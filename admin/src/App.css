@@ -1,0 +1,4 @@
+/* App.css - Dark theme reset */
+* { box-sizing: border-box; }
+body { margin: 0; background: #1a1625; color: #f1f0f5; }
+#root { width: 100%; max-width: 100%; margin: 0; text-align: left; min-height: 100svh; }

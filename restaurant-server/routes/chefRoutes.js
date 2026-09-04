@@ -1,0 +1,12 @@
+import express from "express";
+import { getChefs, createChef, updateChef, deleteChef, updateChefStatus } from "../controllers/chefController.js";
+import { protect } from "../middleware/authMiddleware.js";
+import { requireAdmin } from "../middleware/rbac.js";
+const router = express.Router();
+router.use(protect, requireAdmin);
+router.get("/",           getChefs);
+router.post("/",          createChef);
+router.put("/:id",        updateChef);
+router.delete("/:id",     deleteChef);
+router.patch("/:id/status",updateChefStatus);
+export default router;

@@ -1,0 +1,69 @@
+/* Global dark theme reset */
+*, *::before, *::after { box-sizing: border-box; }
+
+:root {
+  --primary: #7C3AED;
+  --primary-dark: #5b21b6;
+  --primary-light: rgba(124,58,237,0.15);
+  --bg-sidebar: #12101a;
+  --bg-main: #1a1625;
+  --bg-card: #1e1a2e;
+  --bg-input: #252038;
+  --border: rgba(255,255,255,0.07);
+  --text-primary: #f1f0f5;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --sans: 'DM Sans', system-ui, sans-serif;
+  --mono: ui-monospace, Consolas, monospace;
+  color-scheme: dark;
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  background: #1a1625;
+  color: #f1f0f5;
+  font-family: var(--sans);
+}
+
+#root {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  text-align: left;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #12101a; }
+::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.4); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,0.6); }
+
+/* Selection */
+::selection { background: rgba(124,58,237,0.3); color: #fff; }
+
+/* Input global dark style */
+input, select, textarea {
+  background: #252038 !important;
+  color: #f1f0f5 !important;
+  border-color: rgba(255,255,255,0.1) !important;
+}
+input::placeholder, textarea::placeholder { color: #6b7280 !important; }
+input:focus, select:focus, textarea:focus {
+  border-color: rgba(124,58,237,0.5) !important;
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(124,58,237,0.1) !important;
+}
+
+/* Table dark */
+table { color: #f1f0f5; }
+th { color: #9ca3af !important; border-color: rgba(255,255,255,0.07) !important; }
+td { border-color: rgba(255,255,255,0.05) !important; }
+
+/* Button resets */
+button { font-family: var(--sans); }

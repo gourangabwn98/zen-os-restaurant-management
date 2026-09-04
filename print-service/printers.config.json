@@ -1,0 +1,19 @@
+{
+  "_comment": "Defines which physical printer handles which job role. 'role' matches PrinterDevice.role on the backend (KOT / BILL / BOTH). For USB printers, windowsShareName is optional and defaults to windowsPrinterName -- only set it if you gave the printer's SHARE a different name than its display name.",
+  "printers": [
+    {
+      "id": "kitchen",
+      "role": "KOT",
+      "type": "LAN",
+      "ip": "192.168.1.50",
+      "port": 9100
+    },
+    {
+      "id": "billing",
+      "role": "BILL",
+      "type": "USB",
+      "windowsPrinterName": "EPSON_TM_T88V",
+      "windowsShareName": "EPSON_TM_T88V"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "name": "sohoj-print-service",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local print service — bridges the central backend (Socket.IO) to physical LAN/USB thermal printers.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node test/queue.test.js && node test/renderers.test.js && node test/printerManager.test.js && node test/usbDriver.test.js && node test/processor.test.js && node test/integration.test.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "node-thermal-printer": "^4.4.4",
+    "socket.io-client": "^4.7.5"
+  },
+  "devDependencies": {
+    "socket.io": "^4.8.3"
+  }
+}
