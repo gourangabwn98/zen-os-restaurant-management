@@ -1,13 +1,23 @@
-export default function Loader() {
+// src/pages/admin/shared/Loader.jsx
+// `rows` renders shimmer skeletons (preferred for list screens); otherwise a
+// centred spinner.
+export default function Loader({ rows = 0, label }) {
+  if (rows > 0) {
+    return (
+      <div style={{ padding: "8px 0" }} aria-busy="true" aria-live="polite">
+        {Array.from({ length: rows }).map((_, i) => (
+          <div key={i} className="zc-skel" />
+        ))}
+      </div>
+    );
+  }
   return (
-    <div style={{ display: "flex", justifyContent: "center", padding: "60px 0" }}>
-      <div style={{
-        width: 36, height: 36, borderRadius: "50%",
-        border: "3px solid rgba(124,58,237,0.15)",
-        borderTopColor: "#7C3AED",
-        animation: "spin .7s linear infinite",
-      }} />
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    <div style={{
+      display: "flex", flexDirection: "column", alignItems: "center",
+      gap: 12, padding: "60px 0", color: "var(--text-3)",
+    }} aria-busy="true" aria-live="polite">
+      <div className="zc-spin" />
+      {label && <div style={{ fontSize: 13 }}>{label}</div>}
     </div>
   );
 }

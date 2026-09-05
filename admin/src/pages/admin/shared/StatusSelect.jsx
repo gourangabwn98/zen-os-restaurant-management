@@ -1,32 +1,27 @@
 // src/pages/admin/shared/StatusSelect.jsx
-import { W } from "./constants";
+// Canonical order-status filter. Values are the real enum from
+// restaurant-server/utils/orderStateMachine.js — never the pre-rename strings.
+const OPTIONS = [
+  ["All", "All"],
+  ["PENDING_CONFIRMATION", "Pending confirmation"],
+  ["CONFIRMED", "Confirmed"],
+  ["PREPARING", "Preparing"],
+  ["READY", "Ready"],
+  ["DELIVERED", "Delivered"],
+  ["COMPLETED", "Completed"],
+  ["CANCELLED", "Cancelled"],
+];
 
 export default function StatusSelect({ value, onChange }) {
   return (
     <select
+      className="zc-select"
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      style={{
-        padding: "6px 10px",
-        borderRadius: 8,
-        border: "0.5px solid #ddd",
-        fontSize: 13,
-        background: W,
-        cursor: "pointer",
-      }}
+      style={{ width: "auto", cursor: "pointer" }}
     >
-      {[
-        "All",
-        "Placed",
-        "Preparing",
-        "delivered",
-        "Ready",
-        "Completed",
-        "Cancelled",
-      ].map((s) => (
-        <option key={s} value={s}>
-          {s}
-        </option>
+      {OPTIONS.map(([v, label]) => (
+        <option key={v} value={v}>{label}</option>
       ))}
     </select>
   );

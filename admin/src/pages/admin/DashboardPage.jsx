@@ -1,140 +1,154 @@
-import { PRIMARY } from "../../theme.js";
 import { useState, useEffect, useCallback } from "react";
 import toast from "react-hot-toast";
 import {
   updateOrderStatus, getAllOrders, getAllInvoices,
   updateInvoiceStatus, getAllTables,
 } from "../../services/adminService.js";
+import StatCard from "./shared/StatCard.jsx";
+import Badge from "./shared/Badge.jsx";
+import { statusKind } from "./shared/statusKind.js";
 
-const PINK = PRIMARY;
+// ── Canonical vocabulary (see restaurant-server/utils/orderStateMachine.js) ───
+const ALL_STATUSES = [
+  "PENDING_CONFIRMATION", "CONFIRMED", "PREPARING", "READY",
+  "DELIVERED", "COMPLETED", "CANCELLED",
+];
+const STATUS_LABEL = {
+  PENDING_CONFIRMATION: "Pending",
+  CONFIRMED: "Confirmed",
+  PREPARING: "Preparing",
+  READY: "Ready",
+  DELIVERED: "Delivered",
+  COMPLETED: "Completed",
+  CANCELLED: "Cancelled",
+};
+const TYPE_LABEL = { DINE_IN: "Dine-in", TAKEAWAY: "Takeaway", ONLINE: "Online" };
+const ACTIVE_EXCLUDE = ["COMPLETED", "CANCELLED"]; // "no longer on the floor"
 
-// ── Dark theme tokens ─────────────────────────────────────────────────────────
-const BG      = "#0d0b14";
-const CARD    = "#16132a";
-const CARD2   = "#1c1830";
-const BORDER  = "rgba(255,255,255,0.07)";
-const T1      = "#f1f0f5";
-const T2      = "#9ca3af";
-const T3      = "#4b5563";
-
-// ── Status styles (dark-friendly) ─────────────────────────────────────────────
-const STATUS_STYLE = {
-  Placed:    { bg: "rgba(56,122,221,0.18)",  color: "#60a5fa",  label: "Placed"    },
-  Preparing: { bg: "rgba(186,117,23,0.18)",  color: "#fbbf24",  label: "Preparing" },
-  Ready:     { bg: "rgba(29,158,117,0.18)",  color: "#34d399",  label: "Ready"     },
-  Delivered: { bg: "rgba(29,158,117,0.18)",  color: "#34d399",  label: "Delivered" },
-  Completed: { bg: "rgba(107,114,128,0.18)", color: "#9ca3af",  label: "Completed" },
-  Cancelled: { bg: "rgba(239,68,68,0.18)",   color: "#f87171",  label: "Cancelled" },
+// Only the transitions the backend state machine will actually accept.
+// Mirrors TRANSITIONS in restaurant-server/utils/orderStateMachine.js.
+const NEXT_STATUS = {
+  PENDING_CONFIRMATION: ["CONFIRMED", "CANCELLED"],
+  CONFIRMED: ["PREPARING", "CANCELLED"],
+  PREPARING: ["READY", "CANCELLED"],
+  READY: ["DELIVERED"],
+  DELIVERED: ["COMPLETED"],
+  COMPLETED: [],
+  CANCELLED: [],
 };
 
-const TYPE_STYLE = {
-  Dining:      { bg: "rgba(139,92,246,0.15)", color: "#c4b5fd" },
-  "Take Away": { bg: "rgba(59,130,246,0.15)", color: "#93c5fd" },
-};
+const KIND_INK  = { wait: "var(--wait-ink)",  live: "var(--live-ink)",  ready: "var(--ready-ink)",  done: "var(--done-ink)",  stop: "var(--stop-ink)",  vio: "var(--accent-ink)" };
+const KIND_FILL = { wait: "var(--wait-fill)", live: "var(--live-fill)", ready: "var(--ready-fill)", done: "var(--done-fill)", stop: "var(--stop-fill)", vio: "var(--violet-weak)" };
 
-const AVATAR_COLORS = [
-  { bg: "rgba(139,92,246,0.2)", c: "#c4b5fd" },
-  { bg: "rgba(16,185,129,0.2)", c: "#6ee7b7" },
-  { bg: "rgba(59,130,246,0.2)", c: "#93c5fd" },
-  { bg: "rgba(245,158,11,0.2)", c: "#fcd34d" },
-  { bg: "rgba(239,68,68,0.2)",  c: "#fca5a5" },
-  { bg: "rgba(236,72,153,0.2)", c: "#f9a8d4" },
+const statusLabel = (s) => STATUS_LABEL[s] || s;
+const typeLabel = (t) => TYPE_LABEL[t] || t || "—";
+
+const AVATAR_GRADS = [
+  "linear-gradient(140deg,#8B5CF6,#6D28D9)",
+  "linear-gradient(140deg,#22D3EE,#0891B2)",
+  "linear-gradient(140deg,#F0A93B,#D97706)",
+  "linear-gradient(140deg,#35D08A,#059669)",
+  "linear-gradient(140deg,#F2564D,#B91C1C)",
+  "linear-gradient(140deg,#6366F1,#4338CA)",
 ];
 
-// ── inject styles ─────────────────────────────────────────────────────────────
+// ── inject page-scoped keyframes ─────────────────────────────────────────────
 if (!document.getElementById("dash-styles")) {
   const s = document.createElement("style");
   s.id = "dash-styles";
   s.textContent = `
     @keyframes dashBlink {
-      0%,100%{ box-shadow:0 0 0 0 rgba(211,47,47,0); }
-      50%{ box-shadow:0 0 0 4px rgba(211,47,47,0.3); }
+      0%,100%{ box-shadow:0 0 0 0 rgba(242,86,77,0); }
+      50%{ box-shadow:0 0 0 4px rgba(242,86,77,0.28); }
     }
     .dash-blink{ animation:dashBlink 1.4s ease-in-out infinite; }
-    @keyframes spin { to{ transform:rotate(360deg) } }
+    @media (prefers-reduced-motion: reduce){ .dash-blink{ animation-duration:0s; } }
+    .dash-cols{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.1fr); gap:16px; }
+    @media (max-width: 960px){ .dash-cols{ grid-template-columns:1fr; } }
   `;
   document.head.appendChild(s);
 }
 
-// ── helpers ───────────────────────────────────────────────────────────────────
+// ── helpers ─────────────────────────────────────────────────────────────────
 const isToday = (d) => {
   const dt = new Date(d), n = new Date();
-  return dt.getFullYear()===n.getFullYear() && dt.getMonth()===n.getMonth() && dt.getDate()===n.getDate();
+  return dt.getFullYear() === n.getFullYear() && dt.getMonth() === n.getMonth() && dt.getDate() === n.getDate();
 };
-const initials = (n) => !n||n==="Guest" ? "G"
-  : n.split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
-const avatarColor = (s) => AVATAR_COLORS[(s?.charCodeAt(0)||0) % AVATAR_COLORS.length];
-const fmt = (n) => Math.round(n||0).toLocaleString("en-IN");
+const initials = (n) => !n || n === "Guest" ? "G"
+  : n.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
+const avatarGrad = (s) => AVATAR_GRADS[(s?.charCodeAt(0) || 0) % AVATAR_GRADS.length];
+const fmt = (n) => Math.round(n || 0).toLocaleString("en-IN");
 
-// ── Small badge ───────────────────────────────────────────────────────────────
-const Badge = ({ label, map }) => {
-  const s = map[label] || { bg: "rgba(107,114,128,0.15)", color: "#9ca3af" };
+// ── real-data sparkline (area + stroke, no library — matches the reference) ──
+function Sparkline({ values, stroke = "var(--violet)" }) {
+  if (!values || values.length < 2) return null;
+  const max = Math.max(...values);
+  const min = Math.min(...values, 0);
+  const range = max - min || 1;
+  const pts = values.map((v, i) => {
+    const x = (i / (values.length - 1)) * 120;
+    const y = 48 - ((v - min) / range) * 40;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const line = `M${pts.join(" L")}`;
   return (
-    <span style={{
-      background: s.bg, color: s.color,
-      padding: "2px 9px", borderRadius: 20,
-      fontSize: 11, fontWeight: 500, whiteSpace: "nowrap",
-    }}>{label}</span>
+    <svg className="spark" viewBox="0 0 120 52" preserveAspectRatio="none" aria-hidden="true">
+      <path d={`${line} L120,52 L0,52 Z`} fill={stroke} opacity="0.12" />
+      <path d={line} fill="none" stroke={stroke} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
-};
+}
 
-// ── Stat card — matches screenshot exactly ────────────────────────────────────
-const StatCard = ({ label, value, sub, color, icon }) => (
+// ── section label ───────────────────────────────────────────────────────────
+const SectionLabel = ({ children, style }) => (
   <div style={{
-    background: CARD, borderRadius: 14,
-    border: `1px solid ${BORDER}`, padding: "18px 20px",
-    position: "relative", overflow: "hidden",
+    fontSize: 11, fontWeight: 700, color: "var(--accent-ink)", letterSpacing: 1.4,
+    textTransform: "uppercase", marginBottom: 12, ...style,
   }}>
-    {/* glow */}
-    <div style={{
-      position: "absolute", top: 0, right: 0,
-      width: 20, height: 20,
-      background: `radial-gradient(circle, ${color||PINK}22, transparent)`,
-      borderRadius: "0 14px 0 70px",
-    }} />
-    {/* icon circle */}
-    <div style={{
-      width: 38, height: 38, borderRadius: 10, marginBottom: 12,
-      background: `${color||PINK}20`,
-      border: `1px solid ${color||PINK}33`,
-      display: "flex", alignItems: "center", justifyContent: "center",
-      fontSize: 17,
-    }}>{icon}</div>
-    <div style={{ fontSize: 11, color: T2, marginBottom: 5, fontWeight: 500 }}>{label}</div>
-    <div style={{ fontSize: 24, fontWeight: 700, color: color||T1, letterSpacing: -0.5 }}>{value}</div>
-    {sub && <div style={{ fontSize: 11, color: T3, marginTop: 4 }}>{sub}</div>}
+    {children}
   </div>
 );
 
-// ── Status summary grid ───────────────────────────────────────────────────────
+// ── Orders-by-status summary ────────────────────────────────────────────────
 function StatusSummary({ orders }) {
   const counts = {};
-  orders.forEach(o => {
-    if (!counts[o.status]) counts[o.status] = { count:0, revenue:0 };
+  for (const o of orders) {
+    if (!counts[o.status]) counts[o.status] = { count: 0, revenue: 0 };
     counts[o.status].count++;
-    counts[o.status].revenue += Number(o.total||0);
-  });
-  const total = { count: orders.length, revenue: orders.reduce((s,o)=>s+Number(o.total||0),0) };
+    counts[o.status].revenue += Number(o.total || 0);
+  }
+  const total = {
+    count: orders.length,
+    revenue: orders.reduce((s, o) => s + Number(o.total || 0), 0),
+  };
 
   const cells = [
-    ...["Placed","Preparing","Ready","Delivered","Completed","Cancelled"].map(st => ({
-      label: st,
-      ...(counts[st]||{count:0,revenue:0}),
-      style: STATUS_STYLE[st]||{ bg:"rgba(107,114,128,0.15)", color:"#9ca3af" },
+    ...ALL_STATUSES.map((st) => ({
+      label: statusLabel(st),
+      kind: statusKind(st),
+      ...(counts[st] || { count: 0, revenue: 0 }),
     })),
-    { label:"Total", count:total.count, revenue:total.revenue,
-      style:{ bg:"rgba(139,92,246,0.12)", color:"#c4b5fd" } },
+    { label: "Total", kind: "vio", ...total },
   ];
 
   return (
-    <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:20 }}>
-      {cells.map(c => (
+    <div style={{
+      display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))",
+      gap: 8, marginBottom: 20,
+    }}>
+      {cells.map((c) => (
         <div key={c.label} style={{
-          background: c.style.bg, borderRadius:10, padding:"10px 12px", textAlign:"center",
+          background: KIND_FILL[c.kind], borderRadius: "var(--r-row)",
+          border: "1px solid var(--edge)",
+          padding: "10px 12px", textAlign: "center",
         }}>
-          <div style={{ fontSize:11, color:c.style.color, fontWeight:600, marginBottom:4 }}>{c.label}</div>
-          <div style={{ fontSize:22, fontWeight:700, color:c.style.color }}>{c.count}</div>
-          <div style={{ fontSize:10, color:c.style.color, opacity:0.75, marginTop:2 }}>
+          <div style={{ fontSize: 10.5, color: KIND_INK[c.kind], fontWeight: 700, marginBottom: 4 }}>
+            {c.label}
+          </div>
+          <div className="tnum" style={{ fontSize: 21, fontWeight: 700, color: KIND_INK[c.kind] }}>
+            {c.count}
+          </div>
+          <div className="tnum" style={{ fontSize: 10, color: KIND_INK[c.kind], opacity: 0.75, marginTop: 2 }}>
             ₹{fmt(c.revenue)}
           </div>
         </div>
@@ -143,53 +157,58 @@ function StatusSummary({ orders }) {
   );
 }
 
-// ── Live table map ────────────────────────────────────────────────────────────
+// ── Live table map ──────────────────────────────────────────────────────────
 function TableMap({ orders, invoiceMap, onStatusChange, onInvoiceStatusChange }) {
   const [activeTable, setActiveTable] = useState(null);
   const [tables, setTables] = useState([]);
 
   useEffect(() => {
-    getAllTables().then(r => setTables(r.data?.tables||[])).catch(()=>setTables([]));
+    getAllTables().then((r) => setTables(r.data?.tables || [])).catch(() => setTables([]));
   }, []);
 
   const tableOrderMap = {};
-  orders.filter(o => o.orderType==="Dining"&&o.tableNo&&!["Completed","Cancelled"].includes(o.status))
-    .forEach(o => { tableOrderMap[Number(o.tableNo)] = o; });
+  orders
+    .filter((o) => o.orderType === "DINE_IN" && o.tableNo && !ACTIVE_EXCLUDE.includes(o.status))
+    .forEach((o) => { tableOrderMap[Number(o.tableNo)] = o; });
 
-  const selOrder = activeTable ? tableOrderMap[activeTable]||null : null;
-  const selInv   = activeTable ? invoiceMap[activeTable]||null : null;
-  const isPending= selInv?.invoiceStatus?.toLowerCase()==="pending";
+  const selOrder = activeTable ? tableOrderMap[activeTable] || null : null;
+  const selInv = activeTable ? invoiceMap[activeTable] || null : null;
+  const isPending = selInv?.invoiceStatus?.toLowerCase() === "pending";
 
   return (
     <div>
-      {/* Grid */}
-      <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-        {tables.length===0 ? (
-          <div style={{ color:T3, fontSize:12, padding:"16px 0" }}>Loading tables…</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {tables.length === 0 ? (
+          <div style={{ color: "var(--text-3)", fontSize: 12, padding: "16px 0" }}>Loading tables…</div>
         ) : (
-          tables.filter(t=>t.status==="Active"||!t.status)
-            .sort((a,b)=>a.tableNo-b.tableNo)
-            .map(t => {
+          tables
+            .filter((t) => t.status === "Active" || !t.status)
+            .sort((a, b) => a.tableNo - b.tableNo)
+            .map((t) => {
               const o = tableOrderMap[t.tableNo];
               const inv = invoiceMap[t.tableNo];
-              const pend = inv?.invoiceStatus?.toLowerCase()==="pending";
-              const st = o ? (pend ? {bg:"rgba(211,47,47,0.15)",color:"#f87171"} : STATUS_STYLE[o.status]||{bg:"rgba(107,114,128,0.15)",color:"#9ca3af"}) : {bg:"rgba(255,255,255,0.04)",color:"#6b7280"};
-              const isActive = activeTable===t.tableNo;
+              const pend = inv?.invoiceStatus?.toLowerCase() === "pending";
+              const kind = o ? (pend ? "stop" : statusKind(o.status)) : null;
+              const isActive = activeTable === t.tableNo;
               return (
-                <div key={t.tableNo}
-                  className={pend?"dash-blink":""}
-                  onClick={()=>setActiveTable(isActive?null:t.tableNo)}
+                <div
+                  key={t.tableNo}
+                  className={pend ? "dash-blink" : ""}
+                  onClick={() => setActiveTable(isActive ? null : t.tableNo)}
                   style={{
-                    borderRadius:8, padding:"8px 14px", cursor:"pointer",
-                    background: st.bg,
-                    border: isActive ? `2px solid ${PINK}` : `1px solid ${pend?"#f87171":"rgba(255,255,255,0.08)"}`,
-                    minWidth:80, textAlign:"center",
-                    transition:"all .12s",
+                    borderRadius: "var(--r-row)", padding: "8px 14px", cursor: "pointer",
+                    background: kind ? KIND_FILL[kind] : "var(--card-2)",
+                    border: isActive
+                      ? "2px solid var(--violet)"
+                      : `1px solid ${pend ? "var(--stop-line)" : "var(--edge)"}`,
+                    minWidth: 80, textAlign: "center", transition: "border-color .12s",
                   }}
                 >
-                  <div style={{ fontSize:13, fontWeight:600, color:st.color }}>T{t.tableNo}</div>
-                  <div style={{ fontSize:10, color:st.color, marginTop:2 }}>
-                    {pend ? "Pay Due" : o ? o.status : "Free"}
+                  <div style={{ fontSize: 13, fontWeight: 700, color: kind ? KIND_INK[kind] : "var(--text-3)" }}>
+                    T{t.tableNo}
+                  </div>
+                  <div style={{ fontSize: 10, color: kind ? KIND_INK[kind] : "var(--text-3)", marginTop: 2 }}>
+                    {pend ? "Payment due" : o ? statusLabel(o.status) : "Free"}
                   </div>
                 </div>
               );
@@ -197,91 +216,97 @@ function TableMap({ orders, invoiceMap, onStatusChange, onInvoiceStatusChange })
         )}
       </div>
 
-      {/* Inline drawer */}
       {activeTable && (
         <div style={{
-          marginTop:12, background:CARD2, borderRadius:10,
-          border:`1px solid ${isPending?"rgba(239,68,68,0.3)":BORDER}`,
-          padding:14,
+          marginTop: 12, background: "var(--card-2)", borderRadius: "var(--r-row)",
+          border: `1px solid ${isPending ? "var(--stop-line)" : "var(--edge)"}`, padding: 14,
         }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <div>
-              <span style={{ fontWeight:600, fontSize:14, color:T1 }}>Table {activeTable}</span>
+              <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text-1)" }}>Table {activeTable}</span>
               {selOrder && (
-                <span style={{ fontSize:11, color:T3, marginLeft:8 }}>
-                  {selOrder.orderId} · {selOrder.user?.name||"Guest"}
+                <span style={{ fontSize: 11, color: "var(--text-3)", marginLeft: 8 }}>
+                  {selOrder.orderId} · {selOrder.user?.name || selOrder.guestName || "Guest"}
                 </span>
               )}
               {isPending && (
-                <span style={{ marginLeft:8, background:"rgba(239,68,68,0.15)", color:"#f87171",
-                  fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:20 }}>
-                  Invoice Pending
-                </span>
+                <span className="zc-tag stop" style={{ marginLeft: 8 }}><i />Invoice pending</span>
               )}
             </div>
-            <button onClick={()=>setActiveTable(null)} style={{
-              width:26, height:26, borderRadius:"50%", border:`1px solid ${BORDER}`,
-              background:CARD, cursor:"pointer", color:T2, fontSize:13,
-              display:"flex", alignItems:"center", justifyContent:"center",
-            }}>✕</button>
+            <button type="button" onClick={() => setActiveTable(null)} className="zc-x" aria-label="Close">✕</button>
           </div>
 
           {!selOrder ? (
-            <div style={{ color:T3, fontSize:13, textAlign:"center", padding:"16px 0" }}>
+            <div style={{ color: "var(--text-3)", fontSize: 13, textAlign: "center", padding: "16px 0" }}>
               This table is free — no active order
             </div>
           ) : (
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
-              {/* Items */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               <div>
-                <div style={{ fontSize:10, color:T3, fontWeight:600, letterSpacing:1, textTransform:"uppercase", marginBottom:8 }}>Items</div>
-                {selOrder.items?.map((item,i) => (
-                  <div key={i} style={{ display:"flex", justifyContent:"space-between",
-                    padding:"5px 0", borderBottom:`1px solid ${BORDER}`, fontSize:12 }}>
-                    <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-                      <div style={{ width:20, height:20, borderRadius:5, background:`${PINK}20`,
-                        display:"flex", alignItems:"center", justifyContent:"center",
-                        fontSize:11, fontWeight:600, color:PINK }}>
+                <div style={{ fontSize: 10, color: "var(--text-3)", fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>Items</div>
+                {selOrder.items?.map((item, i) => (
+                  <div key={i} style={{
+                    display: "flex", justifyContent: "space-between",
+                    padding: "5px 0", borderBottom: "1px solid var(--edge)", fontSize: 12,
+                  }}>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <div style={{
+                        width: 20, height: 20, borderRadius: 5, background: "var(--violet-weak)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 11, fontWeight: 700, color: "var(--accent-ink)",
+                      }}>
                         {item.qty}
                       </div>
-                      <span style={{ color:T1 }}>{item.name}</span>
+                      <span style={{ color: "var(--text-1)" }}>{item.name}</span>
                     </div>
-                    <span style={{ color:T1, fontWeight:500 }}>₹{item.price*item.qty}</span>
+                    <span className="tnum" style={{ color: "var(--text-1)", fontWeight: 500 }}>₹{item.price * item.qty}</span>
                   </div>
                 ))}
-                <div style={{ marginTop:8, paddingTop:8, borderTop:`1px solid ${BORDER}` }}>
-                  <div style={{ display:"flex", justifyContent:"space-between", fontWeight:600, fontSize:14, color:isPending?"#f87171":PINK }}>
-                    <span style={{ color:T1 }}>Total</span>
-                    <span>₹{fmt(selOrder.total)}</span>
+                <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--edge)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 15 }}>
+                    <span style={{ color: "var(--text-1)" }}>Total</span>
+                    <span className="tnum" style={{ color: "var(--accent-ink)" }}>₹{fmt(selOrder.total)}</span>
                   </div>
                 </div>
               </div>
-              {/* Actions */}
               <div>
-                <div style={{ fontSize:10, color:T3, fontWeight:600, letterSpacing:1, textTransform:"uppercase", marginBottom:8 }}>Update order</div>
-                <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginBottom:12 }}>
-                  {["Placed","Preparing","Ready","Delivered","Completed","Cancelled"]
-                    .filter(s=>s!==selOrder.status).map(s => {
-                      const st = STATUS_STYLE[s]||{bg:"rgba(107,114,128,0.15)",color:"#9ca3af"};
-                      return (
-                        <button key={s} onClick={()=>{ onStatusChange(selOrder._id,s); setActiveTable(null); }}
-                          style={{ padding:"5px 10px", borderRadius:20, fontSize:11, cursor:"pointer",
-                            border:`1px solid ${st.color}33`, background:st.bg, color:st.color, fontWeight:500 }}>
-                          {s}
-                        </button>
-                      );
-                    })}
+                <div style={{ fontSize: 10, color: "var(--text-3)", fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>Update order</div>
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 12 }}>
+                  {(NEXT_STATUS[selOrder.status] || []).map((s) => {
+                    const k = statusKind(s);
+                    return (
+                      <button
+                        type="button"
+                        key={s}
+                        onClick={() => { onStatusChange(selOrder._id, s); setActiveTable(null); }}
+                        style={{
+                          padding: "5px 10px", borderRadius: 20, fontSize: 11, cursor: "pointer",
+                          border: "1px solid var(--edge-hi)", font: "inherit",
+                          background: KIND_FILL[k], color: KIND_INK[k], fontWeight: 600,
+                        }}
+                      >
+                        {statusLabel(s)}
+                      </button>
+                    );
+                  })}
+                  {(NEXT_STATUS[selOrder.status] || []).length === 0 && (
+                    <span style={{ fontSize: 11, color: "var(--text-3)" }}>No further changes</span>
+                  )}
                 </div>
                 {selInv && isPending && (
-                  <div style={{ display:"flex", gap:6 }}>
-                    <button onClick={()=>{ onInvoiceStatusChange(selInv._id,"completed"); setActiveTable(null); }}
-                      style={{ flex:1, padding:"8px", background:"rgba(16,185,129,0.2)", color:"#34d399",
-                        border:"1px solid rgba(16,185,129,0.3)", borderRadius:8, fontWeight:600, cursor:"pointer", fontSize:12 }}>
-                      Mark Paid
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button
+                      type="button"
+                      onClick={() => { onInvoiceStatusChange(selInv._id, "completed"); setActiveTable(null); }}
+                      className="zc-btn good" style={{ flex: 1, justifyContent: "center" }}
+                    >
+                      Mark paid
                     </button>
-                    <button onClick={()=>{ onInvoiceStatusChange(selInv._id,"cancelled"); setActiveTable(null); }}
-                      style={{ flex:1, padding:"8px", background:"rgba(239,68,68,0.15)", color:"#f87171",
-                        border:"1px solid rgba(239,68,68,0.2)", borderRadius:8, fontWeight:600, cursor:"pointer", fontSize:12 }}>
+                    <button
+                      type="button"
+                      onClick={() => { onInvoiceStatusChange(selInv._id, "cancelled"); setActiveTable(null); }}
+                      className="zc-btn danger" style={{ flex: 1, justifyContent: "center" }}
+                    >
                       Cancel
                     </button>
                   </div>
@@ -295,127 +320,141 @@ function TableMap({ orders, invoiceMap, onStatusChange, onInvoiceStatusChange })
   );
 }
 
-// ── Recent orders panel ───────────────────────────────────────────────────────
+// ── Recent orders panel ─────────────────────────────────────────────────────
 function OrderList({ orders, onStatusChange }) {
   const [type, setType] = useState("all");
-  const active = orders.filter(o=>!["Completed","Cancelled"].includes(o.status));
-  const dining  = active.filter(o=>o.orderType==="Dining");
-  const takeaway= active.filter(o=>o.orderType==="Take Away");
-  const visible = type==="dining" ? dining : type==="takeaway" ? takeaway : active;
+  const active = orders.filter((o) => !ACTIVE_EXCLUDE.includes(o.status));
+  const dining = active.filter((o) => o.orderType === "DINE_IN");
+  const takeaway = active.filter((o) => o.orderType === "TAKEAWAY");
+  const visible = type === "dining" ? dining : type === "takeaway" ? takeaway : active;
+
+  const tabs = [
+    { key: "all", label: "All orders", count: active.length },
+    { key: "dining", label: "Dine-in", count: dining.length },
+    { key: "takeaway", label: "Takeaway", count: takeaway.length },
+  ];
 
   return (
     <>
-      {/* Type filter tabs */}
-      <div style={{ display:"flex", gap:8, marginBottom:16 }}>
-        {[
-          { key:"all",      label:"All orders", count:active.length,   color:T1 },
-          { key:"dining",   label:"Dining",     count:dining.length,   color:PINK },
-          { key:"takeaway", label:"Take away",  count:takeaway.length, color:"#60a5fa" },
-        ].map(b => (
-          <div key={b.key} onClick={()=>setType(b.key)} style={{
-            flex:1, textAlign:"center", cursor:"pointer", borderRadius:10,
-            padding:"11px 8px",
-            border: type===b.key ? `2px solid ${PINK}` : `1px solid ${BORDER}`,
-            background: type===b.key ? `${PINK}12` : CARD2,
-            transition:"all .15s",
-          }}>
-            <div style={{ fontSize:20, fontWeight:700, color:b.color }}>{b.count}</div>
-            <div style={{ fontSize:11, color:T2, marginTop:3 }}>{b.label}</div>
-          </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        {tabs.map((b) => (
+          <button
+            type="button"
+            key={b.key}
+            onClick={() => setType(b.key)}
+            style={{
+              flex: 1, textAlign: "center", cursor: "pointer", borderRadius: "var(--r-ctl)",
+              padding: "11px 8px", font: "inherit",
+              border: type === b.key ? "2px solid var(--violet)" : "1px solid var(--edge)",
+              background: type === b.key ? "var(--violet-weak)" : "var(--card-2)",
+              transition: "border-color .15s",
+            }}
+          >
+            <div className="tnum" style={{ fontSize: 20, fontWeight: 700, color: "var(--text-1)" }}>{b.count}</div>
+            <div style={{ fontSize: 11, color: "var(--text-2)", marginTop: 3 }}>{b.label}</div>
+          </button>
         ))}
       </div>
 
-      {visible.length===0 ? (
-        <div style={{ textAlign:"center", padding:"40px 16px", color:T3, fontSize:13 }}>
+      {visible.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "40px 16px", color: "var(--text-3)", fontSize: 13 }}>
           No active orders
         </div>
-      ) : visible.map(o => {
-        const av = avatarColor(o.guestName||o.user?.name||"Guest");
-        return (
-          <div key={o._id} style={{
-            display:"flex", gap:10, alignItems:"flex-start",
-            padding:"11px 0", borderBottom:`1px solid ${BORDER}`,
+      ) : visible.map((o) => (
+        <div key={o._id} style={{
+          display: "flex", gap: 10, alignItems: "flex-start",
+          padding: "11px 0", borderBottom: "1px solid var(--edge)",
+        }}>
+          <div style={{
+            width: 34, height: 34, borderRadius: "50%",
+            background: avatarGrad(o.guestName || o.user?.name || "Guest"), color: "#fff",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 12, fontWeight: 700, flexShrink: 0,
           }}>
-            {/* Avatar */}
-            <div style={{
-              width:34, height:34, borderRadius:"50%",
-              background:av.bg, color:av.c,
-              display:"flex", alignItems:"center", justifyContent:"center",
-              fontSize:12, fontWeight:600, flexShrink:0,
-            }}>{initials(o.guestName||o.user?.name)}</div>
+            {initials(o.guestName || o.user?.name)}
+          </div>
 
-            <div style={{ flex:1, minWidth:0 }}>
-              {/* Row 1: name + amount */}
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:3 }}>
-                <div>
-                  <span style={{ fontWeight:600, fontSize:13, color:T1 }}>{o.guestName||o.user?.name||"Admin"}</span>
-                  <span style={{ fontSize:11, color:T3, marginLeft:6 }}>{o.orderId}</span>
-                </div>
-                <span style={{ fontWeight:700, color:PINK, fontSize:14 }}>₹{fmt(o.total)}</span>
-              </div>
-              {/* Items */}
-              <div style={{ fontSize:12, color:T2, marginBottom:6,
-                whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-                {o.items?.map(i=>`${i.name} ×${i.qty}`).join(", ")}
-              </div>
-              {/* Badges */}
-              <div style={{ display:"flex", alignItems:"center", gap:5, flexWrap:"wrap" }}>
-                <Badge label={o.status} map={STATUS_STYLE} />
-                <Badge label={o.orderType} map={TYPE_STYLE} />
-                {o.tableNo && (
-                  <span style={{ fontSize:11, color:T3,
-                    background:"rgba(255,255,255,0.05)", borderRadius:20, padding:"2px 8px" }}>
-                    Table {o.tableNo}
-                  </span>
-                )}
-                <span style={{ fontSize:11, color:T3, marginLeft:"auto" }}>
-                  {new Date(o.createdAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+              <div>
+                <span style={{ fontWeight: 700, fontSize: 13, color: "var(--text-1)" }}>
+                  {o.guestName || o.user?.name || "Admin"}
                 </span>
+                <span style={{ fontSize: 11, color: "var(--text-3)", marginLeft: 6 }}>{o.orderId}</span>
               </div>
-              {/* Status update dropdown */}
-              <div style={{ marginTop:8 }}>
-                <select defaultValue="" onChange={e=>{ if(e.target.value) onStatusChange(o._id,e.target.value); }}
-                  style={{ fontSize:11, padding:"5px 10px", borderRadius:8,
-                    border:`1px solid ${BORDER}`, background:CARD, color:T2, cursor:"pointer" }}>
+              <span className="tnum" style={{ fontWeight: 700, fontSize: 14, color: "var(--accent-ink)" }}>₹{fmt(o.total)}</span>
+            </div>
+            <div style={{
+              fontSize: 12, color: "var(--text-2)", marginBottom: 6,
+              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+            }}>
+              {o.items?.map((i) => `${i.name} ×${i.qty}`).join(", ")}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+              <Badge label={o.status} format={statusLabel} />
+              <Badge label={o.orderType} kind="vio" format={typeLabel} dot={false} />
+              {o.tableNo && (
+                <span style={{
+                  fontSize: 11, color: "var(--text-3)",
+                  background: "var(--card-2)", borderRadius: 20, padding: "2px 8px",
+                }}>
+                  Table {o.tableNo}
+                </span>
+              )}
+              <span className="tnum" style={{ fontSize: 11, color: "var(--text-3)", marginLeft: "auto" }}>
+                {new Date(o.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            </div>
+            {(NEXT_STATUS[o.status] || []).length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <select
+                  className="zc-select"
+                  defaultValue=""
+                  onChange={(e) => { if (e.target.value) onStatusChange(o._id, e.target.value); }}
+                  style={{ width: "auto", fontSize: 11, padding: "5px 10px", cursor: "pointer" }}
+                >
                   <option value="" disabled>Update status…</option>
-                  {["Placed","Preparing","Ready","Delivered","Completed","Cancelled"]
-                    .filter(s=>s!==o.status).map(s=><option key={s}>{s}</option>)}
+                  {NEXT_STATUS[o.status].map((s) => (
+                    <option key={s} value={s}>{statusLabel(s)}</option>
+                  ))}
                 </select>
               </div>
-            </div>
+            )}
           </div>
-        );
-      })}
+        </div>
+      ))}
     </>
   );
 }
 
-// ── Main Dashboard ────────────────────────────────────────────────────────────
+// ── Main Dashboard ──────────────────────────────────────────────────────────
 export default function DashboardPage({ data }) {
   const s = data?.stats || {};
 
-  const [allOrders,      setAllOrders]      = useState([]);
+  const [allOrders, setAllOrders] = useState([]);
   const [allTodayOrders, setAllTodayOrders] = useState([]);
-  const [invoiceMap,     setInvoiceMap]     = useState({});
-  const [loading,        setLoading]        = useState(true);
+  const [invoiceMap, setInvoiceMap] = useState({});
+  const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     try {
       const [ordersRes, invoicesRes] = await Promise.all([
-        getAllOrders({ limit:1000 }),
-        getAllInvoices().catch(()=>({ data:{ invoices:[] } })),
+        getAllOrders({ limit: 1000 }),
+        getAllInvoices().catch(() => ({ data: { invoices: [] } })),
       ]);
-      const full   = ordersRes.data.orders||[];
-      const today  = full.filter(o=>isToday(o.createdAt));
-      const invoices = invoicesRes.data?.invoices||[];
+      const full = ordersRes.data.orders || [];
+      const today = full.filter((o) => isToday(o.createdAt));
+      const invoices = invoicesRes.data?.invoices || [];
 
-      const activeDining = today.filter(o=>o.orderType==="Dining"&&o.tableNo&&!["Completed","Cancelled"].includes(o.status));
+      const activeDining = today.filter(
+        (o) => o.orderType === "DINE_IN" && o.tableNo && !ACTIVE_EXCLUDE.includes(o.status),
+      );
       const iMap = {};
-      invoices.forEach(inv=>{
-        const ids = inv.orders?.map(String)||[];
-        for(const o of activeDining){
-          if(ids.includes(String(o._id))){
-            iMap[Number(o.tableNo)] = { ...inv, invoiceStatus: inv.status||inv.paymentStatus||"pending" };
+      invoices.forEach((inv) => {
+        const ids = inv.orders?.map(String) || [];
+        for (const o of activeDining) {
+          if (ids.includes(String(o._id))) {
+            iMap[Number(o.tableNo)] = { ...inv, invoiceStatus: inv.status || inv.paymentStatus || "pending" };
             break;
           }
         }
@@ -424,8 +463,11 @@ export default function DashboardPage({ data }) {
       setAllOrders(full);
       setAllTodayOrders(today);
       setInvoiceMap(iMap);
-    } catch { toast.error("Failed to load data"); }
-    finally { setLoading(false); }
+    } catch {
+      toast.error("Failed to load data");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -437,9 +479,12 @@ export default function DashboardPage({ data }) {
   const handleStatusChange = async (id, st) => {
     try {
       await updateOrderStatus(id, st);
-      toast.success(`→ ${st}`);
-      setAllTodayOrders(p=>p.map(o=>o._id===id?{...o,status:st}:o));
-    } catch { toast.error("Update failed"); }
+      toast.success(`Order → ${statusLabel(st)}`);
+      setAllOrders((p) => p.map((o) => (o._id === id ? { ...o, status: st } : o)));
+      setAllTodayOrders((p) => p.map((o) => (o._id === id ? { ...o, status: st } : o)));
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Update failed");
+    }
   };
 
   const handleInvoiceChange = async (id, st) => {
@@ -447,133 +492,120 @@ export default function DashboardPage({ data }) {
       await updateInvoiceStatus(id, st);
       toast.success(`Invoice → ${st}`);
       await fetchData();
-    } catch { toast.error("Invoice update failed"); }
+    } catch {
+      toast.error("Invoice update failed");
+    }
   };
 
-  // ── Stats calculations ──────────────────────────────────────────────────────
-// ── Stats calculations — ALL TIME ──────────────────────────────────────────
-const paidOrders    = allOrders.filter(o => o.paymentStatus === "Paid");
-const pendingOrders = allOrders.filter(o => o.paymentStatus === "Pending");
-const cashPaid      = allOrders.filter(o => o.paymentMethod === "Cash"   && o.paymentStatus === "Paid");
-const onlinePaid    = allOrders.filter(o => o.paymentMethod === "Online" && o.paymentStatus === "Paid");
+  // ── Stats — all real aggregates, canonical enum values ─────────────────────
+  const paidOrders = allOrders.filter((o) => o.paymentStatus === "PAID");
+  const dueOrders = allOrders.filter((o) => o.paymentStatus === "PENDING_VERIFICATION");
+  const cashPaid = allOrders.filter((o) => o.paymentMethod === "Cash" && o.paymentStatus === "PAID");
+  const onlinePaid = allOrders.filter((o) => o.paymentMethod === "Online" && o.paymentStatus === "PAID");
 
-const totalRev      = paidOrders.reduce((s,o) => s + Number(o.total||0), 0);
-const totalDue      = pendingOrders.reduce((s,o) => s + Number(o.total||0), 0);
-const totalCash     = cashPaid.reduce((s,o) => s + Number(o.total||0), 0);
-const totalOnline   = onlinePaid.reduce((s,o) => s + Number(o.total||0), 0);
-const avgOrder      = paidOrders.length ? Math.round(totalRev / paidOrders.length) : 0;
-const activeTables  = allTodayOrders.filter(o => o.orderType==="Dining" && o.tableNo && !["Completed","Cancelled"].includes(o.status)).length;
-const pendingInv    = Object.values(invoiceMap).filter(i => i.invoiceStatus?.toLowerCase()==="pending").length;
+  const totalRev = paidOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+  const totalDue = dueOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+  const totalCash = cashPaid.reduce((sum, o) => sum + Number(o.total || 0), 0);
+  const totalOnline = onlinePaid.reduce((sum, o) => sum + Number(o.total || 0), 0);
+  const avgOrder = paidOrders.length ? Math.round(totalRev / paidOrders.length) : 0;
 
-// today still needed for today's stat boxes in status summary
-const paidToday = allTodayOrders.filter(o => o.paymentStatus === "Paid");
-const todayRev  = paidToday.reduce((s,o) => s + Number(o.total||0), 0);
+  const activeFloorTables = allTodayOrders.filter(
+    (o) => o.orderType === "DINE_IN" && o.tableNo && !ACTIVE_EXCLUDE.includes(o.status),
+  ).length;
+  const pendingInv = Object.values(invoiceMap).filter(
+    (i) => i.invoiceStatus?.toLowerCase() === "pending",
+  ).length;
 
-  const today = new Date().toLocaleDateString("en-IN",{ weekday:"long", day:"numeric", month:"long", year:"numeric" });
+  const paidToday = allTodayOrders.filter((o) => o.paymentStatus === "PAID");
+  const todayRev = paidToday.reduce((sum, o) => sum + Number(o.total || 0), 0);
 
-const STAT_BOXES = [
-  { icon:"💰", label:"Total Collected",        value:`₹${fmt(totalRev)}`,      sub:`${paidOrders.length} paid orders`,    color:PINK        },
-  { icon:"📦", label:"Total Orders",           value:allOrders.length,          sub:`+${allTodayOrders.length} today`,     color:"#34d399"   },
-  { icon:"👥", label:"Registered Users",       value:s.totalUsers||0,           sub:"Guests included",                    color:"#60a5fa"   },
-  { icon:"🍽️", label:"Menu Items",             value:s.totalItems||0,           sub:"Available",                          color:"#fbbf24"   },
-  { icon:"✅", label:"Total Paid Orders",      value:paidOrders.length,         sub:`₹${fmt(totalRev)}`,                  color:"#34d399"   },
-  { icon:"🔴", label:"Total Due",              value:pendingOrders.length,      sub:`₹${fmt(totalDue)}`,                  color:"#f87171"   },
-  { icon:"💵", label:"Cash Collected",         value:cashPaid.length,           sub:`₹${fmt(totalCash)}`,                 color:"#fbbf24"   },
-  { icon:"📱", label:"Online Collected",       value:onlinePaid.length,         sub:`₹${fmt(totalOnline)}`,               color:"#c4b5fd"   },
-];
+  const weeklyRevenue = (data?.weeklyRevenue || []).map((d) => Number(d.revenue || 0));
+
+  const today = new Date().toLocaleDateString("en-IN", {
+    weekday: "long", day: "numeric", month: "long", year: "numeric",
+  });
+
+  const restaurantName = data?.profile?.restaurantName || "Ad's Cafe";
+
+  const STAT_BOXES = [
+    {
+      icon: "💰", label: "Total collected", value: `₹${fmt(totalRev)}`, grad: true,
+      sub: `${paidOrders.length} paid orders`,
+      spark: <Sparkline values={weeklyRevenue} stroke="var(--violet)" />,
+    },
+    { icon: "📦", label: "Total orders", value: fmt(allOrders.length), colorIdx: 1, sub: `${allTodayOrders.length} today` },
+    { icon: "🧾", label: "Collected today", value: `₹${fmt(todayRev)}`, colorIdx: 1, sub: `${paidToday.length} paid today` },
+    { icon: "🪑", label: "Active tables", value: fmt(activeFloorTables), colorIdx: 2, sub: "On the floor now" },
+    { icon: "✅", label: "Paid orders", value: fmt(paidOrders.length), colorIdx: 1, sub: `₹${fmt(totalRev)} collected` },
+    { icon: "🔴", label: "Payment due", value: fmt(dueOrders.length), color: "var(--stop-ink)", sub: `₹${fmt(totalDue)} outstanding` },
+    { icon: "💵", label: "Cash collected", value: `₹${fmt(totalCash)}`, colorIdx: 3, sub: `${cashPaid.length} orders` },
+    { icon: "📱", label: "Online collected", value: `₹${fmt(totalOnline)}`, colorIdx: 0, sub: `${onlinePaid.length} orders` },
+    { icon: "📊", label: "Average order", value: `₹${fmt(avgOrder)}`, colorIdx: 0, sub: "Across paid orders" },
+    { icon: "👥", label: "Registered users", value: fmt(s.totalUsers || 0), colorIdx: 2, sub: "Guests included" },
+    { icon: "🍽️", label: "Menu items", value: fmt(s.totalItems || 0), colorIdx: 3, sub: "Available" },
+  ];
 
   return (
-    <div style={{ padding:28, fontFamily:"'DM Sans',sans-serif", minHeight:"100vh" }}>
-
-      {/* ── Header ── */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:22 }}>
+    <div style={{ minHeight: "100vh" }}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 22, flexWrap: "wrap" }}>
         <div>
-          <h1 style={{ fontSize:22, fontWeight:700, color:T1, margin:0 }}>Dashboard</h1>
-          <div style={{ fontSize:13, color:PINK, marginTop:4, fontWeight:500 }}>{today}</div>
+          <h1 style={{ fontSize: 21, fontWeight: 700, letterSpacing: "-.025em", color: "var(--text-1)", margin: 0 }}>
+            Dashboard
+          </h1>
+          <div style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 3 }}>{today}</div>
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          {pendingInv>0 && (
-            <span className="dash-blink" style={{
-              background:"rgba(239,68,68,0.15)", color:"#f87171",
-              fontSize:12, fontWeight:600, padding:"5px 13px", borderRadius:20,
-              border:"1px solid rgba(239,68,68,0.3)",
-            }}>
-              {pendingInv} invoice{pendingInv>1?"s":""} pending
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          {pendingInv > 0 && (
+            <span className="dash-blink zc-tag stop">
+              <i />{pendingInv} invoice{pendingInv > 1 ? "s" : ""} pending
             </span>
           )}
-          {/* Restaurant pill — matches screenshot top-right */}
           <div style={{
-            display:"flex", alignItems:"center", gap:8,
-            background:CARD2, border:`1px solid ${BORDER}`,
-            borderRadius:20, padding:"7px 14px",
+            display: "flex", alignItems: "center", gap: 8,
+            background: "var(--card-2)", border: "1px solid var(--edge)",
+            borderRadius: 20, padding: "7px 14px",
           }}>
-            <span style={{ fontSize:15 }}>🏪</span>
-            <span style={{ fontSize:13, color:T2 }}>Restaurant:</span>
-            <span style={{ fontSize:13, fontWeight:600, color:T1 }}>
-              {data?.profile?.restaurantName || "Kolhad Cafe"}
-            </span>
-            <span style={{ color:T3, fontSize:13 }}>▾</span>
+            <span style={{ fontSize: 15 }}>🏪</span>
+            <span style={{ fontSize: 13, color: "var(--text-2)" }}>Restaurant:</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)" }}>{restaurantName}</span>
           </div>
-          <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-            <div style={{ width:7, height:7, borderRadius:"50%", background:"#34d399" }} />
-            <span style={{ fontSize:12, color:"#34d399", fontWeight:500 }}>Live</span>
-          </div>
+          <span className="zc-live-dot"><i />Live</span>
         </div>
       </div>
 
-      {/* ── Stat cards grid (4 × 2) ── */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12, marginBottom:22 }}>
-        {STAT_BOXES.map((b,i) => <StatCard key={i} {...b} />)}
+      {/* Stat cards */}
+      <div style={{
+        display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+        gap: 12, marginBottom: 22,
+      }}>
+        {STAT_BOXES.map((b, i) => <StatCard key={i} {...b} />)}
       </div>
 
       {loading ? (
-        <div style={{ textAlign:"center", padding:60, color:T3 }}>
-          <div style={{ width:30, height:30, borderRadius:"50%", border:`3px solid ${PINK}22`,
-            borderTopColor:PINK, animation:"spin .7s linear infinite", margin:"0 auto 12px" }} />
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: 60, color: "var(--text-3)" }}>
+          <div className="zc-spin" />
           Loading…
         </div>
       ) : (
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1.1fr", gap:16 }}>
-
-          {/* ── LEFT ── */}
-          <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-            <div style={{
-              background:CARD, border:`1px solid ${BORDER}`, borderRadius:14, padding:20,
-            }}>
-              {/* Section header */}
-              <div style={{ fontSize:11, fontWeight:600, color:PINK, letterSpacing:1.5,
-                textTransform:"uppercase", marginBottom:14 }}>
-                Orders by status — today
-              </div>
-              <StatusSummary orders={allTodayOrders} />
-
-              {/* Live table map */}
-              <div style={{ fontSize:11, fontWeight:600, color:PINK, letterSpacing:1.5,
-                textTransform:"uppercase", marginBottom:12 }}>
-                Live table map
-              </div>
-              <TableMap
-                orders={allTodayOrders}
-                invoiceMap={invoiceMap}
-                onStatusChange={handleStatusChange}
-                onInvoiceStatusChange={handleInvoiceChange}
-              />
-            </div>
+        <div className="dash-cols">
+          {/* LEFT */}
+          <div className="zc-card" style={{ padding: 20 }}>
+            <SectionLabel>Orders by status — today</SectionLabel>
+            <StatusSummary orders={allTodayOrders} />
+            <SectionLabel>Live table map</SectionLabel>
+            <TableMap
+              orders={allTodayOrders}
+              invoiceMap={invoiceMap}
+              onStatusChange={handleStatusChange}
+              onInvoiceStatusChange={handleInvoiceChange}
+            />
           </div>
 
-          {/* ── RIGHT ── */}
-          <div style={{
-            background:CARD, border:`1px solid ${BORDER}`, borderRadius:14, padding:20,
-            maxHeight:"80vh", overflowY:"auto",
-          }}>
-            <div style={{ fontSize:11, fontWeight:600, color:PINK, letterSpacing:1.5,
-              textTransform:"uppercase", marginBottom:16 }}>
-              Recent orders — today (active only)
-            </div>
-            <OrderList
-              orders={allTodayOrders}
-              onStatusChange={handleStatusChange}
-            />
+          {/* RIGHT */}
+          <div className="zc-card" style={{ padding: 20, maxHeight: "80vh", overflowY: "auto" }}>
+            <SectionLabel>Recent orders — today (active only)</SectionLabel>
+            <OrderList orders={allTodayOrders} onStatusChange={handleStatusChange} />
           </div>
         </div>
       )}

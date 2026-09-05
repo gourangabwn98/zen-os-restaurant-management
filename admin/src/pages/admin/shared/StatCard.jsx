@@ -1,46 +1,41 @@
-import { STAT_COLORS, PRIMARY, BG_CARD, TEXT_SECONDARY } from "../../../theme.js";
+// src/pages/admin/shared/StatCard.jsx
+const ACCENTS = {
+  0: { ink: "var(--accent-ink)", hue: "var(--violet)" },
+  1: { ink: "var(--ready-ink)",  hue: "var(--ready)" },
+  2: { ink: "var(--live-ink)",   hue: "var(--live)" },
+  3: { ink: "var(--wait-ink)",   hue: "var(--wait)" },
+};
 
-export default function StatCard({ label, value, sub, colorIdx = 0, icon }) {
-  const color = STAT_COLORS[colorIdx % STAT_COLORS.length];
+// `value` / `val` and `color` (explicit override) are all accepted so existing
+// call sites keep working. `colorIdx` picks one of the theme accent pairs.
+// `grad` renders the value as brand-gradient text (large/bold only — AA rule).
+// `spark` is an optional <svg class="spark"> node for a real-data sparkline.
+export default function StatCard({ label, value, val, sub, colorIdx = 0, color, icon, grad, spark }) {
+  const shown = value ?? val;
+  const accent = ACCENTS[colorIdx % 4] || ACCENTS[0];
+  const valueColor = color || accent.ink;
+
   return (
-    <div style={{
-      background: "#1e1a2e",
-      border: "1px solid rgba(255,255,255,0.07)",
-      borderRadius: 16,
-      padding: "20px",
-      position: "relative",
-      overflow: "hidden",
-    }}>
-      {/* Glow accent */}
+    <div className="zc-metric">
       <div style={{
-        position: "absolute", top: 0, right: 0,
-        width: 80, height: 80,
-        background: `radial-gradient(circle, ${color}22, transparent)`,
-        borderRadius: "0 16px 0 80px",
+        position: "absolute", top: 0, right: 0, width: 80, height: 80,
+        background: `radial-gradient(circle, ${accent.hue}, transparent 70%)`,
+        opacity: 0.14, borderRadius: "0 var(--r-card) 0 80px",
       }} />
-
-      {/* Icon circle */}
       {icon && (
-        <div style={{
-          width: 44, height: 44, borderRadius: 12,
-          background: `${color}20`,
-          border: `1px solid ${color}33`,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 20, marginBottom: 12,
-        }}>
+        <div className="ic" style={{ color: valueColor, borderColor: "var(--violet-mid)" }}>
           {icon}
         </div>
       )}
-
-      <div style={{ fontSize: 11, color: "#9ca3af", marginBottom: 6, fontWeight: 500, letterSpacing: 0.3 }}>
-        {label}
+      <div className="k">{label}</div>
+      <div
+        className={`v tnum${grad ? " gr" : ""}`}
+        style={grad ? undefined : { color: valueColor }}
+      >
+        {shown}
       </div>
-      <div style={{ fontSize: 26, fontWeight: 600, color: color, letterSpacing: -0.5 }}>
-        {value}
-      </div>
-      {sub && (
-        <div style={{ fontSize: 11, color: "#6b7280", marginTop: 6 }}>{sub}</div>
-      )}
+      {sub && <div className="d">{sub}</div>}
+      {spark}
     </div>
   );
 }

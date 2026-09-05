@@ -11,3 +11,10 @@ export const firebaseVerify = (firebaseToken, name) =>
 // services/authService.js
 export const checkAdminPhone = (phone) =>
   api.post("/auth/check-admin-phone", { phone }); // ← match your existing axios baseURL/prefix
+
+// ── Signed-in user's own account (name, phone, role, themePreference, …) ──────
+export const getMyProfile = () => api.get("/auth/profile");
+
+// ── Persist the admin panel's light/dark choice (light | dark | system) ──────
+export const updateThemePreference = (themePreference) =>
+  api.patch("/auth/theme", { themePreference });

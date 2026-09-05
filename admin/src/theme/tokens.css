@@ -1,0 +1,208 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Ad's Cafe — design tokens
+   Visual language extracted from design-reference/zen-os-design-reference.html.
+
+   Every colour/gradient/radius the admin panel uses resolves to one of the
+   custom properties below. `data-theme="light" | "dark"` on <html> selects the
+   set; the anti-flash script in index.html stamps it before first paint, and
+   ThemeProvider keeps it in sync with the toggle.
+
+   Rules:
+   - Brand hues (violet/indigo/cyan) and the status *hues* are identical in both
+     themes. Only their -ink (text) variants change, so labels stay WCAG AA.
+   - `--grad-brand` is only ever used as clipped text at >=18px bold. Small
+     accent text uses `--accent-ink`.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ══════════════ LIGHT (default) ══════════════ */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* surfaces */
+  --bg:        #F1EFF7;   /* app ground / sidebar */
+  --surface:   #F8F7FC;   /* main content area */
+  --card:      #FFFFFF;   /* card face */
+  --card-2:    #F4F2FB;   /* nested rows / inputs / panel */
+  --raise:     #ECE9F6;   /* raised chip / hover */
+  --edge:      rgba(23, 16, 54, 0.10);
+  --edge-hi:   rgba(23, 16, 54, 0.20);
+  --edge-grad: linear-gradient(155deg, rgba(23,16,54,0.10), rgba(23,16,54,0.03) 46%, rgba(139,92,246,0.18));
+
+  /* text */
+  --text-1: #191426;   /* ~16:1 on --surface */
+  --text-2: #574F6B;   /* ~7:1  — secondary */
+  --text-3: #6E6784;   /* ~5:1  — hints / meta */
+
+  /* brand — hues shared with dark */
+  --violet: #8B5CF6;
+  --indigo: #6366F1;
+  --cyan:   #22D3EE;
+  --violet-faint: rgba(139, 92, 246, 0.08);
+  --violet-weak:  rgba(139, 92, 246, 0.15);
+  --violet-mid:   rgba(139, 92, 246, 0.26);
+  --violet-glow:  rgba(139, 92, 246, 0.40);
+  --violet-line:  rgba(139, 92, 246, 0.55);
+  --accent-ink:   #6D28D9;   /* small accent text / links — AA on light */
+  --grad-brand:   linear-gradient(118deg, #7C3AED 0%, #6366F1 52%, #0E8FAA 100%);
+  --grad-btn:     linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%);
+
+  /* status — hue (dot, border, sparkline stroke): identical both themes */
+  --wait: #F0A93B;
+  --live: #5AA2F5;
+  --ready: #35D08A;
+  --done: #7A7396;
+  --stop: #F2564D;
+
+  /* status — accessible label / value text */
+  --wait-ink: #965A08;
+  --live-ink: #1D6FD8;
+  --ready-ink: #0B7C4E;
+  --done-ink: #575167;
+  --stop-ink: #CB2C22;
+
+  /* status — tag / pill fill */
+  --wait-fill: rgba(240, 169, 59, 0.16);
+  --live-fill: rgba(90, 162, 245, 0.16);
+  --ready-fill: rgba(53, 208, 138, 0.16);
+  --done-fill: rgba(122, 115, 150, 0.16);
+  --stop-fill: rgba(242, 86, 77, 0.16);
+
+  /* status — tag / pill hairline */
+  --wait-line: rgba(240, 169, 59, 0.34);
+  --live-line: rgba(90, 162, 245, 0.34);
+  --ready-line: rgba(53, 208, 138, 0.34);
+  --done-line: rgba(122, 115, 150, 0.30);
+  --stop-line: rgba(242, 86, 77, 0.36);
+  --scrim: rgba(23, 16, 54, 0.42);
+
+  /* gradient surfaces */
+  --grad-card:  linear-gradient(158deg, #FFFFFF 0%, #F6F4FC 100%);
+  --grad-panel: linear-gradient(168deg, #FBFAFE 0%, #F2F0FA 100%);
+  --grad-rail:  linear-gradient(200deg, #FFFFFF 0%, #F3F0FB 62%);
+  --grad-modal: linear-gradient(162deg, #FFFFFF 0%, #F4F1FB 100%);
+
+  /* effects */
+  --shadow-card: 0 10px 30px -18px rgba(23, 16, 54, 0.18);
+  --shadow-pop:  0 24px 60px -20px rgba(23, 16, 54, 0.28);
+  --grain-opacity: 0.035;
+  --glow-side: radial-gradient(ellipse at 20% 0%, rgba(139, 92, 246, 0.10), transparent 70%);
+  --glow-main: radial-gradient(ellipse at 80% 0%, rgba(139, 92, 246, 0.06), transparent 68%);
+
+  /* radius scale (theme-invariant — single source of truth) */
+  --r-card: 18px;
+  --r-ctl: 11px;
+  --r-row: 10px;
+
+  --theme-transition: background-color .22s ease, border-color .22s ease, color .22s ease, fill .22s ease;
+}
+
+/* ══════════════ DARK ══════════════ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg:        #08070C;
+  --surface:   #0C0A14;
+  --card:      #1A1730;
+  --card-2:    #12101E;
+  --raise:     #221E3A;
+  --edge:      rgba(255, 255, 255, 0.09);
+  --edge-hi:   rgba(255, 255, 255, 0.16);
+  --edge-grad: linear-gradient(155deg, rgba(255,255,255,0.15), rgba(255,255,255,0.02) 46%, rgba(139,92,246,0.14));
+
+  --text-1: #F4F2FA;
+  --text-2: #9B93B4;
+  --text-3: #635C7D;
+
+  --violet: #8B5CF6;
+  --indigo: #6366F1;
+  --cyan:   #22D3EE;
+  --violet-faint: rgba(139, 92, 246, 0.08);
+  --violet-weak:  rgba(139, 92, 246, 0.16);
+  --violet-mid:   rgba(139, 92, 246, 0.30);
+  --violet-glow:  rgba(139, 92, 246, 0.45);
+  --violet-line:  rgba(139, 92, 246, 0.55);
+  --accent-ink:   #C4B5FD;
+  --grad-brand:   linear-gradient(118deg, #8B5CF6 0%, #6366F1 52%, #22D3EE 100%);
+  --grad-btn:     linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%);
+
+  --wait: #F0A93B;
+  --live: #5AA2F5;
+  --ready: #35D08A;
+  --done: #7A7396;
+  --stop: #F2564D;
+
+  --wait-ink: #F0A93B;
+  --live-ink: #5AA2F5;
+  --ready-ink: #35D08A;
+  --done-ink: #A79FC0;
+  --stop-ink: #F2564D;
+
+  --wait-fill: rgba(240, 169, 59, 0.20);
+  --live-fill: rgba(90, 162, 245, 0.20);
+  --ready-fill: rgba(53, 208, 138, 0.20);
+  --done-fill: rgba(122, 115, 150, 0.22);
+  --stop-fill: rgba(242, 86, 77, 0.20);
+
+  --wait-line: rgba(240, 169, 59, 0.32);
+  --live-line: rgba(90, 162, 245, 0.32);
+  --ready-line: rgba(53, 208, 138, 0.32);
+  --done-line: rgba(122, 115, 150, 0.30);
+  --stop-line: rgba(242, 86, 77, 0.34);
+  --scrim: rgba(4, 3, 8, 0.72);
+
+  --grad-card:  linear-gradient(158deg, #1A1730 0%, #100E1C 100%);
+  --grad-panel: linear-gradient(168deg, #171429 0%, #0F0D1A 100%);
+  --grad-rail:  linear-gradient(200deg, #1C1834 0%, #100E1C 62%);
+  --grad-modal: linear-gradient(162deg, #1E1A38 0%, #100E1D 100%);
+
+  --shadow-card: 0 18px 40px -22px rgba(0, 0, 0, 0.9);
+  --shadow-pop:  0 50px 100px -24px rgba(0, 0, 0, 0.95);
+  --grain-opacity: 0.24;
+  --glow-side: radial-gradient(ellipse at 20% 0%, rgba(139, 92, 246, 0.18), transparent 70%);
+  --glow-main: radial-gradient(ellipse at 80% 0%, rgba(99, 102, 241, 0.14), transparent 68%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --theme-transition: none; }
+}
+
+/* ══════════════ base ══════════════ */
+* { box-sizing: border-box; }
+
+html { background: var(--bg); }
+
+body {
+  margin: 0;
+  background: var(--surface);
+  color: var(--text-1);
+  font-family: Archivo, -apple-system, "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  transition: var(--theme-transition);
+}
+
+/* tabular numerals for money / counts */
+.tnum { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+
+/* film grain — sits above page content, below modals & toasts */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.42'/%3E%3C/svg%3E");
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--violet-mid); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--violet-glow); }
+
+::selection { background: var(--violet-mid); color: var(--text-1); }

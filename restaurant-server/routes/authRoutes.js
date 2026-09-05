@@ -3,7 +3,7 @@ import {
   adminSendOTP, adminVerifyOTP,
   waiterSendOTP, waiterVerifyOTP,
   firebaseVerify,
-  getProfile, updateProfile, updateVegMode, updateLanguage,
+  getProfile, updateProfile, updateVegMode, updateLanguage, updateTheme,
   firebaseLogin,
 } from "../controllers/authController.js";
 import { protect } from "../middleware/authMiddleware.js";
@@ -34,5 +34,6 @@ router.get  ("/profile",  protect, getProfile);
 router.put  ("/profile",  protect, updateProfile);
 router.patch("/veg-mode", protect, updateVegMode);
 router.patch("/language", protect, updateLanguage);
+router.patch("/theme",    protect, updateTheme);
 
 export default router;

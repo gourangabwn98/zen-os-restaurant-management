@@ -20,6 +20,11 @@ const userSchema = new mongoose.Schema({
   isVerified: { type: Boolean, default: false },
   vegMode:    { type: Boolean, default: false },
   language:   { type: String, default: "English" },
+  // ── Admin/staff panel UI preference ──────────────────────────────────────
+  // Same shape as vegMode/language: a per-user setting with its own PATCH
+  // endpoint (PATCH /api/auth/theme). "system" follows the device's
+  // prefers-color-scheme. Purely cosmetic — never gates any behaviour.
+  themePreference: { type: String, enum: ["light","dark","system"], default: "system" },
   isAdmin:    { type: Boolean, default: false },
   role:       { type: String, enum: ["admin","waiter","chef","customer"], default: "customer" },
   address:    { type: String, default: "" }, // employee address (Employee Management)

@@ -1,47 +1,60 @@
-// src/theme.js — Kolhad Dark Theme
-export const BRAND_NAME    = "Zen OS";
+// src/theme.js — Ad's Cafe theme constants
+// ─────────────────────────────────────────────────────────────────────────────
+// Every value here is a reference to a CSS custom property defined in
+// src/theme/tokens.css, so inline styles that use these constants follow the
+// light/dark toggle with no per-file change. Prefer the .zc-* classes in
+// src/theme/surfaces.css, or the raw var(--token) names, for new code.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Branding.  TODO(Ad's Cafe): fill the contact/support fields with real values.
+export const BRAND_NAME    = "Ad's Cafe";
 export const BRAND_VERSION = "v1.0";
-export const BRAND_MAKER   = "Charubala LLP";
-export const SUPPORT_EMAIL = "support@bengaltech.in";
-export const SUPPORT_PHONE = "+91 98765 43210";
-export const SUPPORT_WEB   = "https://Charubala.in";
-export const STORAGE_KEY   = "kolhadAdmin";
+export const BRAND_MAKER   = "TODO: operator / company name";
+export const SUPPORT_EMAIL = "TODO: support@adscafe.example";
+export const SUPPORT_PHONE = "TODO: +91 00000 00000";
+export const SUPPORT_WEB   = "TODO: https://adscafe.example";
+export const STORAGE_KEY   = "adminUser";
 
-// ── Dark background layers ────────────────────────────────────────────────────
-export const BG_SIDEBAR     = "#12101a";   // darkest — sidebar
-export const BG_MAIN        = "#1a1625";   // main content area
-export const BG_CARD        = "#1e1a2e";   // card background
-export const BG_CARD_HOVER  = "#252038";   // card hover
-export const BG_INPUT       = "#252038";   // input fields
-export const BG_HEADER      = "#12101a";   // top bar
+// ── Background layers ────────────────────────────────────────────────────────
+export const BG_SIDEBAR     = "var(--bg)";
+export const BG_MAIN        = "var(--surface)";
+export const BG_CARD        = "var(--card)";
+export const BG_CARD_HOVER  = "var(--raise)";
+export const BG_INPUT       = "var(--card-2)";
+export const BG_HEADER      = "var(--bg)";
 
-// ── Borders ───────────────────────────────────────────────────────────────────
-export const BORDER         = "rgba(255,255,255,0.07)";
-export const BORDER_ACTIVE  = "rgba(139,92,246,0.4)";
+// ── Borders ─────────────────────────────────────────────────────────────────
+export const BORDER         = "var(--edge)";
+export const BORDER_ACTIVE  = "var(--edge-hi)";
 
-// ── Text ─────────────────────────────────────────────────────────────────────
-export const TEXT_PRIMARY   = "#f1f0f5";
-export const TEXT_SECONDARY = "#9ca3af";
-export const TEXT_MUTED     = "#6b7280";
+// ── Text ────────────────────────────────────────────────────────────────────
+export const TEXT_PRIMARY   = "var(--text-1)";
+export const TEXT_SECONDARY = "var(--text-2)";
+export const TEXT_MUTED     = "var(--text-3)";
 
-// ── Primary purple ────────────────────────────────────────────────────────────
-export const PRIMARY        = "#7C3AED";
-export const PRIMARY_DARK   = "#5b21b6";
-export const PRIMARY_LIGHT  = "rgba(124,58,237,0.15)";
-export const PRIMARY_MID    = "rgba(124,58,237,0.25)";
-export const PRIMARY_MUTED  = "rgba(124,58,237,0.08)";
-export const PRIMARY_GLOW   = "rgba(124,58,237,0.3)";
+// ── Brand ───────────────────────────────────────────────────────────────────
+export const PRIMARY        = "var(--violet)";
+export const PRIMARY_DARK   = "var(--indigo)";
+export const PRIMARY_LIGHT  = "var(--violet-weak)";
+export const PRIMARY_MID    = "var(--violet-mid)";
+export const PRIMARY_MUTED  = "var(--violet-faint)";
+export const PRIMARY_GLOW   = "var(--violet-glow)";
 
-// ── Gradient ──────────────────────────────────────────────────────────────────
-export const GRADIENT        = "linear-gradient(135deg, #1a1625 0%, #12101a 100%)";
-export const GRADIENT_BTN    = "linear-gradient(135deg, #7C3AED, #5b21b6)";
-export const GRADIENT_PURPLE = "radial-gradient(ellipse at 70% 20%, rgba(124,58,237,0.25) 0%, transparent 60%)";
-export const GRADIENT_SIDEBAR= "linear-gradient(180deg, #12101a 0%, #0f0d18 100%)";
+// ── Gradients ───────────────────────────────────────────────────────────────
+export const GRADIENT        = "var(--grad-panel)";
+export const GRADIENT_BTN    = "var(--grad-btn)";
+export const GRADIENT_PURPLE = "var(--glow-main)";
+export const GRADIENT_SIDEBAR = "var(--grad-rail)";
 
-// ── Stat colors ───────────────────────────────────────────────────────────────
-export const STAT_COLORS    = [PRIMARY, "#10b981", "#3b82f6", "#f59e0b"];
+// ── Stat / chart accent colours ─────────────────────────────────────────────
+export const STAT_COLORS    = [
+  "var(--violet)",
+  "var(--ready)",
+  "var(--live)",
+  "var(--wait)",
+];
 
-// ── Keep ──────────────────────────────────────────────────────────────────────
-export const WHITE           = "#fff";
-export const GREEN           = "#10b981";
-export const GREEN_LIGHT     = "rgba(16,185,129,0.15)";
+// ── Kept for back-compat with existing imports ──────────────────────────────
+export const WHITE           = "var(--card)";
+export const GREEN           = "var(--ready-ink)";
+export const GREEN_LIGHT     = "var(--ready-fill)";

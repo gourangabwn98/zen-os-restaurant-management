@@ -559,6 +559,20 @@ export const updateLanguage = async (req, res) => {
     res.json({ language: user.language });
   } catch (err) { res.status(500).json({ message: "Server error" }); }
 };
+
+// ── PATCH /api/auth/theme ────────────────────────────────────────────────────
+// Admin/staff panel light-dark preference. Same pattern as updateLanguage:
+// a thin per-user setting, validated strictly against the enum.
+export const updateTheme = async (req, res) => {
+  try {
+    const { themePreference } = req.body;
+    if (!["light", "dark", "system"].includes(themePreference))
+      return res.status(400).json({ message: "themePreference must be 'light', 'dark' or 'system'" });
+    const user = await req.models.User
+      .findByIdAndUpdate(req.user._id, { themePreference }, { new: true });
+    res.json({ themePreference: user.themePreference });
+  } catch (err) { res.status(500).json({ message: "Server error" }); }
+};
 // ── (removed) DAB slug lookup — unused, single-restaurant mode now uses
 // process.env.MONGO_URI everywhere. Kept as a no-op stub only in case
 // something still imports the name; it is not called anywhere.

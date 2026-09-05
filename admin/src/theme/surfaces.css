@@ -1,0 +1,557 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Ad's Cafe — shared surface & component classes  (prefix: .zc-)
+
+   These reproduce the recurring components from
+   design-reference/zen-os-design-reference.html as reusable, theme-aware
+   classes so per-screen code can drop an inline <div style> for a class.
+   All values come from tokens.css — no literal colours here.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ══════════ card ══════════ */
+.zc-card {
+  background: var(--grad-card);
+  border-radius: var(--r-card);
+  position: relative;
+  box-shadow: var(--shadow-card);
+  transition: var(--theme-transition);
+}
+.zc-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-card);
+  padding: 1px;
+  background: var(--edge-grad);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.zc-card > * { position: relative; }
+
+.zc-card-h {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--edge);
+}
+.zc-card-h .t { font-size: 14px; font-weight: 600; color: var(--text-1); }
+.zc-card-h .s { font-size: 11.5px; color: var(--text-3); }
+.zc-card-b { padding: 16px 18px; }
+
+/* ══════════ rail (contextual side panel) ══════════ */
+.zc-rail {
+  background: var(--grad-rail);
+  border-radius: var(--r-card);
+  position: relative;
+  box-shadow: var(--shadow-pop);
+  transition: var(--theme-transition);
+}
+.zc-rail::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-card);
+  padding: 1px;
+  background: var(--edge-grad);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.zc-rail > * { position: relative; }
+
+/* ══════════ panel (flat inset surface / table rows) ══════════ */
+.zc-panel {
+  background: var(--grad-panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-row);
+  transition: var(--theme-transition);
+}
+
+/* ══════════ metric / stat card ══════════ */
+.zc-metric {
+  border-radius: var(--r-card);
+  padding: 16px 18px;
+  position: relative;
+  overflow: hidden;
+  background: var(--grad-card);
+  box-shadow: var(--shadow-card);
+  transition: var(--theme-transition);
+}
+.zc-metric::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-card);
+  padding: 1px;
+  background: var(--edge-grad);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.zc-metric .k { font-size: 11.5px; color: var(--text-2); font-weight: 500; position: relative; }
+.zc-metric .v {
+  font-size: 27px;
+  font-weight: 700;
+  letter-spacing: -.035em;
+  margin-top: 5px;
+  position: relative;
+  line-height: 1.1;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+.zc-metric .v.gr {
+  background: var(--grad-brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.zc-metric .v.alert { color: var(--stop-ink); }
+.zc-metric .v.pos { color: var(--ready-ink); }
+.zc-metric .d { font-size: 11.5px; color: var(--text-3); margin-top: 3px; position: relative; }
+.zc-metric .spark { position: absolute; right: 0; bottom: 0; width: 120px; height: 52px; opacity: .5; }
+/* compact variant — two dense pill rows (Billing) */
+.zc-metric.sm { padding: 10px 12px; }
+.zc-metric.sm .k { font-size: 10px; }
+.zc-metric.sm .v { font-size: 18px; margin-top: 3px; letter-spacing: -.02em; }
+.zc-metric.sm .d { font-size: 9.5px; margin-top: 2px; }
+.zc-metric .ic {
+  width: 38px; height: 38px; border-radius: var(--r-ctl);
+  display: grid; place-items: center; margin-bottom: 12px;
+  color: var(--accent-ink);
+  background: var(--violet-weak);
+  border: 1px solid var(--violet-mid);
+}
+
+/* ══════════ status tag / pill ══════════ */
+.zc-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  line-height: 1.4;
+}
+.zc-tag i {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: currentColor; flex: none;
+  box-shadow: 0 0 7px currentColor;
+}
+.zc-tag.sq { border-radius: 7px; }
+.zc-tag.wait  { color: var(--wait-ink);  background: var(--wait-fill);  border-color: var(--wait-line); }
+.zc-tag.live  { color: var(--live-ink);  background: var(--live-fill);  border-color: var(--live-line); }
+.zc-tag.ready { color: var(--ready-ink); background: var(--ready-fill); border-color: var(--ready-line); }
+.zc-tag.done  { color: var(--done-ink);  background: var(--done-fill);  border-color: var(--done-line); }
+.zc-tag.stop  { color: var(--stop-ink);  background: var(--stop-fill);  border-color: var(--stop-line); }
+.zc-tag.vio   { color: var(--accent-ink); background: var(--violet-weak); border-color: var(--violet-mid); }
+
+/* ══════════ buttons ══════════ */
+.zc-btn {
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 9px 15px;
+  border-radius: var(--r-ctl);
+  border: 1px solid var(--edge);
+  color: var(--text-1);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--card-2);
+  cursor: pointer;
+  transition: var(--theme-transition), filter .15s ease, transform .15s ease;
+}
+.zc-btn:hover { border-color: var(--edge-hi); }
+.zc-btn:disabled { opacity: .5; cursor: not-allowed; }
+.zc-btn.sm { padding: 6px 11px; font-size: 11.5px; }
+.zc-btn.block { width: 100%; justify-content: center; }
+.zc-btn.pri {
+  border-color: transparent;
+  color: #fff;
+  background: var(--grad-btn);
+  box-shadow: 0 8px 22px -8px var(--violet-glow), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.zc-btn.pri:hover { filter: brightness(1.06); transform: translateY(-1px); }
+.zc-btn.good { color: var(--ready-ink); border-color: var(--ready-line); background: var(--ready-fill); }
+.zc-btn.danger { color: var(--stop-ink); border-color: var(--stop-line); background: var(--stop-fill); }
+.zc-btn.ghost { background: transparent; }
+.zc-btn.pri:disabled { filter: none; transform: none; }
+
+/* ══════════ inputs ══════════ */
+.zc-input,
+.zc-select,
+.zc-textarea {
+  font-family: inherit;
+  font-size: 12.5px;
+  padding: 9px 13px;
+  border-radius: var(--r-ctl);
+  color: var(--text-1);
+  border: 1px solid var(--edge);
+  background: var(--card-2);
+  transition: var(--theme-transition), box-shadow .15s ease;
+  width: 100%;
+}
+.zc-textarea { resize: none; }
+.zc-input::placeholder,
+.zc-textarea::placeholder { color: var(--text-3); }
+.zc-input:focus,
+.zc-select:focus,
+.zc-textarea:focus {
+  outline: none;
+  border-color: var(--violet-line);
+  box-shadow: 0 0 0 3px var(--violet-weak);
+}
+
+/* ══════════ segmented control ══════════ */
+.zc-seg {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: var(--r-ctl);
+  border: 1px solid var(--edge);
+  background: var(--card-2);
+  gap: 2px;
+}
+.zc-seg button {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 13px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text-2);
+  background: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: var(--theme-transition);
+}
+.zc-seg button:hover { color: var(--text-1); }
+.zc-seg button.on {
+  color: #fff;
+  font-weight: 600;
+  background: var(--grad-btn);
+  box-shadow: 0 4px 12px -4px var(--violet-glow);
+}
+
+/* ══════════ sidebar nav ══════════ */
+.zc-nav {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 8px 12px;
+  margin: 1px 9px;
+  border-radius: var(--r-ctl);
+  color: var(--text-2);
+  font-size: 13px;
+  position: relative;
+  cursor: pointer;
+  user-select: none;
+  transition: var(--theme-transition);
+}
+.zc-nav:hover { color: var(--text-1); background: var(--raise); }
+.zc-nav .ct { margin-left: auto; font-size: 11px; color: var(--text-3); font-weight: 600; }
+.zc-nav.on {
+  color: var(--text-1);
+  font-weight: 500;
+  background: linear-gradient(96deg, var(--violet-mid), var(--violet-faint));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 4px 14px -6px var(--violet-glow);
+}
+.zc-nav.on::before {
+  content: "";
+  position: absolute;
+  left: -9px;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--grad-brand);
+  box-shadow: 0 0 10px var(--violet-glow);
+}
+.zc-navgrp {
+  padding: 17px 16px 6px;
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+/* ══════════ empty / error / loading ══════════ */
+.zc-empty { text-align: center; padding: 64px 20px; }
+.zc-empty .ic {
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  margin: 0 auto 16px;
+  display: grid;
+  place-items: center;
+  background: var(--violet-weak);
+  border: 1px solid var(--violet-mid);
+  color: var(--accent-ink);
+}
+.zc-empty .ic.err {
+  background: var(--stop-fill);
+  border-color: var(--stop-line);
+  color: var(--stop-ink);
+}
+.zc-empty h4 { font-size: 15px; font-weight: 600; margin: 0 0 5px; color: var(--text-1); }
+.zc-empty p { font-size: 12.5px; color: var(--text-3); max-width: 40ch; margin: 0 auto; }
+
+.zc-skel {
+  height: 44px;
+  border-radius: var(--r-row);
+  margin-bottom: 8px;
+  background: linear-gradient(100deg, var(--card-2) 30%, var(--violet-weak) 50%, var(--card-2) 70%);
+  background-size: 220% 100%;
+  animation: zc-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes zc-shimmer {
+  0% { background-position: 180% 0; }
+  100% { background-position: -20% 0; }
+}
+.zc-spin {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid var(--violet-weak);
+  border-top-color: var(--violet);
+  animation: zc-spin .7s linear infinite;
+}
+@keyframes zc-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .zc-skel, .zc-spin { animation-duration: 0s; }
+}
+
+/* ══════════ modal ══════════ */
+.zc-scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  backdrop-filter: blur(7px);
+  display: grid;
+  place-items: center;
+  z-index: 1000;
+  padding: 20px;
+}
+.zc-modal {
+  width: 520px;
+  max-width: 100%;
+  max-height: 86vh;
+  overflow: auto;
+  border-radius: 22px;
+  position: relative;
+  background: var(--grad-modal);
+  box-shadow: var(--shadow-pop);
+}
+.zc-modal::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 22px;
+  padding: 1px;
+  background: var(--edge-grad);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.zc-modal > * { position: relative; }
+.zc-modal.wide { width: 880px; }
+.zc-modal .mh {
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--edge);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.zc-modal .mh .t { font-size: 17px; font-weight: 700; letter-spacing: -.02em; color: var(--text-1); }
+.zc-modal .mh .s { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+.zc-modal .mb { padding: 20px 22px; }
+.zc-modal .mf {
+  padding: 16px 22px;
+  border-top: 1px solid var(--edge);
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.zc-x {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  border: 1px solid var(--edge);
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+  flex: none;
+  background: var(--card-2);
+  cursor: pointer;
+}
+
+/* ══════════ ledger / table ══════════ */
+.zc-ledger {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 6px;
+  font-size: 12.5px;
+}
+.zc-ledger thead th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 10.5px;
+  color: var(--text-3);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 0 14px 4px;
+  white-space: nowrap;
+}
+.zc-ledger tbody td {
+  background: var(--grad-panel);
+  padding: 11px 14px;
+  border-top: 1px solid var(--edge);
+  border-bottom: 1px solid var(--edge);
+  vertical-align: middle;
+  color: var(--text-1);
+}
+.zc-ledger tbody td:first-child {
+  border-left: 1px solid var(--edge);
+  border-radius: var(--r-row) 0 0 var(--r-row);
+}
+.zc-ledger tbody td:last-child {
+  border-right: 1px solid var(--edge);
+  border-radius: 0 var(--r-row) var(--r-row) 0;
+}
+.zc-ledger tbody tr:hover td { background: var(--raise); }
+.zc-ledger .num { text-align: right; font-variant-numeric: tabular-nums; }
+.zc-ledger .money { text-align: right; font-weight: 700; font-size: 13px; font-variant-numeric: tabular-nums; }
+.zc-ledger .money.neg { color: var(--stop-ink); }
+
+/* ══════════ sub-nav (tab strip) ══════════ */
+.zc-subnav {
+  display: flex;
+  gap: 5px;
+  padding: 5px;
+  border-radius: 14px;
+  border: 1px solid var(--edge);
+  background: var(--card-2);
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.zc-subnav button {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 10px;
+  color: var(--text-2);
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  transition: var(--theme-transition);
+}
+.zc-subnav button:hover { color: var(--text-1); }
+.zc-subnav button.on {
+  color: #fff;
+  font-weight: 600;
+  background: var(--grad-btn);
+  box-shadow: 0 5px 15px -5px var(--violet-glow);
+}
+
+/* ══════════ quantity chip (order items) ══════════ */
+.zc-q {
+  width: 23px; height: 23px; border-radius: 7px;
+  display: grid; place-items: center;
+  font-size: 11px; font-weight: 700; flex: none;
+  color: var(--accent-ink);
+  background: var(--violet-weak);
+  border: 1px solid var(--violet-mid);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ══════════ pager ══════════ */
+.zc-pager { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.zc-pager button,
+.zc-pager span {
+  min-width: 30px; height: 30px; padding: 0 8px;
+  display: grid; place-items: center;
+  border: 1px solid var(--edge); border-radius: 9px;
+  font: inherit; font-size: 12.5px; font-weight: 600;
+  color: var(--text-2); background: var(--card-2); cursor: pointer;
+  font-variant-numeric: tabular-nums;
+  transition: var(--theme-transition);
+}
+.zc-pager button:hover:not(:disabled) { color: var(--text-1); border-color: var(--edge-hi); }
+.zc-pager button:disabled { opacity: .4; cursor: not-allowed; }
+.zc-pager .gap { border: 0; background: transparent; cursor: default; min-width: 16px; }
+.zc-pager .on {
+  color: #fff; border-color: transparent;
+  background: var(--grad-btn);
+  box-shadow: 0 6px 16px -6px var(--violet-glow);
+}
+.zc-tfoot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+  padding: 14px 4px 2px; font-size: 12px; color: var(--text-2);
+}
+
+/* ══════════ floor table tile ══════════ */
+.zc-tbl {
+  border-radius: 14px; padding: 13px 13px 11px;
+  position: relative; min-height: 100px; width: 100%;
+  display: flex; flex-direction: column;
+  background: var(--card-2);
+  border: 1px solid var(--edge);
+  cursor: pointer; font: inherit; text-align: left;
+  transition: var(--theme-transition), box-shadow .12s ease;
+}
+.zc-tbl:hover { border-color: var(--edge-hi); }
+.zc-tbl.sel:hover { border-color: transparent; }
+.zc-tbl .no { font-size: 18px; font-weight: 700; letter-spacing: -.03em; color: var(--text-1); }
+.zc-tbl .st { font-size: 10.5px; color: var(--text-3); margin-top: -1px; }
+.zc-tbl .ft { margin-top: auto; display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+.zc-tbl .amt { font-size: 14px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--text-1); }
+.zc-tbl .dot { position: absolute; top: 12px; right: 12px; width: 8px; height: 8px; border-radius: 50%; }
+.zc-tbl.free { background: transparent; border-style: dashed; }
+.zc-tbl.free .no { color: var(--text-3); }
+.zc-tbl.sel {
+  border-color: transparent;
+  background: linear-gradient(150deg, var(--violet-mid), var(--violet-faint));
+  box-shadow: 0 0 0 1px var(--violet-line), 0 10px 26px -10px var(--violet-glow);
+}
+.zc-tbl.due { border-color: var(--stop-line); background: var(--stop-fill); }
+.zc-tbl.due .amt { color: var(--stop-ink); }
+
+/* ══════════ vertical status timeline ══════════ */
+.zc-timeline { display: grid; gap: 0; }
+.zc-timeline .row { display: flex; gap: 12px; align-items: flex-start; }
+.zc-timeline .rail { display: flex; flex-direction: column; align-items: center; flex: none; }
+.zc-timeline .node { width: 9px; height: 9px; border-radius: 50%; margin-top: 4px; background: var(--edge-hi); }
+.zc-timeline .node.done { background: var(--ready); box-shadow: 0 0 9px var(--ready); }
+.zc-timeline .node.wait { background: var(--wait); box-shadow: 0 0 9px var(--wait); }
+.zc-timeline .node.stop { background: var(--stop); box-shadow: 0 0 9px var(--stop); }
+.zc-timeline .line { width: 1px; flex: 1; min-height: 22px; background: var(--edge); }
+.zc-timeline .body { padding-bottom: 12px; flex: 1; min-width: 0; }
+.zc-timeline .body .st { font-size: 12.5px; font-weight: 600; color: var(--text-1); }
+.zc-timeline .body .st.pending { color: var(--text-3); }
+.zc-timeline .body .meta { font-size: 11px; color: var(--text-3); margin-top: 1px; }
+
+/* ══════════ progress bar ══════════ */
+.zc-bar { height: 6px; border-radius: 3px; background: var(--raise); overflow: hidden; }
+.zc-bar i { display: block; height: 100%; border-radius: 3px; background: var(--grad-brand); }
+.zc-bar.warn i { background: linear-gradient(90deg, var(--wait), var(--stop)); }
+.zc-bar.good i { background: linear-gradient(90deg, var(--ready), var(--cyan)); }
+
+/* ══════════ misc helpers ══════════ */
+.zc-live-dot { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ready-ink); font-weight: 500; }
+.zc-live-dot i { width: 7px; height: 7px; border-radius: 50%; background: var(--ready); box-shadow: 0 0 9px var(--ready); }
+.zc-grad-text { background: var(--grad-brand); -webkit-background-clip: text; background-clip: text; color: transparent; }
