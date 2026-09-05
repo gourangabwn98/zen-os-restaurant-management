@@ -5,7 +5,7 @@ import crypto from "crypto";
 const generateToken = () => crypto.randomBytes(9).toString("hex");
 
 const generateQR = async (tableNo, token) => {
-  const url     = `${process.env.CLIENT_URL}/?table=${tableNo}&t=${token}`;
+  const url     = `${process.env.CUSTOMER_FRONTEND_URL}/?table=${tableNo}&t=${token}`;
   const dataUri = await QRCode.toDataURL(url, {
     width: 300, margin: 2,
     color: { dark: "#1a1a2e", light: "#ffffff" },
