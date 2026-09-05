@@ -78,7 +78,7 @@ app.get("/api/test-whatsapp/:phone", async (req, res) => {
     items: [{ name: "Cold Coffee", qty: 1, price: 60 }],
     subtotal: 60, tax: 0, serviceCharge: 0, discount: 0, total: 60,
     paymentMethod: "Cash", paymentStatus: "PAID", tableNo: 3,
-  }, "Kolhad Cafe");
+  }, "Ad's Cafe");
   res.json({ message: "WhatsApp test sent to +91" + req.params.phone });
 });
 

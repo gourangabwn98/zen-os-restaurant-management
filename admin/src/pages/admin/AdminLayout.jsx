@@ -193,7 +193,7 @@ export default function AdminLayout() {
     navigate("/login");
   };
 
-  const rName = restaurant?.restaurantName || "Kolhad Cafe";
+  const rName = restaurant?.restaurantName || "Ad's Cafe";
   const rLogo = restaurant?.logo || "";
 
   const mainNav     = NAV.filter((n) => n.group === "main");
