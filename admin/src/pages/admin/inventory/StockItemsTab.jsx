@@ -1,29 +1,37 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import toast from "react-hot-toast";
 import {
   getInventoryItems, createInventoryItem, updateInventoryItem,
   deleteInventoryItem, adjustInventoryItem, getSuppliers,
 } from "../../../services/inventoryService.js";
 import {
-  PINK, T1, T2, T3, BORDER, inp, label, btnPrimary, btnGhost, btnDanger,
-  LevelBadge, Modal, TableShell,
+  Modal, TableShell, TableFooter, Toolbar, Search, Seg, Spacer, Count,
+  Loading, ErrorBox, LevelBadge,
 } from "./invUI.jsx";
+import { inp, label, levelInk, money, num } from "./invKit.js";
 
 const UNITS = ["g", "kg", "ml", "l", "pcs", "dozen", "packet", "box"];
+const LEVEL_SEG = [["All", "All"], ["OK", "Healthy"], ["LOW", "Low"], ["CRITICAL", "Critical"], ["OUT_OF_STOCK", "Out"]];
+const PER_PAGE = 12;
 const emptyItem = { name: "", unit: "kg", category: "", reorderLevel: 0, criticalLevel: 0, costPrice: 0, supplier: "", isBatchTracked: false, notes: "" };
 
 export default function StockItemsTab() {
   const [items, setItems] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
   const [search, setSearch] = useState("");
+  const [cat, setCat] = useState("All");
+  const [level, setLevel] = useState("All");
+  const [page, setPage] = useState(1);
 
   const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState(null); // item being edited, or null for "new"
+  const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyItem);
   const [saving, setSaving] = useState(false);
 
-  const [adjustTarget, setAdjustTarget] = useState(null); // item being adjusted
+  const [adjustTarget, setAdjustTarget] = useState(null);
   const [adjustForm, setAdjustForm] = useState({ newStock: "", type: "MANUAL_ADJUSTMENT", reason: "" });
   const [adjusting, setAdjusting] = useState(false);
 
@@ -32,11 +40,31 @@ export default function StockItemsTab() {
       const [itemsRes, supRes] = await Promise.all([getInventoryItems(), getSuppliers()]);
       setItems(itemsRes.data?.items || []);
       setSuppliers(supRes.data?.suppliers || []);
-    } catch { toast.error("Failed to load stock items"); }
+      setError(false);
+    } catch { setError(true); }
     finally { setLoading(false); }
   }, []);
-
   useEffect(() => { load(); }, [load]);
+
+  const categories = useMemo(
+    () => [...new Set(items.map((i) => i.category).filter(Boolean))].sort(),
+    [items],
+  );
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return items.filter((i) => {
+      if (cat !== "All" && i.category !== cat) return false;
+      if (level !== "All" && i.stockLevel !== level) return false;
+      if (q && !i.name.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [items, search, cat, level]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+  const safePage = Math.min(page, totalPages);
+  const paged = filtered.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+  const resetPage = () => setPage(1);
 
   const openNew = () => { setEditing(null); setForm(emptyItem); setShowForm(true); };
   const openEdit = (item) => {
@@ -55,13 +83,8 @@ export default function StockItemsTab() {
     setSaving(true);
     try {
       const payload = { ...form, supplier: form.supplier || null };
-      if (editing) {
-        await updateInventoryItem(editing._id, payload);
-        toast.success("Item updated");
-      } else {
-        await createInventoryItem(payload);
-        toast.success("Item created — add stock via a Purchase");
-      }
+      if (editing) { await updateInventoryItem(editing._id, payload); toast.success("Item updated"); }
+      else { await createInventoryItem(payload); toast.success("Item created — add stock via a Purchase"); }
       setShowForm(false);
       load();
     } catch (err) { toast.error(err.response?.data?.message || "Save failed"); }
@@ -93,40 +116,56 @@ export default function StockItemsTab() {
     finally { setAdjusting(false); }
   };
 
-  const filtered = items.filter((i) => i.name.toLowerCase().includes(search.toLowerCase()));
+  if (loading) return <Loading />;
+  if (error) return <ErrorBox onRetry={load} what="stock items" />;
 
-  if (loading) return <div style={{ textAlign: "center", padding: 80, color: T3 }}>Loading stock items…</div>;
+  const diff = Number(adjustForm.newStock || 0) - (adjustTarget?.currentStock || 0);
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, gap: 10, flexWrap: "wrap" }}>
-        <input placeholder="Search items…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ ...inp, maxWidth: 260 }} />
-        <button onClick={openNew} style={btnPrimary(false)}>+ Add Stock Item</button>
-      </div>
+      <Toolbar>
+        <Search value={search} onChange={(v) => { setSearch(v); resetPage(); }} placeholder="Search stock items" />
+        <select className="zc-select" value={cat} aria-label="Category filter"
+          onChange={(e) => { setCat(e.target.value); resetPage(); }} style={{ width: "auto" }}>
+          <option value="All">Category: All</option>
+          {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <Seg options={LEVEL_SEG} value={level} onChange={(v) => { setLevel(v); resetPage(); }} ariaLabel="Stock status filter" />
+        <Spacer />
+        <Count>{filtered.length} of {items.length} item{items.length === 1 ? "" : "s"}</Count>
+        <button type="button" className="zc-btn pri" onClick={openNew}>＋ Add stock item</button>
+      </Toolbar>
 
       <TableShell
-        headers={["Item", "Category", "Current Stock", "Reorder / Critical", "Cost/Unit", "Level", "Actions"]}
+        headers={["Item", "Category", "In stock", "Reorder at", "Unit cost", "Value", "Status", ""]}
+        minWidth={860}
         isEmpty={filtered.length === 0}
-        emptyIcon="📦" emptyText="No stock items yet — click “Add Stock Item” to create one"
+        emptyIcon="📦"
+        emptyText={items.length === 0 ? "No stock items yet — add one to start tracking" : "No items match these filters"}
+        footer={<TableFooter page={safePage} pages={totalPages} total={filtered.length} perPage={PER_PAGE} onPage={setPage} unit="items" />}
       >
-        {filtered.map((item, idx) => (
-          <tr key={item._id} style={{ borderBottom: idx < filtered.length - 1 ? `1px solid ${BORDER}` : "none" }}>
-            <td style={{ padding: "13px 18px" }}>
-              <div style={{ fontWeight: 600, color: T1 }}>{item.name}</div>
-              {item.supplier?.name && <div style={{ fontSize: 11, color: T3 }}>{item.supplier.name}</div>}
+        {paged.map((item) => (
+          <tr key={item._id} className={["OUT_OF_STOCK", "CRITICAL"].includes(item.stockLevel) ? "invp-hl" : undefined}>
+            <td>
+              <div style={{ fontWeight: 600, color: "var(--text-1)" }}>
+                {item.name}
+                {item.status === "Inactive" && <span style={{ fontSize: 10.5, color: "var(--text-3)", marginLeft: 6 }}>(inactive)</span>}
+              </div>
+              {item.supplier?.name && <div style={{ fontSize: 11, color: "var(--text-3)" }}>{item.supplier.name}</div>}
             </td>
-            <td style={{ padding: "13px 18px", color: T2 }}>{item.category || "—"}</td>
-            <td style={{ padding: "13px 18px", color: T1, fontWeight: 600 }}>{item.currentStock} {item.unit}</td>
-            <td style={{ padding: "13px 18px", color: T2, fontSize: 12 }}>{item.reorderLevel} / {item.criticalLevel} {item.unit}</td>
-            <td style={{ padding: "13px 18px", color: T2 }}>₹{item.costPrice}</td>
-            <td style={{ padding: "13px 18px" }}><LevelBadge level={item.stockLevel} /></td>
-            <td style={{ padding: "13px 18px" }}>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                <button onClick={() => openEdit(item)} style={{ ...btnGhost, padding: "6px 12px", fontSize: 12 }}>Edit</button>
-                <button onClick={() => openAdjust(item, "MANUAL_ADJUSTMENT")} style={{ ...btnGhost, padding: "6px 12px", fontSize: 12 }}>Adjust</button>
-                <button onClick={() => openAdjust(item, "PHYSICAL_COUNT")} style={{ ...btnGhost, padding: "6px 12px", fontSize: 12 }}>Count</button>
+            <td>{item.category ? <span className="zc-tag done sq">{item.category}</span> : <span style={{ color: "var(--text-3)" }}>—</span>}</td>
+            <td className="num" style={{ fontWeight: 700, color: levelInk(item.stockLevel) }}>{num(item.currentStock)} {item.unit}</td>
+            <td className="num" style={{ color: "var(--text-3)" }}>{num(item.reorderLevel)} {item.unit}</td>
+            <td className="num" style={{ color: "var(--text-2)" }}>{money(item.costPrice)}</td>
+            <td className="money">{money(Number(item.currentStock || 0) * Number(item.costPrice || 0))}</td>
+            <td><LevelBadge level={item.stockLevel} /></td>
+            <td>
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <button type="button" className="zc-btn ghost sm" onClick={() => openEdit(item)}>Edit</button>
+                <button type="button" className="zc-btn ghost sm" onClick={() => openAdjust(item, "MANUAL_ADJUSTMENT")}>Adjust</button>
+                <button type="button" className="zc-btn ghost sm" onClick={() => openAdjust(item, "PHYSICAL_COUNT")}>Count</button>
                 {item.status === "Active" && (
-                  <button onClick={() => handleDeactivate(item)} style={{ ...btnDanger, padding: "6px 12px" }}>Deactivate</button>
+                  <button type="button" className="zc-btn danger sm" onClick={() => handleDeactivate(item)}>Deactivate</button>
                 )}
               </div>
             </td>
@@ -134,12 +173,22 @@ export default function StockItemsTab() {
         ))}
       </TableShell>
 
-      {/* ── Add/Edit Item Modal ── */}
       {showForm && (
-        <Modal title={editing ? "Edit Stock Item" : "Add Stock Item"} onClose={() => setShowForm(false)}>
+        <Modal
+          title={editing ? "Edit stock item" : "Add stock item"}
+          onClose={() => setShowForm(false)}
+          footer={
+            <>
+              <button type="button" className="zc-btn" onClick={() => setShowForm(false)}>Cancel</button>
+              <button type="button" className="zc-btn pri" disabled={saving} onClick={handleSave}>
+                {saving ? "Saving…" : editing ? "Save changes" : "Create item"}
+              </button>
+            </>
+          }
+        >
           <div style={{ display: "grid", gap: 14 }}>
             <div>
-              <label style={label}>Item Name</label>
+              <label style={label}>Item name</label>
               <input style={inp} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Basmati Rice" />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -156,28 +205,28 @@ export default function StockItemsTab() {
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
-                <label style={label}>Reorder Level</label>
+                <label style={label}>Reorder level</label>
                 <input type="number" style={inp} value={form.reorderLevel} onChange={(e) => setForm({ ...form, reorderLevel: e.target.value })} />
               </div>
               <div>
-                <label style={label}>Critical Level</label>
+                <label style={label}>Critical level</label>
                 <input type="number" style={inp} value={form.criticalLevel} onChange={(e) => setForm({ ...form, criticalLevel: e.target.value })} />
               </div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
-                <label style={label}>Cost Price / Unit (₹)</label>
+                <label style={label}>Cost price / unit (₹)</label>
                 <input type="number" style={inp} value={form.costPrice} onChange={(e) => setForm({ ...form, costPrice: e.target.value })} />
               </div>
               <div>
-                <label style={label}>Default Supplier</label>
+                <label style={label}>Default supplier</label>
                 <select style={inp} value={form.supplier} onChange={(e) => setForm({ ...form, supplier: e.target.value })}>
                   <option value="">— none —</option>
                   {suppliers.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
                 </select>
               </div>
             </div>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: T2 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "var(--text-2)" }}>
               <input type="checkbox" checked={form.isBatchTracked} onChange={(e) => setForm({ ...form, isBatchTracked: e.target.checked })} />
               Track batches / expiry dates for this item
             </label>
@@ -186,47 +235,41 @@ export default function StockItemsTab() {
               <input style={inp} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </div>
             {!editing && (
-              <div style={{ fontSize: 12, color: T3, background: "#1a1625", padding: 10, borderRadius: 8 }}>
+              <div style={{ fontSize: 11.5, color: "var(--text-3)", background: "var(--card-2)", border: "1px solid var(--edge)", padding: "10px 13px", borderRadius: "var(--r-ctl)" }}>
                 New items start at 0 stock — record a Purchase afterwards to bring stock in.
               </div>
             )}
-            <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
-              <button onClick={() => setShowForm(false)} style={{ ...btnGhost, flex: 1 }}>Cancel</button>
-              <button onClick={handleSave} disabled={saving} style={{ ...btnPrimary(saving), flex: 1 }}>
-                {saving ? "Saving…" : editing ? "Save Changes" : "Create Item"}
-              </button>
-            </div>
           </div>
         </Modal>
       )}
 
-      {/* ── Adjust / Physical Count Modal ── */}
       {adjustTarget && (
         <Modal
-          title={adjustForm.type === "PHYSICAL_COUNT" ? "Physical Stock Count" : "Adjust Stock"}
-          sub={`${adjustTarget.name} — currently ${adjustTarget.currentStock} ${adjustTarget.unit}`}
+          title={adjustForm.type === "PHYSICAL_COUNT" ? "Physical stock count" : "Adjust stock"}
+          sub={`${adjustTarget.name} — currently ${num(adjustTarget.currentStock)} ${adjustTarget.unit}`}
           onClose={() => setAdjustTarget(null)}
-          width={400}
+          width={420}
+          footer={
+            <>
+              <button type="button" className="zc-btn" onClick={() => setAdjustTarget(null)}>Cancel</button>
+              <button type="button" className="zc-btn pri" disabled={adjusting} onClick={handleAdjust}>
+                {adjusting ? "Saving…" : "Confirm"}
+              </button>
+            </>
+          }
         >
           <div style={{ display: "grid", gap: 14 }}>
             <div>
-              <label style={label}>{adjustForm.type === "PHYSICAL_COUNT" ? "Counted Quantity" : "New Stock Value"} ({adjustTarget.unit})</label>
+              <label style={label}>{adjustForm.type === "PHYSICAL_COUNT" ? "Counted quantity" : "New stock value"} ({adjustTarget.unit})</label>
               <input type="number" style={inp} value={adjustForm.newStock} onChange={(e) => setAdjustForm({ ...adjustForm, newStock: e.target.value })} />
-              <div style={{ fontSize: 11, color: T3, marginTop: 4 }}>
-                Difference will be logged: {Number(adjustForm.newStock || 0) - adjustTarget.currentStock >= 0 ? "+" : ""}
-                {(Number(adjustForm.newStock || 0) - adjustTarget.currentStock).toFixed(2)} {adjustTarget.unit}
+              <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 4 }}>
+                Logged difference: <b style={{ color: diff >= 0 ? "var(--ready-ink)" : "var(--stop-ink)" }}>{diff >= 0 ? "+" : ""}{diff.toFixed(2)} {adjustTarget.unit}</b>
               </div>
             </div>
             <div>
               <label style={label}>Reason</label>
               <input style={inp} value={adjustForm.reason} onChange={(e) => setAdjustForm({ ...adjustForm, reason: e.target.value })}
                 placeholder={adjustForm.type === "PHYSICAL_COUNT" ? "e.g. Monthly count" : "e.g. Correcting entry error"} />
-            </div>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => setAdjustTarget(null)} style={{ ...btnGhost, flex: 1 }}>Cancel</button>
-              <button onClick={handleAdjust} disabled={adjusting} style={{ ...btnPrimary(adjusting), flex: 1 }}>
-                {adjusting ? "Saving…" : "Confirm"}
-              </button>
             </div>
           </div>
         </Modal>

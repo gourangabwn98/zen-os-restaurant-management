@@ -1,24 +1,27 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import toast from "react-hot-toast";
 import { getSuppliers, createSupplier, updateSupplier, deleteSupplier } from "../../../services/inventoryService.js";
-import { T1, T2, T3, BORDER, inp, label, btnPrimary, btnGhost, btnDanger, Modal, TableShell } from "./invUI.jsx";
+import { Modal, TableShell, Toolbar, Search, Spacer, Loading, ErrorBox } from "./invUI.jsx";
+import { inp, label } from "./invKit.js";
 
 const emptySupplier = { name: "", phone: "", email: "", address: "", gstNumber: "", notes: "" };
 
 export default function SuppliersTab() {
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [search, setSearch] = useState("");
+
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptySupplier);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    try { setSuppliers((await getSuppliers()).data?.suppliers || []); }
-    catch { toast.error("Failed to load suppliers"); }
+    try { setSuppliers((await getSuppliers()).data?.suppliers || []); setError(false); }
+    catch { setError(true); }
     finally { setLoading(false); }
   }, []);
-
   useEffect(() => { load(); }, [load]);
 
   const openNew = () => { setEditing(null); setForm(emptySupplier); setShowForm(true); };
@@ -51,39 +54,48 @@ export default function SuppliersTab() {
     catch { toast.error("Failed to delete"); }
   };
 
-  if (loading) return <div style={{ textAlign: "center", padding: 80, color: T3 }}>Loading suppliers…</div>;
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return suppliers;
+    return suppliers.filter((s) =>
+      [s.name, s.phone, s.email, s.gstNumber].some((v) => (v || "").toLowerCase().includes(q)),
+    );
+  }, [suppliers, search]);
+
+  if (loading) return <Loading />;
+  if (error) return <ErrorBox onRetry={load} what="suppliers" />;
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
-        <button onClick={openNew} style={btnPrimary(false)}>+ Add Supplier</button>
-      </div>
+      <Toolbar>
+        <Search value={search} onChange={setSearch} placeholder="Search suppliers" />
+        <Spacer />
+        <button type="button" className="zc-btn pri" onClick={openNew}>＋ Add supplier</button>
+      </Toolbar>
 
       <TableShell
-        headers={["Name", "Phone", "Email", "GST No.", "Status", "Actions"]}
-        isEmpty={suppliers.length === 0}
-        emptyIcon="🚚" emptyText="No suppliers added yet"
+        headers={["Name", "Phone", "Email", "GST no.", "Status", ""]}
+        minWidth={780}
+        isEmpty={filtered.length === 0}
+        emptyIcon="🚚"
+        emptyText={suppliers.length === 0 ? "No suppliers added yet" : "No suppliers match this search"}
       >
-        {suppliers.map((s, idx) => (
-          <tr key={s._id} style={{ borderBottom: idx < suppliers.length - 1 ? `1px solid ${BORDER}` : "none" }}>
-            <td style={{ padding: "13px 18px", fontWeight: 600, color: T1 }}>{s.name}</td>
-            <td style={{ padding: "13px 18px", color: T2 }}>{s.phone || "—"}</td>
-            <td style={{ padding: "13px 18px", color: T2 }}>{s.email || "—"}</td>
-            <td style={{ padding: "13px 18px", color: T2 }}>{s.gstNumber || "—"}</td>
-            <td style={{ padding: "13px 18px" }}>
-              <span style={{
-                padding: "4px 13px", borderRadius: 20, fontSize: 11, fontWeight: 600,
-                background: s.status === "Active" ? "rgba(16,185,129,0.15)" : "rgba(239,68,68,0.15)",
-                color: s.status === "Active" ? "#34d399" : "#f87171",
-              }}>{s.status}</span>
+        {filtered.map((s) => (
+          <tr key={s._id}>
+            <td style={{ fontWeight: 600, color: "var(--text-1)" }}>{s.name}</td>
+            <td style={{ color: "var(--text-2)" }}>{s.phone || "—"}</td>
+            <td style={{ color: "var(--text-2)" }}>{s.email || "—"}</td>
+            <td style={{ color: "var(--text-2)" }}>{s.gstNumber || "—"}</td>
+            <td>
+              <span className={`zc-tag ${s.status === "Active" ? "ready" : "stop"}`}><i />{s.status}</span>
             </td>
-            <td style={{ padding: "13px 18px" }}>
-              <div style={{ display: "flex", gap: 6 }}>
-                <button onClick={() => openEdit(s)} style={{ ...btnGhost, padding: "6px 12px", fontSize: 12 }}>Edit</button>
-                <button onClick={() => handleToggle(s)} style={{ ...btnGhost, padding: "6px 12px", fontSize: 12 }}>
+            <td>
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <button type="button" className="zc-btn ghost sm" onClick={() => openEdit(s)}>Edit</button>
+                <button type="button" className="zc-btn ghost sm" onClick={() => handleToggle(s)}>
                   {s.status === "Active" ? "Deactivate" : "Activate"}
                 </button>
-                <button onClick={() => handleDelete(s)} style={btnDanger}>Delete</button>
+                <button type="button" className="zc-btn danger sm" onClick={() => handleDelete(s)}>Delete</button>
               </div>
             </td>
           </tr>
@@ -91,7 +103,18 @@ export default function SuppliersTab() {
       </TableShell>
 
       {showForm && (
-        <Modal title={editing ? "Edit Supplier" : "Add Supplier"} onClose={() => setShowForm(false)}>
+        <Modal
+          title={editing ? "Edit supplier" : "Add supplier"}
+          onClose={() => setShowForm(false)}
+          footer={
+            <>
+              <button type="button" className="zc-btn" onClick={() => setShowForm(false)}>Cancel</button>
+              <button type="button" className="zc-btn pri" disabled={saving} onClick={handleSave}>
+                {saving ? "Saving…" : "Save"}
+              </button>
+            </>
+          }
+        >
           <div style={{ display: "grid", gap: 14 }}>
             <div><label style={label}>Name</label><input style={inp} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -99,12 +122,8 @@ export default function SuppliersTab() {
               <div><label style={label}>Email</label><input style={inp} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
             </div>
             <div><label style={label}>Address</label><input style={inp} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></div>
-            <div><label style={label}>GST Number</label><input style={inp} value={form.gstNumber} onChange={(e) => setForm({ ...form, gstNumber: e.target.value })} /></div>
+            <div><label style={label}>GST number</label><input style={inp} value={form.gstNumber} onChange={(e) => setForm({ ...form, gstNumber: e.target.value })} /></div>
             <div><label style={label}>Notes</label><input style={inp} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => setShowForm(false)} style={{ ...btnGhost, flex: 1 }}>Cancel</button>
-              <button onClick={handleSave} disabled={saving} style={{ ...btnPrimary(saving), flex: 1 }}>{saving ? "Saving…" : "Save"}</button>
-            </div>
           </div>
         </Modal>
       )}
