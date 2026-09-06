@@ -1,5 +1,12 @@
 import api from "./api.js";
 
+// One key per "place order" attempt — resent on retry/double-click so the
+// backend (services/orderService.js placeOrderTx) creates exactly one order.
+// Without a key, a duplicate-key error on the backend used to be mis-handled
+// as "order already exists" and a stale order was returned as a false success.
+export const newIdempotencyKey = () =>
+  `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
 // ─── Guest order helpers ──────────────────────────────────────────────────────
 const isGuest = () => {
   try {

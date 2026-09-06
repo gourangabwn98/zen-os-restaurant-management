@@ -195,7 +195,12 @@ export const placeOrderTx = async ({ req, body }) => {
         kotJob = kotResult.job;
       });
     } catch (err) {
-      if (err?.code === 11000 && err.keyPattern?.idempotencyKey) {
+      // Only treat a duplicate-key error as an idempotent replay when we
+      // actually HAVE a key to look the original up by. Without the
+      // `&& idempotencyKey` guard, a keyless order that hit any 11000 would
+      // `findOne({ idempotencyKey: undefined })` → `findOne({})` → return an
+      // arbitrary existing order as a false success.
+      if (err?.code === 11000 && err.keyPattern?.idempotencyKey && idempotencyKey) {
         const raced = await Order.findOne({ idempotencyKey });
         if (raced) return { order: raced, alreadyExisted: true };
       }
@@ -210,7 +215,9 @@ export const placeOrderTx = async ({ req, body }) => {
     try {
       order = await Order.create(orderPayload);
     } catch (err) {
-      if (err?.code === 11000 && err.keyPattern?.idempotencyKey) {
+      // See the staff-path catch above — the `&& idempotencyKey` guard is what
+      // stops a keyless order's duplicate-key error becoming a false success.
+      if (err?.code === 11000 && err.keyPattern?.idempotencyKey && idempotencyKey) {
         const raced = await Order.findOne({ idempotencyKey });
         if (raced) return { order: raced, alreadyExisted: true };
       }

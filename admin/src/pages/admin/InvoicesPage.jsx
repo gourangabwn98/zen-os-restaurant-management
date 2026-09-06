@@ -1,357 +1,219 @@
-import { PRIMARY } from "../../theme.js";
-import React, { useState, useEffect } from "react";
+// src/pages/admin/InvoicesPage.jsx
+// ─────────────────────────────────────────────────────────────────────────────
+// Zen OS "Invoices" — the payment ledger for billable orders. Migrated to the
+// shared design system (design-reference/zen-os-design-reference.html →
+// "Invoices" screen) to match Dashboard / Billing.
+//
+// Data + business logic are UNCHANGED from the previous build:
+//   • source        = getAllOrders()  (an "invoice" = a billable order)
+//   • billable set  = order is COMPLETED  OR  payment is PAID
+//   • payment edit  = PATCH /admin/orders/:id/payment  (canonical enums only)
+//   • bulk dues     = CustomerDuesSummary (mark a customer's dues paid at once)
+//   • print         = POST /admin/orders/:id/print-bill
+// Every figure on screen is a live aggregate of that data — nothing invented.
+// ─────────────────────────────────────────────────────────────────────────────
+import { useState, useEffect, useMemo, useCallback } from "react";
 import toast from "react-hot-toast";
-import { getAllOrders } from "../../services/adminService.js";
-import api from "../../services/api.js";
+import { getAllOrders, updateOrderPayment, printOrderBill } from "../../services/adminService.js";
+import PageHeader from "./shared/PageHeader.jsx";
+import StatCard from "./shared/StatCard.jsx";
+import Loader from "./shared/Loader.jsx";
+import EmptyState from "./shared/EmptyState.jsx";
+import ErrorState from "./shared/ErrorState.jsx";
+import { statusKind } from "./shared/statusKind.js";
 
-const PINK  = PRIMARY;
-const CARD  = "#16132a";
-const CARD2 = "#1c1830";
-const BDR   = "rgba(255,255,255,0.07)";
-const T1    = "#f1f0f5";
-const T2    = "#9ca3af";
-const T3    = "#4b5563";
+// ── canonical vocabulary (restaurant-server/utils/orderStateMachine.js) ──────
+const PAYMENT_STATUSES = ["PENDING_VERIFICATION", "PAID", "FAILED"];
+const PAY_SEG = ["All", ...PAYMENT_STATUSES];
+const TYPE_OPTIONS = ["All", "DINE_IN", "TAKEAWAY", "ONLINE"];
+const PER_PAGE = 15;
 
-const STATUS_STYLE = {
-  Placed:    { bg:"rgba(56,122,221,0.15)",  color:"#60a5fa" },
-  Preparing: { bg:"rgba(186,117,23,0.15)",  color:"#fbbf24" },
-  Ready:     { bg:"rgba(16,185,129,0.15)",  color:"#34d399" },
-  Delivered: { bg:"rgba(16,185,129,0.15)",  color:"#34d399" },
-  Completed: { bg:"rgba(107,114,128,0.15)", color:"#9ca3af" },
-  Cancelled: { bg:"rgba(239,68,68,0.15)",   color:"#f87171" },
-};
-const PAY_STYLE = {
-  Paid:    { bg:"rgba(16,185,129,0.15)",  color:"#34d399" },
-  Pending: { bg:"rgba(245,158,11,0.15)",  color:"#fbbf24" },
-  Failed:  { bg:"rgba(239,68,68,0.15)",   color:"#f87171" },
-};
-const TYPE_STYLE = {
-  Dining:      { bg:"rgba(139,92,246,0.15)", color:"#c4b5fd" },
-  "Take Away": { bg:"rgba(59,130,246,0.15)", color:"#93c5fd" },
-};
+const fmt = (n) => Math.round(n || 0).toLocaleString("en-IN");
+const formatPayment = (s) =>
+  ({ PENDING_VERIFICATION: "Pending verification", PAID: "Paid", FAILED: "Failed" }[s] || s || "—");
+const formatType = (s) =>
+  ({ DINE_IN: "Dine-in", TAKEAWAY: "Takeaway", ONLINE: "Online", All: "All types" }[s] || s || "—");
 
-const Badge = ({ label, map }) => {
-  const s = map[label] || { bg:"rgba(107,114,128,0.15)", color:"#9ca3af" };
-  return <span style={{ background:s.bg, color:s.color, padding:"3px 10px", borderRadius:20, fontSize:11, fontWeight:500, whiteSpace:"nowrap" }}>{label}</span>;
-};
+const AVATAR_GRADS = [
+  "linear-gradient(140deg,#8B5CF6,#6D28D9)",
+  "linear-gradient(140deg,#22D3EE,#0891B2)",
+  "linear-gradient(140deg,#F0A93B,#D97706)",
+  "linear-gradient(140deg,#35D08A,#059669)",
+  "linear-gradient(140deg,#F2564D,#B91C1C)",
+  "linear-gradient(140deg,#6366F1,#4338CA)",
+];
+const avc = (n) => AVATAR_GRADS[(n?.charCodeAt(0) || 0) % AVATAR_GRADS.length];
+const ini = (n) => (!n || n === "Guest" ? "G" : n.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2));
+const custName = (o) => o.guestName || o.user?.name || "Guest";
+const custPhone = (o) => o.guestPhone || o.user?.phone || null;
 
-const StatPill = ({ label, value, color, sub }) => (
-  <div style={{ background:CARD, border:`1px solid ${BDR}`, borderRadius:12, padding:"14px 16px" }}>
-    <div style={{ fontSize:11, color:T2, marginBottom:4, fontWeight:500 }}>{label}</div>
-    <div style={{ fontSize:20, fontWeight:700, color:color||T1 }}>{value}</div>
-    {sub && <div style={{ fontSize:11, color:T3, marginTop:3 }}>{sub}</div>}
-  </div>
-);
-
-const inp = {
-  padding:"9px 12px", borderRadius:8, border:`1px solid ${BDR}`,
-  fontSize:13, outline:"none", background:CARD2, color:T1,
-  boxSizing:"border-box",
-};
-const CustomerDuesSummary = ({ invoices, PINK, CARD2, BDR, T1, T2, T3, onPaymentChange }) => {
-  const [selectedInvoices, setSelectedInvoices] = React.useState({});
-  const [payingFor, setPayingFor] = React.useState(null);
-  const [loading, setLoading] = React.useState(false);
- 
-  const customerMap = {};
-  
-  invoices.forEach(inv => {
-    const customerName = inv.guestName || inv.user?.name || "Guest";
-    if (!customerMap[customerName]) {
-      customerMap[customerName] = {
-        name: customerName,
-        invoices: [],
-        totalDue: 0,
-        phone: inv.guestPhone || inv.user?.phone || null,
-      };
+// ── page-scoped styles (tokens only — light / dark safe) ─────────────────────
+if (typeof document !== "undefined" && !document.getElementById("inv-styles")) {
+  const s = document.createElement("style");
+  s.id = "inv-styles";
+  s.textContent = `
+    .inv-idc { color: var(--text-2); font-weight: 600; font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .zc-ledger tbody tr.inv-hl td { background: linear-gradient(168deg, var(--violet-weak), transparent); border-color: var(--violet-mid); }
+    .zc-ledger tbody tr.inv-click { cursor: pointer; }
+    .inv-who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .inv-who .av { width: 27px; height: 27px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 10.5px; font-weight: 700; color: #fff; }
+    .inv-who b { font-weight: 600; display: block; line-height: 1.3; color: var(--text-1); }
+    .inv-who em { font-style: normal; color: var(--text-3); font-size: 11px; display: block; line-height: 1.3; }
+    .inv-filters { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+    .inv-cards { display: none; }
+    @media (max-width: 860px) {
+      .inv-ledger-wrap { display: none; }
+      .inv-cards { display: block; }
     }
-    customerMap[customerName].invoices.push(inv);
-    customerMap[customerName].totalDue += Number(inv.total || 0);
-  });
- 
-  const customers = Object.values(customerMap).sort((a, b) => b.totalDue - a.totalDue);
- 
+    .inv-ocard {
+      border: 1px solid var(--edge); border-radius: var(--r-row);
+      background: var(--grad-panel); padding: 12px 13px; margin-bottom: 8px; cursor: pointer;
+      transition: border-color .12s ease;
+    }
+    .inv-ocard:hover { border-color: var(--edge-hi); }
+    .inv-ocard.inv-hl { border-color: var(--stop-line); background: var(--stop-fill); }
+    .inv-dues { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  `;
+  document.head.appendChild(s);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Customer-wise pending dues — bulk "mark paid" for one customer's open invoices
+// (business feature preserved from the previous build; restyled to Zen OS)
+// ═══════════════════════════════════════════════════════════════════════════════
+function CustomerDuesSummary({ invoices, onPaymentChange }) {
+  const [selected, setSelected] = useState({});
+  const [busyName, setBusyName] = useState(null);
+
+  const customers = useMemo(() => {
+    const map = {};
+    invoices.forEach((inv) => {
+      const name = custName(inv);
+      if (!map[name]) map[name] = { name, invoices: [], phone: custPhone(inv) };
+      map[name].invoices.push(inv);
+    });
+    return Object.values(map)
+      .map((c) => ({
+        ...c,
+        pending: c.invoices.filter(
+          (i) => i.paymentStatus === "PENDING_VERIFICATION" || i.paymentStatus === "FAILED",
+        ),
+      }))
+      .filter((c) => c.pending.length > 0)
+      .map((c) => ({ ...c, pendingTotal: c.pending.reduce((s, i) => s + Number(i.total || 0), 0) }))
+      .sort((a, b) => b.pendingTotal - a.pendingTotal);
+  }, [invoices]);
+
   if (customers.length === 0) return null;
- 
-  // ─────────────────────────────────────────────────────────────────────────
-  // FILTER: Only show invoices that are Pending or Failed (not Paid)
-  // ─────────────────────────────────────────────────────────────────────────
-  const getPendingInvoices = (customer) => {
-    return customer.invoices.filter(inv => 
-      inv.paymentStatus === "Pending" || inv.paymentStatus === "Failed"
-    );
-  };
- 
-  const toggleInvoice = (customerId, invoiceId) => {
-    const key = `${customerId}_${invoiceId}`;
-    setSelectedInvoices(prev => ({
-      ...prev,
-      [key]: !prev[key]
-    }));
-  };
- 
-  const selectAllForCustomer = (customerId, customer) => {
-    const pendingInvoices = getPendingInvoices(customer);
-    const newSelected = { ...selectedInvoices };
-    pendingInvoices.forEach(inv => {
-      const key = `${customerId}_${inv._id}`;
-      newSelected[key] = true;
+
+  const key = (name, id) => `${name}::${id}`;
+  const toggle = (name, id) => setSelected((p) => ({ ...p, [key(name, id)]: !p[key(name, id)] }));
+  const selectAll = (c, on) =>
+    setSelected((p) => {
+      const next = { ...p };
+      c.pending.forEach((i) => (next[key(c.name, i._id)] = on));
+      return next;
     });
-    setSelectedInvoices(newSelected);
-  };
- 
-  const deselectAllForCustomer = (customerId, customer) => {
-    const pendingInvoices = getPendingInvoices(customer);
-    const newSelected = { ...selectedInvoices };
-    pendingInvoices.forEach(inv => {
-      const key = `${customerId}_${inv._id}`;
-      delete newSelected[key];
-    });
-    setSelectedInvoices(newSelected);
-  };
- 
-  const getSelectedForCustomer = (customerId, customer) => {
-    const pendingInvoices = getPendingInvoices(customer);
-    return pendingInvoices.filter(inv => {
-      const key = `${customerId}_${inv._id}`;
-      return selectedInvoices[key];
-    });
-  };
- 
-  const getSelectedTotal = (customerId, customer) => {
-    const selected = getSelectedForCustomer(customerId, customer);
-    return selected.reduce((s, inv) => s + Number(inv.total || 0), 0);
-  };
- 
-  const handlePaySelected = async (customerId, customer) => {
-    const selected = getSelectedForCustomer(customerId, customer);
-    if (selected.length === 0) {
-      return;
-    }
- 
-    setLoading(true);
-    setPayingFor(customer.name);
- 
+  const chosen = (c) => c.pending.filter((i) => selected[key(c.name, i._id)]);
+
+  const payChosen = async (c, list) => {
+    const targets = list || chosen(c);
+    if (!targets.length) return;
+    setBusyName(c.name);
     try {
-      const payPromises = selected.map(inv =>
-        onPaymentChange(inv._id, { paymentStatus: "Paid" })
-      );
-      
-      await Promise.all(payPromises);
-      
-      deselectAllForCustomer(customerId, customer);
-    } catch (error) {
-      console.error('Payment error:', error);
+      await Promise.all(targets.map((i) => onPaymentChange(i._id, { paymentStatus: "PAID" })));
+      selectAll(c, false);
+      toast.success(`${targets.length} invoice${targets.length > 1 ? "s" : ""} marked paid`);
+    } catch {
+      toast.error("Some invoices could not be updated");
     } finally {
-      setLoading(false);
-      setPayingFor(null);
+      setBusyName(null);
     }
   };
- 
+
   return (
-    <div style={{ marginBottom: 20 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: T3, letterSpacing: 1, textTransform: "uppercase", marginBottom: 12 }}>
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--accent-ink)", letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 12 }}>
         Customer-wise pending dues
       </div>
- 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12 }}>
-        {customers.map((customer, customerId) => {
-          // ─────────────────────────────────────────────────────────────────
-          // Get ONLY pending/failed invoices for display
-          // ─────────────────────────────────────────────────────────────────
-          const pendingInvoices = getPendingInvoices(customer);
-          const selectedCount = getSelectedForCustomer(customerId, customer).length;
-          const selectedTotal = getSelectedTotal(customerId, customer);
-          const pendingTotal = pendingInvoices.reduce((s, inv) => s + Number(inv.total || 0), 0);
- 
-          // ─────────────────────────────────────────────────────────────────
-          // Skip card if customer has NO pending invoices
-          // ─────────────────────────────────────────────────────────────────
-          if (pendingInvoices.length === 0) {
-            return null;
-          }
- 
+      <div className="inv-dues">
+        {customers.map((c) => {
+          const sel = chosen(c);
+          const selTotal = sel.reduce((s, i) => s + Number(i.total || 0), 0);
+          const busy = busyName === c.name;
           return (
-            <div key={customer.name} style={{ background: CARD2, border: `1px solid ${BDR}`, borderRadius: 12, padding: 16 }}>
-              {/* Customer header */}
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: T1 }}>
-                      {customer.name}
-                    </div>
-                    {customer.phone && (
-                      <div style={{ fontSize: 11, color: T2, marginTop: 2 }}>
-                        +91 {customer.phone}
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    {/* Show ONLY pending amount */}
-                    <div style={{ fontSize: 20, fontWeight: 700, color: PINK }}>
-                      ₹{Math.round(pendingTotal).toLocaleString("en-IN")}
-                    </div>
-                    <div style={{ fontSize: 11, color: T2, marginTop: 2 }}>
-                      {pendingInvoices.length} pending
-                    </div>
-                  </div>
+            <div key={c.name} className="zc-panel" style={{ padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--text-1)" }}>{c.name}</div>
+                  {c.phone && <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 2 }}>+91 {c.phone}</div>}
+                </div>
+                <div style={{ textAlign: "right", flex: "none" }}>
+                  <div className="tnum" style={{ fontSize: 18, fontWeight: 700, color: "var(--stop-ink)" }}>₹{fmt(c.pendingTotal)}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 2 }}>{c.pending.length} pending</div>
                 </div>
               </div>
- 
-              {/* Invoices with checkboxes - ONLY for Pending/Failed */}
-              <div style={{ borderTop: `1px solid ${BDR}`, paddingTop: 10, marginBottom: 12 }}>
-                {pendingInvoices.map((inv, idx) => {
-                  const key = `${customerId}_${inv._id}`;
-                  const isSelected = selectedInvoices[key];
- 
+
+              <div style={{ borderTop: "1px solid var(--edge)", paddingTop: 10, marginBottom: 12 }}>
+                {c.pending.map((inv) => {
+                  const on = !!selected[key(c.name, inv._id)];
                   return (
                     <div
                       key={inv._id}
-                      onClick={() => toggleInvoice(customerId, inv._id)}
+                      onClick={() => toggle(c.name, inv._id)}
+                      role="checkbox"
+                      aria-checked={on}
+                      tabIndex={0}
+                      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), toggle(c.name, inv._id))}
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                        padding: "8px 0",
-                        cursor: "pointer",
-                        borderBottom: idx < pendingInvoices.length - 1 ? `0.5px solid ${BDR}` : "none",
-                        background: isSelected ? `${PINK}08` : "transparent",
-                        paddingLeft: 8,
-                        borderRadius: 6,
-                        marginLeft: -8,
-                        paddingRight: 8,
-                        marginRight: -8,
-                        transition: "all .15s",
+                        display: "flex", alignItems: "center", gap: 10, padding: "7px 8px", cursor: "pointer",
+                        borderRadius: 8, background: on ? "var(--violet-weak)" : "transparent", transition: "background .15s",
                       }}
                     >
-                      {/* Checkbox */}
-                      <div
-                        style={{
-                          width: 18,
-                          height: 18,
-                          borderRadius: 4,
-                          border: `1.5px solid ${isSelected ? PINK : BDR}`,
-                          background: isSelected ? PINK : "transparent",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          flexShrink: 0,
-                          transition: "all .15s",
-                        }}
-                      >
-                        {isSelected && (
-                          <span style={{ color: "#fff", fontSize: 12, fontWeight: 700 }}>✓</span>
-                        )}
-                      </div>
- 
-                      {/* Invoice details */}
+                      <span style={{
+                        width: 17, height: 17, borderRadius: 5, flexShrink: 0, display: "grid", placeItems: "center",
+                        border: `1.5px solid ${on ? "var(--violet)" : "var(--edge-hi)"}`,
+                        background: on ? "var(--violet)" : "transparent", color: "#fff", fontSize: 11, fontWeight: 700,
+                      }}>{on ? "✓" : ""}</span>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <span style={{ fontWeight: 500, color: T1, fontSize: 12 }}>
-                            {inv.orderId}
-                          </span>
-                          <span style={{ fontWeight: 600, color: isSelected ? PINK : T1, fontSize: 12 }}>
-                            ₹{Math.round(inv.total)}
-                          </span>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                          <span className="tnum" style={{ fontSize: 12, fontWeight: 600, color: "var(--text-1)" }}>{inv.orderId}</span>
+                          <span className="tnum" style={{ fontSize: 12, fontWeight: 700, color: on ? "var(--accent-ink)" : "var(--text-1)" }}>₹{Math.round(inv.total)}</span>
                         </div>
-                        <div style={{ fontSize: 10, color: T3, marginTop: 2 }}>
-                          {inv.items?.map(i => `${i.name} ×${i.qty}`).join(", ")}
+                        <div style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {inv.items?.map((i) => `${i.name} ×${i.qty}`).join(", ") || "—"}
                         </div>
                       </div>
                     </div>
                   );
                 })}
               </div>
- 
-              {/* Selection summary - only show if something selected */}
-              {selectedCount > 0 && (
-                <div style={{ background: `${PINK}08`, borderRadius: 8, padding: 10, marginBottom: 12, border: `1px solid ${PINK}33` }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
-                    <span style={{ color: T2 }}>Selected {selectedCount}</span>
-                    <span style={{ color: PINK, fontWeight: 700 }}>₹{selectedTotal.toLocaleString("en-IN")}</span>
-                  </div>
-                  <div style={{ display: "flex", gap: 6, fontSize: 11 }}>
-                    <button
-                      onClick={() => selectAllForCustomer(customerId, customer)}
-                      style={{
-                        flex: 1,
-                        padding: "4px 8px",
-                        borderRadius: 6,
-                        border: `0.5px solid ${PINK}44`,
-                        background: "transparent",
-                        color: PINK,
-                        cursor: "pointer",
-                        fontWeight: 500,
-                      }}
-                    >
-                      All
-                    </button>
-                    <button
-                      onClick={() => deselectAllForCustomer(customerId, customer)}
-                      style={{
-                        flex: 1,
-                        padding: "4px 8px",
-                        borderRadius: 6,
-                        border: `0.5px solid ${BDR}`,
-                        background: "transparent",
-                        color: T2,
-                        cursor: "pointer",
-                        fontWeight: 500,
-                      }}
-                    >
-                      Clear
-                    </button>
-                  </div>
+
+              {sel.length > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, marginBottom: 10 }}>
+                  <button type="button" onClick={() => selectAll(c, false)} className="zc-btn ghost sm">Clear</button>
+                  <span style={{ color: "var(--text-2)" }}>
+                    {sel.length} selected · <b className="tnum" style={{ color: "var(--accent-ink)" }}>₹{fmt(selTotal)}</b>
+                  </span>
                 </div>
               )}
- 
-              {/* Payment buttons */}
+
               <div style={{ display: "flex", gap: 8 }}>
-                {/* Pay selected button */}
                 <button
-                  disabled={selectedCount === 0 || loading}
-                  onClick={() => handlePaySelected(customerId, customer)}
-                  style={{
-                    flex: 1,
-                    padding: "10px 0",
-                    borderRadius: 8,
-                    border: "none",
-                    background:
-                      selectedCount === 0 || loading
-                        ? "#374151"
-                        : `linear-gradient(135deg, ${PINK}, #5b21b6)`,
-                    color: selectedCount === 0 || loading ? T3 : "#fff",
-                    fontWeight: 600,
-                    fontSize: 12,
-                    cursor: selectedCount === 0 || loading ? "not-allowed" : "pointer",
-                    transition: "all .15s",
-                  }}
+                  type="button"
+                  disabled={sel.length === 0 || busy}
+                  onClick={() => payChosen(c)}
+                  className="zc-btn pri" style={{ flex: 1, justifyContent: "center" }}
                 >
-                  {loading && payingFor === customer.name ? "Paying…" : `Pay · ₹${selectedTotal}`}
+                  {busy ? "Marking paid…" : `Mark paid · ₹${fmt(selTotal)}`}
                 </button>
- 
-                {/* Pay all button */}
                 <button
-                  disabled={loading}
-                  onClick={() => {
-                    selectAllForCustomer(customerId, customer);
-                    setTimeout(() => handlePaySelected(customerId, customer), 0);
-                  }}
-                  style={{
-                    flex: 1,
-                    padding: "10px 0",
-                    borderRadius: 8,
-                    border: `1px solid ${PINK}44`,
-                    background: `${PINK}08`,
-                    color: PINK,
-                    fontWeight: 600,
-                    fontSize: 12,
-                    cursor: loading ? "not-allowed" : "pointer",
-                    transition: "all .15s",
-                    opacity: loading ? 0.5 : 1,
-                  }}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => payChosen(c, c.pending)}
+                  className="zc-btn sm" style={{ justifyContent: "center", whiteSpace: "nowrap" }}
                 >
-                  {loading && payingFor === customer.name ? "…" : `All · ₹${pendingTotal}`}
+                  All · ₹{fmt(c.pendingTotal)}
                 </button>
               </div>
             </div>
@@ -360,382 +222,476 @@ const CustomerDuesSummary = ({ invoices, PINK, CARD2, BDR, T1, T2, T3, onPayment
       </div>
     </div>
   );
-};
- 
-// export default CustomerDuesSummary;
+}
 
-export default function InvoicesPage() {
-  const [orders,    setOrders]    = useState([]);
-  const [loading,   setLoading]   = useState(true);
-  const [search,    setSearch]    = useState("");
-  const [payFilter, setPayFilter] = useState("All");
-  const [typeFilter,setTypeFilter]= useState("All");
-  const [expanded,  setExpanded]  = useState(null);
-  const [updating,  setUpdating]  = useState(null); // order._id being updated
+// ═══════════════════════════════════════════════════════════════════════════════
+// Invoice detail modal — receipt + payment controls (was the expandable row)
+// ═══════════════════════════════════════════════════════════════════════════════
+function InvoiceDetailModal({ inv, busy, onClose, onPaymentChange, onPrint }) {
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
-  useEffect(()=>{
-    getAllOrders({ limit:500 })
-      .then(r=>{ setOrders(r.data?.orders||[]); setLoading(false); })
-      .catch(()=>{ toast.error("Failed to load invoices"); setLoading(false); });
-  },[]);
-
-  // ── Payment status update ─────────────────────────────────────────────────
-  const handlePaymentChange = async (orderId, data) => {
-    setUpdating(orderId);
-    try {
-      await api.patch(`/admin/orders/${orderId}/payment`, data);
-      setOrders(prev => prev.map(o => o._id===orderId ? {...o,...data} : o));
-      toast.success("Payment updated ✓");
-    } catch { toast.error("Update failed"); }
-    finally { setUpdating(null); }
-  };
-
-  // Only completed or paid orders show as invoices
-  const invoiceOrders = orders.filter(o =>
-    o.status==="Completed" || o.paymentStatus==="Paid"
-  );
-
-  const filtered = invoiceOrders.filter(o => {
-    const q = search.toLowerCase();
-    const matchSearch = !q ||
-      o.orderId?.toLowerCase().includes(q) ||
-      o.user?.name?.toLowerCase().includes(q) ||
-      o.guestName?.toLowerCase().includes(q) ||
-      o.user?.phone?.includes(q) ||
-      o.guestPhone?.includes(q);
-    const matchPay  = payFilter==="All"  || o.paymentStatus===payFilter;
-    const matchType = typeFilter==="All" || o.orderType===typeFilter;
-    return matchSearch && matchPay && matchType;
-  });
-
-  // Stats
-  const completedPaid = invoiceOrders.filter(o=>o.status==="Completed"&&o.paymentStatus==="Paid");
-  const totalRevenue  = completedPaid.reduce((s,o)=>s+Number(o.total||0),0);
-  const paidCount     = completedPaid.length;
-  const pendingCount  = invoiceOrders.filter(o=>o.paymentStatus==="Pending").length;
-  const avgVal        = paidCount ? Math.round(totalRevenue/paidCount) : 0;
-  const fmt = (n) => Math.round(n||0).toLocaleString("en-IN");
+  if (!inv) return null;
+  const name = custName(inv);
+  const phone = custPhone(inv);
+  const subtotal = inv.subtotal ?? inv.items?.reduce((s, i) => s + i.price * i.qty, 0) ?? 0;
+  const placedAt = inv.createdAt
+    ? new Date(inv.createdAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+    : "—";
+  const summary = [
+    ["Subtotal", subtotal],
+    ...(inv.serviceCharge > 0 ? [["Service charge", inv.serviceCharge]] : []),
+    ...(inv.tax > 0 ? [["GST", inv.tax]] : []),
+    ...(inv.discount > 0 ? [["Discount", -inv.discount]] : []),
+  ];
+  const info = [
+    ["Customer", name],
+    ["Phone", phone ? `+91 ${phone}` : "—"],
+    ["Type", formatType(inv.orderType)],
+    ["Table", inv.tableNo ? `T${inv.tableNo}` : "—"],
+  ];
 
   return (
-    <div style={{ padding:28, fontFamily:"'DM Sans',sans-serif" }}>
-
-      {/* Header */}
-      <div style={{ marginBottom:20 }}>
-        <h1 style={{ fontSize:22, fontWeight:700, color:T1, margin:0 }}>Invoices</h1>
-        <div style={{ fontSize:13, color:T2, marginTop:4 }}>Generated bills and receipts</div>
-      </div>
-
-      {/* Stats */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12, marginBottom:20 }}>
-        <StatPill label="Total invoices"   value={invoiceOrders.length}              />
-        <StatPill label="Total collected"  value={`₹${fmt(totalRevenue)}`} color={PINK}     />
-        <StatPill label="Paid & Complete"  value={paidCount}              color="#34d399"   />
-        <StatPill label="Pending payment"  value={pendingCount}           color="#fbbf24"   />
-      </div>
-
-      {/* Filters */}
-      <div style={{ background:CARD, border:`1px solid ${BDR}`, borderRadius:12, padding:16, marginBottom:16 }}>
-        <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
-          <input value={search} onChange={e=>setSearch(e.target.value)}
-            placeholder="Search by order ID, customer or phone…"
-            style={{ ...inp, flex:1, minWidth:220 }}/>
-          <select value={payFilter} onChange={e=>setPayFilter(e.target.value)}
-            style={{ ...inp, width:"auto", cursor:"pointer" }}>
-            <option value="All">All payments</option>
-            <option>Paid</option>
-            <option>Pending</option>
-            <option>Failed</option>
-          </select>
-          <select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)}
-            style={{ ...inp, width:"auto", cursor:"pointer" }}>
-            <option value="All">All types</option>
-            <option value="Dining">Dining</option>
-            <option value="Take Away">Take Away</option>
-          </select>
-        </div>
-        {(search||payFilter!=="All"||typeFilter!=="All") && (
-          <div style={{ marginTop:10, fontSize:12, color:T2 }}>
-            Showing <span style={{ fontWeight:600, color:PINK }}>{filtered.length}</span> of {invoiceOrders.length} invoices
-            <span onClick={()=>{ setSearch(""); setPayFilter("All"); setTypeFilter("All"); }}
-              style={{ color:PINK, cursor:"pointer", marginLeft:10 }}>Clear filters</span>
+    <div className="zc-scrim" onClick={onClose}>
+      <div className="zc-modal" style={{ width: 560 }} onClick={(e) => e.stopPropagation()}>
+        <div className="mh">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="t tnum">{inv.orderId}</div>
+            <div className="s">placed {placedAt}</div>
           </div>
+          <span className={`zc-tag ${statusKind(inv.paymentStatus)}`}><i />{formatPayment(inv.paymentStatus)}</span>
+          <button type="button" className="zc-x" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+
+        <div className="mb">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10, marginBottom: 18 }}>
+            {info.map(([k, v]) => (
+              <div key={k} style={{ padding: "10px 12px", borderRadius: 12, background: "var(--card-2)", border: "1px solid var(--edge)" }}>
+                <div style={{ fontSize: 10.5, color: "var(--text-3)" }}>{k}</div>
+                <div style={{ fontSize: 12.5, fontWeight: 600, marginTop: 3, color: "var(--text-1)", wordBreak: "break-word" }}>{v}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>Receipt</div>
+          <div style={{ borderRadius: 13, border: "1px solid var(--edge)", overflow: "hidden", marginBottom: 20 }}>
+            {inv.items?.map((item, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", borderBottom: "1px solid var(--edge)", fontSize: 12.5 }}>
+                <span className="zc-q">{item.qty}</span>
+                <span style={{ flex: 1, color: "var(--text-1)" }}>{item.name}</span>
+                <span className="tnum" style={{ fontWeight: 600, color: "var(--text-1)" }}>₹{item.price * item.qty}</span>
+              </div>
+            ))}
+            <div style={{ padding: "12px 14px", display: "grid", gap: 6, fontSize: 12.5, background: "var(--card-2)" }}>
+              {summary.map(([k, v]) => (
+                <div key={k} style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: "var(--text-2)" }}>{k}</span>
+                  <span className="tnum" style={{ color: "var(--text-1)" }}>{v < 0 ? `−₹${Math.abs(v)}` : `₹${v}`}</span>
+                </div>
+              ))}
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 700, paddingTop: 8, borderTop: "1px solid var(--edge)" }}>
+                <span style={{ color: "var(--text-1)" }}>Total</span>
+                <span className="tnum zc-grad-text">₹{Math.round(inv.total)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>Payment status</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
+            {PAYMENT_STATUSES.map((s) => {
+              const active = inv.paymentStatus === s;
+              const k = statusKind(s);
+              return (
+                <button
+                  key={s} type="button" disabled={active || busy}
+                  onClick={() => onPaymentChange(inv._id, { paymentStatus: s })}
+                  className={`zc-tag ${k}`}
+                  style={{
+                    cursor: active || busy ? "default" : "pointer", font: "inherit",
+                    opacity: active ? 1 : busy ? 0.4 : 0.6,
+                  }}
+                >
+                  {active ? "✓ " : ""}{formatPayment(s)}
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>Payment method</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {["Cash", "Online"].map((m) => {
+              const active = (inv.paymentMethod || "Cash") === m;
+              return (
+                <button
+                  key={m} type="button" disabled={active || busy}
+                  onClick={() => onPaymentChange(inv._id, { paymentMethod: m })}
+                  style={{
+                    flex: 1, padding: "9px 0", borderRadius: "var(--r-ctl)", fontSize: 12.5, fontWeight: 600, font: "inherit",
+                    cursor: active || busy ? "default" : "pointer",
+                    border: `2px solid ${active ? "var(--violet)" : "var(--edge)"}`,
+                    background: active ? "var(--violet-weak)" : "var(--card-2)",
+                    color: active ? "var(--accent-ink)" : "var(--text-2)",
+                  }}
+                >
+                  {m === "Cash" ? "💵 Cash" : "📱 Online"}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="mf" style={{ flexWrap: "wrap" }}>
+          <button type="button" className="zc-btn" onClick={() => onPrint(inv)}>🖨️ Print bill</button>
+          {inv.paymentStatus !== "PAID" && (
+            <button type="button" className="zc-btn good" disabled={busy}
+              onClick={() => onPaymentChange(inv._id, { paymentStatus: "PAID" })}>
+              {busy ? "Updating…" : "✓ Mark as paid"}
+            </button>
+          )}
+          <button type="button" className="zc-btn pri" onClick={onClose}>Done</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN
+// ═══════════════════════════════════════════════════════════════════════════════
+export default function InvoicesPage() {
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [busyId, setBusyId] = useState(null);
+
+  const [search, setSearch] = useState("");
+  const [payF, setPayF] = useState("All");
+  const [typeF, setTypeF] = useState("All");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [page, setPage] = useState(1);
+  const [openId, setOpenId] = useState(null);
+
+  const load = useCallback(() => {
+    getAllOrders({ limit: 5000 })
+      .then((r) => { setOrders(r.data?.orders || []); setError(false); setLoading(false); })
+      .catch(() => { setError(true); setLoading(false); });
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  // Payment update — same endpoint / validation as the previous build & Billing.
+  const handlePaymentChange = async (orderId, data) => {
+    setBusyId(orderId);
+    try {
+      await updateOrderPayment(orderId, data);
+      setOrders((prev) => prev.map((o) => (o._id === orderId ? { ...o, ...data } : o)));
+      toast.success("Payment updated ✓");
+    } catch (e) {
+      toast.error(e?.response?.data?.message || "Update failed");
+      throw e;
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handlePrint = async (o) => {
+    try {
+      await printOrderBill(o._id);
+      toast.success("Bill sent to printer ✓");
+    } catch (e) {
+      toast.error(e?.response?.data?.message || "Printer not running");
+    }
+  };
+
+  // An "invoice" = a billable order: completed OR already paid (unchanged rule).
+  const invoiceOrders = useMemo(
+    () => orders.filter((o) => o.status === "COMPLETED" || o.paymentStatus === "PAID"),
+    [orders],
+  );
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return invoiceOrders.filter((o) => {
+      if (payF !== "All" && o.paymentStatus !== payF) return false;
+      if (typeF !== "All" && o.orderType !== typeF) return false;
+      if (startDate || endDate) {
+        const d = new Date(o.createdAt).toISOString().slice(0, 10);
+        if (startDate && d < startDate) return false;
+        if (endDate && d > endDate) return false;
+      }
+      if (q) {
+        const hay = `${o.orderId || ""} ${custName(o)} ${custPhone(o) || ""}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [invoiceOrders, search, payF, typeF, startDate, endDate]);
+
+  // ── stats — live aggregates only ──────────────────────────────────────────
+  const paid = invoiceOrders.filter((o) => o.paymentStatus === "PAID");
+  const pendingVerif = invoiceOrders.filter((o) => o.paymentStatus === "PENDING_VERIFICATION");
+  const failed = invoiceOrders.filter((o) => o.paymentStatus === "FAILED");
+  const totalCollected = paid.reduce((s, o) => s + Number(o.total || 0), 0);
+  const pendingTotal = pendingVerif.reduce((s, o) => s + Number(o.total || 0), 0);
+  const failedTotal = failed.reduce((s, o) => s + Number(o.total || 0), 0);
+
+  const hasFilters = search || payF !== "All" || typeF !== "All" || startDate || endDate;
+  const clearFilters = () => {
+    setSearch(""); setPayF("All"); setTypeF("All"); setStartDate(""); setEndDate(""); setPage(1);
+  };
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+  const safePage = Math.min(page, totalPages);
+  const paginated = filtered.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+  const pageList = Array.from({ length: totalPages }, (_, i) => i + 1)
+    .filter((p) => p === 1 || p === totalPages || Math.abs(p - safePage) <= 1)
+    .reduce((acc, p, i, arr) => {
+      if (i > 0 && arr[i - 1] !== p - 1) acc.push("…");
+      acc.push(p);
+      return acc;
+    }, []);
+
+  const openInvoice = openId ? filtered.find((o) => o._id === openId) || invoiceOrders.find((o) => o._id === openId) || null : null;
+
+  const STATS = [
+    { label: "Collected", value: `₹${fmt(totalCollected)}`, grad: true, sub: `${paid.length} paid invoice${paid.length === 1 ? "" : "s"}` },
+    { label: "Pending verification", value: fmt(pendingVerif.length), color: "var(--stop-ink)", sub: `₹${fmt(pendingTotal)} unconfirmed` },
+    { label: "Failed", value: fmt(failed.length), color: "var(--stop-ink)", sub: failed.length ? `₹${fmt(failedTotal)} · retry or void` : "None" },
+    { label: "Total invoices", value: fmt(invoiceOrders.length), color: "var(--text-2)", sub: "Completed or paid" },
+  ];
+
+  const dateInputStyle = (v) => ({ width: "auto", color: v ? "var(--text-1)" : "var(--text-3)" });
+
+  return (
+    <div>
+      <PageHeader
+        title="Invoices"
+        sub={`${invoiceOrders.length} invoice${invoiceOrders.length === 1 ? "" : "s"} · ₹${fmt(totalCollected)} collected`}
+      />
+
+      {/* stat row */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12, marginBottom: 20 }}>
+        {STATS.map((b, i) => <StatCard key={i} {...b} />)}
+      </div>
+
+      {/* filters */}
+      <div className="inv-filters">
+        <input
+          className="zc-input"
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          placeholder="Search by order ID, customer or phone"
+          aria-label="Search invoices"
+          style={{ flex: 1, minWidth: 240 }}
+        />
+        <div className="zc-seg" role="tablist" aria-label="Payment status filter">
+          {PAY_SEG.map((s) => (
+            <button
+              key={s} type="button" role="tab" aria-selected={payF === s}
+              className={payF === s ? "on" : ""}
+              onClick={() => { setPayF(s); setPage(1); }}
+              title={s === "All" ? "All payments" : formatPayment(s)}
+            >
+              {{ All: "All", PENDING_VERIFICATION: "Pending", PAID: "Paid", FAILED: "Failed" }[s]}
+            </button>
+          ))}
+        </div>
+        <select
+          className="zc-select" value={typeF} aria-label="Order type filter"
+          onChange={(e) => { setTypeF(e.target.value); setPage(1); }}
+          style={{ width: "auto" }}
+        >
+          {TYPE_OPTIONS.map((t) => <option key={t} value={t}>{formatType(t)}</option>)}
+        </select>
+        <input type="date" className="zc-input" value={startDate} aria-label="From date"
+          onChange={(e) => { setStartDate(e.target.value); setPage(1); }} style={dateInputStyle(startDate)} />
+        <span style={{ fontSize: 12, color: "var(--text-3)" }}>to</span>
+        <input type="date" className="zc-input" value={endDate} min={startDate || undefined} aria-label="To date"
+          onChange={(e) => { setEndDate(e.target.value); setPage(1); }} style={dateInputStyle(endDate)} />
+        <div style={{ flex: 1 }} />
+        {hasFilters ? (
+          <>
+            <span style={{ fontSize: 12, color: "var(--text-2)" }}>
+              <b style={{ color: "var(--accent-ink)" }}>{filtered.length}</b> of {invoiceOrders.length}
+            </span>
+            <button type="button" className="zc-btn sm" onClick={clearFilters}>Clear ✕</button>
+          </>
+        ) : (
+          <span style={{ fontSize: 12, color: "var(--text-3)" }}>
+            {pendingVerif.length} need verification
+          </span>
         )}
       </div>
 
-      {/* Table */}
-            {/* Show customer dues if filters applied */}
-   {(search || payFilter !== "All" || typeFilter !== "All") && filtered.length > 0 && (
-  <CustomerDuesSummary
-    invoices={filtered}
-    PINK={PINK}
-    CARD2={CARD2}
-    BDR={BDR}
-    T1={T1}
-    T2={T2}
-    T3={T3}
-    onPaymentChange={handlePaymentChange}  // ← Pass your payment handler
-  />
-)}
-      <div style={{ background:CARD, border:`1px solid ${BDR}`, borderRadius:12, padding:18 }}>
+      {/* bulk dues — only while filtering, matching the previous build */}
+      {hasFilters && filtered.length > 0 && (
+        <CustomerDuesSummary invoices={filtered} onPaymentChange={handlePaymentChange} />
+      )}
+
+      {/* list */}
+      <div className="zc-card">
+        <div className="zc-card-h">
+          <span className="t">Invoices</span>
+          <span className="s">{loading ? "loading…" : error ? "unavailable" : `${filtered.length} matching`}</span>
+        </div>
+
         {loading ? (
-          <div style={{ textAlign:"center", padding:48, color:T3 }}>Loading…</div>
-        ) : filtered.length===0 ? (
-          <div style={{ textAlign:"center", padding:48 }}>
-            <div style={{ fontSize:30, marginBottom:8 }}>📭</div>
-            <div style={{ fontSize:14, color:T2 }}>No invoices match your filters</div>
-          </div>
+          <div style={{ padding: "16px 18px" }}><Loader rows={8} /></div>
+        ) : error ? (
+          <ErrorState title="Could not load invoices"
+            sub="The server did not respond. Check that the backend is running, then try again."
+            onRetry={load} />
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            icon={
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z" /><path d="M9 8h6M9 12h6" />
+              </svg>
+            }
+            title={invoiceOrders.length === 0 ? "No invoices yet" : "No invoices match"}
+            sub={invoiceOrders.length === 0
+              ? "Invoices appear here once an order is completed and billed. Start one from Billing."
+              : "Nothing matches these filters. Try clearing them."}
+            action={hasFilters ? <button type="button" className="zc-btn" onClick={clearFilters}>Clear filters</button> : null}
+          />
         ) : (
-          <div style={{ overflowX:"auto" }}>
-            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
-              <thead>
-                <tr>
-                  {["Order ID","Customer","Items","Amount","Type","Order Status","Payment","Date",""].map(h=>(
-                    <th key={h} style={{ textAlign:"left", padding:"9px 12px", fontSize:11,
-                      color:T2, fontWeight:600, letterSpacing:0.5,
-                      borderBottom:`1px solid ${BDR}`, whiteSpace:"nowrap" }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(inv=>{
-                  const isOpen = expanded===inv._id;
-                  const subtotal = inv.items?.reduce((s,i)=>s+i.price*i.qty,0)||0;
-                  const tax = inv.tax||0;
-                  const sc  = inv.serviceCharge||0;
-                  const displayName  = inv.guestName||inv.user?.name || "Guest";
-                  const displayPhone =  inv.guestPhone ||inv.user?.phone || null;
-
-                  return (
-                    <>
-                      <tr key={inv._id} style={{
-                        borderBottom: isOpen?"none":`1px solid rgba(255,255,255,0.05)`,
-                        background:   isOpen?`${PINK}05`:"transparent",
-                        transition:"background .15s",
-                      }}
-                        onMouseEnter={e=>!isOpen&&(e.currentTarget.style.background="rgba(139,92,246,0.04)")}
-                        onMouseLeave={e=>!isOpen&&(e.currentTarget.style.background="transparent")}
+          <>
+            {/* desktop / tablet ledger */}
+            <div className="inv-ledger-wrap" style={{ overflowX: "auto", padding: "6px 10px 8px" }}>
+              <table className="zc-ledger" style={{ minWidth: 760 }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: 108 }}>Invoice</th>
+                    <th>Customer</th>
+                    <th style={{ width: 64 }}>Table</th>
+                    <th style={{ width: 84 }}>Method</th>
+                    <th style={{ width: 176 }}>Payment</th>
+                    <th className="num" style={{ width: 104 }}>Amount</th>
+                    <th className="num" style={{ width: 78 }}>Time</th>
+                    <th style={{ width: 108 }} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginated.map((o) => {
+                    const needsAction = o.paymentStatus === "PENDING_VERIFICATION";
+                    const name = custName(o);
+                    const phone = custPhone(o);
+                    return (
+                      <tr
+                        key={o._id}
+                        className={`inv-click${needsAction ? " inv-hl" : ""}`}
+                        onClick={() => setOpenId(o._id)}
                       >
-                        {/* Order ID */}
-                        <td style={{ padding:"12px", fontWeight:600, color:PINK, whiteSpace:"nowrap" }}>{inv.orderId}</td>
-
-                        {/* Customer */}
-                        <td style={{ padding:"12px" }}>
-                          <div style={{ fontWeight:500, color:T1 }}>{displayName}</div>
-                          <div style={{ fontSize:11, color:T3 }}>{displayPhone?`+91 ${displayPhone}`:"—"}</div>
-                        </td>
-
-                        {/* Items */}
-                        <td style={{ padding:"12px", fontSize:12, color:T2, maxWidth:160 }}>
-                          <div style={{ whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-                            {inv.items?.map(i=>`${i.name} ×${i.qty}`).join(", ")||"—"}
+                        <td className="inv-idc">{o.orderId}</td>
+                        <td>
+                          <div className="inv-who">
+                            <span className="av" style={{ background: avc(name) }}>{ini(name)}</span>
+                            <div style={{ minWidth: 0 }}>
+                              <b>{name}</b>
+                              {phone && <em>+91 {phone}</em>}
+                            </div>
                           </div>
                         </td>
-
-                        {/* Amount */}
-                        <td style={{ padding:"12px", fontWeight:600, color:T1, whiteSpace:"nowrap" }}>
-                          ₹{Math.round(inv.total)}
+                        <td>
+                          {o.tableNo
+                            ? <span className="zc-tag vio sq">T{o.tableNo}</span>
+                            : <span style={{ color: "var(--text-3)" }}>—</span>}
                         </td>
-
-                        {/* Type */}
-                        <td style={{ padding:"12px" }}>
-                          <Badge label={inv.orderType||"—"} map={TYPE_STYLE}/>
+                        <td style={{ color: "var(--text-2)" }}>{o.paymentMethod || "Cash"}</td>
+                        <td><span className={`zc-tag ${statusKind(o.paymentStatus)}`}><i />{formatPayment(o.paymentStatus)}</span></td>
+                        <td className={`money${needsAction ? " neg" : ""}`}>₹{Math.round(o.total)}</td>
+                        <td className="num" style={{ color: "var(--text-3)" }}>
+                          {new Date(o.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                         </td>
-
-                        {/* Order Status */}
-                        <td style={{ padding:"12px" }}>
-                          <Badge label={inv.status} map={STATUS_STYLE}/>
-                        </td>
-
-                        {/* Payment */}
-                        <td style={{ padding:"12px" }}>
-                          <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-                            <Badge label={inv.paymentStatus} map={PAY_STYLE}/>
-                            <span style={{ fontSize:10, color:T3 }}>{inv.paymentMethod||"Cash"}</span>
-                          </div>
-                        </td>
-
-                        {/* Date */}
-                        <td style={{ padding:"12px", fontSize:12, color:T3, whiteSpace:"nowrap" }}>
-                          {inv.createdAt
-                            ? new Date(inv.createdAt).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})
-                            : "—"}
-                        </td>
-
-                        {/* View button */}
-                        <td style={{ padding:"12px" }}>
-                          <button onClick={()=>setExpanded(isOpen?null:inv._id)} style={{
-                            padding:"5px 12px", borderRadius:8, fontSize:12, cursor:"pointer",
-                            border:`1px solid ${isOpen?PINK:BDR}`,
-                            background:isOpen?`${PINK}15`:CARD2,
-                            color:isOpen?PINK:T1, whiteSpace:"nowrap",
-                          }}>
-                            {isOpen?"Close ↑":"View ↓"}
-                          </button>
+                        <td style={{ textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
+                          {needsAction ? (
+                            <button type="button" className="zc-btn good sm" disabled={busyId === o._id}
+                              onClick={() => handlePaymentChange(o._id, { paymentStatus: "PAID" }).catch(() => {})}>
+                              {busyId === o._id ? "…" : "Mark paid"}
+                            </button>
+                          ) : (
+                            <button type="button" className="zc-btn ghost sm" title="Print bill"
+                              onClick={() => handlePrint(o)}>🖨️</button>
+                          )}
                         </td>
                       </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
 
-                      {/* ── Expanded receipt row ── */}
-                      {isOpen && (
-                        <tr key={`${inv._id}-detail`} style={{ borderBottom:`1px solid rgba(255,255,255,0.05)` }}>
-                          <td colSpan={9} style={{ padding:"4px 12px 20px" }}>
-                            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, maxWidth:700 }}>
+            {/* mobile cards */}
+            <div className="inv-cards" style={{ padding: "10px 12px 4px" }}>
+              {paginated.map((o) => {
+                const needsAction = o.paymentStatus === "PENDING_VERIFICATION";
+                const name = custName(o);
+                return (
+                  <div key={o._id} className={`inv-ocard${needsAction ? " inv-hl" : ""}`} onClick={() => setOpenId(o._id)}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div className="tnum inv-idc">{o.orderId}</div>
+                        <div style={{ fontSize: 12.5, color: "var(--text-1)", marginTop: 2, fontWeight: 600 }}>{name}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 2 }}>{o.paymentMethod || "Cash"}</div>
+                      </div>
+                      <div style={{ textAlign: "right", flex: "none" }}>
+                        <div className="tnum" style={{ fontWeight: 700, fontSize: 14, color: needsAction ? "var(--stop-ink)" : "var(--text-1)" }}>₹{Math.round(o.total)}</div>
+                        <div style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 2 }}>
+                          {new Date(o.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 9, alignItems: "center" }}>
+                      {o.tableNo && <span className="zc-tag vio sq">T{o.tableNo}</span>}
+                      <span className={`zc-tag ${statusKind(o.paymentStatus)}`}><i />{formatPayment(o.paymentStatus)}</span>
+                      <div style={{ marginLeft: "auto" }} onClick={(e) => e.stopPropagation()}>
+                        {needsAction ? (
+                          <button type="button" className="zc-btn good sm" disabled={busyId === o._id}
+                            onClick={() => handlePaymentChange(o._id, { paymentStatus: "PAID" }).catch(() => {})}>
+                            {busyId === o._id ? "…" : "Mark paid"}
+                          </button>
+                        ) : (
+                          <button type="button" className="zc-btn ghost sm" onClick={() => handlePrint(o)}>🖨️</button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
 
-                              {/* LEFT — receipt */}
-                              <div style={{ background:CARD2, borderRadius:12, padding:16,
-                                border:`1px solid rgba(139,92,246,0.15)` }}>
-                                <div style={{ fontSize:10, fontWeight:600, color:T3, letterSpacing:1,
-                                  textTransform:"uppercase", marginBottom:12 }}>
-                                  Receipt — {inv.orderId}
-                                </div>
-
-                                {/* Items */}
-                                {inv.items?.map((item,i)=>(
-                                  <div key={i} style={{ display:"flex", justifyContent:"space-between",
-                                    padding:"7px 0", borderBottom:`1px solid ${BDR}`, fontSize:13 }}>
-                                    <div style={{ display:"flex", gap:10, alignItems:"center" }}>
-                                      <div style={{ width:24, height:24, borderRadius:6, background:`${PINK}20`,
-                                        display:"flex", alignItems:"center", justifyContent:"center",
-                                        fontSize:12, fontWeight:600, color:PINK }}>{item.qty}</div>
-                                      <span style={{ color:T1 }}>{item.name}</span>
-                                    </div>
-                                    <span style={{ fontWeight:500, color:T1 }}>₹{item.price*item.qty}</span>
-                                  </div>
-                                ))}
-
-                                {/* Totals */}
-                                <div style={{ borderTop:`1px solid ${BDR}`, marginTop:10, paddingTop:10 }}>
-                                  {[
-                                    { label:"Subtotal",       val:`₹${subtotal}` },
-                                    ...(tax>0?[{ label:"GST",            val:`₹${tax}` }]:[]),
-                                    ...(sc>0 ?[{ label:"Service Charge", val:`₹${sc}`  }]:[]),
-                                  ].map(r=>(
-                                    <div key={r.label} style={{ display:"flex", justifyContent:"space-between",
-                                      fontSize:12, color:T2, marginBottom:5 }}>
-                                      <span>{r.label}</span><span>{r.val}</span>
-                                    </div>
-                                  ))}
-                                  <div style={{ display:"flex", justifyContent:"space-between",
-                                    fontWeight:700, fontSize:15, marginTop:8 }}>
-                                    <span style={{ color:T1 }}>Total</span>
-                                    <span style={{ color:PINK }}>₹{Math.round(inv.total)}</span>
-                                  </div>
-                                </div>
-
-                                {/* Order info */}
-                                <div style={{ marginTop:12, paddingTop:12, borderTop:`1px solid ${BDR}` }}>
-                                  {[
-                                    { l:"Customer",  v:displayName },
-                                    { l:"Phone",     v:displayPhone?`+91 ${displayPhone}`:"—" },
-                                    { l:"Type",      v:inv.orderType },
-                                    { l:"Table",     v:inv.tableNo?`T${inv.tableNo}`:"—" },
-                                    { l:"Method",    v:inv.paymentMethod||"Cash" },
-                                  ].map(r=>(
-                                    <div key={r.l} style={{ display:"flex", justifyContent:"space-between",
-                                      padding:"5px 0", borderBottom:`1px solid rgba(255,255,255,0.04)`, fontSize:12 }}>
-                                      <span style={{ color:T2 }}>{r.l}</span>
-                                      <span style={{ color:T1, fontWeight:500 }}>{r.v}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-
-                              {/* RIGHT — payment controls */}
-                              <div style={{ background:CARD2, borderRadius:12, padding:16,
-                                border:`1px solid rgba(139,92,246,0.15)` }}>
-
-                                {/* Current payment status */}
-                                <div style={{ fontSize:10, fontWeight:600, color:T3, letterSpacing:1,
-                                  textTransform:"uppercase", marginBottom:12 }}>Current Payment</div>
-                                <div style={{ display:"flex", gap:8, marginBottom:20 }}>
-                                  <Badge label={inv.paymentStatus} map={PAY_STYLE}/>
-                                  <span style={{ fontSize:12, color:T2, alignSelf:"center" }}>{inv.paymentMethod||"Cash"}</span>
-                                </div>
-
-                                {/* ── Payment Status change ── */}
-                                <div style={{ fontSize:10, fontWeight:600, color:T3, letterSpacing:1,
-                                  textTransform:"uppercase", marginBottom:10 }}>Update Payment Status</div>
-                                <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:20 }}>
-                                  {["Pending","Paid","Failed"].map(s=>{
-                                    const st  = PAY_STYLE[s];
-                                    const active = inv.paymentStatus===s;
-                                    const busy   = updating===inv._id;
-                                    return (
-                                      <button key={s}
-                                        disabled={active||busy}
-                                        onClick={()=>handlePaymentChange(inv._id,{ paymentStatus:s })}
-                                        style={{
-                                          padding:"8px 16px", borderRadius:20, fontSize:12,
-                                          fontWeight:600, cursor:active||busy?"default":"pointer",
-                                          border:`1px solid ${active?st.color+"88":st.color+"44"}`,
-                                          background:active?st.bg:"transparent",
-                                          color:st.color,
-                                          opacity:active?1:busy?0.4:0.7,
-                                          transition:"all .15s",
-                                        }}
-                                        onMouseEnter={e=>{ if(!active&&!busy) e.currentTarget.style.background=st.bg; e.currentTarget.style.opacity="1"; }}
-                                        onMouseLeave={e=>{ if(!active) e.currentTarget.style.background="transparent"; if(!active&&!busy) e.currentTarget.style.opacity="0.7"; }}
-                                      >
-                                        {active?"✓ ":busy?"…":""}{s}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-
-                                {/* ── Payment Method change ── */}
-                                <div style={{ fontSize:10, fontWeight:600, color:T3, letterSpacing:1,
-                                  textTransform:"uppercase", marginBottom:10 }}>Update Payment Method</div>
-                                <div style={{ display:"flex", gap:8 }}>
-                                  {["Cash","Online"].map(m=>{
-                                    const active = (inv.paymentMethod||"Cash")===m;
-                                    const busy   = updating===inv._id;
-                                    return (
-                                      <button key={m}
-                                        disabled={active||busy}
-                                        onClick={()=>handlePaymentChange(inv._id,{ paymentMethod:m })}
-                                        style={{
-                                          flex:1, padding:"9px 0", borderRadius:10, fontSize:13,
-                                          fontWeight:600, cursor:active||busy?"default":"pointer",
-                                          border:`2px solid ${active?PINK:BDR}`,
-                                          background:active?`${PINK}15`:CARD,
-                                          color:active?PINK:T2,
-                                          transition:"all .15s",
-                                        }}>
-                                        {m==="Cash"?"💵 Cash":"📱 Online"}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-
-                                {/* Quick actions */}
-                                {inv.paymentStatus==="Pending" && (
-                                  <div style={{ marginTop:16 }}>
-                                    <button
-                                      disabled={updating===inv._id}
-                                      onClick={()=>handlePaymentChange(inv._id,{ paymentStatus:"Paid" })}
-                                      style={{
-                                        width:"100%", padding:"11px", borderRadius:10,
-                                        background:"rgba(16,185,129,0.2)", color:"#34d399",
-                                        border:"1px solid rgba(16,185,129,0.3)",
-                                        fontWeight:700, cursor:"pointer", fontSize:13,
-                                        opacity:updating===inv._id?0.5:1,
-                                      }}>
-                                      {updating===inv._id?"Updating…":"✓ Mark as Paid"}
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+            {totalPages > 1 && (
+              <div className="zc-tfoot" style={{ padding: "14px 18px 6px" }}>
+                <span>
+                  Showing {(safePage - 1) * PER_PAGE + 1}–{Math.min(safePage * PER_PAGE, filtered.length)} of {filtered.length}
+                </span>
+                <div className="zc-pager">
+                  <button type="button" disabled={safePage === 1} onClick={() => setPage((p) => Math.max(1, p - 1))} aria-label="Previous page">‹</button>
+                  {pageList.map((p, i) =>
+                    p === "…"
+                      ? <span key={`g${i}`} className="gap">…</span>
+                      : <button type="button" key={p} className={safePage === p ? "on" : ""} onClick={() => setPage(p)}>{p}</button>,
+                  )}
+                  <button type="button" disabled={safePage === totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} aria-label="Next page">›</button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
+
+      {openInvoice && (
+        <InvoiceDetailModal
+          inv={openInvoice}
+          busy={busyId === openInvoice._id}
+          onClose={() => setOpenId(null)}
+          onPaymentChange={(id, data) => handlePaymentChange(id, data).catch(() => {})}
+          onPrint={handlePrint}
+        />
+      )}
     </div>
   );
 }

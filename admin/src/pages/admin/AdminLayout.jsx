@@ -176,7 +176,7 @@ export default function AdminLayout() {
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: BG_MAIN }}>
-      <NotificationBell user={user} />
+      <NotificationBell user={user} onNavigate={() => setPage("orders")} />
       <aside style={{
         width: 228,
         background: BG_SIDEBAR,

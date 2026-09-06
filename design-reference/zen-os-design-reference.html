@@ -1,0 +1,1912 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Zen OS Admin — full UI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --void:#08070C;
+  --deep:#0C0A14;
+  --c1:#1A1730;
+  --c2:#12101E;
+  --raise:#221E3A;
+  --edge:rgba(255,255,255,.09);
+  --edge-hi:rgba(255,255,255,.16);
+
+  --violet:#8B5CF6;
+  --indigo:#6366F1;
+  --cyan:#22D3EE;
+  --magenta:#C026D3;
+
+  --grad-brand:linear-gradient(118deg,#8B5CF6 0%,#6366F1 52%,#22D3EE 100%);
+  --grad-btn:linear-gradient(135deg,#8B5CF6 0%,#6D28D9 100%);
+  --grad-card:linear-gradient(158deg,#1A1730 0%,#100E1C 100%);
+  --grad-panel:linear-gradient(168deg,#171429 0%,#0F0D1A 100%);
+  --grad-rail:linear-gradient(200deg,#1C1834 0%,#100E1C 62%);
+
+  --t1:#F4F2FA;
+  --t2:#9B93B4;
+  --t3:#635C7D;
+
+  --wait:#F0A93B;
+  --live:#5AA2F5;
+  --ready:#35D08A;
+  --done:#7A7396;
+  --stop:#F2564D;
+
+  --r-card:18px;
+  --r-ctl:11px;
+  --r-row:10px;
+}
+*{box-sizing:border-box}
+html{background:var(--void)}
+body{
+  margin:0;font-family:Archivo,-apple-system,'Segoe UI',sans-serif;
+  background:var(--void);color:var(--t1);font-size:14px;line-height:1.45;
+  -webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums;
+  font-feature-settings:"tnum" 1;
+}
+/* film grain over everything */
+body::after{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:9999;opacity:.24;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.42'/%3E%3C/svg%3E");
+}
+h1,h2,h3,h4,p{margin:0}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(139,92,246,.3);border-radius:3px}
+
+/* ══════════ document ══════════ */
+.doc{max-width:1560px;margin:0 auto;padding:0 28px 140px}
+.masthead{padding:64px 0 30px;position:relative}
+.masthead::before{
+  content:"";position:absolute;left:-140px;top:-160px;width:620px;height:420px;
+  background:radial-gradient(ellipse at center,rgba(139,92,246,.22),transparent 68%);
+  filter:blur(24px);pointer-events:none;
+}
+.masthead h1{font-size:40px;font-weight:700;letter-spacing:-.035em;position:relative}
+.masthead h1 em{
+  font-style:normal;background:var(--grad-brand);-webkit-background-clip:text;
+  background-clip:text;color:transparent;
+}
+.masthead p{color:var(--t2);font-size:15px;margin-top:12px;max-width:70ch;position:relative}
+
+.jump{
+  position:sticky;top:0;z-index:80;display:flex;gap:6px;flex-wrap:wrap;
+  padding:12px 0;margin-bottom:26px;
+  background:linear-gradient(180deg,var(--void) 62%,transparent);
+  backdrop-filter:blur(8px);
+}
+.jump a{
+  font-size:11.5px;font-weight:500;color:var(--t2);text-decoration:none;
+  padding:6px 11px;border-radius:20px;border:1px solid var(--edge);
+  background:rgba(255,255,255,.02);white-space:nowrap;
+}
+.jump a:hover{color:var(--t1);border-color:var(--edge-hi);background:rgba(139,92,246,.12)}
+
+.grp{margin:52px 0 22px;display:flex;align-items:center;gap:14px}
+.grp .n{font-size:12px;font-weight:700;color:var(--t3);letter-spacing:.12em}
+.grp .ln{flex:1;height:1px;background:linear-gradient(90deg,var(--edge),transparent)}
+
+.shot{margin-bottom:34px;scroll-margin-top:64px}
+.shot-h{display:flex;align-items:baseline;gap:12px;margin-bottom:11px;padding-left:2px}
+.shot-h .t{font-size:16px;font-weight:600;letter-spacing:-.01em}
+.shot-h .d{font-size:12.5px;color:var(--t3)}
+.shot-h .tag-n{
+  margin-left:auto;font-size:10.5px;color:var(--t3);border:1px solid var(--edge);
+  padding:2px 8px;border-radius:20px;
+}
+
+/* the device frame */
+.frame{
+  border-radius:20px;overflow:hidden;position:relative;
+  background:var(--deep);
+  box-shadow:0 40px 90px -20px rgba(0,0,0,.85),0 0 0 1px rgba(255,255,255,.07);
+}
+.frame::before{
+  content:"";position:absolute;inset:0;border-radius:20px;padding:1px;
+  background:linear-gradient(150deg,rgba(255,255,255,.18),rgba(255,255,255,.02) 42%,rgba(139,92,246,.16));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none;z-index:6;
+}
+.app{display:flex;min-height:812px;position:relative}
+.app.solo{display:block;min-height:640px}
+
+/* ══════════ sidebar ══════════ */
+.side{
+  width:228px;flex:none;display:flex;flex-direction:column;padding-bottom:12px;
+  background:linear-gradient(184deg,#141127 0%,#0A0912 100%);
+  border-right:1px solid rgba(255,255,255,.05);position:relative;
+}
+.side::after{
+  content:"";position:absolute;top:0;left:0;right:0;height:200px;pointer-events:none;
+  background:radial-gradient(ellipse at 20% 0%,rgba(139,92,246,.18),transparent 70%);
+}
+.brand{padding:19px 18px 17px;display:flex;align-items:center;gap:11px;position:relative;z-index:1}
+.brand .mk{
+  width:34px;height:34px;border-radius:11px;flex:none;display:grid;place-items:center;
+  font-weight:800;font-size:15px;color:#fff;background:var(--grad-btn);
+  box-shadow:0 6px 18px -4px rgba(139,92,246,.7),inset 0 1px 0 rgba(255,255,255,.28);
+}
+.brand .nm{font-size:15.5px;font-weight:700;letter-spacing:-.02em}
+.brand .sb{font-size:11px;color:var(--t3);margin-top:-2px}
+.navgrp{padding:17px 16px 6px;font-size:10.5px;color:var(--t3);font-weight:600;letter-spacing:.1em;position:relative;z-index:1}
+.nav{
+  display:flex;align-items:center;gap:11px;padding:8px 12px;margin:1px 9px;
+  border-radius:var(--r-ctl);color:var(--t2);font-size:13px;position:relative;z-index:1;
+}
+.nav svg{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.nav .ct{margin-left:auto;font-size:11px;color:var(--t3);font-weight:600}
+.nav.on{
+  color:#fff;font-weight:500;
+  background:linear-gradient(96deg,rgba(139,92,246,.34),rgba(99,102,241,.1));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.1),0 4px 14px -6px rgba(139,92,246,.6);
+}
+.nav.on::before{
+  content:"";position:absolute;left:-9px;top:7px;bottom:7px;width:3px;border-radius:0 3px 3px 0;
+  background:var(--grad-brand);box-shadow:0 0 10px rgba(139,92,246,.9);
+}
+.nav.on .ct{color:#DDD3FF}
+.side .sp{flex:1}
+.who{
+  margin:10px 9px 0;padding:11px;border-radius:var(--r-ctl);display:flex;align-items:center;gap:10px;
+  background:linear-gradient(140deg,rgba(255,255,255,.055),rgba(255,255,255,.01));
+  border:1px solid var(--edge);position:relative;z-index:1;
+}
+.who .av{
+  width:31px;height:31px;border-radius:50%;flex:none;display:grid;place-items:center;
+  font-size:12px;font-weight:700;color:#fff;background:var(--grad-btn);
+  box-shadow:0 4px 12px -3px rgba(139,92,246,.65);
+}
+.who .n{font-size:12.5px;font-weight:600;line-height:1.25}
+.who .r{font-size:10.5px;color:var(--t3);line-height:1.3}
+
+/* ══════════ main ══════════ */
+.main{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--deep);position:relative}
+.main::before{
+  content:"";position:absolute;top:0;right:0;width:60%;height:280px;pointer-events:none;
+  background:radial-gradient(ellipse at 80% 0%,rgba(99,102,241,.14),transparent 68%);
+}
+.top{display:flex;align-items:center;gap:13px;padding:18px 24px;border-bottom:1px solid rgba(255,255,255,.05);position:relative;z-index:1}
+.top h2{font-size:21px;font-weight:700;letter-spacing:-.025em}
+.top .when{font-size:12.5px;color:var(--t2);margin-top:2px}
+.push{flex:1}
+.live-dot{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ready);font-weight:500}
+.live-dot i{width:7px;height:7px;border-radius:50%;background:var(--ready);box-shadow:0 0 9px var(--ready)}
+.body{padding:22px 24px;flex:1;position:relative;z-index:1}
+
+/* ══════════ controls ══════════ */
+.btn{
+  font-family:inherit;font-size:12.5px;font-weight:600;padding:9px 15px;border-radius:var(--r-ctl);
+  border:1px solid var(--edge);color:var(--t1);display:inline-flex;align-items:center;gap:8px;
+  background:linear-gradient(150deg,rgba(255,255,255,.07),rgba(255,255,255,.02));
+  cursor:pointer;
+}
+.btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.btn.pri{
+  border-color:transparent;color:#fff;background:var(--grad-btn);
+  box-shadow:0 8px 22px -8px rgba(139,92,246,.9),inset 0 1px 0 rgba(255,255,255,.25);
+}
+.btn.gd{color:var(--ready);border-color:rgba(53,208,138,.3);background:linear-gradient(150deg,rgba(53,208,138,.18),rgba(53,208,138,.05))}
+.btn.dn{color:var(--stop);border-color:rgba(242,86,77,.3);background:linear-gradient(150deg,rgba(242,86,77,.16),rgba(242,86,77,.04))}
+.btn.qi{background:transparent}
+.btn.sm{padding:6px 11px;font-size:11.5px}
+.inp{
+  font-family:inherit;font-size:12.5px;padding:9px 13px;border-radius:var(--r-ctl);color:var(--t1);
+  border:1px solid var(--edge);background:linear-gradient(150deg,rgba(255,255,255,.05),rgba(0,0,0,.16));
+  min-width:210px;
+}
+.inp::placeholder{color:var(--t3)}
+.seg{display:inline-flex;padding:3px;border-radius:var(--r-ctl);border:1px solid var(--edge);background:rgba(0,0,0,.24)}
+.seg span{font-size:12px;font-weight:500;padding:6px 13px;border-radius:8px;color:var(--t2);cursor:pointer;}
+.seg span.on{color:#fff;font-weight:600;background:var(--grad-btn);box-shadow:0 4px 12px -4px rgba(139,92,246,.8)}
+
+.tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:4px 10px;border-radius:20px;white-space:nowrap;border:1px solid}
+.tag i{width:5px;height:5px;border-radius:50%;background:currentColor;flex:none;box-shadow:0 0 7px currentColor}
+.tag.wait{color:var(--wait);background:linear-gradient(140deg,rgba(240,169,59,.2),rgba(240,169,59,.05));border-color:rgba(240,169,59,.32)}
+.tag.live{color:var(--live);background:linear-gradient(140deg,rgba(90,162,245,.2),rgba(90,162,245,.05));border-color:rgba(90,162,245,.32)}
+.tag.ready{color:var(--ready);background:linear-gradient(140deg,rgba(53,208,138,.2),rgba(53,208,138,.05));border-color:rgba(53,208,138,.32)}
+.tag.done{color:var(--done);background:linear-gradient(140deg,rgba(122,115,150,.22),rgba(122,115,150,.05));border-color:rgba(122,115,150,.3)}
+.tag.stop{color:var(--stop);background:linear-gradient(140deg,rgba(242,86,77,.2),rgba(242,86,77,.05));border-color:rgba(242,86,77,.34)}
+.tag.vio{color:#C4B5FD;background:linear-gradient(140deg,rgba(139,92,246,.24),rgba(139,92,246,.05));border-color:rgba(139,92,246,.34)}
+.tag.sq{border-radius:7px}
+
+/* ══════════ surfaces ══════════ */
+.card{background:var(--grad-card);border-radius:var(--r-card);position:relative;box-shadow:0 18px 40px -22px rgba(0,0,0,.9)}
+.card::before{
+  content:"";position:absolute;inset:0;border-radius:var(--r-card);padding:1px;
+  background:linear-gradient(155deg,rgba(255,255,255,.15),rgba(255,255,255,.02) 46%,rgba(139,92,246,.14));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none;
+}
+.card>*{position:relative}
+.card-h{display:flex;align-items:center;gap:11px;padding:15px 18px;border-bottom:1px solid rgba(255,255,255,.055)}
+.card-h .t{font-size:14px;font-weight:600}
+.card-h .s{font-size:11.5px;color:var(--t3)}
+
+/* metric strip */
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+.metric{
+  border-radius:var(--r-card);padding:16px 18px;position:relative;overflow:hidden;
+  background:var(--grad-card);box-shadow:0 16px 36px -22px rgba(0,0,0,.9);
+}
+.metric::before{
+  content:"";position:absolute;inset:0;border-radius:var(--r-card);padding:1px;
+  background:linear-gradient(155deg,rgba(255,255,255,.15),rgba(255,255,255,.02) 50%,rgba(139,92,246,.12));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;
+}
+.metric .k{font-size:11.5px;color:var(--t2);font-weight:500;position:relative}
+.metric .v{font-size:27px;font-weight:700;letter-spacing:-.035em;margin-top:5px;position:relative;line-height:1.1}
+.metric .v.gr{background:var(--grad-brand);-webkit-background-clip:text;background-clip:text;color:transparent}
+.metric .d{font-size:11.5px;color:var(--t3);margin-top:3px;position:relative}
+.metric .spark{position:absolute;right:0;bottom:0;width:120px;height:52px;opacity:.5}
+.metric.alert .v{color:var(--stop)}
+.metric.pos .v{color:var(--ready)}
+
+/* ══════════ ledger ══════════ */
+.ledger{width:100%;border-collapse:separate;border-spacing:0 6px;font-size:12.5px}
+.ledger thead th{
+  text-align:left;font-weight:600;font-size:10.5px;color:var(--t3);letter-spacing:.08em;
+  padding:0 14px 4px;white-space:nowrap;
+}
+.ledger tbody tr td{background:var(--grad-panel);padding:11px 14px;border-top:1px solid rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.03);vertical-align:middle}
+.ledger tbody tr td:first-child{border-left:1px solid rgba(255,255,255,.06);border-radius:var(--r-row) 0 0 var(--r-row)}
+.ledger tbody tr td:last-child{border-right:1px solid rgba(255,255,255,.06);border-radius:0 var(--r-row) var(--r-row) 0}
+.ledger tbody tr:hover td{background:linear-gradient(168deg,#1D1936 0%,#131020 100%)}
+.ledger tbody tr.hl td{background:linear-gradient(168deg,#231C3E 0%,#161227 100%);border-color:rgba(139,92,246,.34)}
+.ledger .num{text-align:right}
+.ledger .money{text-align:right;font-weight:700;font-size:13px}
+.ledger .money.neg{color:var(--stop)}
+.ledger .idc{color:var(--t2);font-weight:600;font-size:11.5px}
+.who2{display:flex;align-items:center;gap:10px}
+.who2 .av{width:27px;height:27px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:10.5px;font-weight:700;color:#fff}
+.who2 b{font-weight:600;display:block;line-height:1.3}
+.who2 em{font-style:normal;color:var(--t3);font-size:11px;display:block;line-height:1.3}
+.tfoot{display:flex;align-items:center;justify-content:space-between;padding:16px 4px 0;font-size:12px;color:var(--t2)}
+.pager{display:flex;gap:6px}
+.pager span{min-width:29px;height:29px;display:grid;place-items:center;border:1px solid var(--edge);border-radius:9px;font-size:12px;font-weight:600;color:var(--t2)}
+.pager span.on{color:#fff;border-color:transparent;background:var(--grad-btn);box-shadow:0 6px 16px -6px rgba(139,92,246,.8)}
+.filters{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+
+/* ══════════ floor ══════════ */
+.floor{display:grid;grid-template-columns:1fr 348px;gap:16px;align-items:start}
+.tgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:11px;padding:16px 18px 18px}
+.tbl{
+  border-radius:14px;padding:13px 13px 11px;position:relative;min-height:104px;display:flex;flex-direction:column;
+  background:linear-gradient(158deg,rgba(255,255,255,.07),rgba(255,255,255,.015));
+  border:1px solid var(--edge);cursor:pointer;
+}
+.tbl .no{font-size:19px;font-weight:700;letter-spacing:-.03em}
+.tbl .st{font-size:10.5px;color:var(--t3);margin-top:-2px}
+.tbl .ft{margin-top:auto;display:flex;align-items:baseline;justify-content:space-between;gap:6px}
+.tbl .amt{font-size:14px;font-weight:700;letter-spacing:-.02em}
+.tbl .el{font-size:10.5px;color:var(--t3)}
+.tbl .dot{position:absolute;top:13px;right:13px;width:8px;height:8px;border-radius:50%}
+.tbl.free{background:rgba(255,255,255,.014);border-style:dashed;border-color:rgba(255,255,255,.09)}
+.tbl.free .no{color:var(--t3)}
+.tbl.free .lab{margin-top:auto;font-size:11px;color:var(--t3)}
+.tbl.sel{border-color:transparent;background:linear-gradient(150deg,rgba(139,92,246,.32),rgba(99,102,241,.1));box-shadow:0 0 0 1px rgba(139,92,246,.7),0 10px 26px -10px rgba(139,92,246,.75)}
+.tbl.due{border-color:rgba(242,86,77,.5);background:linear-gradient(150deg,rgba(242,86,77,.2),rgba(242,86,77,.04));box-shadow:0 8px 24px -12px rgba(242,86,77,.7)}
+.tbl.due .amt{color:var(--stop)}
+
+.rail{background:var(--grad-rail);border-radius:var(--r-card);position:relative;box-shadow:0 20px 46px -24px rgba(0,0,0,.9)}
+.rail::before{
+  content:"";position:absolute;inset:0;border-radius:var(--r-card);padding:1px;
+  background:linear-gradient(160deg,rgba(255,255,255,.18),rgba(255,255,255,.02) 44%,rgba(139,92,246,.2));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none;
+}
+.rail>*{position:relative}
+.rail .oh{padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.055)}
+.rail .oh .tn{font-size:18px;font-weight:700;letter-spacing:-.025em}
+.rail .oh .id{font-size:11.5px;color:var(--t3);margin-top:1px}
+.rail .oh .r2{display:flex;gap:7px;margin-top:11px;flex-wrap:wrap}
+.items{padding:8px 18px 12px;max-height:262px;overflow:auto}
+.it{display:flex;align-items:center;gap:11px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.045);font-size:12.5px}
+.it:last-child{border-bottom:0}
+.it .q{width:23px;height:23px;border-radius:7px;display:grid;place-items:center;font-size:11px;font-weight:700;color:#C4B5FD;flex:none;background:linear-gradient(150deg,rgba(139,92,246,.3),rgba(139,92,246,.08));border:1px solid rgba(139,92,246,.28)}
+.it .n{flex:1;min-width:0}
+.it .n b{display:block;font-weight:500}
+.it .n em{font-style:normal;font-size:10.5px;color:var(--t3)}
+.it .p{font-weight:600}
+.sum{padding:14px 18px;border-top:1px solid rgba(255,255,255,.055);display:grid;gap:7px;font-size:12.5px}
+.sum div{display:flex;justify-content:space-between}
+.sum .k{color:var(--t2)}
+.sum .tot{padding-top:11px;margin-top:4px;border-top:1px solid rgba(255,255,255,.07);font-size:17px;font-weight:700;letter-spacing:-.025em}
+.sum .tot span:last-child{background:var(--grad-brand);-webkit-background-clip:text;background-clip:text;color:transparent}
+.acts{padding:14px 18px;border-top:1px solid rgba(255,255,255,.055);display:grid;gap:9px}
+.acts .pair{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.acts .btn{justify-content:center}
+
+/* ══════════ modal ══════════ */
+.scrim{position:absolute;inset:0;background:rgba(4,3,8,.72);backdrop-filter:blur(7px);display:grid;place-items:center;z-index:5}
+.modal{
+  width:520px;max-height:86%;overflow:auto;border-radius:22px;position:relative;
+  background:linear-gradient(162deg,#1E1A38 0%,#100E1D 100%);
+  box-shadow:0 50px 100px -24px rgba(0,0,0,.95);
+}
+.modal::before{
+  content:"";position:absolute;inset:0;border-radius:22px;padding:1px;
+  background:linear-gradient(155deg,rgba(255,255,255,.24),rgba(255,255,255,.03) 44%,rgba(139,92,246,.28));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none;
+}
+.modal>*{position:relative}
+.modal.wide{width:880px}
+.modal .mh{padding:20px 22px 16px;border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:flex-start;gap:12px}
+.modal .mh .t{font-size:17px;font-weight:700;letter-spacing:-.02em}
+.modal .mh .s{font-size:12px;color:var(--t3);margin-top:2px}
+.modal .mb{padding:20px 22px}
+.modal .mf{padding:16px 22px;border-top:1px solid rgba(255,255,255,.06);display:flex;gap:10px;justify-content:flex-end}
+.x{width:30px;height:30px;border-radius:9px;border:1px solid var(--edge);display:grid;place-items:center;color:var(--t2);flex:none;background:rgba(255,255,255,.03);cursor:pointer}
+.x svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round}
+
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.f{display:grid;gap:6px}
+.f.full{grid-column:1/-1}
+.f label{font-size:11.5px;color:var(--t2);font-weight:500}
+.f .inp,.f textarea,.f select{width:100%;min-width:0}
+.f textarea{font-family:inherit;font-size:12.5px;padding:10px 13px;border-radius:var(--r-ctl);border:1px solid var(--edge);background:linear-gradient(150deg,rgba(255,255,255,.05),rgba(0,0,0,.16));color:var(--t1);resize:none}
+.f .hint{font-size:10.5px;color:var(--t3)}
+.f select{font-family:inherit;font-size:12.5px;padding:9px 13px;border-radius:var(--r-ctl);border:1px solid var(--edge);background:linear-gradient(150deg,rgba(255,255,255,.05),rgba(0,0,0,.16));color:var(--t1)}
+
+/* misc */
+.empty{text-align:center;padding:64px 20px}
+.empty .ic{width:64px;height:64px;border-radius:20px;margin:0 auto 16px;display:grid;place-items:center;background:linear-gradient(150deg,rgba(139,92,246,.22),rgba(139,92,246,.04));border:1px solid rgba(139,92,246,.24)}
+.empty .ic svg{width:26px;height:26px;stroke:#C4B5FD;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.empty h4{font-size:15px;font-weight:600;margin-bottom:5px}
+.empty p{font-size:12.5px;color:var(--t3);max-width:38ch;margin:0 auto}
+.subnav{display:flex;gap:5px;padding:5px;border-radius:14px;border:1px solid var(--edge);background:rgba(0,0,0,.24);margin-bottom:18px;flex-wrap:wrap}
+.subnav span{font-size:12px;font-weight:500;padding:7px 14px;border-radius:10px;color:var(--t2);display:flex;align-items:center;gap:7px}
+.subnav span svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.subnav span.on{color:#fff;font-weight:600;background:var(--grad-btn);box-shadow:0 5px 15px -5px rgba(139,92,246,.85)}
+.bar{height:6px;border-radius:3px;background:rgba(255,255,255,.07);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:3px;background:var(--grad-brand)}
+.bar.warn i{background:linear-gradient(90deg,#F0A93B,#F2564D)}
+.bar.good i{background:linear-gradient(90deg,#35D08A,#22D3EE)}
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <div class="masthead">
+    <h1>Zen OS Admin — <em>every screen</em></h1>
+    <p>The complete admin panel rebuilt as one system. Gradient depth, glass and glow over a near-black ground, with operational clarity kept intact — status still reads at a glance, figures stay tabular, tables stay dense. Content is drawn from the real routes, statuses, and copy in the codebase.</p>
+  </div>
+
+  <nav class="jump" id="jump"></nav>
+
+  <div id="screens"></div>
+</div>
+
+<script>
+/* ─── icons ─── */
+const I = {
+  billing:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/>',
+  tables:'<circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/>',
+  kitchen:'<path d="M4 20h16M6 20V9a6 6 0 0 1 12 0v11"/><path d="M12 3v2"/>',
+  invoices:'<path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+  insights:'<path d="M4 19V5M4 19h16"/><path d="M8 16v-5M13 16V8M18 16v-3"/>',
+  menu:'<path d="M4 5h16M4 12h16M4 19h10"/>',
+  inventory:'<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/>',
+  employees:'<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><path d="M16 8h5M18.5 5.5v5"/>',
+  users:'<circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/>',
+  profile:'<circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4"/>',
+  help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3 2.4V14"/><path d="M12 17.5v.01"/>',
+  dash:'<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>', close:'<path d="M6 6l12 12M18 6L6 18"/>',
+  search:'<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
+  down:'<path d="M12 3v12M8 11l4 4 4-4M4 19h16"/>',
+  filter:'<path d="M3 5h18l-7 8v6l-4 2v-8z"/>', print:'<path d="M6 9V3h12v6M6 18H4v-6h16v6h-2"/><rect x="8" y="14" width="8" height="7" rx="1"/>',
+  qr:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM19 19h2v2h-2z"/>',
+  box:'<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4"/>',
+  warn:'<path d="M12 3l9 17H3z"/><path d="M12 10v4M12 17v.01"/>',
+  trash:'<path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14"/>',
+  chef:'<path d="M7 21h10M8 21v-5h8v5"/><path d="M6 12a3 3 0 0 1 1-5.8A3.5 3.5 0 0 1 12 4a3.5 3.5 0 0 1 5 2.2A3 3 0 0 1 18 12z"/>',
+  truck:'<rect x="1" y="6" width="13" height="10" rx="1.5"/><path d="M14 9h4l3 3v4h-7z"/><circle cx="5.5" cy="18" r="2"/><circle cx="17.5" cy="18" r="2"/>',
+  book:'<path d="M4 5a2 2 0 0 1 2-2h13v18H6a2 2 0 0 1-2-2z"/><path d="M8 8h7M8 12h7"/>',
+  chart:'<path d="M4 19V5M4 19h16"/><path d="M7 15l4-5 3 3 5-7"/>',
+  edit:'<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+  check:'<path d="M4 12l5 5L20 6"/>',
+  bell:'<path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M10.3 21a2 2 0 0 0 3.4 0"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'
+};
+const ic = (n,c='') => `<svg class="${c}" viewBox="0 0 24 24">${I[n]||''}</svg>`;
+
+/* ─── sidebar ─── */
+const NAV = [
+  ['Service', [['billing','Billing','7'],['tables','Tables','18'],['kitchen','Kitchen','']]],
+  ['Money',   [['dash','Dashboard',''],['invoices','Invoices','3'],['insights','Insights','']]],
+  ['Setup',   [['menu','Menu',''],['inventory','Inventory',''],['employees','Employees',''],['users','Users','']]]
+];
+const SETTINGS = [['profile','Profile',''],['help','Help','']];
+
+function sidebar(active){
+  let h = `<aside class="side"><div class="brand" style="padding:22px 20px 20px"><div class="mk" style="width:38px;height:38px;font-size:17px">Z</div><div><div class="nm" style="font-size:17px">Zen OS</div><div class="sb">AD's Cafe</div></div></div>`;
+  NAV.forEach(([g,items])=>{
+    h += `<div class="navgrp">${g}</div>`;
+    items.forEach(([id,label,ct])=>{
+      h += `<div class="nav${id===active?' on':''}">${ic(id)}${label}${ct?`<span class="ct">${ct}</span>`:''}</div>`;
+    });
+  });
+  h += `<div class="sp"></div><div class="navgrp">Settings</div>`;
+  SETTINGS.forEach(([id,label])=>{ h += `<div class="nav${id===active?' on':''}">${ic(id)}${label}</div>`; });
+  h += `<div class="who"><div class="av">A</div><div><div class="n">Anirban Das</div><div class="r">Owner · +91 98765 43210</div></div></div></aside>`;
+  return h;
+}
+
+/* ─── screen scaffold ─── */
+const SCREENS = [];
+function screen(o){ SCREENS.push(o); }
+function topbar(title, when, right=''){
+  return `<div class="top"><div><h2>${title}</h2><div class="when">${when}</div></div><div class="push"></div>${right}</div>`;
+}
+function avatar(txt, i=0){
+  const g = ['linear-gradient(140deg,#8B5CF6,#6D28D9)','linear-gradient(140deg,#22D3EE,#0891B2)','linear-gradient(140deg,#F0A93B,#D97706)','linear-gradient(140deg,#35D08A,#059669)','linear-gradient(140deg,#F2564D,#B91C1C)','linear-gradient(140deg,#6366F1,#4338CA)'];
+  return `<span class="av" style="background:${g[i%6]}">${txt}</span>`;
+}
+
+/* ══════════════════ AUTH ══════════════════ */
+const authWrap = inner => `<div class="app solo" style="display:grid;place-items:center;background:
+  radial-gradient(ellipse at 28% 22%,rgba(139,92,246,.28),transparent 58%),
+  radial-gradient(ellipse at 78% 82%,rgba(34,211,238,.14),transparent 56%),
+  linear-gradient(168deg,#100D1C 0%,#07060B 100%);padding:60px 0">${inner}</div>`;
+
+const authCard = body => `
+<div style="width:396px;border-radius:26px;position:relative;padding:1px;
+  background:linear-gradient(158deg,rgba(255,255,255,.26),rgba(255,255,255,.03) 44%,rgba(139,92,246,.36));
+  box-shadow:0 50px 110px -30px rgba(0,0,0,.95),0 0 70px -20px rgba(139,92,246,.4)">
+  <div style="border-radius:25px;padding:38px 34px 30px;background:linear-gradient(165deg,#1A1631 0%,#0D0B18 100%);text-align:center">
+    <div style="width:60px;height:60px;border-radius:19px;margin:0 auto 18px;display:grid;place-items:center;
+      background:var(--grad-btn);box-shadow:0 14px 34px -10px rgba(139,92,246,.95),inset 0 1px 0 rgba(255,255,255,.3);
+      font-weight:800;font-size:25px;color:#fff;letter-spacing:-.03em">Z</div>
+    <div style="font-size:23px;font-weight:700;letter-spacing:-.03em;background:var(--grad-brand);
+      -webkit-background-clip:text;background-clip:text;color:transparent">Zen OS</div>
+    <div style="color:var(--t3);font-size:11.5px;margin-top:3px;margin-bottom:30px">Admin panel</div>
+    ${body}
+    <div style="margin-top:26px;font-size:10.5px;color:#2A2540">v1.0 — Charubala LLP</div>
+  </div>
+</div>`;
+
+screen({id:'login-phone',group:'Access',title:'Sign in — phone',desc:'Step 1 of 2. Admin accounts are created under Employees; there is no public staff signup anywhere in this system.',
+html: authWrap(authCard(`
+  <div style="text-align:left;margin-bottom:20px">
+    <label style="font-size:11.5px;color:var(--t2);font-weight:500;display:block;margin-bottom:8px">Phone number</label>
+    <div style="display:flex;gap:9px">
+      <div style="padding:11px 13px;border-radius:12px;border:1px solid var(--edge);background:rgba(0,0,0,.3);
+        font-size:13.5px;color:var(--t2);display:flex;align-items:center;flex:none">+91</div>
+      <div style="flex:1;padding:11px 14px;border-radius:12px;font-size:15px;letter-spacing:.09em;
+        background:rgba(0,0,0,.3);border:1px solid rgba(139,92,246,.5);color:var(--t1);text-align:left;
+        box-shadow:0 0 0 3px rgba(139,92,246,.14)">98765 43210</div>
+    </div>
+    <div style="font-size:11px;color:var(--t3);margin-top:9px">Use the number registered to this restaurant.</div>
+  </div>
+  <div class="btn pri" style="width:100%;justify-content:center;padding:13px;border-radius:14px;font-size:14px">Send code</div>
+`))});
+
+screen({id:'login-otp',group:'Access',title:'Sign in — code',desc:'Step 2 of 2. Six digits verified through Firebase before the backend issues a JWT.',
+html: authWrap(authCard(`
+  <div style="border-radius:13px;padding:12px 15px;margin-bottom:20px;text-align:left;font-size:12.5px;color:var(--t2);
+    background:linear-gradient(150deg,rgba(139,92,246,.16),rgba(139,92,246,.03));border:1px solid rgba(139,92,246,.26)">
+    Code sent to <b style="color:#C4B5FD">+91 98765 43210</b>
+    <div style="font-size:10.5px;color:var(--t3);margin-top:2px">Delivered by SMS</div>
+  </div>
+  <div style="text-align:left;margin-bottom:20px">
+    <label style="font-size:11.5px;color:var(--t2);font-weight:500;display:block;margin-bottom:10px">Six-digit code</label>
+    <div style="display:flex;gap:8px">
+      ${['4','8','2','9','1','5'].map((d,i)=>`<div style="flex:1;aspect-ratio:1/1.15;border-radius:12px;display:grid;place-items:center;
+        font-size:21px;font-weight:700;background:rgba(0,0,0,.32);border:1px solid rgba(139,92,246,.55);
+        box-shadow:${i===5?'0 0 0 3px rgba(139,92,246,.16)':'none'}">${d}</div>`).join('')}
+    </div>
+  </div>
+  <div class="btn pri" style="width:100%;justify-content:center;padding:13px;border-radius:14px;font-size:14px">Verify and sign in</div>
+  <div style="display:flex;justify-content:space-between;margin-top:16px;font-size:12.5px">
+    <span style="color:var(--t3)">Change number</span>
+    <span style="color:var(--t3)">Resend in 1:47</span>
+  </div>
+`))});
+
+/* ══════════════════ BILLING ══════════════════ */
+const TABLES = [
+  [1,4,'live','₹1,240','22m'],[2,2,'free'],[3,4,'wait','₹860','9m'],[4,6,'ready','₹3,110','41m'],[5,2,'free'],
+  [6,4,'sel','₹1,845','17m'],[7,4,'free'],[8,2,'free'],[9,4,'ready','₹720','28m'],[10,6,'free'],
+  [11,2,'free'],[12,8,'due','₹2,340','Due'],[13,4,'free'],[14,2,'free'],[15,4,'ready','₹900','12m'],
+  [16,4,'free'],[17,2,'free'],[18,6,'live','₹1,560','6m']
+];
+const STLABEL = {live:'Confirmed',wait:'Preparing',ready:'Ready',sel:'Confirmed',due:'Payment due'};
+const STCOLOR = {live:'var(--live)',wait:'var(--wait)',ready:'var(--ready)',sel:'var(--live)',due:'var(--stop)'};
+
+function tableGrid(){
+  return TABLES.map(([n,seats,st,amt,el])=>{
+    if(st==='free') return `<div class="tbl free"><div class="no">T${n}</div><div class="st">${seats} seats</div><div class="lab">Free</div></div>`;
+    const cls = st==='sel' ? 'sel' : st==='due' ? 'due' : '';
+    return `<div class="tbl ${cls}">
+      <span class="dot" style="background:${STCOLOR[st]};box-shadow:0 0 9px ${STCOLOR[st]}"></span>
+      <div class="no">T${n}</div><div class="st">${seats} seats · ${STLABEL[st]}</div>
+      <div class="ft"><span class="amt">${amt}</span><span class="el">${el}</span></div></div>`;
+  }).join('');
+}
+
+const ORDERS = [
+  ['ORD-2214','Rahul Sharma','+91 98765 43210','T6','live','Confirmed','Dine-in','₹2,045','8:42 pm','RS',0],
+  ['ORD-2213','Priya Mehta','+91 90123 45678','T4','ready','Ready','Dine-in','₹3,110','8:31 pm','PM',1],
+  ['ORD-2212','Guest','Takeaway counter','—','wait','Preparing','Takeaway','₹640','8:26 pm','G',2],
+  ['ORD-2211','Arjun Kapoor','+91 88990 11223','T9','ready','Ready','Dine-in','₹720','8:18 pm','AK',3],
+  ['ORD-2210','Sneha Nair','+91 77665 44332','T3','wait','Preparing','Dine-in','₹860','8:09 pm','SN',4],
+  ['ORD-2209','Vikram Rao','+91 99887 66554','T15','ready','Ready','Dine-in','₹900','7:58 pm','VR',5],
+  ['ORD-2208','Meera Das','+91 91234 56780','T12','stop','Payment due','Dine-in','₹2,340','7:44 pm','MD',0],
+  ['ORD-2207','Guest','Takeaway counter','—','done','Completed','Takeaway','₹410','7:30 pm','G',1],
+  ['ORD-2206','Kabir Sen','+91 93456 78901','T1','live','Confirmed','Dine-in','₹1,240','7:22 pm','KS',2],
+  ['ORD-2205','Ananya Bose','+91 94567 89012','T18','wait','Pending confirmation','Dine-in','₹1,560','7:15 pm','AB',3]
+];
+
+const CATS = ['Starters','Biryani','Curries','Breads','Tandoor','Rice','Chinese','Desserts','Mocktails','Cold Coffee'];
+const MENUITEMS = [
+  ['Hyderabadi Dum Biryani','₹420','veg0'],['Mutton Rogan Josh','₹500','veg0'],['Paneer Tikka Masala','₹340','veg1'],
+  ['Chicken 65','₹320','veg0'],['Dal Makhani','₹260','veg1'],['Butter Naan','₹60','veg1'],
+  ['Malai Kofta','₹300','veg1'],['Prawn Koliwada','₹460','veg0'],['Veg Pulao','₹240','veg1'],
+  ['Tandoori Chicken','₹480','veg0'],['Gulab Jamun','₹90','veg1'],['Masala Lemonade','₹95','veg1']
+];
+const vegDot = v => `<span style="width:13px;height:13px;border-radius:3px;border:1.5px solid ${v==='veg1'?'#35D08A':'#F2564D'};display:inline-grid;place-items:center;flex:none">
+  <span style="width:6px;height:6px;border-radius:50%;background:${v==='veg1'?'#35D08A':'#F2564D'}"></span></span>`;
+
+const ORDER_RAIL = `
+<div class="rail" style="display:flex; flex-direction:column; height: 100%; max-height: calc(100vh - 200px);">
+  <div class="oh">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between">
+      <div><div class="tn">Table 6</div><div class="id">ORD-2214 · seated 17 min · 4 guests</div></div>
+      <div class="x">${ic('close')}</div>
+    </div>
+    <div class="r2">
+      <span class="tag live"><i></i>Confirmed</span>
+      <span class="tag vio sq">Dine-in</span>
+      <span class="tag done sq">Waiter: Rahul</span>
+    </div>
+  </div>
+  <div class="items" style="flex:1;">
+    <div class="it"><span class="q">2</span><span class="n"><b>Butter Naan</b></span><span class="p">₹120</span></div>
+    <div class="it"><span class="q">1</span><span class="n"><b>Paneer Tikka Masala</b><em>Extra spicy</em></span><span class="p">₹340</span></div>
+    <div class="it"><span class="q">1</span><span class="n"><b>Hyderabadi Dum Biryani</b></span><span class="p">₹420</span></div>
+    <div class="it"><span class="q">3</span><span class="n"><b>Masala Lemonade</b></span><span class="p">₹285</span></div>
+    <div class="it"><span class="q">2</span><span class="n"><b>Gulab Jamun</b></span><span class="p">₹180</span></div>
+    <div class="it"><span class="q">1</span><span class="n"><b>Mutton Rogan Josh</b></span><span class="p">₹500</span></div>
+  </div>
+  <div class="sum">
+    <div><span class="k">Subtotal</span><span>₹1,845</span></div>
+    <div><span class="k">GST 5%</span><span>₹92</span></div>
+    <div><span class="k">Service charge</span><span>₹108</span></div>
+    <div class="tot"><span>Total</span><span>₹2,045</span></div>
+  </div>
+  <div class="acts">
+    <div class="btn pri" style="justify-content:center">${ic('check')}Mark ready</div>
+    <div class="pair"><div class="btn" style="justify-content:center">${ic('plus')}Add items</div><div class="btn" style="justify-content:center">${ic('print')}Print bill</div></div>
+    <div class="btn dn" style="justify-content:center">Cancel order</div>
+  </div>
+</div>`;
+
+const MENU_RAIL = `
+<div class="rail" style="display:flex; flex-direction:column; height: 100%; max-height: calc(100vh - 200px);">
+  <div class="oh" style="flex:none;">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between">
+      <div><div class="tn">New Order</div><div class="id">Select items to add</div></div>
+      <div class="x">${ic('close')}</div>
+    </div>
+    <div class="r2" style="margin-top: 14px; display: flex; gap: 8px;">
+      <span class="tag vio sq">Dine-in</span>
+      <div class="inp" style="padding: 4px 8px; font-size: 11.5px; min-width: 0; width: 60px; height: 26px; display:flex; align-items:center;">T6</div>
+      <div class="inp" style="padding: 4px 8px; font-size: 11.5px; min-width: 0; flex:1; height: 26px; display:flex; align-items:center; color:var(--t3);">Customer info</div>
+    </div>
+  </div>
+  <div style="display: flex; flex: 1; min-height: 0; border-top: 1px solid rgba(255,255,255,.05);">
+    <div style="width: 100px; border-right: 1px solid rgba(255,255,255,.05); overflow-y: auto; padding: 12px 8px;">
+       ${CATS.map((c,i)=>`<div style="padding: 8px 10px; font-size: 11.5px; font-weight: ${i===1?600:500}; color: ${i===1?'#fff':'var(--t2)'}; background: ${i===1?'var(--grad-btn)':'transparent'}; border-radius: 8px; margin-bottom: 4px; ${i===1?'box-shadow:0 4px 10px -4px rgba(139,92,246,.7)':''}">${c}</div>`).join('')}
+    </div>
+    <div style="flex: 1; overflow-y: auto; padding: 12px;">
+       ${MENUITEMS.map(([n,p,v],i)=>`<div style="padding: 10px; border: 1px solid ${i===0?'rgba(139,92,246,.5)':'var(--edge)'}; border-radius: 10px; margin-bottom: 10px; background: ${i===0?'linear-gradient(150deg,rgba(139,92,246,.12),rgba(139,92,246,.02))':'rgba(255,255,255,.02)'};">
+         <div style="font-size: 12px; font-weight: 600; line-height: 1.3; margin-bottom: 8px;">${vegDot(v)} <span style="vertical-align: top; margin-left: 4px;">${n}</span></div>
+         <div style="display: flex; justify-content: space-between; align-items: center;">
+           <span style="font-weight: 700; font-size: 13px;">${p}</span>
+           <span style="width: 24px; height: 24px; border-radius: 6px; background: var(--grad-btn); color: #fff; display: grid; place-items: center; font-size: 16px; font-weight: 600; box-shadow:0 4px 10px -4px rgba(139,92,246,.7);">+</span>
+         </div>
+       </div>`).join('')}
+    </div>
+  </div>
+  <div class="sum" style="flex:none; border-top: 1px solid rgba(255,255,255,.05); padding: 12px 18px;">
+    <div style="font-size:11.5px; font-weight:600; margin-bottom:8px;">Current cart</div>
+    <div style="max-height: 90px; overflow-y: auto; margin-bottom: 10px;">
+      <div class="it" style="padding: 5px 0; border: none;"><span class="q" style="width:20px;height:20px;font-size:10px;">1</span><span class="n" style="font-size:11.5px;"><b>Paneer Tikka Masala</b></span><span class="p" style="font-size:11.5px;">₹340</span></div>
+      <div class="it" style="padding: 5px 0; border: none;"><span class="q" style="width:20px;height:20px;font-size:10px;">2</span><span class="n" style="font-size:11.5px;"><b>Butter Naan</b></span><span class="p" style="font-size:11.5px;">₹120</span></div>
+    </div>
+    <div class="tot" style="font-size: 16px; padding-top: 10px; margin-top: 0;"><span>Total</span><span style="background:var(--grad-brand);-webkit-background-clip:text;background-clip:text;color:transparent">₹460</span></div>
+  </div>
+  <div class="acts" style="flex:none;">
+    <div class="btn pri" style="justify-content:center; padding: 11px;">Place Order</div>
+  </div>
+</div>`;
+
+const billingTop = topbar('Order','Friday, 5 September · service open',
+  `<span class="live-dot"><i></i>Live</span>
+   <div class="inp" style="color:var(--t3)">Search order, customer or phone</div>
+   <div class="btn pri">${ic('plus')}New order</div>`);
+
+/* ─── shared compact card: half the padding/font of the base .metric class, applied only here via inline styles so the shared class (used by Dashboard, Tables, Menu, etc.) is untouched ─── */
+function metricSmCard(label,value,caption,valueStyle){
+  return `<div class="metric" style="padding:9px 12px">
+    <div class="k" style="font-size:10px">${label}</div>
+    <div class="v" style="font-size:17px;margin-top:3px${valueStyle?`;${valueStyle}`:''}">${value}</div>
+    <div class="d" style="font-size:9.5px;margin-top:2px">${caption}</div>
+  </div>`;
+}
+/* both rows share the exact same grid rule (equal-width cards via auto-fit) so every card — summary or stage — is the same size, symmetric across both groups */
+const CARD_GRID = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:12px';
+const GRAD_TEXT = 'background:var(--grad-brand);-webkit-background-clip:text;background-clip:text;color:transparent';
+
+function billingStatCards(){
+  return `<div style="${CARD_GRID}">
+    ${metricSmCard('Open Table','7<span style="font-size:11px;color:var(--t3);font-weight:500;letter-spacing:0"> / 18</span>','₹11,015 on the floor',GRAD_TEXT)}
+    ${metricSmCard('Awaiting Confirmation','2','Oldest waiting 6 min','color:var(--wait)')}
+    ${metricSmCard('Ready to Serve','3','T4, T9, T15','color:var(--ready)')}
+    ${metricSmCard('Payment Due','1','T12 · ₹2,340','color:var(--stop)')}
+    ${metricSmCard('Total Active Order','9','Across 6 stages',GRAD_TEXT)}
+  </div>`;
+}
+
+/* row 2: the six order-stage cards — own accent colour, own count */
+const STAGES = [
+  ['Confirmation','2','var(--violet)','Oldest waiting 4 min'],
+  ['Ready to start preparing','2','var(--wait)','Queued for kitchen'],
+  ['Ready','3','var(--ready)','T4, T9, T15'],
+  ['Delivered','2','var(--live)','Out with waiter'],
+  ['Completed','4','var(--t2)','Billed today'],
+  ['Cancelled','1','var(--stop)','T2 · guest request']
+];
+function billingStageCards(){
+  return `<div style="${CARD_GRID.replace('margin-bottom:12px','margin-bottom:16px')}">
+    ${STAGES.map(([label,count,color,caption])=>metricSmCard(label,count,caption,`color:${color}`)).join('')}
+  </div>`;
+}
+function billingPills(){ return billingStatCards() + billingStageCards(); }
+
+/* ─── Recent-Today | All Orders tabs + the Table on/off toggle ─── */
+function billingControls(tab,tableOn){
+  return `<div class="filters" style="margin:0 0 16px;align-items:center">
+    <div class="seg">
+      <span class="${tab==='recent'?'on':''}">Recent · Today</span>
+      <span class="${tab==='all'?'on':''}">All Orders</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:9px;padding:6px 13px 6px 15px;border-radius:11px;cursor:pointer;
+      border:1px solid ${tableOn?'rgba(139,92,246,.45)':'var(--edge)'};background:rgba(0,0,0,.24)">
+      <span style="font-size:12px;font-weight:500;color:${tableOn?'#fff':'var(--t2)'}">Table</span>
+      <span style="width:32px;height:18px;border-radius:20px;position:relative;flex:none;
+        background:${tableOn?'var(--grad-btn)':'rgba(255,255,255,.14)'}">
+        <span style="position:absolute;${tableOn?'right:2px':'left:2px'};top:2px;width:14px;height:14px;border-radius:50%;background:#fff"></span></span>
+    </div>
+    <div class="push"></div>
+    <span style="font-size:12px;color:var(--t3)">${tab==='all'?'248 orders total':'14 orders today'}</span>
+  </div>`;
+}
+
+/* ─── Table Map card, floor grid only — no nested ledger now that the list below always shows ─── */
+const tableMapCard = `
+<div class="card">
+  <div class="card-h">
+    <span class="t">Table Map</span><span class="s">18 tables · 7 seated</span>
+    <div class="push"></div>
+    <div class="seg"><span class="on">Dine-in</span><span>Takeaway</span><span>Delivery</span></div>
+  </div>
+  <div class="tgrid">${tableGrid()}</div>
+</div>`;
+
+/* ─── the always-visible order list: compact "Recent" card, or the full "All orders" ledger ─── */
+function recentOrderList(){
+  return `<div class="card">
+    <div class="card-h"><span class="t">Recent orders</span><span class="s">Today's active queue</span><div class="push"></div><div class="btn sm qi">${ic('filter')}Filters</div></div>
+    <div style="padding:6px 18px 18px;overflow:auto">
+      <table class="ledger" style="margin:0">
+        <thead><tr><th style="width:104px">Order</th><th>Customer</th><th style="width:64px">Table</th>
+          <th style="width:160px">Status</th><th style="width:96px" class="num">Amount</th></tr></thead>
+        <tbody>
+        ${ORDERS.slice(0,5).map(([id,nm,ph,tb,st,stl,ty,amt,tm,av,ci],i)=>`
+          <tr class="${i===0?'hl':''}">
+            <td class="idc">${id}</td>
+            <td><div class="who2">${avatar(av,ci)}<div><b>${nm}</b></div></div></td>
+            <td>${tb==='—'?`<span style="color:var(--t3)">—</span>`:`<span class="tag vio sq">${tb}</span>`}</td>
+            <td><span class="tag ${st}"><i></i>${stl}</span></td>
+            <td class="money ${st==='stop'?'neg':''}">${amt}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+function allOrdersList(){
+  return `<div>
+    <div class="filters">
+      <div class="inp" style="color:var(--t3);min-width:280px">Search order ID, customer or phone</div>
+      <div class="btn qi">${ic('filter')}Status: All</div>
+      <div class="btn qi">${ic('filter')}Type: All</div>
+      <div class="btn qi">${ic('filter')}Payment: All</div>
+    </div>
+    <table class="ledger">
+      <thead><tr>
+        <th style="width:112px">Order</th><th>Customer</th><th style="width:64px">Table</th>
+        <th style="width:180px">Status</th><th style="width:96px">Type</th>
+        <th style="width:104px" class="num">Amount</th><th style="width:84px" class="num">Placed</th>
+      </tr></thead>
+      <tbody>
+      ${ORDERS.map(([id,nm,ph,tb,st,stl,ty,amt,tm,av,ci],i)=>`
+        <tr class="${i===0?'hl':''}">
+          <td class="idc">${id}</td>
+          <td><div class="who2">${avatar(av,ci)}<div><b>${nm}</b><em>${ph}</em></div></div></td>
+          <td>${tb==='—'?`<span style="color:var(--t3)">—</span>`:`<span class="tag vio sq">${tb}</span>`}</td>
+          <td><span class="tag ${st}"><i></i>${stl}</span></td>
+          <td style="color:var(--t2)">${ty}</td>
+          <td class="money ${st==='stop'?'neg':''}">${amt}</td>
+          <td class="num" style="color:var(--t3)">${tm}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <div class="tfoot"><span>Showing 10 of 248</span>
+      <div class="pager"><span>‹</span><span class="on">1</span><span>2</span><span>3</span><span>…</span><span>25</span><span>›</span></div>
+    </div>
+  </div>`;
+}
+
+screen({id:'billing',group:'Service',title:'My Billing — Today',desc:'ORDER header, the two pill rows (stat pills + stage/filter pills, held to two lines), Recent·Today/All Orders tabs and the new Table toggle. Table is on here: Table Map and the order rail (unchanged) sit above the always-visible recent-orders list. Toggle Table off and this whole floor row hides, per the sketch.',
+html:`<div class="app">${sidebar('billing')}<div class="main">
+  ${billingTop}
+  <div class="body">
+    ${billingPills()}
+    ${billingControls('recent',true)}
+    <div class="floor" style="margin-bottom:16px">
+      ${tableMapCard}
+      ${ORDER_RAIL}
+    </div>
+    ${recentOrderList()}
+  </div></div></div>`});
+
+screen({id:'billing-new',group:'Service',title:'My Billing — Take Order',desc:'Same pills, tabs and Table toggle. Table is on and the rail has swapped to the menu — tapping a table or +New Order gets you here without a modal.',
+html:`<div class="app">${sidebar('billing')}<div class="main">
+  ${billingTop}
+  <div class="body">
+    ${billingPills()}
+    ${billingControls('recent',true)}
+    <div class="floor" style="margin-bottom:16px">
+      ${tableMapCard}
+      ${MENU_RAIL}
+    </div>
+    ${recentOrderList()}
+  </div></div></div>`});
+
+screen({id:'billing-orders',group:'Service',title:'My Billing — All orders',desc:'All Orders tab active, Table toggled off — the Table Map + rail row disappears entirely, leaving the full historic ledger with its own search, quick filters and pagination.',
+html:`<div class="app">${sidebar('billing')}<div class="main">
+  ${billingTop}
+  <div class="body">
+    ${billingPills()}
+    ${billingControls('all',false)}
+    ${allOrdersList()}
+  </div></div></div>`});
+
+/* ─── order detail ─── */
+screen({id:'billing-detail',group:'Service',title:'Order detail',desc:'Full history of one order, including who performed each transition — the backend records createdBy, confirmedBy, preparedBy, readyBy, deliveredBy and completedBy.',
+html:`<div class="app">${sidebar('billing')}<div class="main">
+  ${billingTop}
+  <div class="body" style="filter:blur(2.5px);opacity:.42">
+    ${billingPills()}
+    ${billingControls('all',false)}
+    ${allOrdersList()}
+  </div>
+  <div class="scrim"><div class="modal" style="width:600px">
+    <div class="mh">
+      <div><div class="t">ORD-2214</div><div class="s">Table 6 · placed 8:42 pm · 4 guests</div></div>
+      <div class="push"></div><span class="tag live"><i></i>Confirmed</span><div class="x">${ic('close')}</div>
+    </div>
+    <div class="mb">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px">
+        ${[['Customer','Rahul Sharma'],['Phone','98765 43210'],['Type','Dine-in'],['Payment','UPI · pending']].map(([k,v])=>
+          `<div style="padding:11px 13px;border-radius:12px;background:rgba(255,255,255,.035);border:1px solid var(--edge)">
+            <div style="font-size:10.5px;color:var(--t3)">${k}</div><div style="font-size:12.5px;font-weight:600;margin-top:3px">${v}</div></div>`).join('')}
+      </div>
+      <div style="font-size:12px;font-weight:700;margin-bottom:10px">Items</div>
+      <div style="border-radius:13px;border:1px solid var(--edge);overflow:hidden;margin-bottom:20px">
+        ${[['2','Butter Naan','₹120'],['1','Paneer Tikka Masala','₹340'],['1','Hyderabadi Dum Biryani','₹420'],['3','Masala Lemonade','₹285'],['2','Gulab Jamun','₹180'],['1','Mutton Rogan Josh','₹500']]
+          .map(([q,n,p])=>`<div style="display:flex;align-items:center;gap:11px;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.045);font-size:12.5px">
+            <span class="q">${q}</span><span style="flex:1;font-weight:500">${n}</span><span style="font-weight:600">${p}</span></div>`).join('')}
+        <div style="padding:12px 14px;display:grid;gap:6px;font-size:12.5px;background:rgba(0,0,0,.22)">
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">Subtotal</span><span>₹1,845</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">GST 5%</span><span>₹92</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">Service charge</span><span>₹108</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:700;padding-top:8px;border-top:1px solid rgba(255,255,255,.08)">
+            <span>Total</span><span style="background:var(--grad-brand);-webkit-background-clip:text;background-clip:text;color:transparent">₹2,045</span></div>
+        </div>
+      </div>
+      <div style="font-size:12px;font-weight:700;margin-bottom:12px">Timeline</div>
+      <div style="display:grid;gap:0">
+        ${[['Placed','Rahul Sharma (customer)','8:42 pm','ready'],['Confirmed','Rahul (waiter)','8:43 pm','ready'],['Preparing','Imran (chef)','8:46 pm','wait'],['Ready','—','pending','done'],['Delivered','—','pending','done'],['Completed','—','pending','done']]
+          .map(([st,by,tm,tone],i,a)=>`<div style="display:flex;gap:12px;align-items:flex-start">
+            <div style="display:flex;flex-direction:column;align-items:center;flex:none">
+              <span style="width:9px;height:9px;border-radius:50%;background:${tone==='done'?'#332D48':tone==='wait'?'var(--wait)':'var(--ready)'};
+                box-shadow:${tone==='done'?'none':'0 0 9px currentColor'};margin-top:4px"></span>
+              ${i<a.length-1?`<span style="width:1px;flex:1;min-height:22px;background:rgba(255,255,255,.09)"></span>`:''}
+            </div>
+            <div style="padding-bottom:12px;flex:1">
+              <div style="font-size:12.5px;font-weight:600;color:${tone==='done'?'var(--t3)':'var(--t1)'}">${st}</div>
+              <div style="font-size:11px;color:var(--t3)">${by} · ${tm}</div></div>
+          </div>`).join('')}
+      </div>
+    </div>
+    <div class="mf"><div class="btn">${ic('print')}Print bill</div><div class="btn dn">Cancel order</div><div class="btn pri">${ic('check')}Mark ready</div></div>
+  </div></div>
+</div></div>`});
+
+/* ══════════════════ TABLES ══════════════════ */
+const chairs = n => Array.from({length:n}).map((_,i)=>`<span style="position:absolute;width:9px;height:5px;border-radius:2px;background:rgba(255,255,255,.16);
+  ${i<n/2 ? `top:-4px;left:${18+i*22}%` : `bottom:-4px;left:${18+(i-Math.ceil(n/2))*22}%`}"></span>`).join('');
+
+screen({id:'tables',group:'Service',title:'Tables',desc:'Table configuration and live occupancy. Each card carries its QR, seat count and current session; the manager can free, deactivate or delete a table here.',
+html:`<div class="app">${sidebar('tables')}<div class="main">
+  ${topbar('Tables','18 tables · 7 seated · ₹11,015 open',
+    `<div class="btn">${ic('qr')}Print all QR codes</div><div class="btn pri">${ic('plus')}Add table</div>`)}
+  <div class="body">
+    <div class="metrics">
+      <div class="metric"><div class="k">Total tables</div><div class="v gr">18</div><div class="d">96 seats</div></div>
+      <div class="metric"><div class="k">Occupied</div><div class="v">7</div><div class="d">39% of floor</div></div>
+      <div class="metric pos"><div class="k">Open value</div><div class="v">₹11,015</div><div class="d">Across 7 tables</div></div>
+      <div class="metric alert"><div class="k">Needs attention</div><div class="v">1</div><div class="d">T12 payment due</div></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><span class="t">Floor plan</span><span class="s">Tap a table to open its session</span><div class="push"></div>
+        <div style="display:flex;gap:14px;font-size:11px;color:var(--t2)">
+          ${[['Free','rgba(255,255,255,.18)'],['Confirmed','var(--live)'],['Preparing','var(--wait)'],['Ready','var(--ready)'],['Payment due','var(--stop)']]
+            .map(([l,c])=>`<span style="display:flex;align-items:center;gap:5px"><i style="width:7px;height:7px;border-radius:50%;background:${c}"></i>${l}</span>`).join('')}
+        </div></div>
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:14px;padding:20px">
+        ${TABLES.map(([n,seats,st,amt,el])=>{
+          const free = st==='free';
+          const col = free?'rgba(255,255,255,.14)':STCOLOR[st];
+          return `<div style="position:relative;padding:6px">
+            ${chairs(seats)}
+            <div style="border-radius:14px;padding:14px 12px;text-align:center;position:relative;
+              border:1px solid ${free?'rgba(255,255,255,.1)':col};
+              background:${free?'rgba(255,255,255,.02)':`linear-gradient(155deg,${st==='due'?'rgba(242,86,77,.2)':'rgba(139,92,246,.16)'},rgba(255,255,255,.02))`};
+              ${free?'border-style:dashed':`box-shadow:0 10px 26px -14px ${col}`}">
+              <div style="font-size:19px;font-weight:700;letter-spacing:-.03em;color:${free?'var(--t3)':'var(--t1)'}">T${n}</div>
+              <div style="font-size:10.5px;color:var(--t3);margin-bottom:8px">${seats} seats</div>
+              ${free?`<div style="font-size:11px;color:var(--t3)">Free</div>`
+                    :`<div style="font-size:13px;font-weight:700">${amt}</div><div style="font-size:10px;color:var(--t3)">${el}</div>`}
+              <div style="margin-top:9px;display:flex;gap:5px;justify-content:center">
+                <span style="width:22px;height:22px;border-radius:7px;border:1px solid var(--edge);display:grid;place-items:center;color:var(--t2)">${ic('qr')}</span>
+                <span style="width:22px;height:22px;border-radius:7px;border:1px solid var(--edge);display:grid;place-items:center;color:var(--t2)">${ic('edit')}</span>
+              </div>
+            </div></div>`;
+        }).join('')}
+      </div>
+    </div>
+  </div></div></div>`});
+
+screen({id:'tables-qr',group:'Service',title:'Table QR code',desc:'Each table has a signed QR that opens the customer ordering site scoped to that table. Regenerating invalidates the old code immediately.',
+html:`<div class="app">${sidebar('tables')}<div class="main">
+  ${topbar('Tables','18 tables · 7 seated',`<div class="btn pri">${ic('plus')}Add table</div>`)}
+  <div class="body" style="filter:blur(2.5px);opacity:.42">
+    <div class="card"><div class="card-h"><span class="t">Floor plan</span></div>
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:14px;padding:20px">
+      ${TABLES.slice(0,12).map(([n,s])=>`<div style="border-radius:14px;padding:16px;text-align:center;border:1px solid var(--edge)">
+        <div style="font-size:19px;font-weight:700">T${n}</div><div style="font-size:10.5px;color:var(--t3)">${s} seats</div></div>`).join('')}</div></div>
+  </div>
+  <div class="scrim"><div class="modal" style="width:396px">
+    <div class="mh"><div><div class="t">QR code — Table 6</div><div class="s">4 seats · Active</div></div><div class="push"></div><div class="x">${ic('close')}</div></div>
+    <div class="mb" style="text-align:center">
+      <div style="width:214px;height:214px;margin:0 auto 16px;border-radius:20px;padding:15px;background:#fff;
+        box-shadow:0 22px 50px -18px rgba(139,92,246,.6)">
+        <div style="width:100%;height:100%;background:
+          repeating-conic-gradient(#0B0A10 0% 25%, #fff 0% 50%) 0 0/13px 13px;border-radius:5px"></div>
+      </div>
+      <div style="font-size:17px;font-weight:700;letter-spacing:-.02em">Table 6</div>
+      <div style="font-size:11.5px;color:var(--t3);margin-top:3px;margin-bottom:18px">Scan to order from this table</div>
+      <div style="display:flex;gap:8px;align-items:center;padding:9px 12px;border-radius:11px;border:1px solid var(--edge);
+        background:rgba(0,0,0,.28);font-size:11px;color:var(--t2);text-align:left">
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">zenos.app/t/6?k=a91f4c7e…</span>
+        <span class="btn sm" style="flex:none">Copy</span></div>
+    </div>
+    <div class="mf"><div class="btn">Regenerate</div><div class="btn">${ic('print')}Print</div><div class="btn pri">${ic('down')}Download</div></div>
+  </div></div>
+</div></div>`});
+
+/* ══════════════════ KITCHEN DISPLAY ══════════════════ */
+const kot = (id,tbl,mins,items,tone,label) => `
+<div style="border-radius:16px;overflow:hidden;position:relative;
+  background:linear-gradient(162deg,#181430 0%,#0D0B18 100%);
+  border:1px solid ${tone==='stop'?'rgba(242,86,77,.55)':tone==='wait'?'rgba(240,169,59,.4)':'rgba(255,255,255,.1)'};
+  box-shadow:0 16px 38px -20px rgba(0,0,0,.9)${tone==='stop'?',0 0 26px -10px rgba(242,86,77,.6)':''}">
+  <div style="padding:12px 14px;display:flex;align-items:center;justify-content:space-between;
+    background:linear-gradient(140deg,rgba(255,255,255,.07),rgba(255,255,255,.01));border-bottom:1px solid rgba(255,255,255,.07)">
+    <div><div style="font-size:16px;font-weight:700;letter-spacing:-.02em">${tbl}</div>
+      <div style="font-size:10.5px;color:var(--t3)">${id}</div></div>
+    <div style="text-align:right">
+      <div style="font-size:19px;font-weight:700;letter-spacing:-.03em;color:${tone==='stop'?'var(--stop)':tone==='wait'?'var(--wait)':'var(--ready)'}">${mins}</div>
+      <div style="font-size:9.5px;color:var(--t3)">${label}</div></div>
+  </div>
+  <div style="padding:11px 14px">
+    ${items.map(([q,n,note])=>`<div style="display:flex;gap:10px;padding:6px 0;font-size:13.5px;align-items:flex-start">
+      <span style="min-width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:12px;font-weight:700;
+        background:rgba(255,255,255,.09);color:#fff;flex:none">${q}</span>
+      <span style="flex:1;font-weight:500;line-height:1.35">${n}${note?`<em style="display:block;font-style:normal;font-size:11px;color:var(--wait);font-weight:600">${note}</em>`:''}</span>
+    </div>`).join('')}
+  </div>
+</div>`;
+
+screen({id:'kitchen',group:'Service',title:'Kitchen display',desc:'The /kitchen route, opened on a tablet left running all shift. High contrast, no dropdowns, columns advance left to right. Red means the ticket has run past its target time.',
+html:`<div class="app solo" style="background:linear-gradient(172deg,#0B0912 0%,#060509 100%);min-height:812px;display:flex;flex-direction:column">
+  <div style="padding:16px 24px;display:flex;align-items:center;gap:14px;border-bottom:1px solid rgba(255,255,255,.07)">
+    <div class="brand" style="padding:0"><div class="mk" style="width:30px;height:30px;border-radius:9px;font-size:13px">Z</div>
+      <div><div class="nm" style="font-size:14px">Kitchen</div><div class="sb">AD's Cafe</div></div></div>
+    <div class="push"></div>
+    <span class="tag ready"><i></i>Connected</span>
+    <span style="font-size:12.5px;color:var(--t2)">Imran · chef</span>
+    <div style="font-size:24px;font-weight:700;letter-spacing:-.03em">8:47</div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;padding:20px 24px;flex:1;align-items:start">
+    <div>
+      <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px">
+        <span style="width:9px;height:9px;border-radius:50%;background:var(--live);box-shadow:0 0 10px var(--live)"></span>
+        <span style="font-size:14px;font-weight:700">New</span>
+        <span style="font-size:12px;color:var(--t3)">3 tickets</span></div>
+      <div style="display:grid;gap:12px">
+        ${kot('KOT-881','Table 18','2m',[['1','Hyderabadi Dum Biryani',''],['2','Butter Naan',''],['1','Dal Makhani','No cream']],'live','waiting')}
+        ${kot('KOT-880','Takeaway','4m',[['2','Chicken 65',''],['1','Veg Pulao','']],'live','waiting')}
+        ${kot('KOT-879','Table 3','6m',[['1','Malai Kofta',''],['3','Butter Naan',''],['1','Masala Lemonade','']],'live','waiting')}
+      </div>
+    </div>
+    <div>
+      <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px">
+        <span style="width:9px;height:9px;border-radius:50%;background:var(--wait);box-shadow:0 0 10px var(--wait)"></span>
+        <span style="font-size:14px;font-weight:700">Preparing</span>
+        <span style="font-size:12px;color:var(--t3)">2 tickets</span></div>
+      <div style="display:grid;gap:12px">
+        ${kot('KOT-877','Table 6','11m',[['1','Paneer Tikka Masala','Extra spicy'],['1','Mutton Rogan Josh',''],['2','Gulab Jamun','']],'wait','cooking')}
+        ${kot('KOT-874','Table 12','24m',[['2','Tandoori Chicken',''],['1','Prawn Koliwada',''],['4','Butter Naan','']],'stop','over target')}
+      </div>
+    </div>
+    <div>
+      <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px">
+        <span style="width:9px;height:9px;border-radius:50%;background:var(--ready);box-shadow:0 0 10px var(--ready)"></span>
+        <span style="font-size:14px;font-weight:700">Ready</span>
+        <span style="font-size:12px;color:var(--t3)">2 tickets · waiter alerted</span></div>
+      <div style="display:grid;gap:12px">
+        ${kot('KOT-873','Table 4','—',[['1','Hyderabadi Dum Biryani',''],['2','Masala Lemonade','']],'ready','ready')}
+        ${kot('KOT-872','Table 9','—',[['1','Chicken 65',''],['1','Veg Pulao','']],'ready','ready')}
+      </div>
+    </div>
+  </div>
+</div>`});
+
+/* ══════════════════ DASHBOARD ══════════════════ */
+const spark = (color,pts) => `<svg class="spark" viewBox="0 0 120 52" preserveAspectRatio="none">
+  <defs><linearGradient id="g${color.replace(/[^a-z]/gi,'')}" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="${color}" stop-opacity=".5"/><stop offset="100%" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>
+  <path d="M0,52 ${pts} L120,52 Z" fill="url(#g${color.replace(/[^a-z]/gi,'')})"/>
+  <path d="M${pts.replace(/^L/,'')}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
+
+screen({id:'dashboard',group:'Money',title:'Dashboard',desc:'The owner glance. Everything here is real aggregate — no invented ratios. Alerts from inventory and the print service surface at the top.',
+html:`<div class="app">${sidebar('dash')}<div class="main">
+  ${topbar('Dashboard','Friday, 5 September',`<span class="live-dot"><i></i>Live</span><div class="btn">${ic('down')}Export</div>`)}
+  <div class="body">
+    <div style="display:flex;gap:12px;margin-bottom:18px">
+      <div class="card" style="flex:1;padding:14px 17px;display:flex;align-items:center;gap:12px">
+        <span style="width:34px;height:34px;border-radius:11px;display:grid;place-items:center;flex:none;color:var(--wait);
+          background:linear-gradient(150deg,rgba(240,169,59,.24),rgba(240,169,59,.05));border:1px solid rgba(240,169,59,.3)">${ic('warn')}</span>
+        <div style="flex:1"><div style="font-size:12.5px;font-weight:600">Stock alerts</div>
+          <div style="font-size:11px;color:var(--t3)">4 low · 1 critical · 2 expiring within 3 days</div></div>
+        <span class="btn sm">Review</span>
+      </div>
+      <div class="card" style="flex:1;padding:14px 17px;display:flex;align-items:center;gap:12px">
+        <span style="width:34px;height:34px;border-radius:11px;display:grid;place-items:center;flex:none;color:var(--ready);
+          background:linear-gradient(150deg,rgba(53,208,138,.22),rgba(53,208,138,.05));border:1px solid rgba(53,208,138,.3)">${ic('print')}</span>
+        <div style="flex:1"><div style="font-size:12.5px;font-weight:600">Printer</div>
+          <div style="font-size:11px;color:var(--t3)">2 connected · 0 pending · 148 printed today</div></div>
+        <span class="tag ready"><i></i>Online</span>
+      </div>
+    </div>
+
+    <div class="metrics">
+      <div class="metric"><div class="k">Collected today</div><div class="v gr">₹48,230</div><div class="d">112 paid orders</div>
+        ${spark('#8B5CF6','L0,40 L15,36 L30,38 L45,28 L60,30 L75,20 L90,22 L105,12 L120,14')}</div>
+      <div class="metric"><div class="k">Orders today</div><div class="v">248</div><div class="d">+18% vs last Friday</div>
+        ${spark('#22D3EE','L0,42 L15,38 L30,40 L45,32 L60,26 L75,28 L90,18 L105,20 L120,10')}</div>
+      <div class="metric alert"><div class="k">Outstanding</div><div class="v">₹6,890</div><div class="d">9 orders unpaid</div></div>
+      <div class="metric"><div class="k">Average order</div><div class="v">₹431</div><div class="d">Up ₹26 this week</div></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1.05fr;gap:16px">
+      <div class="card">
+        <div class="card-h"><span class="t">Orders by status</span><span class="s">today</span></div>
+        <div style="padding:16px 18px;display:grid;grid-template-columns:repeat(2,1fr);gap:10px">
+          ${[['Pending confirmation','2','₹1,890','wait'],['Confirmed','5','₹6,240','live'],['Preparing','4','₹4,180','wait'],['Ready','3','₹4,730','ready'],['Delivered','19','₹8,220','ready'],['Completed','212','₹46,340','done'],['Cancelled','3','₹1,110','stop'],['Total','248','₹72,710','vio']]
+            .map(([l,c,v,t])=>`<div style="border-radius:13px;padding:12px 14px;
+              background:linear-gradient(150deg,rgba(255,255,255,.055),rgba(255,255,255,.012));border:1px solid var(--edge)">
+              <div style="display:flex;align-items:center;justify-content:space-between">
+                <span class="tag ${t}" style="border:none;background:none;padding:0"><i></i>${l}</span></div>
+              <div style="font-size:22px;font-weight:700;letter-spacing:-.03em;margin-top:6px">${c}</div>
+              <div style="font-size:11px;color:var(--t3)">${v}</div></div>`).join('')}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-h"><span class="t">Recent orders</span><span class="s">active only</span><div class="push"></div>
+          <div class="seg"><span class="on">All</span><span>Dine-in</span><span>Takeaway</span></div></div>
+        <div style="padding:6px 18px 16px;max-height:452px;overflow:auto">
+          ${ORDERS.slice(0,7).map(([id,nm,ph,tb,st,stl,ty,amt,tm,av,ci])=>`
+            <div style="display:flex;gap:11px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+              <div class="who2" style="flex:none">${avatar(av,ci)}</div>
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
+                  <span style="font-size:13px;font-weight:600">${nm}</span>
+                  <span style="font-weight:700;font-size:13.5px">${amt}</span></div>
+                <div style="font-size:11.5px;color:var(--t3);margin-bottom:7px">${id} · ${tm}</div>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <span class="tag ${st}"><i></i>${stl}</span>
+                  ${tb!=='—'?`<span class="tag vio sq">${tb}</span>`:`<span class="tag done sq">${ty}</span>`}
+                </div>
+              </div></div>`).join('')}
+        </div>
+      </div>
+    </div>
+  </div></div></div>`});
+
+/* ══════════════════ INVOICES ══════════════════ */
+const INVOICES = [
+  ['INV-1042','Rahul Sharma','+91 98765 43210','T12','UPI','stop','Pending verification','₹2,340','8:42 pm','RS',0,1],
+  ['INV-1041','Priya Mehta','+91 90123 45678','T4','Cash','ready','Paid','₹3,110','8:31 pm','PM',1,0],
+  ['INV-1040','Guest','Takeaway','—','UPI','ready','Paid','₹640','8:18 pm','G',2,0],
+  ['INV-1039','Arjun Kapoor','+91 88990 11223','T9','Card','ready','Paid','₹1,890','7:56 pm','AK',3,0],
+  ['INV-1038','Sneha Nair','+91 77665 44332','T1','UPI','stop','Failed','₹1,240','7:40 pm','SN',4,1],
+  ['INV-1037','Vikram Rao','+91 99887 66554','T15','Cash','ready','Paid','₹900','7:22 pm','VR',5,0],
+  ['INV-1036','Guest','Takeaway','—','UPI','done','Refunded','₹410','6:58 pm','G',1,0],
+  ['INV-1035','Meera Das','+91 91234 56780','T6','UPI','ready','Paid','₹2,105','6:44 pm','MD',0,0],
+  ['INV-1034','Kabir Sen','+91 93456 78901','T3','Card','ready','Paid','₹1,480','6:20 pm','KS',2,0],
+  ['INV-1033','Ananya Bose','+91 94567 89012','T7','UPI','stop','Pending verification','₹3,260','5:58 pm','AB',3,1]
+];
+
+screen({id:'invoices',group:'Money',title:'Invoices',desc:'UPI is a deep link, never proof of payment — orders sit at Pending verification until an admin confirms against the actual bank receipt. Those rows are the ones that need action, so they carry the only coloured money on screen.',
+html:`<div class="app">${sidebar('invoices')}<div class="main">
+  ${topbar('Invoices','142 invoices · ₹1,84,320 collected this month',`<div class="btn">${ic('down')}Export</div>`)}
+  <div class="body">
+    <div class="metrics">
+      <div class="metric"><div class="k">Collected this month</div><div class="v gr">₹1,84,320</div><div class="d">412 paid invoices</div></div>
+      <div class="metric alert"><div class="k">Pending verification</div><div class="v">3</div><div class="d">₹7,840 unconfirmed</div></div>
+      <div class="metric"><div class="k">Failed</div><div class="v" style="color:var(--stop)">1</div><div class="d">₹1,240 · retry or void</div></div>
+      <div class="metric"><div class="k">Refunded</div><div class="v" style="color:var(--t2)">₹410</div><div class="d">1 invoice this month</div></div>
+    </div>
+    <div class="filters">
+      <div class="inp" style="color:var(--t3);min-width:290px">Search by order ID, customer or phone</div>
+      <div class="seg"><span class="on">All</span><span>Paid</span><span>Pending</span><span>Failed</span><span>Refunded</span></div>
+      <div class="btn qi">${ic('filter')}This month</div>
+      <div class="push"></div><span style="font-size:12px;color:var(--t3)">3 need verification</span>
+    </div>
+    <table class="ledger">
+      <thead><tr><th style="width:104px">Invoice</th><th>Customer</th><th style="width:64px">Table</th>
+        <th style="width:84px">Method</th><th style="width:186px">Status</th>
+        <th style="width:104px" class="num">Amount</th><th style="width:80px" class="num">Time</th><th style="width:112px"></th></tr></thead>
+      <tbody>
+      ${INVOICES.map(([id,nm,ph,tb,mt,st,stl,amt,tm,av,ci,act])=>`
+        <tr class="${act?'hl':''}">
+          <td class="idc">${id}</td>
+          <td><div class="who2">${avatar(av,ci)}<div><b>${nm}</b><em>${ph}</em></div></div></td>
+          <td>${tb==='—'?`<span style="color:var(--t3)">—</span>`:`<span class="tag vio sq">${tb}</span>`}</td>
+          <td style="color:var(--t2)">${mt}</td>
+          <td><span class="tag ${st}"><i></i>${stl}</span></td>
+          <td class="money ${act?'neg':''}">${amt}</td>
+          <td class="num" style="color:var(--t3)">${tm}</td>
+          <td style="text-align:right">${act?`<span class="btn sm gd">Mark paid</span>`:`<span class="btn sm qi">${ic('print')}</span>`}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <div class="tfoot"><span>Showing 10 of 142</span>
+      <div class="pager"><span>‹</span><span class="on">1</span><span>2</span><span>3</span><span>…</span><span>15</span><span>›</span></div></div>
+  </div></div></div>`});
+
+screen({id:'invoices-bill',group:'Money',title:'Combined bill',desc:'A table can accumulate several orders across a sitting. This merges them into one bill with a single UPI target and one printable receipt.',
+html:`<div class="app">${sidebar('invoices')}<div class="main">
+  ${topbar('Invoices','142 invoices · ₹1,84,320 collected this month',`<div class="btn">${ic('down')}Export</div>`)}
+  <div class="body" style="filter:blur(2.5px);opacity:.42">
+    <div class="metrics"><div class="metric"><div class="k">Collected this month</div><div class="v gr">₹1,84,320</div></div>
+      <div class="metric"><div class="k">Pending</div><div class="v">3</div></div>
+      <div class="metric"><div class="k">Failed</div><div class="v">1</div></div>
+      <div class="metric"><div class="k">Refunded</div><div class="v">₹410</div></div></div>
+  </div>
+  <div class="scrim"><div class="modal" style="width:520px">
+    <div class="mh"><div><div class="t">Combined bill — Table 12</div><div class="s">3 orders · seated 1h 14m</div></div>
+      <div class="push"></div><div class="x">${ic('close')}</div></div>
+    <div class="mb">
+      ${[['ORD-2208','8:12 pm','₹1,240',['2 Tandoori Chicken','4 Butter Naan']],['ORD-2216','8:38 pm','₹680',['1 Prawn Koliwada','2 Masala Lemonade']],['ORD-2221','9:02 pm','₹420',['2 Gulab Jamun','1 Filter Coffee']]]
+        .map(([id,tm,amt,items])=>`
+        <div style="border-radius:13px;border:1px solid var(--edge);padding:13px 15px;margin-bottom:10px;
+          background:linear-gradient(155deg,rgba(255,255,255,.045),rgba(255,255,255,.01))">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <span style="font-size:12.5px;font-weight:600">${id}</span>
+            <span style="font-weight:700;font-size:13.5px">${amt}</span></div>
+          <div style="font-size:11.5px;color:var(--t3)">${items.join(' · ')} — ${tm}</div>
+        </div>`).join('')}
+      <div style="border-radius:14px;padding:15px 17px;margin-top:16px;
+        background:linear-gradient(150deg,rgba(139,92,246,.2),rgba(139,92,246,.04));border:1px solid rgba(139,92,246,.3)">
+        <div style="display:grid;gap:7px;font-size:12.5px">
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">Subtotal</span><span>₹2,340</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">GST 5%</span><span>₹117</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">Service charge</span><span>₹137</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:20px;font-weight:700;letter-spacing:-.03em;
+            padding-top:10px;margin-top:4px;border-top:1px solid rgba(255,255,255,.12)">
+            <span>Total</span><span style="background:var(--grad-brand);-webkit-background-clip:text;background-clip:text;color:transparent">₹2,594</span></div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--t3);margin-top:12px;text-align:center">
+        Opening the UPI app is not proof of payment. Confirm against the bank receipt before marking paid.</div>
+    </div>
+    <div class="mf"><div class="btn">${ic('print')}Print</div><div class="btn">Send on WhatsApp</div><div class="btn pri">${ic('check')}Mark paid</div></div>
+  </div></div>
+</div></div>`});
+
+/* ══════════════════ INSIGHTS ══════════════════ */
+const WEEK = [['Mon',54200,132],['Tue',48900,119],['Wed',61300,148],['Thu',57800,141],['Fri',72400,186],['Sat',94100,238],['Sun',88600,221]];
+const maxRev = Math.max(...WEEK.map(w=>w[1]));
+
+screen({id:'insights',group:'Money',title:'Insights',desc:'Every figure here is a real aggregate from the orders collection. Where a breakdown cannot be computed the panel says so rather than estimating — the current build fabricates a 65/35 dine-in split, including on revenue.',
+html:`<div class="app">${sidebar('insights')}<div class="main">
+  ${topbar('Insights','1 – 5 September · week to date',
+    `<div class="seg"><span>Today</span><span class="on">Week</span><span>Month</span><span>Year</span></div><div class="btn">${ic('down')}Export</div>`)}
+  <div class="body">
+    <div class="metrics">
+      <div class="metric"><div class="k">Revenue this week</div><div class="v gr">₹4,77,300</div><div class="d">+12.4% vs last week</div>
+        ${spark('#8B5CF6','L0,44 L20,40 L40,30 L60,34 L80,22 L100,8 L120,14')}</div>
+      <div class="metric"><div class="k">Orders</div><div class="v">1,185</div><div class="d">169 per day average</div>
+        ${spark('#22D3EE','L0,42 L20,44 L40,32 L60,36 L80,24 L100,10 L120,16')}</div>
+      <div class="metric"><div class="k">Average order value</div><div class="v">₹403</div><div class="d">Up ₹18 vs last week</div></div>
+      <div class="metric"><div class="k">Busiest hour</div><div class="v">8 – 9<span style="font-size:14px;color:var(--t3);font-weight:500"> pm</span></div><div class="d">21% of daily covers</div></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1.45fr 1fr;gap:16px;margin-bottom:16px">
+      <div class="card">
+        <div class="card-h"><span class="t">Revenue by day</span><span class="s">last 7 days</span><div class="push"></div>
+          <span style="font-size:11px;color:var(--t3)">Bars show revenue · line shows order count</span></div>
+        <div style="padding:22px 20px 16px;display:flex;align-items:flex-end;gap:14px;height:246px">
+          ${WEEK.map(([d,rev,cnt])=>{
+            const h = Math.round(rev/maxRev*172);
+            const best = rev===maxRev;
+            return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:9px">
+              <div style="font-size:11.5px;font-weight:700;color:${best?'#C4B5FD':'var(--t2)'}">₹${(rev/1000).toFixed(1)}k</div>
+              <div style="width:100%;height:${h}px;border-radius:9px 9px 4px 4px;position:relative;
+                background:${best?'linear-gradient(180deg,#A78BFA,#6D28D9)':'linear-gradient(180deg,rgba(139,92,246,.55),rgba(139,92,246,.12))'};
+                ${best?'box-shadow:0 0 26px -6px rgba(167,139,250,.85)':''}">
+                <span style="position:absolute;top:-3px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;
+                  background:var(--cyan);box-shadow:0 0 8px var(--cyan)"></span></div>
+              <div style="font-size:11px;color:${best?'var(--t1)':'var(--t3)'};font-weight:${best?600:400}">${d}</div>
+              <div style="font-size:10px;color:var(--t3)">${cnt}</div>
+            </div>`}).join('')}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-h"><span class="t">Order type</span><span class="s">grouped from orders</span></div>
+        <div style="padding:20px">
+          ${[['Dine-in',812,'#8B5CF6','₹3,41,040'],['Takeaway',298,'#22D3EE','₹1,08,260'],['Online',75,'#F0A93B','₹28,000']].map(([l,v,c,rev])=>{
+            const pct = Math.round(v/1185*100);
+            return `<div style="margin-bottom:17px">
+              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px">
+                <span style="font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:7px">
+                  <i style="width:8px;height:8px;border-radius:2px;background:${c};box-shadow:0 0 8px ${c}"></i>${l}</span>
+                <span style="font-size:12px;color:var(--t2)">${v} · ${pct}%</span></div>
+              <div class="bar"><i style="width:${pct}%;background:linear-gradient(90deg,${c},${c}55)"></i></div>
+              <div style="font-size:11px;color:var(--t3);margin-top:5px">${rev}</div>
+            </div>`}).join('')}
+          <div style="margin-top:22px;padding-top:16px;border-top:1px solid rgba(255,255,255,.07)">
+            <div style="font-size:11.5px;color:var(--t2);margin-bottom:11px;font-weight:600">Payment method</div>
+            ${[['UPI',62,'#8B5CF6'],['Cash',27,'#35D08A'],['Card',11,'#5AA2F5']].map(([l,p,c])=>`
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:9px">
+                <span style="font-size:11.5px;color:var(--t2);width:38px">${l}</span>
+                <div class="bar" style="flex:1"><i style="width:${p}%;background:linear-gradient(90deg,${c},${c}44)"></i></div>
+                <span style="font-size:11.5px;font-weight:600;width:30px;text-align:right">${p}%</span></div>`).join('')}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="card">
+        <div class="card-h"><span class="t">Top items</span><span class="s">by revenue, this week</span></div>
+        <div style="padding:8px 18px 16px">
+          ${[['Hyderabadi Dum Biryani',186,'₹78,120'],['Tandoori Chicken',142,'₹68,160'],['Paneer Tikka Masala',158,'₹53,720'],['Mutton Rogan Josh',94,'₹47,000'],['Butter Naan',612,'₹36,720'],['Chicken 65',108,'₹34,560']]
+            .map(([n,q,rev],i)=>`<div style="display:flex;align-items:center;gap:13px;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+              <span style="width:25px;height:25px;border-radius:8px;display:grid;place-items:center;font-size:11.5px;font-weight:700;flex:none;
+                color:${i<3?'#C4B5FD':'var(--t3)'};background:${i<3?'linear-gradient(150deg,rgba(139,92,246,.3),rgba(139,92,246,.07))':'rgba(255,255,255,.05)'};
+                border:1px solid ${i<3?'rgba(139,92,246,.3)':'var(--edge)'}">${i+1}</span>
+              <span style="flex:1;font-size:12.5px;font-weight:500">${n}</span>
+              <span style="font-size:11.5px;color:var(--t3);width:56px;text-align:right">${q} sold</span>
+              <span style="font-size:13px;font-weight:700;width:70px;text-align:right">${rev}</span>
+            </div>`).join('')}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-h"><span class="t">Revenue by category</span><span class="s">this week</span></div>
+        <div style="padding:20px">
+          ${[['Biryani','#8B5CF6',132400],['Tandoor','#22D3EE',98600],['Curries','#F0A93B',86200],['Breads','#35D08A',54300],['Desserts','#F2564D',38900],['Beverages','#6366F1',66900]]
+            .map(([l,c,v])=>{const pct=Math.round(v/477300*100);
+            return `<div style="margin-bottom:14px">
+              <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+                <span style="font-size:12px;font-weight:500;display:flex;align-items:center;gap:7px">
+                  <i style="width:8px;height:8px;border-radius:2px;background:${c}"></i>${l}</span>
+                <span style="font-size:12px;font-weight:600">₹${(v/1000).toFixed(1)}k</span></div>
+              <div class="bar"><i style="width:${pct}%;background:linear-gradient(90deg,${c},${c}44)"></i></div>
+            </div>`}).join('')}
+        </div>
+      </div>
+    </div>
+  </div></div></div>`});
+
+/* ══════════════════ MENU ══════════════════ */
+const MENU_ROWS = [
+  ['Hyderabadi Dum Biryani','Biryani','₹420','₹560','veg0',1,186],
+  ['Mutton Rogan Josh','Curries','₹500','—','veg0',1,94],
+  ['Paneer Tikka Masala','Curries','₹340','₹460','veg1',1,158],
+  ['Tandoori Chicken','Tandoor','₹480','₹640','veg0',1,142],
+  ['Chicken 65','Starters','₹320','—','veg0',1,108],
+  ['Malai Kofta','Curries','₹300','—','veg1',1,66],
+  ['Butter Naan','Breads','₹60','—','veg1',1,612],
+  ['Prawn Koliwada','Starters','₹460','—','veg0',0,41],
+  ['Dal Makhani','Curries','₹260','₹340','veg1',1,124],
+  ['Gulab Jamun','Desserts','₹90','—','veg1',1,203]
+];
+
+screen({id:'menu',group:'Setup',title:'Menu items',desc:'Half and full pricing, veg marks, and availability. Hidden items stay in history but disappear from the customer site immediately.',
+html:`<div class="app">${sidebar('menu')}<div class="main">
+  ${topbar('Menu items','86 items across 10 categories',
+    `<div class="btn">${ic('plus')}New category</div><div class="btn pri">${ic('plus')}New item</div>`)}
+  <div class="body">
+    <div class="metrics" style="grid-template-columns:repeat(5,1fr)">
+      <div class="metric"><div class="k">Total items</div><div class="v gr">86</div><div class="d">10 categories</div></div>
+      <div class="metric pos"><div class="k">Available</div><div class="v">81</div><div class="d">Live on the menu</div></div>
+      <div class="metric"><div class="k">Hidden</div><div class="v" style="color:var(--t2)">5</div><div class="d">Out of season</div></div>
+      <div class="metric"><div class="k">Vegetarian</div><div class="v" style="color:var(--ready)">48</div><div class="d">56% of menu</div></div>
+      <div class="metric"><div class="k">Non-vegetarian</div><div class="v" style="color:var(--stop)">38</div><div class="d">44% of menu</div></div>
+    </div>
+    <div class="filters">
+      <div class="inp" style="color:var(--t3);min-width:250px">Search by item name</div>
+      <div class="seg"><span class="on">All</span><span>Available</span><span>Hidden</span></div>
+      <div class="btn qi">${ic('filter')}Category: All</div>
+      <div class="btn qi">Veg only</div>
+      <div class="push"></div><span style="font-size:12px;color:var(--t3)">86 items</span>
+    </div>
+    <table class="ledger">
+      <thead><tr><th>Item</th><th style="width:118px">Category</th><th style="width:88px" class="num">Half</th>
+        <th style="width:88px" class="num">Full</th><th style="width:96px" class="num">Sold</th>
+        <th style="width:124px">Availability</th><th style="width:88px"></th></tr></thead>
+      <tbody>
+      ${MENU_ROWS.map(([n,cat,half,full,v,avail,sold])=>`
+        <tr>
+          <td><div style="display:flex;align-items:center;gap:11px">
+            <span style="width:34px;height:34px;border-radius:9px;flex:none;
+              background:linear-gradient(150deg,rgba(139,92,246,.28),rgba(34,211,238,.12));border:1px solid var(--edge)"></span>
+            ${vegDot(v)}<b style="font-weight:600">${n}</b></div></td>
+          <td><span class="tag done sq">${cat}</span></td>
+          <td class="num" style="font-weight:600">${half}</td>
+          <td class="num" style="color:${full==='—'?'var(--t3)':'var(--t1)'};font-weight:600">${full}</td>
+          <td class="num" style="color:var(--t2)">${sold}</td>
+          <td>${avail?`<span class="tag ready"><i></i>Available</span>`:`<span class="tag done"><i></i>Hidden</span>`}</td>
+          <td style="text-align:right"><span class="btn sm qi">${ic('edit')}</span></td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <div class="tfoot"><span>Showing 10 of 86</span>
+      <div class="pager"><span>‹</span><span class="on">1</span><span>2</span><span>…</span><span>9</span><span>›</span></div></div>
+  </div></div></div>`});
+
+screen({id:'menu-item',group:'Setup',title:'Add menu item',desc:'One form, grouped by what the kitchen needs versus what the customer sees. Image upload goes to Cloudinary.',
+html:`<div class="app">${sidebar('menu')}<div class="main">
+  ${topbar('Menu items','86 items across 10 categories',`<div class="btn pri">${ic('plus')}New item</div>`)}
+  <div class="body" style="filter:blur(2.5px);opacity:.42">
+    <div class="metrics" style="grid-template-columns:repeat(5,1fr)">
+      ${'12345'.split('').map(()=>`<div class="metric"><div class="k">Metric</div><div class="v">—</div></div>`).join('')}</div>
+  </div>
+  <div class="scrim"><div class="modal" style="width:640px">
+    <div class="mh"><div><div class="t">New menu item</div><div class="s">Appears on the customer site as soon as it is available</div></div>
+      <div class="push"></div><div class="x">${ic('close')}</div></div>
+    <div class="mb">
+      <div style="display:flex;gap:18px;margin-bottom:20px">
+        <div style="width:142px;height:142px;border-radius:16px;flex:none;display:grid;place-items:center;text-align:center;
+          border:1.5px dashed rgba(139,92,246,.4);background:linear-gradient(150deg,rgba(139,92,246,.12),rgba(139,92,246,.02))">
+          <div><div style="color:#C4B5FD;margin-bottom:6px">${ic('plus')}</div>
+            <div style="font-size:11px;color:var(--t2);font-weight:500">Add photo</div>
+            <div style="font-size:10px;color:var(--t3);margin-top:2px">JPG or PNG, 1:1</div></div></div>
+        <div class="fgrid" style="flex:1;align-content:start">
+          <div class="f full"><label>Item name</label><div class="inp">Hyderabadi Dum Biryani</div></div>
+          <div class="f"><label>Category</label><div class="inp">Biryani</div></div>
+          <div class="f"><label>Food type</label>
+            <div style="display:flex;gap:8px">
+              <div class="btn gd" style="flex:1;justify-content:center">Veg</div>
+              <div class="btn" style="flex:1;justify-content:center">Non-veg</div></div></div>
+        </div>
+      </div>
+      <div class="fgrid">
+        <div class="f"><label>Half price</label><div class="inp">₹420</div><div class="hint">Shown as the default price</div></div>
+        <div class="f"><label>Full price</label><div class="inp" style="color:var(--t3)">Optional</div><div class="hint">Leave empty for single-size items</div></div>
+        <div class="f full"><label>Description</label><textarea rows="3">Slow-cooked basmati with saffron, fried onion and hand-ground spices. Served with raita and mirchi ka salan.</textarea></div>
+        <div class="f full"><label>Availability</label>
+          <div style="display:flex;gap:9px;align-items:center;padding:11px 14px;border-radius:12px;border:1px solid rgba(53,208,138,.3);
+            background:linear-gradient(150deg,rgba(53,208,138,.14),rgba(53,208,138,.03))">
+            <span style="width:34px;height:19px;border-radius:20px;background:var(--ready);position:relative;flex:none;
+              box-shadow:0 0 14px -2px var(--ready)">
+              <span style="position:absolute;right:2px;top:2px;width:15px;height:15px;border-radius:50%;background:#fff"></span></span>
+            <span style="font-size:12.5px;font-weight:500">Available now</span>
+            <span style="font-size:11px;color:var(--t3);margin-left:auto">Customers can order this item</span></div></div>
+      </div>
+    </div>
+    <div class="mf"><div class="btn">Cancel</div><div class="btn pri">Save item</div></div>
+  </div></div>
+</div></div>`});
+
+/* ══════════════════ INVENTORY ══════════════════ */
+const INV_TABS = [['overview','Overview','chart'],['items','Stock items','box'],['purchases','Purchases','invoices'],
+  ['movements','Movements','book'],['lowstock','Low stock','warn'],['wastage','Wastage','trash'],
+  ['recipes','Recipes','chef'],['suppliers','Suppliers','truck']];
+const invNav = a => `<div class="subnav">${INV_TABS.map(([id,l,i])=>
+  `<span class="${id===a?'on':''}">${ic(i)}${l}</span>`).join('')}</div>`;
+const invShell = (active, body, sub) => `<div class="app">${sidebar('inventory')}<div class="main">
+  ${topbar('Inventory', sub, `<div class="btn">${ic('down')}Export</div><div class="btn pri">${ic('plus')}Add stock</div>`)}
+  <div class="body">${invNav(active)}${body}</div></div></div>`;
+
+screen({id:'inv-overview',group:'Inventory',title:'Inventory — overview',desc:'Where stock stands right now and what needs a decision today. Every tile links into the tab that resolves it.',
+html: invShell('overview',`
+  <div class="metrics">
+    <div class="metric"><div class="k">Stock value</div><div class="v gr">₹3,42,800</div><div class="d">184 tracked items</div></div>
+    <div class="metric alert"><div class="k">Needs reorder</div><div class="v">5</div><div class="d">1 critical, 4 low</div></div>
+    <div class="metric"><div class="k">Expiring in 3 days</div><div class="v" style="color:var(--wait)">2</div><div class="d">₹4,120 at risk</div></div>
+    <div class="metric"><div class="k">Wastage this month</div><div class="v" style="color:var(--stop)">₹8,940</div><div class="d">2.6% of purchases</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div class="card">
+      <div class="card-h"><span class="t">Needs attention</span><span class="s">act today</span></div>
+      <div style="padding:8px 18px 16px">
+        ${[['Basmati rice (aged)','2.4 kg','12 kg','stop','Critical'],['Paneer','4 kg','10 kg','wait','Low'],['Fresh cream','3 L','8 L','wait','Low'],['Chicken (curry cut)','6 kg','15 kg','wait','Low'],['Saffron','8 g','20 g','wait','Low']]
+          .map(([n,have,need,tone,lbl])=>{
+            const pct = Math.round(parseFloat(have)/parseFloat(need)*100);
+            return `<div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px">
+                <span style="font-size:12.5px;font-weight:600">${n}</span>
+                <span class="tag ${tone}"><i></i>${lbl}</span></div>
+              <div class="bar ${tone==='stop'?'warn':'warn'}"><i style="width:${pct}%"></i></div>
+              <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3);margin-top:5px">
+                <span>${have} in stock</span><span>reorder at ${need}</span></div>
+            </div>`}).join('')}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-h"><span class="t">Recent movements</span><span class="s">last 24 hours</span></div>
+      <div style="padding:8px 18px 16px">
+        ${[['Basmati rice','−8 kg','Consumed by recipes','stop','9:12 pm'],['Paneer','+20 kg','Purchase PO-341','ready','6:40 pm'],['Tomato','−4.2 kg','Consumed by recipes','stop','6:15 pm'],['Fresh cream','−2 L','Wastage — spoiled','stop','2:30 pm'],['Chicken','+25 kg','Purchase PO-340','ready','11:05 am'],['Butter','−3 kg','Consumed by recipes','stop','10:22 am']]
+          .map(([n,delta,why,tone,tm])=>`<div style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+            <span style="width:30px;height:30px;border-radius:9px;display:grid;place-items:center;flex:none;font-size:13px;font-weight:700;
+              color:${tone==='ready'?'var(--ready)':'var(--stop)'};
+              background:${tone==='ready'?'rgba(53,208,138,.14)':'rgba(242,86,77,.12)'};
+              border:1px solid ${tone==='ready'?'rgba(53,208,138,.28)':'rgba(242,86,77,.26)'}">${tone==='ready'?'+':'−'}</span>
+            <div style="flex:1"><div style="font-size:12.5px;font-weight:600">${n}</div>
+              <div style="font-size:11px;color:var(--t3)">${why}</div></div>
+            <div style="text-align:right"><div style="font-size:12.5px;font-weight:700;color:${tone==='ready'?'var(--ready)':'var(--stop)'}">${delta}</div>
+              <div style="font-size:10.5px;color:var(--t3)">${tm}</div></div>
+          </div>`).join('')}
+      </div>
+    </div>
+  </div>`,'184 items · ₹3,42,800 stock value')});
+
+const STOCK = [
+  ['Basmati rice (aged)','Grains','2.4 kg','12 kg','₹142/kg','₹341','stop','Critical'],
+  ['Paneer','Dairy','4 kg','10 kg','₹320/kg','₹1,280','wait','Low'],
+  ['Fresh cream','Dairy','3 L','8 L','₹210/L','₹630','wait','Low'],
+  ['Chicken (curry cut)','Meat','6 kg','15 kg','₹240/kg','₹1,440','wait','Low'],
+  ['Saffron','Spices','8 g','20 g','₹420/g','₹3,360','wait','Low'],
+  ['Onion','Vegetables','48 kg','20 kg','₹32/kg','₹1,536','ready','Healthy'],
+  ['Tomato','Vegetables','32 kg','15 kg','₹40/kg','₹1,280','ready','Healthy'],
+  ['Refined flour','Grains','64 kg','25 kg','₹46/kg','₹2,944','ready','Healthy'],
+  ['Mutton (shoulder)','Meat','18 kg','10 kg','₹720/kg','₹12,960','ready','Healthy'],
+  ['Ghee','Dairy','22 kg','10 kg','₹640/kg','₹14,080','ready','Healthy']
+];
+
+screen({id:'inv-items',group:'Inventory',title:'Inventory — stock items',desc:'The master list. Reorder level drives the low-stock alerts that surface on the Dashboard.',
+html: invShell('items',`
+  <div class="filters">
+    <div class="inp" style="color:var(--t3);min-width:250px">Search stock items</div>
+    <div class="btn qi">${ic('filter')}Category: All</div>
+    <div class="seg"><span class="on">All</span><span>Healthy</span><span>Low</span><span>Critical</span></div>
+    <div class="push"></div><span style="font-size:12px;color:var(--t3)">184 items</span>
+  </div>
+  <table class="ledger">
+    <thead><tr><th>Item</th><th style="width:112px">Category</th><th style="width:96px" class="num">In stock</th>
+      <th style="width:104px" class="num">Reorder at</th><th style="width:100px" class="num">Unit cost</th>
+      <th style="width:100px" class="num">Value</th><th style="width:114px">Status</th><th style="width:78px"></th></tr></thead>
+    <tbody>
+    ${STOCK.map(([n,cat,have,re,cost,val,tone,lbl])=>`
+      <tr class="${tone==='stop'?'hl':''}">
+        <td><b style="font-weight:600">${n}</b></td>
+        <td><span class="tag done sq">${cat}</span></td>
+        <td class="num" style="font-weight:700;color:${tone==='stop'?'var(--stop)':tone==='wait'?'var(--wait)':'var(--t1)'}">${have}</td>
+        <td class="num" style="color:var(--t3)">${re}</td>
+        <td class="num" style="color:var(--t2)">${cost}</td>
+        <td class="money">${val}</td>
+        <td><span class="tag ${tone}"><i></i>${lbl}</span></td>
+        <td style="text-align:right"><span class="btn sm qi">${ic('edit')}</span></td>
+      </tr>`).join('')}
+    </tbody></table>
+  <div class="tfoot"><span>Showing 10 of 184</span>
+    <div class="pager"><span>‹</span><span class="on">1</span><span>2</span><span>…</span><span>19</span><span>›</span></div></div>`,
+  '184 items · ₹3,42,800 stock value')});
+
+screen({id:'inv-purchases',group:'Inventory',title:'Inventory — purchases',desc:'Goods in, against a supplier and an invoice. Receiving a purchase writes a stock movement automatically.',
+html: invShell('purchases',`
+  <div class="metrics">
+    <div class="metric"><div class="k">Purchased this month</div><div class="v gr">₹3,42,600</div><div class="d">38 purchase orders</div></div>
+    <div class="metric"><div class="k">Awaiting delivery</div><div class="v" style="color:var(--wait)">4</div><div class="d">₹48,200 committed</div></div>
+    <div class="metric"><div class="k">Received today</div><div class="v" style="color:var(--ready)">2</div><div class="d">₹22,400</div></div>
+    <div class="metric"><div class="k">Average lead time</div><div class="v">1.8<span style="font-size:14px;color:var(--t3);font-weight:500"> days</span></div><div class="d">Across 6 suppliers</div></div>
+  </div>
+  <div class="filters"><div class="inp" style="color:var(--t3);min-width:250px">Search purchase orders</div>
+    <div class="seg"><span class="on">All</span><span>Ordered</span><span>Received</span></div><div class="push"></div>
+    <div class="btn pri">${ic('plus')}New purchase</div></div>
+  <table class="ledger">
+    <thead><tr><th style="width:96px">Order</th><th>Supplier</th><th style="width:150px">Items</th>
+      <th style="width:130px">Status</th><th style="width:104px" class="num">Amount</th><th style="width:96px" class="num">Date</th></tr></thead>
+    <tbody>
+    ${[['PO-341','Anand Dairy Supply','Paneer, cream, ghee','ready','Received','₹18,400','5 Sep','AD',1],
+       ['PO-340','Kolkata Poultry Co','Chicken, eggs','ready','Received','₹22,400','5 Sep','KP',3],
+       ['PO-339','Sharma Grains','Basmati rice, flour','wait','In transit','₹34,800','4 Sep','SG',2],
+       ['PO-338','Green Farm Produce','Onion, tomato, greens','wait','In transit','₹8,900','4 Sep','GF',0],
+       ['PO-337','Spice Route Traders','Saffron, cardamom','ready','Received','₹26,300','3 Sep','SR',4],
+       ['PO-336','Anand Dairy Supply','Butter, curd','ready','Received','₹11,200','2 Sep','AD',1]]
+      .map(([id,sup,items,tone,lbl,amt,dt,av,ci])=>`
+      <tr><td class="idc">${id}</td>
+        <td><div class="who2">${avatar(av,ci)}<div><b>${sup}</b></div></div></td>
+        <td style="color:var(--t2);font-size:11.5px">${items}</td>
+        <td><span class="tag ${tone}"><i></i>${lbl}</span></td>
+        <td class="money">${amt}</td>
+        <td class="num" style="color:var(--t3)">${dt}</td></tr>`).join('')}
+    </tbody></table>`,'38 purchase orders this month')});
+
+screen({id:'inv-lowstock',group:'Inventory',title:'Inventory — low stock',desc:'A working queue rather than a table: each row is one reorder decision, with the supplier and last price already attached.',
+html: invShell('lowstock',`
+  <div style="display:grid;gap:12px">
+    ${[['Basmati rice (aged)','2.4 kg','12 kg','Sharma Grains','₹142/kg','stop','Critical — 0.2 days of cover'],
+       ['Paneer','4 kg','10 kg','Anand Dairy Supply','₹320/kg','wait','Low — 1.1 days of cover'],
+       ['Fresh cream','3 L','8 L','Anand Dairy Supply','₹210/L','wait','Low — 1.4 days of cover'],
+       ['Chicken (curry cut)','6 kg','15 kg','Kolkata Poultry Co','₹240/kg','wait','Low — 1.6 days of cover'],
+       ['Saffron','8 g','20 g','Spice Route Traders','₹420/g','wait','Low — 3.2 days of cover']]
+      .map(([n,have,need,sup,cost,tone,note])=>`
+      <div class="card" style="padding:16px 18px;display:flex;align-items:center;gap:18px;
+        ${tone==='stop'?'box-shadow:0 18px 40px -22px rgba(0,0,0,.9),0 0 30px -14px rgba(242,86,77,.7)':''}">
+        <span style="width:40px;height:40px;border-radius:12px;display:grid;place-items:center;flex:none;
+          color:${tone==='stop'?'var(--stop)':'var(--wait)'};
+          background:${tone==='stop'?'rgba(242,86,77,.14)':'rgba(240,169,59,.13)'};
+          border:1px solid ${tone==='stop'?'rgba(242,86,77,.32)':'rgba(240,169,59,.3)'}">${ic('warn')}</span>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:5px">
+            <span style="font-size:14px;font-weight:600">${n}</span><span class="tag ${tone}"><i></i>${tone==='stop'?'Critical':'Low'}</span></div>
+          <div style="font-size:11.5px;color:var(--t3)">${note} · ${sup} · last paid ${cost}</div>
+        </div>
+        <div style="text-align:right;flex:none">
+          <div style="font-size:19px;font-weight:700;letter-spacing:-.03em;color:${tone==='stop'?'var(--stop)':'var(--wait)'}">${have}</div>
+          <div style="font-size:10.5px;color:var(--t3)">reorder at ${need}</div></div>
+        <div class="btn pri" style="flex:none">Reorder</div>
+      </div>`).join('')}
+  </div>`,'5 items need reordering')});
+
+screen({id:'inv-recipes',group:'Inventory',title:'Inventory — recipes',desc:'Links a menu item to the stock it consumes, so selling a dish depletes inventory automatically and gives a true plate cost.',
+html: invShell('recipes',`
+  <div class="filters"><div class="inp" style="color:var(--t3);min-width:250px">Search recipes</div>
+    <div class="push"></div><div class="btn pri">${ic('plus')}New recipe</div></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    ${[['Hyderabadi Dum Biryani','₹420','₹163','61%',[['Basmati rice','180 g'],['Mutton','160 g'],['Ghee','25 g'],['Saffron','0.3 g'],['Onion','80 g']]],
+       ['Paneer Tikka Masala','₹340','₹118','65%',[['Paneer','180 g'],['Tomato','120 g'],['Fresh cream','40 ml'],['Butter','20 g']]],
+       ['Butter Naan','₹60','₹17','72%',[['Refined flour','90 g'],['Butter','12 g'],['Curd','20 g']]],
+       ['Tandoori Chicken','₹480','₹186','61%',[['Chicken','320 g'],['Curd','60 g'],['Spice mix','14 g']]]]
+      .map(([n,price,cost,margin,ing])=>`
+      <div class="card">
+        <div class="card-h"><span class="t">${n}</span><div class="push"></div>
+          <span class="tag ready" style="border:none;background:none;padding:0">${margin} margin</span></div>
+        <div style="padding:14px 18px">
+          <div style="display:flex;gap:10px;margin-bottom:14px">
+            <div style="flex:1;padding:10px 12px;border-radius:11px;background:rgba(255,255,255,.04);border:1px solid var(--edge)">
+              <div style="font-size:10.5px;color:var(--t3)">Menu price</div>
+              <div style="font-size:16px;font-weight:700;margin-top:2px">${price}</div></div>
+            <div style="flex:1;padding:10px 12px;border-radius:11px;background:rgba(255,255,255,.04);border:1px solid var(--edge)">
+              <div style="font-size:10.5px;color:var(--t3)">Plate cost</div>
+              <div style="font-size:16px;font-weight:700;margin-top:2px;color:var(--wait)">${cost}</div></div>
+          </div>
+          ${ing.map(([i,q])=>`<div style="display:flex;justify-content:space-between;padding:7px 0;
+            border-bottom:1px solid rgba(255,255,255,.045);font-size:12px">
+            <span style="color:var(--t2)">${i}</span><span style="font-weight:600">${q}</span></div>`).join('')}
+        </div>
+      </div>`).join('')}
+  </div>`,'62 recipes mapped')});
+
+screen({id:'inv-suppliers',group:'Inventory',title:'Inventory — suppliers',desc:'Who supplies what, how reliably, and what you last paid them.',
+html: invShell('suppliers',`
+  <div class="filters"><div class="inp" style="color:var(--t3);min-width:250px">Search suppliers</div>
+    <div class="push"></div><div class="btn pri">${ic('plus')}Add supplier</div></div>
+  <table class="ledger">
+    <thead><tr><th>Supplier</th><th style="width:190px">Supplies</th><th style="width:130px">Contact</th>
+      <th style="width:104px" class="num">Orders</th><th style="width:118px" class="num">Spent (30d)</th>
+      <th style="width:124px">Reliability</th></tr></thead>
+    <tbody>
+    ${[['Anand Dairy Supply','Paneer, cream, butter, ghee','+91 98300 11223',14,'₹86,400',96,'AD',1],
+       ['Kolkata Poultry Co','Chicken, mutton, eggs','+91 98311 44556',11,'₹1,24,800',92,'KP',3],
+       ['Sharma Grains','Rice, flour, pulses','+91 98322 77889',8,'₹68,200',88,'SG',2],
+       ['Green Farm Produce','Vegetables, herbs','+91 98333 00112',22,'₹34,900',74,'GF',0],
+       ['Spice Route Traders','Whole and ground spices','+91 98344 33445',5,'₹26,300',100,'SR',4],
+       ['Metro Cash & Carry','General, packaging','+91 98355 66778',9,'₹18,600',81,'MC',5]]
+      .map(([n,sup,ph,ord,spent,rel,av,ci])=>`
+      <tr><td><div class="who2">${avatar(av,ci)}<div><b>${n}</b></div></div></td>
+        <td style="color:var(--t2);font-size:11.5px">${sup}</td>
+        <td style="color:var(--t2);font-size:11.5px">${ph}</td>
+        <td class="num" style="color:var(--t2)">${ord}</td>
+        <td class="money">${spent}</td>
+        <td><div style="display:flex;align-items:center;gap:8px">
+          <div class="bar ${rel>=90?'good':''}" style="flex:1"><i style="width:${rel}%"></i></div>
+          <span style="font-size:11px;font-weight:600;color:${rel>=90?'var(--ready)':'var(--t2)'}">${rel}%</span></div></td>
+      </tr>`).join('')}
+    </tbody></table>`,'6 active suppliers')});
+
+screen({id:'inv-wastage',group:'Inventory',title:'Inventory — wastage',desc:'Logged write-offs with a reason, so the monthly wastage figure can actually be acted on.',
+html: invShell('wastage',`
+  <div class="metrics">
+    <div class="metric alert"><div class="k">Wastage this month</div><div class="v">₹8,940</div><div class="d">2.6% of purchases</div></div>
+    <div class="metric"><div class="k">Entries</div><div class="v">34</div><div class="d">Across 18 items</div></div>
+    <div class="metric"><div class="k">Top reason</div><div class="v" style="font-size:20px">Spoiled</div><div class="d">₹4,120 · 46%</div></div>
+    <div class="metric"><div class="k">vs last month</div><div class="v" style="color:var(--ready)">−18%</div><div class="d">Down ₹1,960</div></div>
+  </div>
+  <div class="filters"><div class="inp" style="color:var(--t3);min-width:250px">Search wastage log</div>
+    <div class="seg"><span class="on">All</span><span>Spoiled</span><span>Overcooked</span><span>Spillage</span><span>Returned</span></div>
+    <div class="push"></div><div class="btn pri">${ic('plus')}Log wastage</div></div>
+  <table class="ledger">
+    <thead><tr><th>Item</th><th style="width:96px" class="num">Quantity</th><th style="width:130px">Reason</th>
+      <th style="width:150px">Logged by</th><th style="width:100px" class="num">Value</th><th style="width:110px" class="num">When</th></tr></thead>
+    <tbody>
+    ${[['Fresh cream','2 L','Spoiled','Imran (chef)','₹420','Today 2:30 pm'],
+       ['Tomato','3.4 kg','Spoiled','Imran (chef)','₹136','Today 11:10 am'],
+       ['Hyderabadi Biryani','2 plates','Returned','Rahul (waiter)','₹840','Yesterday 9:12 pm'],
+       ['Paneer','1.2 kg','Overcooked','Imran (chef)','₹384','Yesterday 8:40 pm'],
+       ['Fresh cream','1 L','Spillage','Sana (chef)','₹210','Yesterday 7:05 pm'],
+       ['Chicken (curry cut)','0.8 kg','Spoiled','Imran (chef)','₹192','3 Sep 6:20 pm']]
+      .map(([n,q,why,who,val,tm])=>`
+      <tr><td><b style="font-weight:600">${n}</b></td>
+        <td class="num" style="font-weight:600">${q}</td>
+        <td><span class="tag ${why==='Spoiled'?'stop':why==='Returned'?'wait':'done'}"><i></i>${why}</span></td>
+        <td style="color:var(--t2);font-size:11.5px">${who}</td>
+        <td class="money neg">${val}</td>
+        <td class="num" style="color:var(--t3);font-size:11.5px">${tm}</td></tr>`).join('')}
+    </tbody></table>`,'₹8,940 written off this month')});
+
+screen({id:'inv-movements',group:'Inventory',title:'Inventory — movements',desc:'The audit trail. Every change to stock, what caused it, and who was responsible.',
+html: invShell('movements',`
+  <div class="filters"><div class="inp" style="color:var(--t3);min-width:250px">Search movements</div>
+    <div class="seg"><span class="on">All</span><span>In</span><span>Out</span></div>
+    <div class="btn qi">${ic('filter')}Source: All</div>
+    <div class="push"></div><span style="font-size:12px;color:var(--t3)">1,284 movements this month</span></div>
+  <table class="ledger">
+    <thead><tr><th style="width:52px"></th><th>Item</th><th style="width:96px" class="num">Change</th>
+      <th style="width:110px" class="num">Balance</th><th style="width:180px">Source</th>
+      <th style="width:150px">By</th><th style="width:118px" class="num">When</th></tr></thead>
+    <tbody>
+    ${[['Basmati rice','−8 kg','2.4 kg','Recipe consumption','System','Today 9:12 pm','out'],
+       ['Paneer','+20 kg','24 kg','Purchase PO-341','Anirban (admin)','Today 6:40 pm','in'],
+       ['Tomato','−4.2 kg','32 kg','Recipe consumption','System','Today 6:15 pm','out'],
+       ['Fresh cream','−2 L','3 L','Wastage — spoiled','Imran (chef)','Today 2:30 pm','out'],
+       ['Chicken (curry cut)','+25 kg','31 kg','Purchase PO-340','Anirban (admin)','Today 11:05 am','in'],
+       ['Butter','−3 kg','18 kg','Recipe consumption','System','Today 10:22 am','out'],
+       ['Saffron','−1.4 g','8 g','Recipe consumption','System','Today 9:40 am','out'],
+       ['Onion','+40 kg','48 kg','Purchase PO-338','Anirban (admin)','Yesterday 4:12 pm','in']]
+      .map(([n,delta,bal,src,by,tm,dir])=>`
+      <tr><td><span style="width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:13px;font-weight:700;
+          color:${dir==='in'?'var(--ready)':'var(--stop)'};
+          background:${dir==='in'?'rgba(53,208,138,.13)':'rgba(242,86,77,.11)'};
+          border:1px solid ${dir==='in'?'rgba(53,208,138,.28)':'rgba(242,86,77,.24)'}">${dir==='in'?'+':'−'}</span></td>
+        <td><b style="font-weight:600">${n}</b></td>
+        <td class="num" style="font-weight:700;color:${dir==='in'?'var(--ready)':'var(--stop)'}">${delta}</td>
+        <td class="num" style="color:var(--t2)">${bal}</td>
+        <td style="color:var(--t2);font-size:11.5px">${src}</td>
+        <td style="color:var(--t3);font-size:11.5px">${by}</td>
+        <td class="num" style="color:var(--t3);font-size:11.5px">${tm}</td></tr>`).join('')}
+    </tbody></table>`,'1,284 movements this month')});
+
+/* ══════════════════ EMPLOYEES ══════════════════ */
+screen({id:'employees',group:'Setup',title:'Employees',desc:'The only place staff accounts are created. An employee then signs into the waiter or kitchen app with their own number — same OTP, scoped to whatever role this record gives them.',
+html:`<div class="app">${sidebar('employees')}<div class="main">
+  ${topbar('Employees','14 staff · 9 on shift',`<div class="btn pri">${ic('plus')}Add employee</div>`)}
+  <div class="body">
+    <div class="metrics">
+      <div class="metric"><div class="k">Total staff</div><div class="v gr">14</div><div class="d">4 waiters, 6 chefs, 4 other</div></div>
+      <div class="metric pos"><div class="k">On shift now</div><div class="v">9</div><div class="d">Signed in and active</div></div>
+      <div class="metric"><div class="k">Orders handled today</div><div class="v">248</div><div class="d">28 per waiter average</div></div>
+      <div class="metric"><div class="k">Top performer</div><div class="v" style="font-size:19px">Rahul</div><div class="d">64 orders · ₹24,800</div></div>
+    </div>
+    <div class="filters">
+      <div class="inp" style="color:var(--t3);min-width:250px">Search name or phone</div>
+      <div class="seg"><span class="on">All</span><span>Waiter</span><span>Chef</span><span>Manager</span></div>
+      <div class="push"></div><span style="font-size:12px;color:var(--t3)">14 employees</span>
+    </div>
+    <table class="ledger">
+      <thead><tr><th>Name</th><th style="width:120px">Role</th><th style="width:140px">Phone</th>
+        <th style="width:170px">Address</th><th style="width:96px" class="num">Orders</th>
+        <th style="width:118px">Status</th><th style="width:78px"></th></tr></thead>
+      <tbody>
+      ${[['Rahul Chatterjee','Waiter','+91 98765 43210','Salt Lake, Kolkata',64,'ready','On shift','RC',0],
+         ['Imran Sheikh','Chef','+91 98311 22334','Park Circus, Kolkata',0,'ready','On shift','IS',3],
+         ['Sana Parveen','Chef','+91 98322 33445','Topsia, Kolkata',0,'ready','On shift','SP',2],
+         ['Debjit Roy','Waiter','+91 98333 44556','Behala, Kolkata',52,'ready','On shift','DR',1],
+         ['Farhan Ali','Waiter','+91 98344 55667','Beniapukur, Kolkata',48,'ready','On shift','FA',4],
+         ['Ananya Ghosh','Manager','+91 98355 66778','New Town, Kolkata',0,'ready','On shift','AG',5],
+         ['Suman Das','Waiter','+91 98366 77889','Garia, Kolkata',38,'done','Off shift','SD',0],
+         ['Pooja Singh','Chef','+91 98377 88990','Tangra, Kolkata',0,'done','Off shift','PS',2]]
+        .map(([n,role,ph,addr,ord,tone,st,av,ci])=>`
+        <tr><td><div class="who2">${avatar(av,ci)}<div><b>${n}</b></div></div></td>
+          <td><span class="tag ${role==='Chef'?'wait':role==='Manager'?'vio':'live'} sq">${role}</span></td>
+          <td style="color:var(--t2);font-size:11.5px">${ph}</td>
+          <td style="color:var(--t3);font-size:11.5px">${addr}</td>
+          <td class="num" style="color:var(--t2)">${ord||'—'}</td>
+          <td><span class="tag ${tone}"><i></i>${st}</span></td>
+          <td style="text-align:right"><span class="btn sm qi">${ic('edit')}</span></td></tr>`).join('')}
+      </tbody></table>
+  </div></div></div>`});
+
+screen({id:'employees-add',group:'Setup',title:'Add employee',desc:'Four fields. The phone number becomes their sign-in identity, so it cannot be edited afterwards.',
+html:`<div class="app">${sidebar('employees')}<div class="main">
+  ${topbar('Employees','14 staff · 9 on shift',`<div class="btn pri">${ic('plus')}Add employee</div>`)}
+  <div class="body" style="filter:blur(2.5px);opacity:.42">
+    <div class="metrics">${'1234'.split('').map(()=>`<div class="metric"><div class="k">Metric</div><div class="v">—</div></div>`).join('')}</div></div>
+  <div class="scrim"><div class="modal" style="width:498px">
+    <div class="mh"><div><div class="t">Add employee</div><div class="s">They sign in with this number, no password</div></div>
+      <div class="push"></div><div class="x">${ic('close')}</div></div>
+    <div class="mb"><div class="fgrid">
+      <div class="f full"><label>Full name</label><div class="inp">Rahul Chatterjee</div></div>
+      <div class="f full"><label>Phone number</label>
+        <div style="display:flex;gap:9px"><div class="inp" style="min-width:0;width:62px;flex:none;color:var(--t2)">+91</div>
+          <div class="inp" style="flex:1;min-width:0">98765 43210</div></div>
+        <div class="hint">Cannot be changed later — it is how they sign in.</div></div>
+      <div class="f full"><label>Role</label>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:9px">
+          <div class="btn" style="justify-content:center">Waiter</div>
+          <div class="btn pri" style="justify-content:center">Chef</div>
+          <div class="btn" style="justify-content:center">Manager</div></div>
+        <div class="hint">Chefs get the kitchen app; waiters get the floor app.</div></div>
+      <div class="f full"><label>Address</label><div class="inp">Park Circus, Kolkata</div></div>
+    </div></div>
+    <div class="mf"><div class="btn">Cancel</div><div class="btn pri">Create account</div></div>
+  </div></div>
+</div></div>`});
+
+/* ══════════════════ USERS ══════════════════ */
+screen({id:'users',group:'Setup',title:'Users',desc:'Customers who have ordered, including guests. Read-mostly — this exists to look someone up, not to manage them.',
+html:`<div class="app">${sidebar('users')}<div class="main">
+  ${topbar('Users','2,840 customers · 412 this month',`<div class="btn">${ic('down')}Export</div>`)}
+  <div class="body">
+    <div class="metrics">
+      <div class="metric"><div class="k">Registered</div><div class="v gr">2,840</div><div class="d">+412 this month</div></div>
+      <div class="metric"><div class="k">Repeat customers</div><div class="v">1,106</div><div class="d">39% return rate</div></div>
+      <div class="metric"><div class="k">Guest orders</div><div class="v" style="color:var(--t2)">31%</div><div class="d">No account created</div></div>
+      <div class="metric"><div class="k">Highest spender</div><div class="v" style="font-size:19px">₹48,200</div><div class="d">Meera Das · 62 orders</div></div>
+    </div>
+    <div class="filters"><div class="inp" style="color:var(--t3);min-width:250px">Search by name or phone</div>
+      <div class="seg"><span class="on">All</span><span>Registered</span><span>Guest</span></div>
+      <div class="push"></div><span style="font-size:12px;color:var(--t3)">2,840 customers</span></div>
+    <table class="ledger">
+      <thead><tr><th>Customer</th><th style="width:140px">Phone</th><th style="width:96px" class="num">Orders</th>
+        <th style="width:112px" class="num">Lifetime</th><th style="width:104px" class="num">Average</th>
+        <th style="width:124px" class="num">Last order</th><th style="width:104px">Type</th></tr></thead>
+      <tbody>
+      ${[['Meera Das','+91 91234 56780',62,'₹48,200','₹778','Today','Registered','MD',0],
+         ['Rahul Sharma','+91 98765 43210',41,'₹31,400','₹766','Today','Registered','RS',1],
+         ['Priya Mehta','+91 90123 45678',38,'₹26,900','₹708','Today','Registered','PM',2],
+         ['Arjun Kapoor','+91 88990 11223',29,'₹22,100','₹762','Today','Registered','AK',3],
+         ['Kabir Sen','+91 93456 78901',24,'₹18,600','₹775','Yesterday','Registered','KS',4],
+         ['Sneha Nair','+91 77665 44332',18,'₹12,400','₹689','Yesterday','Registered','SN',5],
+         ['Guest','—',1,'₹640','₹640','Today','Guest','G',1],
+         ['Vikram Rao','+91 99887 66554',14,'₹9,800','₹700','2 Sep','Registered','VR',0]]
+        .map(([n,ph,ord,life,avg,last,ty,av,ci])=>`
+        <tr><td><div class="who2">${avatar(av,ci)}<div><b>${n}</b></div></div></td>
+          <td style="color:var(--t2);font-size:11.5px">${ph}</td>
+          <td class="num" style="font-weight:600">${ord}</td>
+          <td class="money">${life}</td>
+          <td class="num" style="color:var(--t2)">${avg}</td>
+          <td class="num" style="color:var(--t3);font-size:11.5px">${last}</td>
+          <td><span class="tag ${ty==='Guest'?'done':'live'} sq">${ty}</span></td></tr>`).join('')}
+      </tbody></table>
+  </div></div></div>`});
+
+/* ══════════════════ PROFILE ══════════════════ */
+const secCard = (title,sub,body,action='Edit') => `
+<div class="card" style="margin-bottom:16px">
+  <div class="card-h"><div><div class="t">${title}</div><div class="s">${sub}</div></div><div class="push"></div>
+    <span class="btn sm">${action}</span></div>
+  <div style="padding:18px">${body}</div>
+</div>`;
+const kv = pairs => `<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px">
+  ${pairs.map(([k,v,full])=>`<div style="${full?'grid-column:1/-1':''}">
+    <div style="font-size:10.5px;color:var(--t3);margin-bottom:4px">${k}</div>
+    <div style="font-size:12.5px;font-weight:500">${v}</div></div>`).join('')}</div>`;
+
+screen({id:'profile',group:'Settings',title:'Restaurant profile',desc:'Everything that is restaurant data rather than environment config — including the UPI ID, which is deliberately stored in the database, not an env var.',
+html:`<div class="app">${sidebar('profile')}<div class="main">
+  ${topbar('Restaurant profile',"AD's Cafe · last updated 2 September",`<div class="btn pri">${ic('check')}Save changes</div>`)}
+  <div class="body">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">
+      <div>
+        ${secCard('Identity','Shown on the customer site, bills and KOT headers',`
+          <div style="display:flex;gap:16px;margin-bottom:18px">
+            <div style="width:82px;height:82px;border-radius:18px;flex:none;display:grid;place-items:center;
+              background:var(--grad-btn);font-size:32px;font-weight:800;color:#fff;
+              box-shadow:0 14px 32px -12px rgba(139,92,246,.9)">K</div>
+            <div style="flex:1">${kv([['Restaurant name',"AD's Cafe",1],['Phone','+91 98765 43210'],['GSTIN','19AABCU9603R1ZX']])}</div>
+          </div>
+          ${kv([['Address','21B Park Street, Kolkata 700016',1]])}`)}
+
+        ${secCard('Payment (UPI)','Direct deep link — no payment gateway',`
+          ${kv([['UPI ID','adscafe@okhdfcbank'],['Payee name',"AD's Cafe"]])}
+          <div style="margin-top:16px;padding:12px 14px;border-radius:12px;font-size:11.5px;color:var(--t2);
+            background:linear-gradient(150deg,rgba(240,169,59,.12),rgba(240,169,59,.03));border:1px solid rgba(240,169,59,.26)">
+            Opening the UPI app is never treated as proof of payment. Orders stay at
+            <b style="color:var(--wait)">Pending verification</b> until an admin or waiter confirms against the bank receipt.</div>`)}
+
+        ${secCard('Service','What customers can order and how',`
+          <div style="display:grid;gap:11px">
+            ${[['Dine-in',1],['Takeaway',1],['Delivery',0]].map(([l,on])=>`
+              <div style="display:flex;align-items:center;gap:11px;padding:11px 13px;border-radius:12px;
+                border:1px solid ${on?'rgba(53,208,138,.28)':'var(--edge)'};
+                background:${on?'linear-gradient(150deg,rgba(53,208,138,.12),rgba(53,208,138,.02))':'rgba(255,255,255,.025)'}">
+                <span style="width:32px;height:18px;border-radius:20px;flex:none;position:relative;
+                  background:${on?'var(--ready)':'rgba(255,255,255,.14)'};${on?'box-shadow:0 0 12px -2px var(--ready)':''}">
+                  <span style="position:absolute;${on?'right:2px':'left:2px'};top:2px;width:14px;height:14px;border-radius:50%;background:#fff"></span></span>
+                <span style="font-size:12.5px;font-weight:500">${l}</span>
+                <span style="margin-left:auto;font-size:11px;color:var(--t3)">${on?'Accepting orders':'Turned off'}</span></div>`).join('')}
+            <div style="display:flex;align-items:center;gap:11px;padding:11px 13px;border-radius:12px;border:1px solid var(--edge)">
+              <span style="width:32px;height:18px;border-radius:20px;flex:none;position:relative;background:rgba(255,255,255,.14)">
+                <span style="position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff"></span></span>
+              <span style="font-size:12.5px;font-weight:500">Pure veg mode</span>
+              <span style="margin-left:auto;font-size:11px;color:var(--t3)">Hides all non-veg items</span></div>
+          </div>`)}
+      </div>
+      <div>
+        ${secCard('Printers','Local print service, discovered on the restaurant network',`
+          <div style="display:grid;gap:10px">
+            ${[['Kitchen','192.168.1.100','KOT',1],['Counter','192.168.1.101','Bills',1]].map(([n,ip,role,on])=>`
+              <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;
+                border:1px solid var(--edge);background:rgba(255,255,255,.03)">
+                <span style="width:32px;height:32px;border-radius:10px;display:grid;place-items:center;flex:none;color:var(--ready);
+                  background:rgba(53,208,138,.13);border:1px solid rgba(53,208,138,.26)">${ic('print')}</span>
+                <div style="flex:1"><div style="font-size:12.5px;font-weight:600">${n}</div>
+                  <div style="font-size:11px;color:var(--t3)">${ip} · prints ${role}</div></div>
+                <span class="tag ready"><i></i>Online</span></div>`).join('')}
+            <div style="display:flex;gap:9px;margin-top:4px">
+              <div class="inp" style="flex:1;min-width:0;color:var(--t3)">192.168.1.102</div>
+              <div class="inp" style="flex:1;min-width:0;color:var(--t3)">Name</div>
+              <div class="btn" style="flex:none">${ic('plus')}Add</div></div>
+          </div>`,'Manage')}
+
+        ${secCard('Banners','Carousel on the customer home screen',`
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+            ${[['#8B5CF6','#22D3EE'],['#F0A93B','#F2564D'],['#35D08A','#6366F1']].map(([a,b],i)=>`
+              <div style="border-radius:13px;height:84px;position:relative;overflow:hidden;
+                background:linear-gradient(140deg,${a},${b});box-shadow:0 10px 26px -14px ${a}">
+                <span style="position:absolute;top:7px;right:7px;width:20px;height:20px;border-radius:6px;
+                  background:rgba(0,0,0,.44);display:grid;place-items:center;color:#fff;font-size:11px">×</span>
+                <span style="position:absolute;bottom:8px;left:10px;font-size:11px;font-weight:700;color:#fff">Banner ${i+1}</span></div>`).join('')}
+            <div style="border-radius:13px;height:84px;display:grid;place-items:center;color:#C4B5FD;
+              border:1.5px dashed rgba(139,92,246,.4);background:rgba(139,92,246,.06)">${ic('plus')}</div>
+          </div>`,'Manage')}
+
+        ${secCard('Links','Shown in the footer of the customer site',
+          kv([['Instagram','instagram.com/adscafe'],['Facebook','facebook.com/adscafe'],['Website','adscafe.in',1]]))}
+      </div>
+    </div>
+  </div></div></div>`});
+
+/* ══════════════════ HELP ══════════════════ */
+screen({id:'help',group:'Settings',title:'Help and support',desc:'Task-shaped guides rather than a FAQ dump, plus a direct line. Support details come from the build config.',
+html:`<div class="app">${sidebar('help')}<div class="main">
+  ${topbar('Help and support','Zen OS v1.0 · Charubala LLP','')}
+  <div class="body">
+    <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:16px;align-items:start">
+      <div class="card">
+        <div class="card-h"><span class="t">Guides</span><span class="s">the eight things people ask about</span></div>
+        <div style="padding:16px 18px;display:grid;grid-template-columns:1fr 1fr;gap:11px">
+          ${[['Adding menu items','menu','Photos, half and full pricing, veg marks'],
+             ['Managing tables','tables','Seats, QR codes, freeing a table'],
+             ['Handling orders','billing','Confirm, prepare, deliver, complete'],
+             ['Creating staff accounts','employees','Waiters and chefs sign in by phone'],
+             ['Generating invoices','invoices','Single and combined bills'],
+             ['Sending bills on WhatsApp','help','What the customer receives'],
+             ['Reading insights','insights','What each figure is measuring'],
+             ['Setting up printers','print','Connecting the local print service']]
+            .map(([t,i,d])=>`<div style="padding:14px;border-radius:13px;border:1px solid var(--edge);
+              background:linear-gradient(155deg,rgba(255,255,255,.05),rgba(255,255,255,.012))">
+              <span style="width:32px;height:32px;border-radius:10px;display:grid;place-items:center;margin-bottom:10px;color:#C4B5FD;
+                background:linear-gradient(150deg,rgba(139,92,246,.26),rgba(139,92,246,.05));
+                border:1px solid rgba(139,92,246,.26)">${ic(i)}</span>
+              <div style="font-size:12.5px;font-weight:600;margin-bottom:3px">${t}</div>
+              <div style="font-size:11px;color:var(--t3);line-height:1.4">${d}</div></div>`).join('')}
+        </div>
+      </div>
+      <div>
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-h"><span class="t">Contact support</span></div>
+          <div style="padding:16px 18px;display:grid;gap:10px">
+            ${[['Phone','+91 98765 43210','help'],['Email','support@bengaltech.in','invoices'],['WhatsApp','+91 98765 43210','help'],['Company','Charubala LLP','profile']]
+              .map(([k,v,i])=>`<div style="display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:12px;
+                border:1px solid var(--edge);background:rgba(255,255,255,.03)">
+                <span style="width:32px;height:32px;border-radius:10px;display:grid;place-items:center;flex:none;color:#C4B5FD;
+                  background:linear-gradient(150deg,rgba(139,92,246,.24),rgba(139,92,246,.05))">${ic(i)}</span>
+                <div><div style="font-size:10.5px;color:var(--t3)">${k}</div>
+                  <div style="font-size:12.5px;font-weight:600">${v}</div></div></div>`).join('')}
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-h"><span class="t">Raise a ticket</span><span class="s">we reply within a day</span></div>
+          <div style="padding:16px 18px;display:grid;gap:12px">
+            <div class="f"><label>Your name</label><div class="inp" style="width:100%">Anirban Das</div></div>
+            <div class="f"><label>Phone</label><div class="inp" style="width:100%">98765 43210</div></div>
+            <div class="f"><label>What is happening</label>
+              <textarea rows="4" style="color:var(--t3)">Describe the problem, and what you were doing when it happened.</textarea></div>
+            <div class="btn pri" style="justify-content:center">Send to support</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div></div></div>`});
+
+/* ══════════════════ STATES ══════════════════ */
+screen({id:'states',group:'Settings',title:'Empty, loading and error',desc:'The three states every ledger screen needs. An empty screen is an invitation to act, and an error says what to do next rather than apologising.',
+html:`<div class="app">${sidebar('invoices')}<div class="main">
+  ${topbar('Invoices','No invoices yet','')}
+  <div class="body">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+      <div class="card"><div class="card-h"><span class="t">Empty</span></div>
+        <div class="empty"><div class="ic">${ic('invoices')}</div>
+          <h4>No invoices yet</h4><p>Invoices appear here once an order is completed and billed. Start one from Billing.</p>
+          <div class="btn pri" style="margin-top:16px">${ic('plus')}New order</div></div></div>
+      <div class="card"><div class="card-h"><span class="t">Loading</span></div>
+        <div style="padding:24px 18px">
+          ${[1,2,3,4,5,6].map(()=>`<div style="height:44px;border-radius:10px;margin-bottom:8px;
+            background:linear-gradient(100deg,rgba(255,255,255,.045) 30%,rgba(139,92,246,.14) 50%,rgba(255,255,255,.045) 70%)"></div>`).join('')}
+        </div></div>
+      <div class="card"><div class="card-h"><span class="t">Error</span></div>
+        <div class="empty"><div class="ic" style="background:linear-gradient(150deg,rgba(242,86,77,.2),rgba(242,86,77,.04));border-color:rgba(242,86,77,.28)">
+            <svg viewBox="0 0 24 24" style="stroke:#F2564D">${I.warn}</svg></div>
+          <h4>Could not load invoices</h4><p>The server did not respond. Check that the backend is running, then try again.</p>
+          <div class="btn" style="margin-top:16px">Try again</div></div></div>
+    </div>
+  </div></div></div>`});
+
+/* ══════════════════ RENDER ══════════════════ */
+(function(){
+  const groups = [];
+  SCREENS.forEach(s=>{
+    let g = groups.find(x=>x.name===s.group);
+    if(!g){ g={name:s.group,items:[]}; groups.push(g); }
+    g.items.push(s);
+  });
+  const root = document.getElementById('screens');
+  const jump = document.getElementById('jump');
+  let html='', jhtml='';
+  groups.forEach(g=>{
+    html += `<div class="grp"><span class="n">${g.name.toUpperCase()}</span><span class="ln"></span>
+      <span style="font-size:11.5px;color:var(--t3)">${g.items.length} screen${g.items.length>1?'s':''}</span></div>`;
+    g.items.forEach((s,i)=>{
+      jhtml += `<a href="#${s.id}">${s.title}</a>`;
+      html += `<div class="shot" id="${s.id}">
+        <div class="shot-h"><span class="t">${s.title}</span><span class="d">${s.desc}</span></div>
+        <div class="frame">${s.html}</div></div>`;
+    });
+  });
+  root.innerHTML = html;
+  jump.innerHTML = jhtml;
+})();
+</script>
+</body>
+</html>

@@ -12,8 +12,14 @@ cloudinary.config({
 export const getMenu = async (req, res) => {
   try {
     const { MenuItem } = req.models;
-    const { category, search, vegOnly } = req.query;
+    const { category, search, vegOnly, includeUnavailable } = req.query;
     const filter = { isAvailable: true };
+    // Admin menu management needs to see hidden items too (to un-hide them or
+    // filter by "Hidden"). Opt-in only — customer/waiter never pass this, so
+    // their menu stays "available items only" exactly as before.
+    if (includeUnavailable === "true" && (req.user?.isAdmin || req.user?.role === "admin")) {
+      delete filter.isAvailable;
+    }
     if (category) filter.category = category;
     if (search)   filter.name = { $regex: search, $options: "i" };
     if (vegOnly === "true") filter.tag = "Veg";

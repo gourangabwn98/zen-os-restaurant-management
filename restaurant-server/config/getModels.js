@@ -7,6 +7,16 @@
 import mongoose from "mongoose";
 import { ORDER_STATUSES, ORDER_SOURCES, ORDER_TYPES } from "../utils/orderStateMachine.js";
 import { STOCK_UNITS, LEDGER_TYPES, WASTAGE_REASONS } from "../utils/inventoryConstants.js";
+import { nextOrderId } from "../utils/orderNumber.js";
+
+// ── Atomic counters ──────────────────────────────────────────────────────────
+// One document per sequence (currently just "orderId"). Incremented with a
+// single atomic `$inc` so concurrent order placement can never mint the same
+// number twice — see utils/orderNumber.js for the full rationale.
+const counterSchema = new mongoose.Schema({
+  _id: { type: String },        // sequence name, e.g. "orderId"
+  seq: { type: Number, default: 0 },
+}, { versionKey: false });
 
 // ── Schema definitions ────────────────────────────────────────────────────────
 
@@ -193,9 +203,17 @@ const orderSchema = new mongoose.Schema({
   // ── Idempotency (Phase 1) ──────────────────────────────────────────────────
   // Client (customer/waiter/admin UI) generates one key per "place order"
   // attempt (e.g. a uuid held in component state) and resends the same key
-  // on retry/double-click. A unique sparse index guarantees only the first
+  // on retry/double-click. A unique partial index guarantees only the first
   // request actually creates a document; subsequent ones return the same order.
-  idempotencyKey: { type: String, default: null },
+  //
+  // IMPORTANT: no `default` here. It used to be `default: null`, which meant
+  // every keyless order persisted `idempotencyKey: null` — and a partial/
+  // sparse unique index still indexes an explicit `null`, so the *second*
+  // keyless order ever placed collided on this index. That collision was then
+  // mis-handled as "this order already exists" and a stale order was returned
+  // as a false success. Leaving the field absent keeps keyless orders out of
+  // the index entirely.
+  idempotencyKey: { type: String },
 
   // ── Inventory (Phase 2) ─────────────────────────────────────────────────────
   // Whether recipe-based stock deduction has run for this order. Guarded by
@@ -218,15 +236,25 @@ const orderSchema = new mongoose.Schema({
   },
 }, { timestamps: true });
 
-orderSchema.index({ idempotencyKey: 1 }, { unique: true, sparse: true });
+// Partial (not sparse) unique index: only orders that actually carry a string
+// idempotency key are indexed, so keyless orders can never collide here.
+orderSchema.index(
+  { idempotencyKey: 1 },
+  { unique: true, partialFilterExpression: { idempotencyKey: { $type: "string" } }, name: "idempotencyKey_str_unique" },
+);
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ tableSession: 1 });
 
+// Order number: assigned here as a backstop for any `.save()` path, but always
+// via the atomic counter (utils/orderNumber.js) — never the old racy
+// countDocuments()+1. The single place orders are actually created
+// (services/orderService.js placeOrderTx) is the primary caller.
 orderSchema.pre("save", async function () {
-  if (!this.orderId) {
-    const count = await this.constructor.countDocuments();
-    this.orderId = `ORD${String(count + 1).padStart(5, "0")}`;
-  }
+  if (this.orderId) return;
+  this.orderId = await nextOrderId({
+    Counter: this.db.model("Counter"),
+    Order: this.constructor,
+  });
 });
 
 const tableSchema = new mongoose.Schema({
@@ -482,6 +510,7 @@ export function getModels(conn) {
     Chef:              conn.models.Chef              || conn.model("Chef",              chefSchema),
     MenuItem:          conn.models.MenuItem          || conn.model("MenuItem",          menuItemSchema),
     Order:             conn.models.Order             || conn.model("Order",             orderSchema),
+    Counter:           conn.models.Counter           || conn.model("Counter",           counterSchema),
     Table:             conn.models.Table             || conn.model("Table",             tableSchema),
     TableSession:      conn.models.TableSession      || conn.model("TableSession",      tableSessionSchema),
     KOTJob:            conn.models.KOTJob            || conn.model("KOTJob",            kotJobSchema),

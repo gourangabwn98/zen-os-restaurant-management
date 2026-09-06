@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { getAllOrders, confirmOrder } from "../services/orderService.js";
+import { getSocket } from "../services/socketService.js";
 import OrderCard from "../components/OrderCard.jsx";
 import { Loader, ErrorState, EmptyState } from "../components/StateViews.jsx";
 import { BLUE, BLUE_LIGHT, TEXT_MUTED, BORDER, NAV_HEIGHT } from "../theme.js";
@@ -34,8 +35,17 @@ export default function OrdersPage() {
 
   useEffect(() => {
     load();
+    // Realtime: refresh the list the instant an order is placed/confirmed/
+    // rejected/changed anywhere (same staff-room events the admin panel uses).
+    // The 12s poll stays as a safety net if the socket drops.
     const iv = setInterval(load, 12000);
-    return () => clearInterval(iv);
+    const socket = getSocket();
+    const events = ["order:new", "order:confirmed", "order:status_changed", "order:cancelled", "order:payment_changed"];
+    if (socket) events.forEach((e) => socket.on(e, load));
+    return () => {
+      clearInterval(iv);
+      if (socket) events.forEach((e) => socket.off(e, load));
+    };
   }, [load]);
 
   const handleQuickConfirm = async (e, order) => {

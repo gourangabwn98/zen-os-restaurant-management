@@ -2,9 +2,11 @@ import { useState, useEffect, useCallback, useMemo, Fragment } from "react";
 import toast from "react-hot-toast";
 import {
   getAllOrders, getRestaurantProfile, updateOrderStatus,
-  getAllTables, printOrderBill
+  getAllTables, printOrderBill, confirmOrder, rejectOrder,
 } from "../../services/adminService.js";
-import { placeOrder } from "../../services/orderService.js";
+import { placeOrder, newIdempotencyKey } from "../../services/orderService.js";
+import { getSocket } from "../../services/socketService.js";
+import { consumePendingOrderFocus } from "../../services/orderFocus.js";
 import CombinedBillModal from "./shared/CombinedBillModal.jsx";
 import { statusKind } from "./shared/statusKind.js";
 import ErrorState from "./shared/ErrorState.jsx";
@@ -155,8 +157,9 @@ const DLabel = ({ children }) => (
 );
 
 // ── OrderDetailModal — full history of one order (reference "Order detail") ───
-const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onCombinedBill, onPrint, onAddItems }) => {
+const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onCombinedBill, onPrint, onAddItems, onConfirm, onReject, actionBusy }) => {
   if (!order) return null;
+  const isPending = order.status === "PENDING_CONFIRMATION";
   const displayName  = order.user?.name || order.guestName || "Guest";
   const displayPhone = order.guestPhone || order.user?.phone || null;
   const subtotal     = order.subtotal ?? order.items?.reduce((s,i)=>s+i.price*i.qty,0) ?? 0;
@@ -193,6 +196,37 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
         </div>
 
         <div className="mb">
+          {/* ── Pending confirmation → prominent Confirm / Reject ── */}
+          {isPending && (
+            <div style={{
+              display:"flex", gap:10, alignItems:"center", flexWrap:"wrap",
+              padding:"12px 14px", marginBottom:18, borderRadius:12,
+              border:"1px solid var(--wait-line)", background:"var(--wait-fill)",
+            }}>
+              <div style={{ flex:1, minWidth:140 }}>
+                <div style={{ fontSize:12.5, fontWeight:700, color:"var(--wait-ink)" }}>
+                  Awaiting your confirmation
+                </div>
+                <div style={{ fontSize:11.5, color:T2, marginTop:2 }}>
+                  Confirming sends the KOT to the kitchen and deducts stock.
+                </div>
+              </div>
+              <button type="button" className="op-btn" disabled={actionBusy}
+                onClick={()=>onConfirm?.(order)}
+                style={{ padding:"9px 18px", borderRadius:10, border:"none", cursor:actionBusy?"wait":"pointer",
+                  background:"var(--grad-btn)", color:"#fff", fontWeight:800, fontSize:13 }}>
+                {actionBusy ? "Working…" : "✓ Confirm Order"}
+              </button>
+              <button type="button" className="op-btn" disabled={actionBusy}
+                onClick={()=>onReject?.(order)}
+                style={{ padding:"9px 16px", borderRadius:10, cursor:actionBusy?"wait":"pointer",
+                  border:"1px solid var(--stop-line)", background:"var(--stop-fill)",
+                  color:"var(--stop-ink)", fontWeight:700, fontSize:13 }}>
+                ✕ Reject Order
+              </button>
+            </div>
+          )}
+
           {/* info grid */}
           <div className="op-detail-grid" style={{ marginBottom:20 }}>
             {info.map(([k,v]) => (
@@ -357,6 +391,7 @@ const CreateOrderModal = ({ onClose, onCreated }) => {
   const [scpi,        setScpi]        = useState(0);
   const [gstRate,     setGstRate]     = useState(0);
   const [catImages, setCatImages] = useState({});
+  const [idemKey] = useState(newIdempotencyKey);
 
   useEffect(()=>{
     getMenu({}).then(r=>{ setMi(r.data||[]); setMenuLoading(false); }).catch(()=>setMenuLoading(false));
@@ -413,7 +448,10 @@ const CreateOrderModal = ({ onClose, onCreated }) => {
         customerName:  customerName.trim()||undefined,
         customerPhone: customerPhone.trim()||undefined,
         paymentMethod, paymentStatus,
+        idempotencyKey: idemKey,
       });
+      // Only a real persisted order comes back with a Mongo _id + orderId.
+      if (!data?._id || !data?.orderId) throw new Error("Order was not created — please retry");
       toast.success(`✓ Order ${data.orderId} placed!`);
       onCreated(data); onClose();
     }catch(e){ toast.error(e.response?.data?.message||"Failed"); }
@@ -1647,7 +1685,22 @@ export default function OrdersPage() {
   const [showTables, setShowTables] = useState(true);
   const [error, setError] = useState(false);
   const [online, setOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
+  const [actionBusy, setActionBusy] = useState(false);
   const PER_PAGE=15;
+
+  // ── Insert-or-update one order in local state, keyed by Mongo _id ──────────
+  // Used by every realtime path so a socket event that arrives twice (or races
+  // the initial fetch) can never create a duplicate row.
+  const upsertOrder = useCallback((incoming) => {
+    if (!incoming?._id) return;
+    setOrders((prev) => {
+      const i = prev.findIndex((o) => o._id === incoming._id);
+      if (i === -1) return [incoming, ...prev];
+      const next = [...prev];
+      next[i] = { ...next[i], ...incoming };
+      return next;
+    });
+  }, []);
 
   const fetchTables=useCallback(()=>{ getAllTables().then(r=>{setTables(r.data?.tables||[]);setTablesLoading(false);}).catch(()=>setTablesLoading(false)); },[]);
   useEffect(()=>{ fetchTables(); },[fetchTables]);
@@ -1658,6 +1711,65 @@ export default function OrdersPage() {
       .catch(()=>{ setError(true); setLoading(false); });
   },[]);
   useEffect(()=>{ fetchOrders(); },[fetchOrders]);
+
+  // ── Realtime: keep the list live off the SAME socket the notification bell
+  // already uses (staff room). No polling. Every handler goes through
+  // upsertOrder so duplicate/replayed events are idempotent, and listeners are
+  // removed on unmount / socket change so a reconnect can't stack them up.
+  useEffect(()=>{
+    const socket = getSocket();
+    if (!socket) return;
+
+    const onNew        = (p)=>{ if (p?.order) upsertOrder(p.order); };
+    const onConfirmed  = (p)=>{ if (p?.order) upsertOrder(p.order); };
+    const onStatus     = (p)=>{ if (p?.order) upsertOrder(p.order); };
+    const onCancelled  = (p)=>{ if (p?.order) upsertOrder(p.order); };
+    const onPayment    = (p)=>{ if (p?.order) upsertOrder(p.order); };
+
+    socket.on("order:new",             onNew);
+    socket.on("order:confirmed",       onConfirmed);
+    socket.on("order:status_changed",  onStatus);
+    socket.on("order:cancelled",       onCancelled);
+    socket.on("order:payment_changed", onPayment);
+
+    return ()=>{
+      socket.off("order:new",             onNew);
+      socket.off("order:confirmed",       onConfirmed);
+      socket.off("order:status_changed",  onStatus);
+      socket.off("order:cancelled",       onCancelled);
+      socket.off("order:payment_changed", onPayment);
+    };
+  },[upsertOrder]);
+
+  // ── Clicking a notification (in NotificationBell) opens that order here ────
+  const [pendingFocus, setPendingFocus] = useState(null); // { _id?, orderId? }
+  const applyFocus = useCallback((target)=>{
+    if (!target || (!target._id && !target.orderId)) return;
+    setViewMode("all");           // "all" view isn't status/date-limited — the order is always reachable
+    setSearch(""); setFilter("All"); setTypeF("All"); setPayF("All");
+    setStartDate(""); setEndDate(""); setPage(1);
+    setPendingFocus({ _id: target._id, orderId: target.orderId });
+    fetchOrders();                // make sure a very-fresh order is pulled in
+  },[fetchOrders]);
+
+  useEffect(()=>{
+    // Drain a focus request that fired before this page was mounted
+    // (notification clicked from another admin screen).
+    const queued = consumePendingOrderFocus();
+    if (queued) applyFocus(queued);
+    const onFocus=(e)=>{ consumePendingOrderFocus(); applyFocus(e.detail); };
+    window.addEventListener("zc:focus-order", onFocus);
+    return ()=>window.removeEventListener("zc:focus-order", onFocus);
+  },[applyFocus]);
+
+  // Resolve a pending focus once the target order is actually in state.
+  useEffect(()=>{
+    if (!pendingFocus) return;
+    const hit = orders.find((o)=>
+      (pendingFocus._id && o._id===pendingFocus._id) ||
+      (pendingFocus.orderId && o.orderId===pendingFocus.orderId));
+    if (hit) { setExpanded(hit._id); setPendingFocus(null); }
+  },[pendingFocus, orders]);
 
   useEffect(()=>{
     const on=()=>setOnline(true), off=()=>setOnline(false);
@@ -1700,7 +1812,42 @@ export default function OrdersPage() {
 
   const handleStatusChange=async(id,newStatus)=>{
     try{ await updateOrderStatus(id,newStatus); setOrders(prev=>prev.map(o=>o._id===id?{...o,status:newStatus}:o)); toast.success(`→ ${formatStatus(newStatus)}`); }
-    catch{ toast.error("Update failed"); }
+    catch(e){ toast.error(e?.response?.data?.message || "Update failed"); }
+  };
+
+  // ── Confirm / Reject a PENDING_CONFIRMATION order ─────────────────────────
+  // Both go through the existing backend state machine
+  // (PATCH /orders/:id/confirm → CONFIRMED + KOT + stock deduction;
+  //  PATCH /orders/:id/reject  → CANCELLED, order kept for history). The
+  // backend also emits the realtime event that updates every other screen —
+  // the local upsert here is just so the acting admin sees it instantly even
+  // if their own socket round-trip is a beat behind.
+  const handleConfirm = async (order) => {
+    if (actionBusy) return;
+    setActionBusy(true);
+    try {
+      const { data } = await confirmOrder(order._id);
+      const updated = data?.order || data;
+      if (updated?._id) upsertOrder(updated);
+      toast.success(`Order ${order.orderId} confirmed · KOT sent`);
+    } catch (e) {
+      toast.error(e?.response?.data?.message || "Couldn't confirm this order");
+    } finally { setActionBusy(false); }
+  };
+
+  const handleReject = async (order) => {
+    if (actionBusy) return;
+    if (!window.confirm(`Reject order ${order.orderId}? This cannot be undone. The order stays in history as cancelled.`)) return;
+    const reason = (window.prompt("Reason for rejecting (optional):", "") || "").trim();
+    setActionBusy(true);
+    try {
+      const { data } = await rejectOrder(order._id, reason || undefined);
+      const updated = data?.order || data;
+      if (updated?._id) upsertOrder(updated);
+      toast.success(`Order ${order.orderId} rejected`);
+    } catch (e) {
+      toast.error(e?.response?.data?.message || "Couldn't reject this order");
+    } finally { setActionBusy(false); }
   };
 
   const handlePaymentChange=async(id,data)=>{
@@ -1834,6 +1981,23 @@ export default function OrdersPage() {
     const canAddItems = ["CONFIRMED", "PREPARING", "READY"].includes(o.status);
     return (
       <div style={{ display: "flex", gap: 5, justifyContent: "flex-end" }} onClick={(e) => e.stopPropagation()}>
+        {o.status === "PENDING_CONFIRMATION" && (
+          <>
+            <button type="button" className="op-btn" title="Confirm order" disabled={actionBusy}
+              onClick={() => handleConfirm(o)}
+              style={{ padding: "5px 10px", borderRadius: 8, border: "none", background: "var(--grad-btn)",
+                color: "#fff", fontWeight: 800, fontSize: 12, cursor: actionBusy ? "wait" : "pointer" }}>
+              ✓ Confirm
+            </button>
+            <button type="button" className="op-btn" title="Reject order" disabled={actionBusy}
+              onClick={() => handleReject(o)}
+              style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid var(--stop-line)",
+                background: "var(--stop-fill)", color: "var(--stop-ink)", fontWeight: 700, fontSize: 12,
+                cursor: actionBusy ? "wait" : "pointer" }}>
+              ✕
+            </button>
+          </>
+        )}
         {canAddItems && (
           <button type="button" className="zc-btn sm" title="Add items"
             onClick={() => setShowAddItems(o._id)} style={{ padding: "5px 8px" }}>＋</button>
@@ -2190,11 +2354,14 @@ export default function OrdersPage() {
           onCombinedBill={(mode, value) => setShowCombinedBill({ mode, value })}
           onPrint={handlePrint}
           onAddItems={(o) => { setShowAddItems(o._id); setExpanded(null); }}
+          onConfirm={handleConfirm}
+          onReject={handleReject}
+          actionBusy={actionBusy}
         />
       )}
 
       {showCreate && (
-        <CreateOrderModal onClose={() => setShowCreate(false)} onCreated={(o) => setOrders((prev) => [o, ...prev])} />
+        <CreateOrderModal onClose={() => setShowCreate(false)} onCreated={(o) => upsertOrder(o)} />
       )}
 
       {showAddItems && (

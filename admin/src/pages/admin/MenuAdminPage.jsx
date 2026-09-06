@@ -1,155 +1,161 @@
-import { PRIMARY, PRIMARY_LIGHT, PRIMARY_MID, PRIMARY_DARK, GRADIENT_BTN } from "../../theme.js";
-import { useState, useEffect, useRef } from "react";
+// src/pages/admin/MenuAdminPage.jsx
+// ─────────────────────────────────────────────────────────────────────────────
+// Zen OS "Menu items" — migrated to the shared design system
+// (design-reference/zen-os-design-reference.html → "Menu items" / "Add menu
+// item"). Visual language only: every API call, field, and rule is unchanged.
+//
+//   list / search / filter   getMenu({ includeUnavailable: true })
+//   add / edit               createMenuItem / updateMenuItem  (multipart)
+//   delete                   deleteMenuItem
+//   availability toggle      updateMenuItem(id, { isAvailable })
+//   categories               getCategories / createCategory / deleteCategory
+// Images go to Cloudinary through the backend, same as before.
+// ─────────────────────────────────────────────────────────────────────────────
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import toast from "react-hot-toast";
 import {
-  getMenu,
-  getCategories,
-  createMenuItem,
-  updateMenuItem,
-  deleteMenuItem,
-  createCategory,
-  deleteCategory
-  
+  getMenu, getCategories, createMenuItem, updateMenuItem, deleteMenuItem,
+  createCategory, deleteCategory,
 } from "../../services/menuService.js";
+import PageHeader from "./shared/PageHeader.jsx";
+import StatCard from "./shared/StatCard.jsx";
+import Loader from "./shared/Loader.jsx";
+import EmptyState from "./shared/EmptyState.jsx";
+import ErrorState from "./shared/ErrorState.jsx";
 
-// ── Design tokens ─────────────────────────────────────────────────────────────
-const PINK = PRIMARY;
-const WHITE = "#1e1a2e";
-const PINK_BG = "#fbeaf0";
-const GREEN = "#1D9E75";
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-// Change normalizeCats to keep full objects:
-const normalizeCats = (responseData) => {
-  const list = responseData?.data || responseData || [];
-  return list.filter(Boolean); // keep full {_id, name} objects
+const TAGS = ["Veg", "Non Veg"];
+const AVAIL_SEG = ["All", "Available", "Hidden"];
+const EMPTY_FORM = {
+  name: "", price: "", originalPrice: "", description: "",
+  category: "", tag: "Veg", isAvailable: true, rating: 4.0,
 };
+const normalizeCats = (data) => (data?.data || data || []).filter(Boolean);
 
-const Badge = ({ label, type }) => {
-  const MAP = {
-    Ready: { bg: "#EAF3DE", color: "#3B6D11" },
-    Preparing: { bg: "#FAEEDA", color: "#854F0B" },
-    Cancelled: { bg: "#FCEBEB", color: "#A32D2D" },
-  };
-  const s = MAP[type] || { bg: "#2a2540", color: "#9ca3af" };
+// ── page-scoped styles (tokens only — light / dark safe) ─────────────────────
+if (typeof document !== "undefined" && !document.getElementById("menu-styles")) {
+  const s = document.createElement("style");
+  s.id = "menu-styles";
+  s.textContent = `
+    .menu-filters { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+    .menu-thumb {
+      width: 40px; height: 40px; border-radius: 9px; flex: none; overflow: hidden;
+      background: linear-gradient(150deg, var(--violet-mid), var(--violet-faint));
+      border: 1px solid var(--edge); display: grid; place-items: center; font-size: 18px;
+    }
+    .menu-veg { width: 14px; height: 14px; border-radius: 3px; display: inline-grid; place-items: center; flex: none; }
+    .menu-veg i { width: 6px; height: 6px; border-radius: 50%; display: block; }
+    .zc-ledger tbody tr.menu-click { cursor: pointer; }
+    .menu-cards { display: none; }
+    @media (max-width: 900px) {
+      .menu-ledger-wrap { display: none; }
+      .menu-cards { display: block; }
+    }
+    .menu-mcard {
+      border: 1px solid var(--edge); border-radius: var(--r-row); background: var(--grad-panel);
+      padding: 12px 13px; margin-bottom: 8px; display: flex; gap: 11px; align-items: flex-start;
+    }
+    /* form */
+    .menu-fgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 520px) { .menu-fgrid { grid-template-columns: 1fr; } }
+    .menu-field { display: grid; gap: 6px; min-width: 0; }
+    .menu-field.full { grid-column: 1 / -1; }
+    .menu-field > label { font-size: 11.5px; color: var(--text-2); font-weight: 500; }
+    .menu-field .hint { font-size: 10.5px; color: var(--text-3); }
+    .menu-toggle-row {
+      display: flex; gap: 10px; align-items: center; padding: 11px 14px; border-radius: 12px;
+      border: 1px solid var(--edge); background: var(--card-2);
+    }
+    .menu-toggle-row.on { border-color: var(--ready-line); background: var(--ready-fill); }
+    .menu-switch { width: 34px; height: 19px; border-radius: 20px; position: relative; flex: none; background: var(--edge-hi); transition: background .15s ease; }
+    .menu-switch.on { background: var(--ready); box-shadow: 0 0 14px -2px var(--ready); }
+    .menu-switch i { position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; transition: left .15s ease; }
+    .menu-switch.on i { left: 17px; }
+    .menu-drop {
+      width: 100%; border-radius: var(--r-ctl); border: 1px solid var(--edge);
+      background: var(--card-2); overflow: hidden;
+    }
+    .menu-dropitem {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 9px 12px; cursor: pointer; font-size: 12.5px; color: var(--text-2);
+      border-bottom: 1px solid var(--edge); transition: background .12s ease;
+    }
+    .menu-dropitem:last-child { border-bottom: 0; }
+    .menu-dropitem:hover { background: var(--raise); }
+    .menu-dropitem.on { background: var(--violet-weak); color: var(--accent-ink); font-weight: 600; }
+    .menu-dropitem button { background: none; border: 0; cursor: pointer; color: var(--text-3); font-size: 13px; padding: 0 4px; line-height: 1; }
+    .menu-dropitem button:hover { color: var(--stop-ink); }
+  `;
+  document.head.appendChild(s);
+}
+
+const VegDot = ({ tag }) => {
+  const veg = tag === "Veg";
   return (
-    <span
-      style={{
-        background: s.bg,
-        color: s.color,
-        padding: "3px 10px",
-        borderRadius: 20,
-        fontSize: 11,
-        fontWeight: 500,
-      }}
-    >
-      {label}
+    <span className="menu-veg" style={{ border: `1.5px solid ${veg ? "var(--ready)" : "var(--stop)"}` }} aria-label={veg ? "Vegetarian" : "Non-vegetarian"}>
+      <i style={{ background: veg ? "var(--ready)" : "var(--stop)" }} />
     </span>
   );
 };
 
-const TAGS = ["Veg", "Non Veg"];
-const EMPTY_FORM = {
-  name: "",
-  price: "",
-  originalPrice: "",
-  description: "",
-  category: "",
-  tag: "Veg",
-  isAvailable: true,
-  rating: 4.0,
+const Switch = ({ on, onClick, label }) => (
+  <button type="button" role="switch" aria-checked={on} aria-label={label} onClick={onClick}
+    className={`menu-switch${on ? " on" : ""}`} style={{ border: 0, cursor: "pointer" }}>
+    <i />
+  </button>
+);
+
+// Item thumbnail — the Cloudinary image, or a glyph fallback (also on load error)
+const Thumb = ({ src, size = 40 }) => {
+  const [broken, setBroken] = useState(false);
+  const ok = typeof src === "string" && src.startsWith("http") && !broken;
+  return (
+    <span className="menu-thumb" style={{ width: size, height: size }}>
+      {ok
+        ? <img src={src} alt="" onError={() => setBroken(true)}
+            style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 9 }} />
+        : "🍽️"}
+    </span>
+  );
 };
 
-// ── Image Upload Box ──────────────────────────────────────────────────────────
-function ImageUploadBox({ label, currentUrl, file, onFileChange }) {
+// ── image upload box (dashed drop target — matches reference) ────────────────
+function ImageUploadBox({ currentUrl, file, onFileChange }) {
   const ref = useRef(null);
-  const preview = file ? URL.createObjectURL(file) : currentUrl;
+  const objUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
+  useEffect(() => () => { if (objUrl) URL.revokeObjectURL(objUrl); }, [objUrl]);
+  const preview = objUrl || currentUrl || null;
 
   return (
     <div>
-      <label
-        style={{
-          fontSize: 12,
-          color: "#9ca3af",
-          display: "block",
-          marginBottom: 5,
-          fontWeight: 600,
-        }}
-      >
-        {label}
-      </label>
       <div
-        onClick={() => ref.current.click()}
+        onClick={() => ref.current?.click()}
+        role="button" tabIndex={0} aria-label="Add photo"
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), ref.current?.click())}
         style={{
-          width: "100%",
-          height: 110,
-          borderRadius: 10,
-          border: `2px dashed ${file || currentUrl ? PINK : "#ddd"}`,
-          cursor: "pointer",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          background: preview ? PINK_BG : "#252038",
-          overflow: "hidden",
-          position: "relative",
-          transition: "border-color .2s",
+          width: 142, height: 142, borderRadius: 16, flex: "none", display: "grid", placeItems: "center",
+          textAlign: "center", cursor: "pointer", overflow: "hidden", position: "relative",
+          border: `1.5px dashed ${file || currentUrl ? "var(--violet-line)" : "var(--violet-mid)"}`,
+          background: preview ? "var(--card-2)" : "var(--violet-faint)",
         }}
       >
         {preview ? (
           <>
-            <img
-              src={preview}
-              alt="preview"
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
-            <div
-              style={{
-                position: "absolute",
-                bottom: 4,
-                right: 4,
-                background: "rgba(0,0,0,.5)",
-                color: WHITE,
-                fontSize: 10,
-                padding: "2px 6px",
-                borderRadius: 6,
-              }}
-            >
-              Change
-            </div>
+            <img src={preview} alt="preview" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            <span style={{ position: "absolute", bottom: 6, right: 6, background: "var(--scrim)", color: "#fff", fontSize: 10, padding: "2px 7px", borderRadius: 6 }}>Change</span>
           </>
         ) : (
-          <>
-            <div style={{ fontSize: 26, marginBottom: 4 }}>📷</div>
-            <div style={{ fontSize: 11, color: "#4b5563" }}>
-              Click to upload image
-            </div>
-            <div style={{ fontSize: 10, color: "#374151", marginTop: 2 }}>
-              JPG, PNG, WEBP · max 5MB
-            </div>
-          </>
+          <div>
+            <div style={{ color: "var(--accent-ink)", fontSize: 20, marginBottom: 4 }}>＋</div>
+            <div style={{ fontSize: 11, color: "var(--text-2)", fontWeight: 500 }}>Add photo</div>
+            <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 2 }}>JPG or PNG, 1:1</div>
+          </div>
         )}
       </div>
-      <input
-        ref={ref}
-        type="file"
-        accept="image/*"
-        style={{ display: "none" }}
-        onChange={(e) => onFileChange(e.target.files[0] || null)}
-      />
+      <input ref={ref} type="file" accept="image/*" style={{ display: "none" }}
+        onChange={(e) => onFileChange(e.target.files[0] || null)} />
       {file && (
-        <button
-          onClick={() => onFileChange(null)}
-          style={{
-            marginTop: 5,
-            fontSize: 11,
-            color: "#A32D2D",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            padding: 0,
-          }}
-        >
+        <button type="button" onClick={() => onFileChange(null)}
+          style={{ marginTop: 6, fontSize: 11, color: "var(--stop-ink)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
           Remove new image
         </button>
       )}
@@ -157,23 +163,83 @@ function ImageUploadBox({ label, currentUrl, file, onFileChange }) {
   );
 }
 
-// ── Category Modal ────────────────────────────────────────────────────────────
+// ── category picker: choose / create / delete (feature preserved) ───────────
+function CategoryPicker({ value, categories, onChange, onOpenCreate, onDeleteCategory }) {
+  const [confirm, setConfirm] = useState(null);
+
+  const doDelete = async () => {
+    try {
+      await onDeleteCategory(confirm);
+      toast.success(`"${confirm.name}" deleted`);
+    } catch {
+      toast.error("Failed to delete category");
+    } finally {
+      setConfirm(null);
+    }
+  };
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <label style={{ fontSize: 11.5, color: "var(--text-2)", fontWeight: 500 }}>Category *</label>
+        <button type="button" onClick={onOpenCreate} className="zc-btn ghost sm" style={{ padding: "3px 10px" }}>＋ New</button>
+      </div>
+      <div className="menu-drop">
+        {categories.length === 0 ? (
+          <div style={{ padding: "10px 12px", fontSize: 12.5, color: "var(--text-3)" }}>No categories — create one first</div>
+        ) : (
+          categories.map((c) => (
+            <div key={c._id} className={`menu-dropitem${value === c.name ? " on" : ""}`} onClick={() => onChange(c.name)}>
+              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {value === c.name && <span style={{ fontSize: 9 }}>●</span>}{c.name}
+              </span>
+              <button type="button" title={`Delete "${c.name}"`}
+                onClick={(e) => { e.stopPropagation(); setConfirm(c); }}>✕</button>
+            </div>
+          ))
+        )}
+      </div>
+
+      {confirm && (
+        <div className="zc-scrim" onClick={() => setConfirm(null)} style={{ zIndex: 1200 }}>
+          <div className="zc-modal" style={{ width: 380 }} onClick={(e) => e.stopPropagation()}>
+            <div className="mh"><div className="t">Delete category?</div></div>
+            <div className="mb" style={{ fontSize: 13, color: "var(--text-2)" }}>
+              Delete <strong style={{ color: "var(--text-1)" }}>&ldquo;{confirm.name}&rdquo;</strong>? Menu items in this
+              category are not deleted.
+            </div>
+            <div className="mf">
+              <button type="button" className="zc-btn" onClick={() => setConfirm(null)}>Cancel</button>
+              <button type="button" className="zc-btn danger" onClick={doDelete}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── create-category modal ──────────────────────────────────────────────────
 function CategoryModal({ onClose, onSaved }) {
   const [name, setName] = useState("");
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
-  const fileRef = useRef(null);
-  const preview = file ? URL.createObjectURL(file) : null;
 
-  const handleSubmit = async () => {
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const submit = async () => {
     if (!name.trim()) return toast.error("Category name is required");
+    setLoading(true);
     try {
-      setLoading(true);
       const fd = new FormData();
       fd.append("name", name.trim());
       if (file) fd.append("image", file);
       const { data } = await createCategory(fd);
-      toast.success(`"${name}" category created!`);
+      toast.success(`"${name.trim()}" created`);
       onSaved(data?.data || data);
       onClose();
     } catch (e) {
@@ -183,242 +249,32 @@ function CategoryModal({ onClose, onSaved }) {
     }
   };
 
-  const inp = {
-    width: "100%",
-    padding: "10px 13px",
-    border: "1.5px solid #e8e8e8",
-    borderRadius: 10,
-    fontSize: 14,
-    outline: "none",
-    fontFamily: "inherit",
-    transition: "border .15s",
-  };
-
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,.55)",
-        zIndex: 1100,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
-      }}
-    >
-      <div
-        style={{
-          background: "#1e1a2e",
-          borderRadius: 20,
-          width: "100%",
-          maxWidth: 400,
-          padding: 28,
-          boxShadow: "0 24px 64px rgba(0,0,0,.18)",
-          animation: "slideUp .2s cubic-bezier(.4,0,.2,1) both",
-        }}
-      >
-        {/* Header */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 22,
-          }}
-        >
-          <div>
-            <div style={{ fontSize: 17, fontWeight: 600, color: "#f1f0f5" }}>
-              Create category
-            </div>
-            <div style={{ fontSize: 12, color: "#4b5563", marginTop: 2 }}>
-              Add a new menu category
-            </div>
+    <div className="zc-scrim" onClick={onClose} style={{ zIndex: 1100 }}>
+      <div className="zc-modal" style={{ width: 400 }} onClick={(e) => e.stopPropagation()}>
+        <div className="mh">
+          <div style={{ flex: 1 }}>
+            <div className="t">New category</div>
+            <div className="s">Groups items on the customer menu</div>
           </div>
-          <button
-            onClick={onClose}
-            style={{
-              width: 30,
-              height: 30,
-              borderRadius: "50%",
-              border: "1.5px solid #eee",
-              background: "#1a1625",
-              cursor: "pointer",
-              fontSize: 14,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#9ca3af",
-            }}
-          >
-            ✕
-          </button>
+          <button type="button" className="zc-x" onClick={onClose} aria-label="Close">✕</button>
         </div>
-
-        {/* Name */}
-        <div style={{ marginBottom: 16 }}>
-          <label
-            style={{
-              fontSize: 12,
-              color: "#6b7280",
-              fontWeight: 500,
-              display: "block",
-              marginBottom: 6,
-            }}
-          >
-            Category name *
-          </label>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Biryani, Burgers, Desserts…"
-            style={inp}
-            onFocus={(e) => (e.target.style.borderColor = PINK)}
-            onBlur={(e) => (e.target.style.borderColor = "#e8e8e8")}
-            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-            autoFocus
-          />
-        </div>
-
-        {/* Image upload */}
-        <div style={{ marginBottom: 22 }}>
-          <label
-            style={{
-              fontSize: 12,
-              color: "#6b7280",
-              fontWeight: 500,
-              display: "block",
-              marginBottom: 6,
-            }}
-          >
-            Category image{" "}
-            <span style={{ color: "#374151", fontWeight: 400 }}>(optional)</span>
-          </label>
-          <div
-            onClick={() => fileRef.current?.click()}
-            style={{
-              width: "100%",
-              height: 130,
-              borderRadius: 12,
-              border: `2px dashed ${file ? PINK : "#e8e8e8"}`,
-              cursor: "pointer",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              background: file ? PINK_BG : "#252038",
-              overflow: "hidden",
-              position: "relative",
-              transition: "all .2s",
-            }}
-          >
-            {preview ? (
-              <>
-                <img
-                  src={preview}
-                  alt="preview"
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                />
-                <div
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    background: "rgba(0,0,0,.35)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: WHITE,
-                    fontSize: 13,
-                    fontWeight: 500,
-                    opacity: 0,
-                    transition: "opacity .2s",
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.opacity = 1)}
-                  onMouseLeave={(e) => (e.currentTarget.style.opacity = 0)}
-                >
-                  Click to change
-                </div>
-              </>
-            ) : (
-              <>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>🖼️</div>
-                <div style={{ fontSize: 13, color: "#4b5563", fontWeight: 500 }}>
-                  Click to upload image
-                </div>
-                <div style={{ fontSize: 11, color: "#374151", marginTop: 3 }}>
-                  JPG, PNG, WEBP · max 5 MB
-                </div>
-              </>
-            )}
+        <div className="mb" style={{ display: "grid", gap: 14 }}>
+          <div className="menu-field">
+            <label htmlFor="cat-name">Category name *</label>
+            <input id="cat-name" className="zc-input" value={name} autoFocus
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && submit()}
+              placeholder="e.g. Biryani, Desserts…" />
           </div>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            style={{ display: "none" }}
-            onChange={(e) => setFile(e.target.files[0] || null)}
-          />
-          {file && (
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginTop: 6,
-              }}
-            >
-              <span style={{ fontSize: 11, color: "#4b5563" }}>{file.name}</span>
-              <button
-                onClick={() => setFile(null)}
-                style={{
-                  fontSize: 11,
-                  color: "#A32D2D",
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  padding: 0,
-                }}
-              >
-                Remove
-              </button>
-            </div>
-          )}
+          <div className="menu-field">
+            <label>Category image <span style={{ color: "var(--text-3)", fontWeight: 400 }}>(optional)</span></label>
+            <ImageUploadBox currentUrl={null} file={file} onFileChange={setFile} />
+          </div>
         </div>
-
-        {/* Actions */}
-        <div style={{ display: "flex", gap: 10 }}>
-          <button
-            onClick={onClose}
-            style={{
-              flex: 1,
-              padding: "11px",
-              border: "1.5px solid #eee",
-              borderRadius: 12,
-              background: "#1e1a2e",
-              cursor: "pointer",
-              fontSize: 14,
-              fontWeight: 500,
-              color: "#9ca3af",
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={loading}
-            style={{
-              flex: 2,
-              padding: "11px",
-              border: "none",
-              borderRadius: 12,
-              background: loading ? "#374151" : PINK,
-              color: WHITE,
-              cursor: loading ? "not-allowed" : "pointer",
-              fontSize: 14,
-              fontWeight: 600,
-              boxShadow: loading ? "none" : "0 4px 14px rgba(233,30,140,.28)",
-            }}
-          >
+        <div className="mf">
+          <button type="button" className="zc-btn" onClick={onClose}>Cancel</button>
+          <button type="button" className="zc-btn pri" disabled={loading} onClick={submit}>
             {loading ? "Creating…" : "Create category"}
           </button>
         </div>
@@ -427,235 +283,45 @@ function CategoryModal({ onClose, onSaved }) {
   );
 }
 
-// ── Category Select with inline "+ New category" button ──────────────────────
-// function CategorySelect({ value, categories, onChange, onOpenCreateModal }) {
-//   return (
-//     <div>
-//       <div
-//         style={{
-//           display: "flex",
-//           justifyContent: "space-between",
-//           alignItems: "center",
-//           marginBottom: 5,
-//         }}
-//       >
-//         <label style={{ fontSize: 12, color: "#9ca3af", fontWeight: 600 }}>
-//           Category *
-//         </label>
-//         <button
-//           onClick={onOpenCreateModal}
-//           style={{
-//             fontSize: 11,
-//             color: PINK,
-//             background: PINK_BG,
-//             border: `1px solid #f4c0d1`,
-//             borderRadius: 20,
-//             padding: "2px 10px",
-//             cursor: "pointer",
-//             fontWeight: 500,
-//             display: "flex",
-//             alignItems: "center",
-//             gap: 4,
-//           }}
-//         >
-//           + New category
-//         </button>
-//       </div>
-//       <select
-//         value={value}
-//         onChange={(e) => onChange(e.target.value)}
-//         style={{
-//           width: "100%",
-//           padding: "9px 12px",
-//           border: "1px solid rgba(255,255,255,0.08)",
-//           borderRadius: 8,
-//           fontSize: 13,
-//           outline: "none",
-//           background: "#1e1a2e",
-//           cursor: "pointer",
-//           boxSizing: "border-box",
-//         }}
-//       >
-//         {categories.length === 0 ? (
-//           <option value="">No categories — create one first</option>
-//         ) : (
-//           categories.map((c) => (
-//             <option key={c} value={c}>
-//               {c}
-//             </option>
-//           ))
-//         )}
-//       </select>
-//     </div>
-//   );
-// }
-function CategorySelect({ value, categories, onChange, onOpenCreateModal, onDeleteCategory }) {
-  const [confirmDelete, setConfirmDelete] = useState(null); // holds category name to delete
-
-  const handleConfirmDelete = async () => {
-    try {
-      await onDeleteCategory(confirmDelete);
-      toast.success(`"${confirmDelete?.name}" deleted`);
-    } catch {
-      toast.error("Failed to delete category");
-    } finally {
-      setConfirmDelete(null);
-    }
-  };
-
-  return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
-        <label style={{ fontSize: 12, color: "#9ca3af", fontWeight: 600 }}>Category *</label>
-        <button
-          onClick={onOpenCreateModal}
-          style={{
-            fontSize: 11, color: PINK, background: PINK_BG,
-            border: `1px solid #f4c0d1`, borderRadius: 20,
-            padding: "2px 10px", cursor: "pointer", fontWeight: 500,
-          }}
-        >
-          + New category
-        </button>
-      </div>
-
-      {/* List with delete buttons */}
-      <div style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, overflow: "hidden", marginBottom: 6 }}>
-        {categories.length === 0 ? (
-          <div style={{ padding: "10px 12px", fontSize: 13, color: "#4b5563" }}>
-            No categories — create one first
-          </div>
-        ) : (
-          categories.map((c) => (
-            <div
-              key={c._id}                          // ← use _id as key
-    onClick={() => onChange(c.name)} 
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between",
-                padding: "9px 12px", cursor: "pointer", fontSize: 13,
-                background: value === c.name ? PINK_BG : WHITE, 
-                color: value === c ? PINK : "#e2e0ea",
-                fontWeight: value === c ? 600 : 400,
-                borderBottom: "1px solid #f5f5f5",
-                transition: "background .15s",
-              }}
-            >
-              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                 {value === c.name && <span style={{ fontSize: 10 }}>●</span>}
-      {c.name}      
-              </span>
-              <button
-                 onClick={(e) => { e.stopPropagation(); setConfirmDelete(c); }} 
-                style={{
-                  background: "none", border: "none", cursor: "pointer",
-                  color: "#374151", fontSize: 14, padding: "0 4px",
-                  lineHeight: 1, borderRadius: 4,
-                  transition: "color .15s",
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.color = "#e53935"}
-                onMouseLeave={(e) => e.currentTarget.style.color = "#374151"}
-                title={`Delete "${c}"`}
-              >
-                ✕
-              </button>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* Confirm delete popup */}
-      {confirmDelete && (
-        <div style={{
-          position: "fixed", inset: 0, background: "rgba(0,0,0,.5)",
-          zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center",
-        }}>
-          <div style={{
-            background: "#1e1a2e", borderRadius: 16, padding: 28, width: 360,
-            boxShadow: "0 24px 64px rgba(0,0,0,.18)",
-          }}>
-            <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 8 }}>Delete category?</div>
-            <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 22 }}>
-             Are you sure you want to delete <strong>"{confirmDelete?.name}"</strong>?
-              Menu items in this category won't be deleted.
-            </div>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button
-                onClick={() => setConfirmDelete(null)}
-                style={{
-                  flex: 1, padding: "11px", border: "1.5px solid #eee",
-                  borderRadius: 10, background: "#1e1a2e", cursor: "pointer",
-                  fontSize: 14, fontWeight: 500, color: "#9ca3af",
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmDelete}
-                style={{
-                  flex: 1, padding: "11px", border: "none",
-                  borderRadius: 10, background: "#e53935", color: WHITE,
-                  cursor: "pointer", fontSize: 14, fontWeight: 600,
-                }}
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Item Modal ────────────────────────────────────────────────────────────────
+// ── add / edit menu item modal ─────────────────────────────────────────────
 function ItemModal({ item, categories, onClose, onSaved, onCategoryCreated }) {
   const isEdit = !!item?._id;
   const [form, setForm] = useState(
     isEdit
-      ? { ...item, price: item.price, originalPrice: item.originalPrice || "" }
-      : { ...EMPTY_FORM, category: categories[0] || "" },
+      ? { ...EMPTY_FORM, ...item, price: item.price ?? "", originalPrice: item.originalPrice || "" }
+      : { ...EMPTY_FORM, category: categories[0]?.name || "" },
   );
   const [imgFile, setImgFile] = useState(null);
-  const [catFile, setCatFile] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [showCatModal, setShowCatModal] = useState(false);
-
+  const [showCat, setShowCat] = useState(false);
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && !showCat && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, showCat]);
 
-  // Inside ItemModal, add this function:
-const handleDeleteCategory = async (cat) => {
-  // cat is a full object {_id, name} since normalizeCats now keeps full objects
-  await deleteCategory(cat._id);
-  onCategoryCreated({ name: cat.name, _deleted: true });
-  if (form.category === cat.name) set("category", "");
-};
-
-// Then update the CategorySelect usage:
-<CategorySelect
-  value={form.category}
-  categories={categories}
-  onChange={(v) => set("category", v)}
-  onOpenCreateModal={() => setShowCatModal(true)}
-  onDeleteCategory={handleDeleteCategory}  // ← add this
-/>
-  // When a new category is created inside the nested modal
-  const handleCategoryCreated = (newCat) => {
-    const name = typeof newCat === "string" ? newCat : newCat?.name;
-    if (!name) return;
-    onCategoryCreated(newCat); // bubble up to page
-    set("category", name); // auto-select the new category
-    setShowCatModal(false);
+  const deleteCat = async (cat) => {
+    await deleteCategory(cat._id);
+    onCategoryCreated({ name: cat.name, _deleted: true });
+    if (form.category === cat.name) set("category", "");
   };
 
-  const handleSubmit = async () => {
-    if (!form.name.trim()) return toast.error("Name is required");
-    if (!form.price) return toast.error("Price is required");
-    if (isNaN(Number(form.price))) return toast.error("Price must be a number");
+  const catCreated = (newCat) => {
+    const name = typeof newCat === "string" ? newCat : newCat?.name;
+    onCategoryCreated(newCat);
+    if (name) set("category", name);
+    setShowCat(false);
+  };
+
+  const submit = async () => {
+    if (!form.name.trim()) return toast.error("Item name is required");
+    if (form.price === "" || isNaN(Number(form.price))) return toast.error("Price must be a number");
     if (!form.category) return toast.error("Category is required");
 
+    setLoading(true);
     try {
-      setLoading(true);
       const fd = new FormData();
       fd.append("name", form.name.trim());
       fd.append("price", form.price);
@@ -666,791 +332,403 @@ const handleDeleteCategory = async (cat) => {
       if (form.originalPrice) fd.append("originalPrice", form.originalPrice);
       if (form.description) fd.append("description", form.description);
       if (imgFile) fd.append("image", imgFile);
-      // else if (form.image) fd.append("image", form.image);
-      if (catFile) fd.append("categoryImage", catFile);
-      // else if (form.categoryImage)
-      //   fd.append("categoryImage", form.categoryImage);
 
       let data;
       if (isEdit) {
         ({ data } = await updateMenuItem(item._id, fd));
-        toast.success("Item updated!");
+        toast.success("Item updated");
         onSaved(data, "edit");
       } else {
         ({ data } = await createMenuItem(fd));
-        toast.success("Item created!");
+        toast.success("Item created");
         onSaved(data, "create");
       }
       onClose();
     } catch (e) {
-      toast.error(e.response?.data?.message || "Failed to save item");
+      toast.error(e?.response?.data?.message || "Failed to save item");
     } finally {
       setLoading(false);
     }
   };
 
-  const inp = {
-    width: "100%",
-    padding: "9px 12px",
-    border: "1px solid rgba(255,255,255,0.08)",
-    borderRadius: 8,
-    fontSize: 13,
-    outline: "none",
-    boxSizing: "border-box",
-  };
-  const lbl = {
-    fontSize: 12,
-    color: "#9ca3af",
-    display: "block",
-    marginBottom: 5,
-    fontWeight: 600,
-  };
-
   return (
     <>
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,.7)",
-          zIndex: 999,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 16,
-        }}
-      >
-        <div
-          style={{
-            background: "#1e1a2e",
-            borderRadius: 16,
-            padding: 28,
-            width: "100%",
-            maxWidth: 560,
-            maxHeight: "92vh",
-            overflowY: "auto",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 22,
-            }}
-          >
-            <div style={{ fontWeight: 600, fontSize: 17 }}>
-              {isEdit ? "Edit menu item" : "Add new item"}
+      <div className="zc-scrim" onClick={onClose}>
+        <div className="zc-modal" style={{ width: 640 }} onClick={(e) => e.stopPropagation()}>
+          <div className="mh">
+            <div style={{ flex: 1 }}>
+              <div className="t">{isEdit ? "Edit menu item" : "New menu item"}</div>
+              <div className="s">Appears on the customer site as soon as it is available</div>
             </div>
-            <button
-              onClick={onClose}
-              style={{
-                background: "#2a2540",
-                border: "none",
-                borderRadius: "50%",
-                width: 30,
-                height: 30,
-                cursor: "pointer",
-                fontSize: 16,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              ✕
-            </button>
+            <button type="button" className="zc-x" onClick={onClose} aria-label="Close">✕</button>
           </div>
 
-          <div
-            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}
-          >
-            <div style={{ gridColumn: "1/-1" }}>
-              <label style={lbl}>Item name *</label>
-              <input
-                value={form.name}
-                onChange={(e) => set("name", e.target.value)}
-                placeholder="e.g. Dunked Zinger Burger"
-                style={inp}
-              />
-            </div>
-
-            <div>
-              <label style={lbl}>Price (₹) *</label>
-              <input
-                type="number"
-                value={form.price}
-                onChange={(e) => set("price", e.target.value)}
-                placeholder="290"
-                style={inp}
-              />
-            </div>
-
-            <div>
-              <label style={lbl}>Original price (₹)</label>
-              <input
-                type="number"
-                value={form.originalPrice}
-                onChange={(e) => set("originalPrice", e.target.value)}
-                placeholder="440 (optional)"
-                style={inp}
-              />
-            </div>
-
-            {/* ── Category select with "+ New category" button ── */}
-            <div style={{ gridColumn: "1/-1" }}>
-           <CategorySelect
-  value={form.category}
-  categories={categories}
-  onChange={(v) => set("category", v)}
-  onOpenCreateModal={() => setShowCatModal(true)}
-  onDeleteCategory={handleDeleteCategory}  // ← add this
-/>
-            </div>
-
-            <div style={{ gridColumn: "1/-1" }}>
-              <label style={lbl}>Tag *</label>
-              <div style={{ display: "flex", gap: 8 }}>
-                {TAGS.map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => set("tag", t)}
-                    style={{
-                      flex: 1,
-                      padding: "9px",
-                      borderRadius: 8,
-                      cursor: "pointer",
-                      fontSize: 13,
-                      border:
-                        form.tag === t ? `2px solid ${PINK}` : "1px solid rgba(255,255,255,0.08)",
-                      background: form.tag === t ? PINK_BG : WHITE,
-                      color: form.tag === t ? PINK : "#9ca3af",
-                      fontWeight: form.tag === t ? 600 : 400,
-                    }}
-                  >
-                    {t === "Veg" ? "🟢" : "🔴"} {t}
-                  </button>
-                ))}
+          <div className="mb">
+            <div style={{ display: "flex", gap: 18, marginBottom: 20, flexWrap: "wrap" }}>
+              <ImageUploadBox currentUrl={form.image} file={imgFile} onFileChange={setImgFile} />
+              <div className="menu-fgrid" style={{ flex: 1, minWidth: 240, alignContent: "start" }}>
+                <div className="menu-field full">
+                  <label htmlFor="mi-name">Item name *</label>
+                  <input id="mi-name" className="zc-input" value={form.name}
+                    onChange={(e) => set("name", e.target.value)} placeholder="e.g. Hyderabadi Dum Biryani" />
+                </div>
+                <div className="menu-field full">
+                  <CategoryPicker
+                    value={form.category}
+                    categories={categories}
+                    onChange={(v) => set("category", v)}
+                    onOpenCreate={() => setShowCat(true)}
+                    onDeleteCategory={deleteCat}
+                  />
+                </div>
+                <div className="menu-field full">
+                  <label>Food type *</label>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    {TAGS.map((t) => (
+                      <button key={t} type="button" onClick={() => set("tag", t)}
+                        className={`zc-btn${form.tag === t ? (t === "Veg" ? " good" : " danger") : ""}`}
+                        style={{ flex: 1, justifyContent: "center" }}>
+                        <VegDot tag={t} />{t === "Veg" ? "Veg" : "Non-veg"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div style={{ gridColumn: "1/-1" }}>
-              <label style={lbl}>Description</label>
-              <textarea
-                value={form.description}
-                onChange={(e) => set("description", e.target.value)}
-                placeholder="Short description of the item…"
-                rows={2}
-                style={{ ...inp, resize: "vertical", fontFamily: "inherit" }}
-              />
-            </div>
-
-            <ImageUploadBox
-              label="Item image *"
-              currentUrl={form.image}
-              file={imgFile}
-              onFileChange={setImgFile}
-            />
-
-            {/* <ImageUploadBox
-              label="Category image"
-              currentUrl={form.categoryImage}
-              file={catFile}
-              onFileChange={setCatFile}
-            /> */}
-
-            <div>
-              <label style={lbl}>Rating (1–5)</label>
-              <input
-                type="number"
-                min="1"
-                max="5"
-                step="0.1"
-                value={form.rating}
-                onChange={(e) => set("rating", e.target.value)}
-                style={inp}
-              />
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <label style={{ ...lbl, marginBottom: 0 }}>Available</label>
-              <div
-                onClick={() => set("isAvailable", !form.isAvailable)}
-                style={{
-                  width: 44,
-                  height: 24,
-                  borderRadius: 12,
-                  cursor: "pointer",
-                  position: "relative",
-                  background: form.isAvailable ? GREEN : "#ddd",
-                  transition: "background .2s",
-                }}
-              >
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 3,
-                    left: form.isAvailable ? 22 : 3,
-                    width: 18,
-                    height: 18,
-                    borderRadius: "50%",
-                    background: "#1e1a2e",
-                    transition: "left .2s",
-                    boxShadow: "0 1px 3px rgba(0,0,0,.2)",
-                  }}
-                />
+            <div className="menu-fgrid">
+              <div className="menu-field">
+                <label htmlFor="mi-price">Price (₹) *</label>
+                <input id="mi-price" type="number" min="0" className="zc-input" value={form.price}
+                  onChange={(e) => set("price", e.target.value)} placeholder="420" />
+                <div className="hint">Shown as the item price</div>
               </div>
-              <span style={{ fontSize: 12, color: "#6b7280" }}>
-                {form.isAvailable ? "Yes" : "No"}
-              </span>
+              <div className="menu-field">
+                <label htmlFor="mi-oprice">Original price (₹)</label>
+                <input id="mi-oprice" type="number" min="0" className="zc-input" value={form.originalPrice}
+                  onChange={(e) => set("originalPrice", e.target.value)} placeholder="Optional" />
+                <div className="hint">Struck-through &ldquo;was&rdquo; price — leave empty if none</div>
+              </div>
+              <div className="menu-field">
+                <label htmlFor="mi-rating">Rating (1–5)</label>
+                <input id="mi-rating" type="number" min="1" max="5" step="0.1" className="zc-input"
+                  value={form.rating} onChange={(e) => set("rating", e.target.value)} />
+              </div>
+              <div className="menu-field full">
+                <label htmlFor="mi-desc">Description</label>
+                <textarea id="mi-desc" rows={3} className="zc-textarea" value={form.description}
+                  onChange={(e) => set("description", e.target.value)}
+                  placeholder="Short description shown to customers…" />
+              </div>
+              <div className="menu-field full">
+                <label>Availability</label>
+                <div className={`menu-toggle-row${form.isAvailable ? " on" : ""}`}>
+                  <Switch on={form.isAvailable} onClick={() => set("isAvailable", !form.isAvailable)}
+                    label="Toggle availability" />
+                  <span style={{ fontSize: 12.5, fontWeight: 500, color: "var(--text-1)" }}>
+                    {form.isAvailable ? "Available now" : "Hidden"}
+                  </span>
+                  <span style={{ fontSize: 11, color: "var(--text-3)", marginLeft: "auto" }}>
+                    {form.isAvailable ? "Customers can order this item" : "Stays in history, hidden from the menu"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 14, padding: "10px 13px", background: "var(--card-2)", border: "1px solid var(--edge)", borderRadius: "var(--r-ctl)", fontSize: 11.5, color: "var(--text-3)" }}>
+              📷 Images upload to Cloudinary automatically. Max 5 MB · square images recommended.
             </div>
           </div>
 
-          <div
-            style={{
-              marginTop: 14,
-              padding: "10px 14px",
-              background: "#1a1625",
-              borderRadius: 8,
-              fontSize: 12,
-              color: "#6b7280",
-            }}
-          >
-            📷 Images uploaded to Cloudinary automatically. Max 5 MB. Square
-            images recommended.
-          </div>
-
-          <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
-            <button
-              onClick={onClose}
-              style={{
-                flex: 1,
-                padding: "11px",
-                border: "1px solid rgba(255,255,255,0.08)",
-                borderRadius: 25,
-                background: "#1e1a2e",
-                cursor: "pointer",
-                fontSize: 14,
-                fontWeight: 600,
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={loading}
-              style={{
-                flex: 2,
-                padding: "11px",
-                border: "none",
-                borderRadius: 25,
-                background: loading ? "#374151" : PINK,
-                color: WHITE,
-                cursor: loading ? "not-allowed" : "pointer",
-                fontSize: 14,
-                fontWeight: 700,
-              }}
-            >
-              {loading
-                ? `⏳ ${isEdit ? "Updating…" : "Creating…"}`
-                : isEdit
-                  ? "Update item"
-                  : "Create item"}
+          <div className="mf">
+            <button type="button" className="zc-btn" onClick={onClose}>Cancel</button>
+            <button type="button" className="zc-btn pri" disabled={loading} onClick={submit}>
+              {loading ? (isEdit ? "Updating…" : "Creating…") : isEdit ? "Update item" : "Save item"}
             </button>
           </div>
         </div>
       </div>
 
-      {/* Nested category modal — z-index higher than item modal */}
-      {showCatModal && (
-        <div style={{ zIndex: 1100, position: "fixed", inset: 0 }}>
-          <CategoryModal
-            onClose={() => setShowCatModal(false)}
-            onSaved={handleCategoryCreated}
-          />
-        </div>
-      )}
+      {showCat && <CategoryModal onClose={() => setShowCat(false)} onSaved={catCreated} />}
     </>
   );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN
+// ═══════════════════════════════════════════════════════════════════════════════
 export default function MenuAdminPage() {
   const [items, setItems] = useState([]);
-  const [cats, setCats] = useState([]); // string[]
+  const [cats, setCats] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
   const [search, setSearch] = useState("");
   const [selCat, setSelCat] = useState("All");
-  const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState(null);
+  const [avail, setAvail] = useState("All");
+  const [vegOnly, setVegOnly] = useState(false);
 
-  // Also allow creating category directly from the filter bar
-  const [showCatModal, setShowCatModal] = useState(false);
+  const [modal, setModal] = useState(null); // "create" | item | null
+  const [showCat, setShowCat] = useState(false);
 
-  const loadCats = () =>
-    getCategories().then((r) => setCats(normalizeCats(r.data)));
+  const loadCats = useCallback(
+    () => getCategories().then((r) => setCats(normalizeCats(r.data))).catch(() => {}),
+    [],
+  );
 
-  useEffect(() => {
-    Promise.all([getMenu({}), getCategories()])
+  const load = useCallback(() => {
+    Promise.all([getMenu({ includeUnavailable: true }), getCategories()])
       .then(([m, c]) => {
-        setItems(m.data || []);
+        setItems(Array.isArray(m.data) ? m.data : []);
         setCats(normalizeCats(c.data));
+        setError(false);
         setLoading(false);
       })
-      .catch(() => {
-        toast.error("Failed to load menu");
-        setLoading(false);
-      });
+      .catch(() => { setError(true); setLoading(false); });
   }, []);
+  useEffect(() => { load(); }, [load]);
 
   const handleSaved = (saved, mode) => {
-    if (mode === "create") setItems((p) => [saved, ...p]);
-    else setItems((p) => p.map((i) => (i._id === saved._id ? saved : i)));
+    setItems((p) => (mode === "create" ? [saved, ...p] : p.map((i) => (i._id === saved._id ? saved : i))));
     loadCats();
   };
 
-  // Called when a new category is created from inside ItemModal OR the filter bar
-  // const handleCategoryCreated = (newCat) => {
-  //   const name = typeof newCat === "string" ? newCat : newCat?.name;
-  //   if (name && !cats.includes(name)) {
-  //     setCats((p) => [...p, name]);
-  //   }
-  // };
- const handleCategoryCreated = (newCat) => {
-  if (newCat?._deleted) {
-    setCats((p) => p.filter((c) => c.name !== newCat.name));  // ← compare by name
-    return;
-  }
-  const exists = cats.some((c) => c.name === newCat?.name);
-  if (!exists) setCats((p) => [...p, newCat]);
-};
-  const handleDelete = async (id) => {
-    if (!window.confirm("Delete this item? This cannot be undone.")) return;
+  const handleCategoryCreated = (newCat) => {
+    if (newCat?._deleted) {
+      setCats((p) => p.filter((c) => c.name !== newCat.name));
+      return;
+    }
+    setCats((p) => (p.some((c) => c.name === newCat?.name) ? p : [...p, newCat]));
+  };
+
+  const handleDelete = async (item) => {
+    if (!window.confirm(`Delete "${item.name}"? This cannot be undone.`)) return;
     try {
-      await deleteMenuItem(id);
-      setItems((p) => p.filter((i) => i._id !== id));
+      await deleteMenuItem(item._id);
+      setItems((p) => p.filter((i) => i._id !== item._id));
       toast.success("Item deleted");
-    } catch {
-      toast.error("Delete failed");
+    } catch (e) {
+      toast.error(e?.response?.data?.message || "Delete failed");
     }
   };
 
   const toggleAvail = async (item) => {
     try {
-      const { data } = await updateMenuItem(item._id, {
-        isAvailable: !item.isAvailable,
-      });
+      const { data } = await updateMenuItem(item._id, { isAvailable: !item.isAvailable });
       setItems((p) => p.map((i) => (i._id === data._id ? data : i)));
-      toast.success(
-        `${data.name} → ${data.isAvailable ? "Available" : "Hidden"}`,
-      );
-    } catch {
-      toast.error("Update failed");
+      toast.success(`${data.name} → ${data.isAvailable ? "Available" : "Hidden"}`);
+    } catch (e) {
+      toast.error(e?.response?.data?.message || "Update failed");
     }
   };
 
-  const filtered = items.filter(
-    (i) =>
-      (selCat === "All" || i.category === selCat) &&
-      i.name?.toLowerCase().includes(search.toLowerCase()),
-  );
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return items.filter((i) => {
+      if (selCat !== "All" && i.category !== selCat) return false;
+      if (avail === "Available" && !i.isAvailable) return false;
+      if (avail === "Hidden" && i.isAvailable) return false;
+      if (vegOnly && i.tag !== "Veg") return false;
+      if (q && !i.name?.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [items, search, selCat, avail, vegOnly]);
 
-const allCats = ["All", ...cats.map((c) => c.name)];
+  const availableCount = items.filter((i) => i.isAvailable).length;
+  const hiddenCount = items.length - availableCount;
+  const vegCount = items.filter((i) => i.tag === "Veg").length;
+  const nonVegCount = items.filter((i) => i.tag === "Non Veg").length;
+  const hasFilters = search || selCat !== "All" || avail !== "All" || vegOnly;
+  const clearFilters = () => { setSearch(""); setSelCat("All"); setAvail("All"); setVegOnly(false); };
+
+  const STATS = [
+    { label: "Total items", value: items.length, grad: true, sub: `${cats.length} categor${cats.length === 1 ? "y" : "ies"}` },
+    { label: "Available", value: availableCount, color: "var(--ready-ink)", sub: "Live on the menu" },
+    { label: "Hidden", value: hiddenCount, color: "var(--text-2)", sub: hiddenCount ? "Off the menu" : "None hidden" },
+    { label: "Vegetarian", value: vegCount, color: "var(--ready-ink)", sub: items.length ? `${Math.round((vegCount / items.length) * 100)}% of menu` : "—" },
+    { label: "Non-vegetarian", value: nonVegCount, color: "var(--stop-ink)", sub: items.length ? `${Math.round((nonVegCount / items.length) * 100)}% of menu` : "—" },
+  ];
 
   return (
-    <>
-      {/* ── Header ── */}
-      <div style={{ marginBottom: 20 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <div>
-            <div style={{ fontSize: 20, fontWeight: 500 }}>Menu items</div>
-            <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>
-              Manage the café's food & beverage catalog
-            </div>
-          </div>
-          <button
-            onClick={() => setModal("create")}
-            style={{
-              background: PINK,
-              color: WHITE,
-              border: "none",
-              borderRadius: 25,
-              padding: "10px 22px",
-              fontWeight: 700,
-              fontSize: 14,
-              cursor: "pointer",
-            }}
-          >
-            + Add item
-          </button>
-        </div>
+    <div>
+      <PageHeader
+        title="Menu items"
+        sub={`${items.length} item${items.length === 1 ? "" : "s"} across ${cats.length} categor${cats.length === 1 ? "y" : "ies"}`}
+        right={
+          <>
+            <button type="button" className="zc-btn" onClick={() => setShowCat(true)}>＋ New category</button>
+            <button type="button" className="zc-btn pri" onClick={() => setModal("create")}>＋ New item</button>
+          </>
+        }
+      />
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 20 }}>
+        {STATS.map((b, i) => <StatCard key={i} {...b} />)}
       </div>
 
-      <div
-        style={{
-          background: "#1e1a2e",
-          border: "0.5px solid #eee",
-          borderRadius: 12,
-          padding: 18,
-        }}
-      >
-        {/* ── Filters ── */}
-        <div
-          style={{
-            display: "flex",
-            gap: 10,
-            marginBottom: 18,
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by item name…"
-            style={{
-              flex: 1,
-              minWidth: 200,
-              padding: "9px 14px",
-              borderRadius: 8,
-              border: "1px solid rgba(255,255,255,0.08)",
-              fontSize: 13,
-              outline: "none",
-            }}
-          />
-
-          {/* Category filter dropdown */}
-          <select
-            value={selCat}
-            onChange={(e) => setSelCat(e.target.value)}
-            style={{
-              padding: "9px 14px",
-              borderRadius: 8,
-              border: "1px solid rgba(255,255,255,0.08)",
-              fontSize: 13,
-              background: "#ddd",
-              cursor: "pointer",
-              minWidth: 160,
-            }}
-          >
-            {allCats.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-
-          {/* ── Create category button in filter bar ── */}
-          <button
-            onClick={() => setShowCatModal(true)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "9px 16px",
-              borderRadius: 8,
-              border: `1.5px solid #f4c0d1`,
-              background: PINK_BG,
-              color: PINK,
-              fontSize: 13,
-              fontWeight: 500,
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-            }}
-          >
-            + New category
-          </button>
-        </div>
-
-        {/* ── Stats ── */}
-        <div
-          style={{
-            display: "flex",
-            gap: 10,
-            marginBottom: 18,
-            flexWrap: "wrap",
-          }}
-        >
-          {[
-            {
-              label: "Total items",
-              val: items.length,
-              color: "#185FA5",
-              bg: "#E6F1FB",
-            },
-            {
-              label: "Available",
-              val: items.filter((i) => i.isAvailable).length,
-              color: "#3B6D11",
-              bg: "#EAF3DE",
-            },
-            {
-              label: "Hidden",
-              val: items.filter((i) => !i.isAvailable).length,
-              color: "#A32D2D",
-              bg: "#FCEBEB",
-            },
-            {
-              label: "Veg items",
-              val: items.filter((i) => i.tag === "Veg").length,
-              color: "#3B6D11",
-              bg: "#EAF3DE",
-            },
-            {
-              label: "Non-veg items",
-              val: items.filter((i) => i.tag === "Non Veg").length,
-              color: "#854F0B",
-              bg: "#FAEEDA",
-            },
-          ].map((s) => (
-            <div
-              key={s.label}
-              style={{
-                background: s.bg,
-                borderRadius: 8,
-                padding: "8px 14px",
-                display: "flex",
-                gap: 8,
-                alignItems: "center",
-              }}
-            >
-              <span style={{ fontSize: 18, fontWeight: 700, color: s.color }}>
-                {s.val}
-              </span>
-              <span style={{ fontSize: 11, color: s.color }}>{s.label}</span>
-            </div>
+      <div className="menu-filters">
+        <input
+          className="zc-input"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by item name"
+          aria-label="Search menu items"
+          style={{ flex: 1, minWidth: 220 }}
+        />
+        <div className="zc-seg" role="tablist" aria-label="Availability filter">
+          {AVAIL_SEG.map((a) => (
+            <button key={a} type="button" role="tab" aria-selected={avail === a}
+              className={avail === a ? "on" : ""} onClick={() => setAvail(a)}>{a}</button>
           ))}
         </div>
-
-        {/* ── Table ── */}
-        {loading ? (
-          <div
-            style={{ textAlign: "center", padding: "48px 0", color: "#4b5563" }}
-          >
-            Loading…
-          </div>
-        ) : filtered.length === 0 ? (
-          <div
-            style={{ textAlign: "center", padding: "48px 20px", color: "#4b5563" }}
-          >
-            <div style={{ fontSize: 30, marginBottom: 8 }}>📭</div>
-            <div>No items match your filters</div>
-          </div>
+        <select className="zc-select" value={selCat} onChange={(e) => setSelCat(e.target.value)}
+          aria-label="Category filter" style={{ width: "auto" }}>
+          <option value="All">Category: All</option>
+          {cats.map((c) => <option key={c._id} value={c.name}>{c.name}</option>)}
+        </select>
+        <button type="button" onClick={() => setVegOnly((v) => !v)}
+          className={`zc-btn${vegOnly ? " good" : " ghost"}`} aria-pressed={vegOnly}>
+          <VegDot tag="Veg" />Veg only
+        </button>
+        <div style={{ flex: 1 }} />
+        {hasFilters ? (
+          <>
+            <span style={{ fontSize: 12, color: "var(--text-2)" }}>
+              <b style={{ color: "var(--accent-ink)" }}>{filtered.length}</b> of {items.length}
+            </span>
+            <button type="button" className="zc-btn sm" onClick={clearFilters}>Clear ✕</button>
+          </>
         ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                fontSize: 13,
-              }}
-            >
-              <thead>
-                <tr>
-                  {[
-                    "Item",
-                    "Category",
-                    "Price",
-                    "Tag",
-                    "Rating",
-                    "Available",
-                    "Actions",
-                  ].map((h) => (
-                    <th
-                      key={h}
-                      style={{
-                        textAlign: "left",
-                        padding: "10px 12px",
-                        color: "#6b7280",
-                        fontSize: 11,
-                        fontWeight: 500,
-                        borderBottom: "0.5px solid #eee",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((item) => (
-                  <tr
-                    key={item._id}
-                    style={{ borderBottom: "0.5px solid #f5f5f5" }}
-                  >
-                    <td style={{ padding: "12px" }}>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 10,
-                        }}
-                      >
-                        {item.image?.startsWith("http") ? (
-                          <img
-                            src={item.image}
-                            alt={item.name}
-                            style={{
-                              width: 56,
-                              height: 56,
-                              borderRadius: 10,
-                              objectFit: "cover",
-                              background: "#252038",
-                              flexShrink: 0,
-                            }}
-                            onError={(e) => {
-                              e.target.style.display = "none";
-                            }}
-                          />
-                        ) : (
-                          <div
-                            style={{
-                              width: 56,
-                              height: 56,
-                              borderRadius: 10,
-                              background: "#252038",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              fontSize: 28,
-                              flexShrink: 0,
-                            }}
-                          >
-                            🍽️
-                          </div>
-                        )}
-                        <div>
-                          <div style={{ fontWeight: 500 }}>{item.name}</div>
-                          <div
-                            style={{
-                              fontSize: 11,
-                              color: "#4b5563",
-                              marginTop: 1,
-                            }}
-                          >
-                            {item.description?.slice(0, 40)}
-                            {item.description?.length > 40 ? "…" : ""}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td style={{ padding: "12px" }}>
-                      <span
-                        style={{
-                          background: "#252038",
-                          padding: "3px 10px",
-                          borderRadius: 12,
-                          fontSize: 12,
-                        }}
-                      >
-                        {item.category}
-                      </span>
-                    </td>
-                    <td style={{ padding: "12px" }}>
-                      <div style={{ fontWeight: 600 }}>₹{item.price}</div>
-                      {item.originalPrice && (
-                        <div
-                          style={{
-                            fontSize: 11,
-                            color: "#4b5563",
-                            textDecoration: "line-through",
-                          }}
-                        >
-                          ₹{item.originalPrice}
-                        </div>
-                      )}
-                    </td>
-                    <td style={{ padding: "12px" }}>
-                      <Badge
-                        label={item.tag || "—"}
-                        type={item.tag === "Veg" ? "Ready" : "Preparing"}
-                      />
-                    </td>
-                    <td
-                      style={{
-                        padding: "12px",
-                        color: "#BA7517",
-                        fontWeight: 500,
-                      }}
-                    >
-                      ★ {item.rating?.toFixed(1)}
-                    </td>
-                    <td style={{ padding: "12px" }}>
-                      <div
-                        onClick={() => toggleAvail(item)}
-                        title="Click to toggle"
-                        style={{
-                          width: 40,
-                          height: 22,
-                          borderRadius: 11,
-                          cursor: "pointer",
-                          position: "relative",
-                          background: item.isAvailable ? GREEN : "#ddd",
-                          transition: "background .2s",
-                        }}
-                      >
-                        <div
-                          style={{
-                            position: "absolute",
-                            top: 2,
-                            left: item.isAvailable ? 20 : 2,
-                            width: 18,
-                            height: 18,
-                            borderRadius: "50%",
-                            background: "#1e1a2e",
-                            transition: "left .2s",
-                            boxShadow: "0 1px 3px rgba(0,0,0,.2)",
-                          }}
-                        />
-                      </div>
-                    </td>
-                    <td style={{ padding: "12px" }}>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button
-                          onClick={() => setModal(item)}
-                          style={{
-                            padding: "5px 12px",
-                            borderRadius: 8,
-                            border: "0.5px solid #ddd",
-                            background: "#ddd",
-                            cursor: "pointer",
-                            fontSize: 12,
-                            fontWeight: 500,
-                          }}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDelete(item._id)}
-                          style={{
-                            padding: "5px 12px",
-                            borderRadius: 8,
-                            border: "0.5px solid #f9a8a8",
-                            background: "#1e1a2e",
-                            color: "#A32D2D",
-                            cursor: "pointer",
-                            fontSize: 12,
-                            fontWeight: 500,
-                          }}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <span style={{ fontSize: 12, color: "var(--text-3)" }}>{items.length} item{items.length === 1 ? "" : "s"}</span>
         )}
       </div>
 
-      {/* ── Item Modal ── */}
+      <div className="zc-card">
+        <div className="zc-card-h">
+          <span className="t">Items</span>
+          <span className="s">{loading ? "loading…" : error ? "unavailable" : `${filtered.length} shown`}</span>
+        </div>
+
+        {loading ? (
+          <div style={{ padding: "16px 18px" }}><Loader rows={8} /></div>
+        ) : error ? (
+          <ErrorState title="Could not load the menu"
+            sub="The server did not respond. Check that the backend is running, then try again."
+            onRetry={load} />
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            icon={
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M4 5h16M4 12h16M4 19h10" />
+              </svg>
+            }
+            title={items.length === 0 ? "No menu items yet" : "No items match"}
+            sub={items.length === 0
+              ? "Add your first dish or drink — it shows on the customer site as soon as it is available."
+              : "Nothing matches these filters. Try clearing them."}
+            action={
+              items.length === 0
+                ? <button type="button" className="zc-btn pri" onClick={() => setModal("create")}>＋ New item</button>
+                : hasFilters ? <button type="button" className="zc-btn" onClick={clearFilters}>Clear filters</button> : null
+            }
+          />
+        ) : (
+          <>
+            {/* desktop / tablet ledger */}
+            <div className="menu-ledger-wrap" style={{ overflowX: "auto", padding: "6px 10px 8px" }}>
+              <table className="zc-ledger" style={{ minWidth: 720 }}>
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th style={{ width: 130 }}>Category</th>
+                    <th className="num" style={{ width: 110 }}>Price</th>
+                    <th className="num" style={{ width: 84 }}>Rating</th>
+                    <th style={{ width: 132 }}>Availability</th>
+                    <th style={{ width: 96 }} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((item) => (
+                    <tr key={item._id} className="menu-click" onClick={() => setModal(item)}>
+                      <td>
+                        <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
+                          <Thumb src={item.image} />
+                          <VegDot tag={item.tag} />
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, color: "var(--text-1)" }}>{item.name}</div>
+                            {item.description && (
+                              <div style={{ fontSize: 11, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 320 }}>
+                                {item.description}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td><span className="zc-tag done sq">{item.category || "—"}</span></td>
+                      <td className="num">
+                        <span style={{ fontWeight: 600, color: "var(--text-1)" }}>₹{item.price}</span>
+                        {item.originalPrice ? (
+                          <div style={{ fontSize: 11, color: "var(--text-3)", textDecoration: "line-through" }}>₹{item.originalPrice}</div>
+                        ) : null}
+                      </td>
+                      <td className="num" style={{ color: "var(--wait-ink)", fontWeight: 600 }}>
+                        ★ {Number(item.rating || 0).toFixed(1)}
+                      </td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                          <Switch on={item.isAvailable} onClick={() => toggleAvail(item)}
+                            label={`Toggle ${item.name} availability`} />
+                          <span className={`zc-tag ${item.isAvailable ? "ready" : "done"}`}>
+                            <i />{item.isAvailable ? "Available" : "Hidden"}
+                          </span>
+                        </div>
+                      </td>
+                      <td style={{ textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
+                        <div style={{ display: "flex", gap: 5, justifyContent: "flex-end" }}>
+                          <button type="button" className="zc-btn ghost sm" title="Edit" onClick={() => setModal(item)}
+                            style={{ padding: "5px 8px" }}>✏️</button>
+                          <button type="button" className="zc-btn danger sm" title="Delete" onClick={() => handleDelete(item)}
+                            style={{ padding: "5px 8px" }}>🗑️</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* mobile cards */}
+            <div className="menu-cards" style={{ padding: "10px 12px 4px" }}>
+              {filtered.map((item) => (
+                <div key={item._id} className="menu-mcard" onClick={() => setModal(item)}>
+                  <Thumb src={item.image} size={48} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                      <VegDot tag={item.tag} />
+                      <span style={{ fontWeight: 600, color: "var(--text-1)", fontSize: 13 }}>{item.name}</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 3 }}>
+                      {item.category} · ★ {Number(item.rating || 0).toFixed(1)}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                      <span className="tnum" style={{ fontWeight: 700, color: "var(--text-1)" }}>₹{item.price}</span>
+                      {item.originalPrice ? (
+                        <span className="tnum" style={{ fontSize: 11, color: "var(--text-3)", textDecoration: "line-through" }}>₹{item.originalPrice}</span>
+                      ) : null}
+                      <span className={`zc-tag ${item.isAvailable ? "ready" : "done"}`}><i />{item.isAvailable ? "Available" : "Hidden"}</span>
+                      <div style={{ marginLeft: "auto", display: "flex", gap: 5 }} onClick={(e) => e.stopPropagation()}>
+                        <Switch on={item.isAvailable} onClick={() => toggleAvail(item)} label={`Toggle ${item.name}`} />
+                        <button type="button" className="zc-btn danger sm" style={{ padding: "4px 8px" }} onClick={() => handleDelete(item)}>🗑️</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
       {modal && (
         <ItemModal
           item={modal === "create" ? null : modal}
@@ -1461,16 +739,12 @@ const allCats = ["All", ...cats.map((c) => c.name)];
         />
       )}
 
-      {/* ── Standalone Category Modal (from filter bar) ── */}
-      {showCatModal && (
+      {showCat && (
         <CategoryModal
-          onClose={() => setShowCatModal(false)}
-          onSaved={(newCat) => {
-            handleCategoryCreated(newCat);
-            setShowCatModal(false);
-          }}
+          onClose={() => setShowCat(false)}
+          onSaved={(newCat) => { handleCategoryCreated(newCat); setShowCat(false); }}
         />
       )}
-    </>
+    </div>
   );
 }

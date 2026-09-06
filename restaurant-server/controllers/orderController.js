@@ -27,6 +27,15 @@ export const placeOrder = async (req, res) => {
       req, body: req.body,
     });
 
+    // Hard invariant: we never tell a client "order placed" without a real,
+    // persisted order document in hand. If this ever trips, something in
+    // placeOrderTx resolved without creating/finding an order — treat it as a
+    // failure, never a success.
+    if (!order || !order._id) {
+      console.error("placeOrder: placeOrderTx resolved without an order document");
+      return res.status(500).json({ message: "Order could not be created. Please try again." });
+    }
+
     if (!alreadyExisted) {
       if (order.status === "PENDING_CONFIRMATION") {
         emitNewOrderPendingConfirmation(req.tenantKey, order);
@@ -43,8 +52,15 @@ export const placeOrder = async (req, res) => {
       ...(kotJob ? { kotJobId: kotJob._id } : {}),
     });
   } catch (err) {
-    console.error("placeOrder error:", err.message);
-    res.status(err.statusCode || 400).json({ message: err.message });
+    // Full error server-side (stack + duplicate-key details) for debugging;
+    // only a safe message goes to the client.
+    console.error("placeOrder error:", err);
+    const status = err.statusCode || (err.code === 11000 ? 409 : 400);
+    const clientMessage =
+      err.code === 11000
+        ? "Could not place the order due to a conflict. Please try again."
+        : err.message || "Could not place the order.";
+    res.status(status).json({ message: clientMessage });
   }
 };
 

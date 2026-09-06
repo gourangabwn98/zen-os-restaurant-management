@@ -1,7 +1,8 @@
 // src/components/NotificationBell.jsx
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { getSocket, disconnectSocket } from "../services/socketService.js";
+import { requestOrderFocus } from "../services/orderFocus.js";
 import { playNotificationSound } from "../utils/notificationSound.js";
 import { PRIMARY, BG_CARD, BORDER, TEXT_PRIMARY, TEXT_MUTED } from "../theme.js";
 
@@ -14,28 +15,40 @@ const EVENT_META = {
   "table:cleared":         { icon: "🧹", label: (p) => `Table ${p.session?.tableNo ?? ""} cleared` },
 };
 
-export default function NotificationBell({ user }) {
+export default function NotificationBell({ user, onNavigate }) {
   const [open, setOpen]     = useState(false);
   const [items, setItems]   = useState([]);
   const [unread, setUnread] = useState(0);
-  const boundRef = useRef(false);
 
   useEffect(() => {
     if (!user) return;
     const socket = getSocket();
-    if (!socket || boundRef.current) return;
-    boundRef.current = true;
+    if (!socket) return;
 
     const push = (event, payload) => {
       const meta = EVENT_META[event];
       if (!meta) return;
       const message = meta.label(payload || {});
+      const order = payload?.order || null;
 
-      setItems((prev) => [{ id: `${Date.now()}-${Math.random()}`, icon: meta.icon, message, at: new Date() }, ...prev].slice(0, 30));
+      setItems((prev) => [{
+        id: `${Date.now()}-${Math.random()}`, icon: meta.icon, message, at: new Date(),
+        order: order ? { _id: order._id, orderId: order.orderId } : null,
+      }, ...prev].slice(0, 30));
       setUnread((n) => n + 1);
 
       if (meta.sound) playNotificationSound();
-      toast(message, { icon: meta.icon, duration: 4000 });
+      toast(
+        (t) => (
+          <span
+            onClick={() => { toast.dismiss(t.id); if (order) { onNavigate?.(); requestOrderFocus(order); } }}
+            style={{ cursor: order ? "pointer" : "default" }}
+          >
+            {message}{order ? "  ›" : ""}
+          </span>
+        ),
+        { icon: meta.icon, duration: 4000 },
+      );
     };
 
     const handlers = {};
@@ -47,7 +60,7 @@ export default function NotificationBell({ user }) {
     return () => {
       for (const event of Object.keys(handlers)) socket.off(event, handlers[event]);
     };
-  }, [user]);
+  }, [user, onNavigate]);
 
   // Disconnect the socket entirely on logout.
   useEffect(() => {
@@ -95,10 +108,26 @@ export default function NotificationBell({ user }) {
             </div>
           ) : (
             items.map((n) => (
-              <div key={n.id} style={{ display: "flex", gap: 10, padding: "9px 10px", borderRadius: 10 }}>
+              <div
+                key={n.id}
+                onClick={() => {
+                  if (!n.order) return;
+                  setOpen(false);
+                  onNavigate?.();
+                  requestOrderFocus(n.order);
+                }}
+                style={{
+                  display: "flex", gap: 10, padding: "9px 10px", borderRadius: 10,
+                  cursor: n.order ? "pointer" : "default",
+                }}
+                onMouseEnter={(e) => { if (n.order) e.currentTarget.style.background = "rgba(127,127,127,0.12)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+              >
                 <span style={{ fontSize: 15 }}>{n.icon}</span>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 12.5, color: TEXT_PRIMARY }}>{n.message}</div>
+                  <div style={{ fontSize: 12.5, color: TEXT_PRIMARY }}>
+                    {n.message}{n.order ? "  ›" : ""}
+                  </div>
                   <div style={{ fontSize: 10.5, color: TEXT_MUTED, marginTop: 2 }}>
                     {n.at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </div>
