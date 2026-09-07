@@ -7,6 +7,7 @@ import {
 import StatCard from "./shared/StatCard.jsx";
 import Badge from "./shared/Badge.jsx";
 import { statusKind } from "./shared/statusKind.js";
+import { RankedBars, SegmentedBar, Meter, TrendChart, CAT_COLORS } from "./shared/charts.jsx";
 
 // ── Canonical vocabulary (see restaurant-server/utils/orderStateMachine.js) ───
 const ALL_STATUSES = [
@@ -65,6 +66,8 @@ if (!document.getElementById("dash-styles")) {
     @media (prefers-reduced-motion: reduce){ .dash-blink{ animation-duration:0s; } }
     .dash-cols{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.1fr); gap:16px; }
     @media (max-width: 960px){ .dash-cols{ grid-template-columns:1fr; } }
+    @media (max-width: 1100px){ .dash-charts-row{ grid-template-columns:1fr 1fr !important; } }
+    @media (max-width: 700px){ .dash-charts-row{ grid-template-columns:1fr !important; } }
   `;
   document.head.appendChild(s);
 }
@@ -520,6 +523,30 @@ export default function DashboardPage({ data }) {
   const todayRev = paidToday.reduce((sum, o) => sum + Number(o.total || 0), 0);
 
   const weeklyRevenue = (data?.weeklyRevenue || []).map((d) => Number(d.revenue || 0));
+  const weeklyRevenuePoints = (data?.weeklyRevenue || []).map((d) => ({
+    label: d._id ? new Date(d._id).toLocaleDateString("en-IN", { weekday: "short" }) : "",
+    value: Number(d.revenue || 0),
+  }));
+
+  // ── chart-ready aggregates — same real orders, reshaped per chart's job ────
+  const statusRows = ALL_STATUSES.map((st) => ({
+    label: statusLabel(st),
+    value: allTodayOrders.filter((o) => o.status === st).length,
+    color: KIND_INK[statusKind(st)],
+  }));
+
+  const orderTypeSegments = ["DINE_IN", "TAKEAWAY", "ONLINE"].map((t, i) => ({
+    label: typeLabel(t),
+    value: allTodayOrders.filter((o) => o.orderType === t).length,
+    color: CAT_COLORS[i],
+  }));
+
+  const cashPaidToday = allTodayOrders.filter((o) => o.paymentMethod === "Cash" && o.paymentStatus === "PAID");
+  const onlinePaidToday = allTodayOrders.filter((o) => o.paymentMethod === "Online" && o.paymentStatus === "PAID");
+  const paymentSegmentsToday = [
+    { label: "Cash", value: cashPaidToday.reduce((s2, o) => s2 + Number(o.total || 0), 0), color: CAT_COLORS[3] },
+    { label: "Online", value: onlinePaidToday.reduce((s2, o) => s2 + Number(o.total || 0), 0), color: CAT_COLORS[0] },
+  ];
 
   const today = new Date().toLocaleDateString("en-IN", {
     weekday: "long", day: "numeric", month: "long", year: "numeric",
@@ -588,10 +615,36 @@ export default function DashboardPage({ data }) {
           Loading…
         </div>
       ) : (
+        <>
+        {/* Charts — each form picked for the job its data does */}
+        <div className="zc-card" style={{ padding: 20, marginBottom: 16 }}>
+          <SectionLabel>Revenue trend — last 7 days</SectionLabel>
+          <TrendChart points={weeklyRevenuePoints} color="var(--violet)" />
+        </div>
+
+        <div className="dash-charts-row" style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr", gap: 16, marginBottom: 16 }}>
+          <div className="zc-card" style={{ padding: 20 }}>
+            <SectionLabel>Orders by status — today</SectionLabel>
+            <RankedBars rows={statusRows} />
+          </div>
+          <div className="zc-card" style={{ padding: 20 }}>
+            <SectionLabel>Order type — today</SectionLabel>
+            <SegmentedBar segments={orderTypeSegments} />
+          </div>
+          <div className="zc-card" style={{ padding: 20 }}>
+            <SectionLabel>Table occupancy</SectionLabel>
+            <Meter value={activeFloorTables} max={s.totalTables || activeFloorTables} label="Tables on the floor" sub="Active dine-in orders vs total tables" />
+            <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid var(--edge)" }}>
+              <SectionLabel style={{ marginBottom: 10 }}>Payment method — today</SectionLabel>
+              <SegmentedBar segments={paymentSegmentsToday} />
+            </div>
+          </div>
+        </div>
+
         <div className="dash-cols">
           {/* LEFT */}
           <div className="zc-card" style={{ padding: 20 }}>
-            <SectionLabel>Orders by status — today</SectionLabel>
+            <SectionLabel>Orders by status — today (detail)</SectionLabel>
             <StatusSummary orders={allTodayOrders} />
             <SectionLabel>Live table map</SectionLabel>
             <TableMap
@@ -608,6 +661,7 @@ export default function DashboardPage({ data }) {
             <OrderList orders={allTodayOrders} onStatusChange={handleStatusChange} />
           </div>
         </div>
+        </>
       )}
     </div>
   );
