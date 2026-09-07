@@ -373,7 +373,7 @@ const PAYMENT_STATUS_OPTIONS = [
   { value:"PAID",                 label:"Paid", icon:"✓"  },
 ];
 
-const CreateOrderModal = ({ onClose, onCreated }) => {
+const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null }) => {
   const [vegFilter,  setVegFilter]  = useState("All");
   const [tempFilter, setTempFilter] = useState("All");
   const [mi,          setMi]          = useState([]);
@@ -381,7 +381,9 @@ const CreateOrderModal = ({ onClose, onCreated }) => {
   const [search,      setSearch]      = useState("");
   const [cart,        setCart]        = useState([]);
   const [orderType,   setOrderType]   = useState("DINE_IN");
-  const [tableNo,     setTableNo]     = useState("");
+  // Pre-filled when opened by tapping a specific table on the floor map
+  // (see openNewOrder in the parent) — saves re-typing a number just picked.
+  const [tableNo,     setTableNo]     = useState(initialTableNo ? String(initialTableNo) : "");
   const [customerName,setCustomerName]= useState("");
   const [customerPhone,setCustomerPhone]=useState("");
   const [paymentMethod,setPaymentMethod]=useState("Cash");
@@ -1356,14 +1358,22 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
 // MULTI-ORDER TABLE VIEW
 // ══════════════════════════════════════════════════════════════════════════════
 
-const MultiOrderTableView = ({ orders, tableNo, onStatusChange, onPaymentChange, onCombinedBill, onAddItems }) => {
+const MultiOrderTableView = ({ orders, tableNo, onStatusChange, onPaymentChange, onCombinedBill, onAddItems, onNewOrder }) => {
   const [expandedOrder, setExpandedOrder] = useState(null);
 
   if (orders.length === 0) {
     return (
-      <div style={{ marginTop:14, textAlign:"center", padding:20, color:T3,
+      <div style={{ marginTop:14, textAlign:"center", padding:24, color:T3,
         fontSize:12, border:`1px dashed ${BDR}`, borderRadius:RADIUS }}>
-        Table {tableNo} is free
+        <div style={{ marginBottom:12 }}>Table {tableNo} is free</div>
+        <button
+          type="button"
+          onClick={() => onNewOrder?.(tableNo)}
+          className="zc-btn pri"
+          style={{ justifyContent:"center" }}
+        >
+          ＋ New order for Table {tableNo}
+        </button>
       </div>
     );
   }
@@ -1673,6 +1683,11 @@ export default function OrdersPage() {
   const [payF,setPayF]=useState("All");
   const [expanded,setExpanded]=useState(null);
   const [showCreate,setShowCreate]=useState(false);
+  const [presetTableNo,setPresetTableNo]=useState(null);
+  // Opens the New order form. Passing a table number (e.g. from tapping a
+  // free table on the map) pre-fills it there instead of leaving the admin
+  // to re-type a number they already picked.
+  const openNewOrder = (tableNo = null) => { setPresetTableNo(tableNo); setShowCreate(true); };
   const [showAddItems, setShowAddItems] = useState(null);
   const [page,setPage]=useState(1);
   const [startDate,setStartDate]=useState("");
@@ -1783,7 +1798,7 @@ export default function OrdersPage() {
       const tag=document.activeElement?.tagName;
       const isTyping=tag==="INPUT"||tag==="TEXTAREA"||tag==="SELECT"||document.activeElement?.isContentEditable;
       if(isTyping) return;
-      if(e.key.toLowerCase()==="n"&&!e.metaKey&&!e.ctrlKey&&!e.altKey){ e.preventDefault(); setShowCreate(true); }
+      if(e.key.toLowerCase()==="n"&&!e.metaKey&&!e.ctrlKey&&!e.altKey){ e.preventDefault(); openNewOrder(); }
     };
     window.addEventListener("keydown",handleKeyDown);
     return()=>window.removeEventListener("keydown",handleKeyDown);
@@ -2036,7 +2051,7 @@ export default function OrdersPage() {
             placeholder="Search order, customer or phone"
             style={{ minWidth: 190, maxWidth: 260 }}
           />
-          <button type="button" className="zc-btn pri" onClick={() => setShowCreate(true)}>
+          <button type="button" className="zc-btn pri" onClick={() => openNewOrder()}>
             ＋ New order
             <span style={{ fontSize: 10, fontWeight: 700, background: "var(--edge-hi)", padding: "1px 5px", borderRadius: 5 }}>N</span>
           </button>
@@ -2181,6 +2196,7 @@ export default function OrdersPage() {
                 onPaymentChange={handlePaymentChange}
                 onCombinedBill={(mode, value) => setShowCombinedBill({ mode, value })}
                 onAddItems={(order) => setShowAddItems(order._id)}
+                onNewOrder={openNewOrder}
               />
             ) : (
               <div className="zc-empty" style={{ padding: "44px 16px" }}>
@@ -2191,7 +2207,7 @@ export default function OrdersPage() {
                 </div>
                 <h4>Pick a table</h4>
                 <p>Tap a table to see its orders, split the bill, or start a new one.</p>
-                <button type="button" className="zc-btn pri" style={{ marginTop: 16 }} onClick={() => setShowCreate(true)}>＋ New order</button>
+                <button type="button" className="zc-btn pri" style={{ marginTop: 16 }} onClick={() => openNewOrder()}>＋ New order</button>
               </div>
             )}
           </div>
@@ -2229,7 +2245,7 @@ export default function OrdersPage() {
               ? "No active orders right now. Start one from New order."
               : "Nothing matches these filters. Try clearing them."}</p>
             <button type="button" className="zc-btn pri" style={{ marginTop: 16 }}
-              onClick={() => (viewMode === "recent" ? setShowCreate(true) : clearFilters())}>
+              onClick={() => (viewMode === "recent" ? openNewOrder() : clearFilters())}>
               {viewMode === "recent" ? "＋ New order" : "Clear filters"}
             </button>
           </div>
@@ -2361,7 +2377,11 @@ export default function OrdersPage() {
       )}
 
       {showCreate && (
-        <CreateOrderModal onClose={() => setShowCreate(false)} onCreated={(o) => upsertOrder(o)} />
+        <CreateOrderModal
+          initialTableNo={presetTableNo}
+          onClose={() => { setShowCreate(false); setPresetTableNo(null); }}
+          onCreated={(o) => upsertOrder(o)}
+        />
       )}
 
       {showAddItems && (
