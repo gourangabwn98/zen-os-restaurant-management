@@ -11,3 +11,7 @@ dist/
 
 # Logs
 *.log
+
+# OCR trained-data cache (should live in the OS temp dir — see
+# utils/purchaseImportExtract.js — this is a safety net in case it doesn't)
+*.traineddata
