@@ -21,124 +21,101 @@ import OpsAlertsPanel from "../../components/OpsAlertsPanel.jsx";
 import ThemeToggle from "../../components/ThemeToggle.jsx";
 
 import {
-  BG_MAIN, BG_SIDEBAR, BORDER,
-  TEXT_PRIMARY, TEXT_MUTED,
-  GRADIENT_SIDEBAR,
+  BG_MAIN, TEXT_MUTED,
   BRAND_NAME, BRAND_VERSION,
 } from "../../theme.js";
 
-const NAV = [
-  { id: "orders",    label: "Billing",        icon: "📦", group: "main" },
-  { id: "invoices",  label: "Invoices",       icon: "🧾", group: "main" },
-  { id: "dashboard", label: "Dashboard",      icon: "⊞",  group: "main" },
-  { id: "tables",    label: "Table Map",      icon: "🪑", group: "main" },
-  { id: "menu",      label: "Menu Items",     icon: "🍽", group: "main" },
-  { id: "employees", label: "Employees",      icon: "🧑‍🍳", group: "main" },
-  { id: "inventory", label: "Inventory",      icon: "🗄️", group: "main" },
-  { id: "users",     label: "Users",          icon: "👥", group: "main" },
-  { id: "analytics", label: "Insights",       icon: "📊", group: "main" },
-  { id: "profile",   label: "Profile",        icon: "⚙️", group: "settings" },
-  { id: "help",      label: "Help & Support", icon: "❓", group: "settings" },
+// ── nav icons (line style, matching design-reference/zen-os-design-reference.html's `I` set) ──
+const ICONS = {
+  billing:   <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18" /></>,
+  tables:    <><circle cx="12" cy="12" r="8" /><path d="M12 4v16M4 12h16" /></>,
+  chef:      <><path d="M7 21h10M8 21v-5h8v5" /><path d="M6 12a3 3 0 0 1 1-5.8A3.5 3.5 0 0 1 12 4a3.5 3.5 0 0 1 5 2.2A3 3 0 0 1 18 12z" /></>,
+  dash:      <><rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" /><rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" /></>,
+  invoices:  <><path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z" /><path d="M9 8h6M9 12h6" /></>,
+  insights:  <><path d="M4 19V5M4 19h16" /><path d="M8 16v-5M13 16V8M18 16v-3" /></>,
+  menu:      <path d="M4 5h16M4 12h16M4 19h10" />,
+  inventory: <><path d="M3 7l9-4 9 4v10l-9 4-9-4z" /><path d="M3 7l9 4 9-4M12 11v10" /></>,
+  employees: <><circle cx="9" cy="8" r="3" /><path d="M3 20a6 6 0 0 1 12 0" /><path d="M16 8h5M18.5 5.5v5" /></>,
+  users:     <><circle cx="12" cy="8" r="3.5" /><path d="M5 20a7 7 0 0 1 14 0" /></>,
+  profile:   <><circle cx="12" cy="12" r="3" /><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4" /></>,
+  help:      <><circle cx="12" cy="12" r="9" /><path d="M9.5 9.5a2.5 2.5 0 1 1 3 2.4V14" /><path d="M12 17.5v.01" /></>,
+};
+const Icon = ({ id }) => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {ICONS[id]}
+  </svg>
+);
+
+// Grouped the same way as the reference sidebar: Service / Money / Setup, then
+// a separate Settings section pinned to the bottom.
+const SERVICE_NAV = [
+  { id: "orders", label: "Billing", icon: "billing", badgeKey: "active" },
+  { id: "tables", label: "Table Map", icon: "tables", badgeKey: "tables" },
+];
+const MONEY_NAV = [
+  { id: "dashboard", label: "Dashboard", icon: "dash" },
+  { id: "invoices", label: "Invoices", icon: "invoices" },
+  { id: "analytics", label: "Insights", icon: "insights" },
+];
+const SETUP_NAV = [
+  { id: "menu", label: "Menu Items", icon: "menu" },
+  { id: "inventory", label: "Inventory", icon: "inventory" },
+  { id: "employees", label: "Employees", icon: "employees" },
+  { id: "users", label: "Users", icon: "users" },
+];
+const SETTINGS_NAV = [
+  { id: "profile", label: "Profile", icon: "profile" },
+  { id: "help", label: "Help & Support", icon: "help" },
 ];
 
 if (!document.getElementById("admin-layout-styles")) {
   const s = document.createElement("style");
   s.id = "admin-layout-styles";
-  // All values resolve to tokens in src/theme/tokens.css so every class below
-  // follows the light/dark toggle. Class names are kept stable — pages that
-  // are not yet migrated to .zc-* still rely on .dark-card / .dark-input / etc.
   s.textContent = `
-    .nav-item {
-      display: flex; align-items: center; gap: 10px;
-      padding: 9px 12px; border-radius: var(--r-ctl); margin: 1px 8px;
-      cursor: pointer; font-size: 13px; font-weight: 400; color: var(--text-2);
-      transition: var(--theme-transition); user-select: none; position: relative;
-    }
-    .nav-item:hover  { background: var(--raise); color: var(--text-1); }
-    .nav-item.active {
-      background: linear-gradient(96deg, var(--violet-mid), var(--violet-faint));
-      color: var(--text-1);
-      font-weight: 500;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.1), 0 4px 14px -6px var(--violet-glow);
-    }
-    .nav-item.active::before {
-      content: ""; position: absolute; left: -8px; top: 7px; bottom: 7px;
-      width: 3px; border-radius: 0 3px 3px 0;
-      background: var(--grad-brand); box-shadow: 0 0 10px var(--violet-glow);
-    }
-    .nav-icon {
-      width: 28px; height: 28px; border-radius: 8px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 15px; flex-shrink: 0; transition: var(--theme-transition);
-    }
-    .nav-item.active .nav-icon { background: var(--violet-mid); }
-    .nav-item:hover  .nav-icon { background: var(--violet-weak); }
-    .nav-group-label {
-      padding: 14px 20px 5px; font-size: 10px; color: var(--text-3);
-      letter-spacing: 1.5px; text-transform: uppercase; font-weight: 600;
-    }
-    .sidebar-logo-img { width: 120px; height: 48px; object-fit: contain; flex-shrink: 0; }
-    .logout-btn {
-      display: flex; align-items: center; gap: 8px;
-      padding: 9px 12px; margin: 4px 8px; border-radius: var(--r-ctl);
-      font-size: 13px; color: var(--stop-ink); cursor: pointer;
-      transition: var(--theme-transition); border: none; background: none;
-      width: calc(100% - 16px); font-family: inherit;
-    }
-    .logout-btn:hover { background: var(--stop-fill); }
+    .side { width: 228px; flex: none; display: flex; flex-direction: column; padding-bottom: 12px;
+      background: var(--grad-rail); border-right: 1px solid var(--edge); position: sticky; top: 0;
+      height: 100vh; overflow-y: auto; }
+    .side::after { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 200px;
+      pointer-events: none; background: var(--glow-side); }
+    .side-brand { padding: 19px 18px 17px; display: flex; align-items: center; gap: 11px; position: relative; z-index: 1; }
+    .side-logo-img { width: 120px; height: 44px; object-fit: contain; flex-shrink: 0; }
+    .side-mk { width: 34px; height: 34px; border-radius: 11px; flex: none; display: grid; place-items: center;
+      font-weight: 800; font-size: 15px; color: #fff; background: var(--grad-btn);
+      box-shadow: 0 6px 18px -4px var(--violet-glow), inset 0 1px 0 rgba(255,255,255,.28); }
+    .side-nm { font-size: 15.5px; font-weight: 700; letter-spacing: -.02em; color: var(--text-1);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .side-sb { font-size: 11px; color: var(--text-3); margin-top: -2px; }
+    .side-sp { flex: 1; }
+    .side-who { margin: 10px 9px 0; padding: 11px; border-radius: var(--r-ctl); display: flex; align-items: center;
+      gap: 10px; background: linear-gradient(140deg, rgba(255,255,255,.055), rgba(255,255,255,.01));
+      border: 1px solid var(--edge); position: relative; z-index: 1; }
+    .side-who .av { width: 31px; height: 31px; border-radius: 50%; flex: none; display: grid; place-items: center;
+      font-size: 12px; font-weight: 700; color: #fff; background: var(--grad-btn);
+      box-shadow: 0 4px 12px -3px var(--violet-glow); }
+    .side-who .n { font-size: 12.5px; font-weight: 600; line-height: 1.25; color: var(--text-1);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .side-who .r { font-size: 10.5px; color: var(--text-3); line-height: 1.3;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .side-foot { position: relative; z-index: 1; padding: 8px 9px 0; }
+    .side-foot-btn { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: var(--r-ctl);
+      font-size: 12.5px; color: var(--text-2); cursor: pointer; border: none; background: none; width: 100%;
+      font-family: inherit; text-decoration: none; box-sizing: border-box; transition: var(--theme-transition); }
+    .side-foot-btn:hover { background: var(--raise); color: var(--text-1); }
+    .side-foot-btn.danger { color: var(--stop-ink); }
+    .side-foot-btn.danger:hover { background: var(--stop-fill); }
+    .side-version { padding: 6px 12px 0; font-size: 10px; color: var(--text-3); }
     @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* ── Compatibility classes for pages not yet migrated to .zc-* ── */
-    .admin-page-bg { background: transparent !important; }
-    .dark-card {
-      background: var(--card) !important;
-      border: 1px solid var(--edge) !important;
-      color: var(--text-1) !important;
-    }
-    .dark-table th { color: var(--text-2); border-bottom: 1px solid var(--edge); }
-    .dark-table td { border-bottom: 1px solid var(--edge); }
-    .dark-table tr:hover td { background: var(--raise); }
-    .dark-input {
-      background: var(--card-2) !important;
-      border: 1px solid var(--edge) !important;
-      color: var(--text-1) !important;
-      border-radius: 8px;
-    }
-    .dark-input:focus {
-      border-color: var(--violet-line) !important;
-      box-shadow: 0 0 0 3px var(--violet-weak) !important;
-    }
-    .dark-input option { background: var(--card); color: var(--text-1); }
-    .btn-primary-dark {
-      background: var(--grad-btn) !important;
-      color: #fff !important; border: none !important;
-      box-shadow: 0 4px 15px -4px var(--violet-glow) !important;
-    }
-    .btn-primary-dark:hover { filter: brightness(1.08); transform: translateY(-1px); }
-    .stat-card-dark {
-      background: var(--card);
-      border: 1px solid var(--edge);
-      border-radius: var(--r-card);
-      padding: 20px;
-      position: relative;
-      overflow: hidden;
-    }
-    .stat-card-dark::before {
-      content: '';
-      position: absolute;
-      top: 0; right: 0;
-      width: 80px; height: 80px;
-      background: radial-gradient(circle, var(--violet-weak), transparent);
-      border-radius: 0 var(--r-card) 0 80px;
-    }
-    select option { background: var(--card) !important; color: var(--text-1) !important; }
-    .modal-dark {
-      background: var(--grad-modal) !important;
-      border: 1px solid var(--edge-hi) !important;
-      box-shadow: var(--shadow-pop) !important;
-    }
   `;
   document.head.appendChild(s);
+}
+
+function NavItem({ id, label, icon, active, count, onClick }) {
+  return (
+    <div className={`zc-nav${active ? " on" : ""}`} onClick={onClick}>
+      <Icon id={icon} />{label}
+      {count > 0 && <span className="ct">{count}</span>}
+    </div>
+  );
 }
 
 export default function AdminLayout() {
@@ -171,113 +148,73 @@ export default function AdminLayout() {
   const rName = restaurant?.restaurantName || "Ad's Cafe";
   const rLogo = restaurant?.logo || "";
 
-  const mainNav     = NAV.filter((n) => n.group === "main");
-  const settingsNav = NAV.filter((n) => n.group === "settings");
+  // Real, cheap-to-derive counts only — no invented numbers. Everything else
+  // in the reference's nav badges (Kitchen, Dashboard, Insights, …) was blank
+  // too, so most items here stay without a badge.
+  const activeOrders = (dashboardData?.ordersByStatus || [])
+    .filter((s) => s._id !== "COMPLETED" && s._id !== "CANCELLED")
+    .reduce((sum, s) => sum + (s.count || 0), 0);
+  const totalTables = dashboardData?.stats?.totalTables || 0;
+  const badgeFor = (key) => (key === "active" ? activeOrders : key === "tables" ? totalTables : 0);
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: BG_MAIN }}>
       <NotificationBell user={user} onNavigate={() => setPage("orders")} />
-      <aside style={{
-        width: 228,
-        background: BG_SIDEBAR,
-        backgroundImage: GRADIENT_SIDEBAR,
-        borderRight: `1px solid ${BORDER}`,
-        position: "sticky", top: 0, height: "100vh",
-        overflowY: "auto", display: "flex", flexDirection: "column",
-      }}>
-        {/* Brand */}
-        <div style={{
-          padding: "20px 16px 16px", borderBottom: `1px solid ${BORDER}`,
-          display: "flex", alignItems: "center", gap: 11,
-        }}>
+      <aside className="side">
+        <div className="side-brand">
           {rLogo ? (
-            <img src={rLogo} alt={rName} className="sidebar-logo-img"
-              onError={(e) => { e.currentTarget.style.display = "none"; }} />
+            <img src={rLogo} alt={rName} className="side-logo-img" onError={(e) => { e.currentTarget.style.display = "none"; }} />
           ) : (
             <>
-              <div style={{
-                width: 34, height: 34, borderRadius: 11, flexShrink: 0,
-                display: "grid", placeItems: "center",
-                fontWeight: 800, fontSize: 15, color: "#fff",
-                background: "var(--grad-btn)",
-                boxShadow: "0 6px 18px -4px var(--violet-glow), inset 0 1px 0 rgba(255,255,255,0.28)",
-              }}>
-                {rName.charAt(0).toUpperCase()}
-              </div>
+              <div className="side-mk">{rName.charAt(0).toUpperCase()}</div>
               <div style={{ minWidth: 0 }}>
-                <div style={{
-                  fontSize: 15.5, fontWeight: 700, letterSpacing: "-.02em",
-                  color: TEXT_PRIMARY, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                }}>
-                  {rName}
-                </div>
-                <div style={{ fontSize: 11, color: TEXT_MUTED, marginTop: -2 }}>Admin panel</div>
+                <div className="side-nm">{rName}</div>
+                <div className="side-sb">Admin panel</div>
               </div>
             </>
           )}
         </div>
 
-        {/* Main nav */}
-        <div className="nav-group-label">Management</div>
-        {mainNav.map((n) => (
-          <div key={n.id} className={`nav-item${page === n.id ? " active" : ""}`} onClick={() => setPage(n.id)}>
-            <div className="nav-icon">{n.icon}</div>
-            {n.label}
-          </div>
+        <div className="zc-navgrp">Service</div>
+        {SERVICE_NAV.map((n) => (
+          <NavItem key={n.id} {...n} active={page === n.id} count={badgeFor(n.badgeKey)} onClick={() => setPage(n.id)} />
+        ))}
+        <a href="/kitchen" target="_blank" rel="noopener noreferrer" className="zc-nav" style={{ textDecoration: "none" }}>
+          <Icon id="chef" />Kitchen Display
+        </a>
+
+        <div className="zc-navgrp">Money</div>
+        {MONEY_NAV.map((n) => (
+          <NavItem key={n.id} {...n} active={page === n.id} onClick={() => setPage(n.id)} />
         ))}
 
-        <div className="nav-group-label" style={{ marginTop: 8 }}>Settings</div>
-        {settingsNav.map((n) => (
-          <div key={n.id} className={`nav-item${page === n.id ? " active" : ""}`} onClick={() => setPage(n.id)}>
-            <div className="nav-icon">{n.icon}</div>
-            {n.label}
-          </div>
+        <div className="zc-navgrp">Setup</div>
+        {SETUP_NAV.map((n) => (
+          <NavItem key={n.id} {...n} active={page === n.id} onClick={() => setPage(n.id)} />
         ))}
 
-        <div style={{ flex: 1 }} />
+        <div className="side-sp" />
+        <div className="zc-navgrp">Settings</div>
+        {SETTINGS_NAV.map((n) => (
+          <NavItem key={n.id} {...n} active={page === n.id} onClick={() => setPage(n.id)} />
+        ))}
 
-        {/* Footer */}
-        <div style={{ borderTop: `1px solid ${BORDER}`, padding: "10px 8px 8px" }}>
-          {user && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", marginBottom: 4 }}>
-              <div style={{
-                width: 32, height: 32, borderRadius: "50%",
-                background: "var(--grad-btn)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 13, fontWeight: 700, color: "#fff", flexShrink: 0,
-                boxShadow: "0 4px 12px -3px var(--violet-glow)",
-              }}>
-                {(user.name || user.email || "A").charAt(0).toUpperCase()}
-              </div>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 12, fontWeight: 500, color: TEXT_PRIMARY, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {user.name || "Admin"}
-                </div>
-                <div style={{ fontSize: 10, color: TEXT_MUTED, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {user.email || user.phone || ""}
-                </div>
-              </div>
+        {user && (
+          <div className="side-who">
+            <div className="av">{(user.name || user.email || "A").charAt(0).toUpperCase()}</div>
+            <div style={{ minWidth: 0 }}>
+              <div className="n">{user.name || "Admin"}</div>
+              <div className="r">{user.email || user.phone || ""}</div>
             </div>
-          )}
+          </div>
+        )}
 
-          <a
-            href="/kitchen" target="_blank" rel="noopener noreferrer"
-            className="logout-btn"
-            style={{ textDecoration: "none", color: "var(--text-2)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 6 }}
-          >
-            <span style={{ fontSize: 15 }}>🍳</span> Kitchen Display
-          </a>
-          <button className="logout-btn" onClick={handleLogout}>
-            <span style={{ fontSize: 15 }}>⎋</span> Sign out
+        <div className="side-foot">
+          <button type="button" className="side-foot-btn danger" onClick={handleLogout}>
+            <span style={{ fontSize: 14 }}>⎋</span> Sign out
           </button>
-
-          <div style={{ padding: "8px 10px 4px" }}>
-            <ThemeToggle />
-          </div>
-
-          <div style={{ padding: "4px 12px 2px", fontSize: 10, color: TEXT_MUTED }}>
-            {BRAND_NAME} · {BRAND_VERSION}
-          </div>
+          <div style={{ padding: "4px 3px 0" }}><ThemeToggle /></div>
+          <div className="side-version">{BRAND_NAME} · {BRAND_VERSION}</div>
         </div>
       </aside>
 

@@ -1,4 +1,20 @@
 // src/pages/KitchenBoardPage.jsx
+// ─────────────────────────────────────────────────────────────────────────────
+// Zen OS "Kitchen display" — migrated to the shared design system
+// (design-reference/zen-os-design-reference.html → "Kitchen display" screen):
+// dark violet ticket cards, a live clock, and tickets that turn red once
+// they've run past a target time — instead of the previous flat navy board.
+//
+// All state/data logic is UNCHANGED from the previous build: same socket
+// events (kot:created / order:status_changed / order:confirmed /
+// order:cancelled), same backfill-on-reconnect, same duplicate-alert guard
+// via seenJobIds, same PATCH /kitchen/orders/:id/status action calls. The
+// "red" urgency tone is new — the reference's own description says "red
+// means the ticket has run past its target time", and there's no such field
+// on the order, so it's computed client-side from a real timestamp
+// (createdAt) against a fixed threshold, combined with the real
+// staff-set `priority: "URGENT"` flag that already existed.
+// ─────────────────────────────────────────────────────────────────────────────
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -8,7 +24,10 @@ import { useAppState } from "../context/AppState.jsx";
 import {
   playNewOrderAlert, playUrgentOrderAlert, unlockAudio, isAudioUnlocked,
 } from "../utils/kitchenAlertSound.js";
-import { BG, CARD, BORDER, TEXT, TEXT_MUTED, BLUE, AMBER, GREEN, RED } from "../theme.js";
+import {
+  VOID, CARD_2, EDGE, EDGE_HI, VIOLET, LIVE, WAIT, READY_C, STOP,
+  T1, T2, T3, GRAD_BTN, GRAD_CARD, GRAD_BG, R_CARD, R_CTL,
+} from "../theme.js";
 
 const SOUND_PREF_KEY = "kitchenSoundEnabled";
 const loadSoundPref = () => {
@@ -16,11 +35,123 @@ const loadSoundPref = () => {
   return raw === null ? true : raw === "true";
 };
 
+// No backend "target time" field exists per ticket — this is a fixed,
+// documented heuristic: past this many minutes since the KOT was created,
+// a still-pending ticket turns red so it can't be missed on a busy board.
+const OVER_TARGET_MIN = 15;
+
 const COLUMNS = [
-  { status: "CONFIRMED", label: "NEW",       color: BLUE,  action: null },
-  { status: "PREPARING", label: "PREPARING", color: AMBER, action: { to: "READY", label: "✓ Mark Ready" } },
-  { status: "READY",     label: "READY",     color: GREEN, action: null },
+  { status: "CONFIRMED", label: "New", dot: LIVE, action: null },
+  { status: "PREPARING", label: "Preparing", dot: WAIT, action: { to: "READY", label: "✓ Mark ready" } },
+  { status: "READY",     label: "Ready", dot: READY_C, action: null },
 ];
+
+// live-updating clock + elapsed-time source, ticking once a second
+function useNow() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return now;
+}
+
+function Tag({ tone, children }) {
+  const c = { live: LIVE, wait: WAIT, ready: READY_C, stop: STOP }[tone] || T3;
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600,
+      padding: "4px 10px", borderRadius: 20, color: c,
+      background: `${c}26`, border: `1px solid ${c}55`, whiteSpace: "nowrap",
+    }}>
+      <i style={{ width: 5, height: 5, borderRadius: "50%", background: c, boxShadow: `0 0 7px ${c}` }} />
+      {children}
+    </span>
+  );
+}
+
+function KitchenTicket({ order, now, busy, onStartPreparing, onAdvance, action, column }) {
+  const elapsedMin = Math.max(0, Math.floor((now - new Date(order.createdAt)) / 60000));
+  const overTarget = elapsedMin >= OVER_TARGET_MIN;
+  const urgent = order.priority === "URGENT";
+
+  let tone, value, label;
+  if (column === "READY") {
+    tone = "ready"; value = "—"; label = "ready";
+  } else if (urgent || overTarget) {
+    tone = "stop"; value = `${elapsedMin}m`; label = urgent ? "URGENT" : "over target";
+  } else if (column === "PREPARING") {
+    tone = "wait"; value = `${elapsedMin}m`; label = "cooking";
+  } else {
+    tone = "live"; value = `${elapsedMin}m`; label = "waiting";
+  }
+  const toneColor = { live: LIVE, wait: WAIT, ready: READY_C, stop: STOP }[tone];
+  const borderColor = tone === "stop" ? `${STOP}8C` : tone === "wait" ? `${WAIT}66` : EDGE_HI;
+
+  return (
+    <div style={{
+      borderRadius: R_CARD, overflow: "hidden", position: "relative",
+      background: GRAD_CARD, border: `1px solid ${borderColor}`,
+      boxShadow: tone === "stop" ? `0 16px 38px -20px rgba(0,0,0,.9), 0 0 26px -10px ${STOP}99` : "0 16px 38px -20px rgba(0,0,0,.9)",
+    }}>
+      <div style={{
+        padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between",
+        background: "linear-gradient(140deg, rgba(255,255,255,.07), rgba(255,255,255,.01))", borderBottom: `1px solid ${EDGE}`,
+      }}>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-.02em", color: T1 }}>
+            {order.tableNo ? `Table ${order.tableNo}` : "Takeaway"}
+          </div>
+          <div style={{ fontSize: 10.5, color: T3 }}>{order.orderId}{order.waiterName ? ` · ${order.waiterName}` : ""}</div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 19, fontWeight: 700, letterSpacing: "-.03em", color: toneColor }}>{value}</div>
+          <div style={{ fontSize: 9.5, color: T3, textTransform: "uppercase", letterSpacing: ".04em" }}>{label}</div>
+        </div>
+      </div>
+
+      <div style={{ padding: "11px 14px" }}>
+        {order.items.map((it, i) => (
+          <div key={i} style={{ display: "flex", gap: 10, padding: "6px 0", fontSize: 13.5, alignItems: "flex-start" }}>
+            <span style={{
+              minWidth: 22, height: 22, borderRadius: 6, display: "grid", placeItems: "center",
+              fontSize: 12, fontWeight: 700, background: "rgba(255,255,255,.09)", color: "#fff", flex: "none",
+            }}>{it.qty}</span>
+            <span style={{ flex: 1, fontWeight: 500, lineHeight: 1.35, color: T1 }}>
+              {it.name}
+              {it.notes && <em style={{ display: "block", fontStyle: "normal", fontSize: 11, color: WAIT, fontWeight: 600 }}>{it.notes}</em>}
+            </span>
+          </div>
+        ))}
+        {order.notes && (
+          <div style={{ marginTop: 8, padding: "8px 10px", background: `${WAIT}1A`, borderRadius: 8, fontSize: 12, color: WAIT, fontWeight: 600 }}>
+            Note: {order.notes}
+          </div>
+        )}
+
+        {column === "CONFIRMED" && (
+          <button disabled={busy} onClick={onStartPreparing} style={ticketBtn(WAIT)}>
+            {busy ? "…" : "▶ Start preparing"}
+          </button>
+        )}
+        {action && column === "PREPARING" && (
+          <button disabled={busy} onClick={() => onAdvance(action.to)} style={ticketBtn(READY_C)}>
+            {busy ? "…" : action.label}
+          </button>
+        )}
+        {column === "READY" && (
+          <div style={{ marginTop: 12, textAlign: "center", fontSize: 11.5, color: T3, fontStyle: "italic" }}>
+            Waiting for waiter to deliver
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+const ticketBtn = (color) => ({
+  marginTop: 12, width: "100%", padding: 12, borderRadius: R_CTL, border: "none",
+  background: color, color: "#111", fontWeight: 800, fontSize: 13.5, cursor: "pointer", minHeight: 44,
+});
 
 export default function KitchenBoardPage() {
   const nav = useNavigate();
@@ -31,6 +162,7 @@ export default function KitchenBoardPage() {
   const [connected, setConnected] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const seenJobIds = useRef(new Set());
+  const now = useNow();
 
   const upsertOrderSilently = useCallback((order) => {
     const key = order._id || order.orderId;
@@ -146,77 +278,76 @@ export default function KitchenBoardPage() {
     nav("/login", { replace: true });
   };
 
+  const clockStr = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).replace(/^0/, "");
+
   return (
-    <div style={{ minHeight: "100vh", background: BG, color: TEXT }}>
-      <header style={styles.header}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 20, fontWeight: 800 }}>🍳 Kitchen Board</span>
-          <span style={{ width: 9, height: 9, borderRadius: "50%", background: connected ? GREEN : RED }} />
-          <span style={{ fontSize: 12.5, color: TEXT_MUTED }}>{connected ? "Live" : "Reconnecting…"}</span>
+    <div style={{ minHeight: "100vh", background: GRAD_BG, color: T1, fontFamily: "'DM Sans', sans-serif" }}>
+      <header style={{
+        display: "flex", alignItems: "center", gap: 14, padding: "14px 24px",
+        borderBottom: `1px solid ${EDGE}`, position: "sticky", top: 0, background: VOID, zIndex: 10,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+          <div style={{
+            width: 30, height: 30, borderRadius: 9, display: "grid", placeItems: "center", flex: "none",
+            fontWeight: 800, fontSize: 13, color: "#fff", background: GRAD_BTN,
+            boxShadow: `0 6px 18px -4px ${VIOLET}B3, inset 0 1px 0 rgba(255,255,255,.28)`,
+          }}>🍳</div>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-.02em" }}>Kitchen</div>
+            <div style={{ fontSize: 11, color: T3, marginTop: -2 }}>Ad's Cafe</div>
+          </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ fontSize: 13, color: TEXT_MUTED }}>{auth.user?.name}</span>
-          <Link to="/profile" style={{ ...styles.logoutBtn, textDecoration: "none", display: "inline-block" }}>👤 Profile</Link>
-          <button onClick={toggleSound} style={{ ...styles.soundBtn, background: soundOn ? GREEN : "#4b5563" }}>
-            {soundOn ? "🔊 Sound ON" : "🔇 Sound OFF"}
-          </button>
-          <button onClick={handleLogout} style={styles.logoutBtn}>Logout</button>
-        </div>
+
+        <div style={{ flex: 1 }} />
+        <Tag tone={connected ? "ready" : "stop"}>{connected ? "Connected" : "Reconnecting…"}</Tag>
+        <span style={{ fontSize: 12.5, color: T2 }}>{auth.user?.name}{auth.user?.name ? " · " : ""}{auth.user?.role || "chef"}</span>
+        <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-.03em", fontVariantNumeric: "tabular-nums" }}>{clockStr}</div>
+
+        <Link to="/profile" style={headerBtn}>👤 Profile</Link>
+        <button onClick={toggleSound} style={{ ...headerBtn, background: soundOn ? `${READY_C}26` : CARD_2, color: soundOn ? READY_C : T2, borderColor: soundOn ? `${READY_C}55` : EDGE }}>
+          {soundOn ? "🔊 Sound on" : "🔇 Sound off"}
+        </button>
+        <button onClick={handleLogout} style={{ ...headerBtn, color: STOP, borderColor: `${STOP}55` }}>Sign out</button>
       </header>
 
       {needsUnlock && (
-        <div style={styles.unlockBar}>
+        <div style={{
+          display: "flex", justifyContent: "center", alignItems: "center", gap: 16, padding: "10px 20px",
+          background: `${WAIT}26`, color: WAIT, fontSize: 13.5, fontWeight: 600, borderBottom: `1px solid ${WAIT}44`,
+        }}>
           <span>Tap to enable kitchen alert sounds on this device</span>
-          <button onClick={handleEnableSound} style={styles.unlockBtn}>Enable Kitchen Sound</button>
+          <button onClick={handleEnableSound} style={{ padding: "9px 16px", borderRadius: R_CTL, border: "none", background: WAIT, color: "#111", fontWeight: 800, cursor: "pointer" }}>
+            Enable kitchen sound
+          </button>
         </div>
       )}
 
-      <div style={styles.board}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, padding: "20px 24px", alignItems: "start" }}>
         {COLUMNS.map((col) => {
           const colOrders = orders.filter((o) => o.status === col.status)
             .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
           return (
-            <div key={col.status} style={styles.column}>
-              <div style={{ ...styles.columnHeader, borderColor: col.color, color: col.color }}>
-                {col.label} <span style={styles.count}>{colOrders.length}</span>
+            <div key={col.status}>
+              <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 13 }}>
+                <span style={{ width: 9, height: 9, borderRadius: "50%", background: col.dot, boxShadow: `0 0 10px ${col.dot}` }} />
+                <span style={{ fontSize: 14, fontWeight: 700 }}>{col.label}</span>
+                <span style={{ fontSize: 12, color: T3 }}>
+                  {colOrders.length} ticket{colOrders.length === 1 ? "" : "s"}{col.status === "READY" && colOrders.length > 0 ? " · waiter alerted" : ""}
+                </span>
               </div>
-              <div style={styles.columnBody}>
-                {colOrders.length === 0 && <div style={styles.emptyCol}>No tickets</div>}
-                {colOrders.map((o) => (
-                  <div key={o._id} style={{ ...styles.card, ...(o.priority === "URGENT" ? styles.cardUrgent : {}) }}>
-                    <div style={styles.cardTop}>
-                      <span style={styles.orderId}>{o.orderId}</span>
-                      {o.priority === "URGENT" && <span style={styles.urgentBadge}>URGENT</span>}
-                    </div>
-                    <div style={styles.meta}>
-                      {o.tableNo ? `TABLE ${o.tableNo}` : "TAKEAWAY"} · {o.orderType === "DINE_IN" ? "DINE IN" : o.orderType}
-                      {o.waiterName ? ` · WAITER: ${o.waiterName.toUpperCase()}` : ""}
-                    </div>
-                    <div style={styles.items}>
-                      {o.items.map((it, i) => (
-                        <div key={i} style={styles.itemRow}>{it.qty} × {it.name}</div>
-                      ))}
-                    </div>
-                    {(o.notes || o.items.some((it) => it.notes)) && (
-                      <div style={styles.notes}>
-                        {o.notes && <div>NOTE: {o.notes}</div>}
-                        {o.items.filter((it) => it.notes).map((it, i) => <div key={i}>{it.name}: {it.notes}</div>)}
-                      </div>
-                    )}
-                    {col.status === "CONFIRMED" && (
-                      <button disabled={busyId === o._id} onClick={() => handleStartPreparing(o)} style={styles.actionBtn(AMBER)}>
-                        {busyId === o._id ? "…" : "▶ Start Preparing"}
-                      </button>
-                    )}
-                    {col.action && col.status === "PREPARING" && (
-                      <button disabled={busyId === o._id} onClick={() => handleAdvance(o, col.action.to)} style={styles.actionBtn(GREEN)}>
-                        {busyId === o._id ? "…" : col.action.label}
-                      </button>
-                    )}
-                    {col.status === "READY" && (
-                      <div style={styles.waitingNote}>Waiting for waiter to deliver</div>
-                    )}
+              <div style={{ display: "grid", gap: 12 }}>
+                {colOrders.length === 0 && (
+                  <div style={{ textAlign: "center", padding: "40px 10px", color: T3, fontSize: 13, border: `1px dashed ${EDGE}`, borderRadius: R_CARD }}>
+                    No tickets
                   </div>
+                )}
+                {colOrders.map((o) => (
+                  <KitchenTicket
+                    key={o._id} order={o} now={now} column={col.status}
+                    busy={busyId === o._id} action={col.action}
+                    onStartPreparing={() => handleStartPreparing(o)}
+                    onAdvance={(to) => handleAdvance(o, to)}
+                  />
                 ))}
               </div>
             </div>
@@ -227,30 +358,8 @@ export default function KitchenBoardPage() {
   );
 }
 
-const styles = {
-  header: {
-    display: "flex", justifyContent: "space-between", alignItems: "center",
-    padding: "14px 20px", borderBottom: `1px solid ${BORDER}`, position: "sticky", top: 0, background: BG, zIndex: 10,
-  },
-  soundBtn: { padding: "10px 16px", borderRadius: 10, border: "none", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer", minHeight: 42 },
-  logoutBtn: { padding: "10px 14px", borderRadius: 10, border: `1px solid ${BORDER}`, background: "transparent", color: TEXT_MUTED, fontWeight: 700, fontSize: 12.5, cursor: "pointer", minHeight: 42 },
-  unlockBar: { display: "flex", justifyContent: "center", alignItems: "center", gap: 16, padding: "10px 20px", background: "#78350f", color: "#fde68a", fontSize: 13.5, fontWeight: 600 },
-  unlockBtn: { padding: "9px 16px", borderRadius: 10, border: "none", background: "#f59e0b", color: "#111", fontWeight: 800, cursor: "pointer" },
-  board: { display: "flex", gap: 14, padding: 16, overflowX: "auto", alignItems: "flex-start" },
-  column: { flex: "1 1 320px", minWidth: 300, background: "#0f1218", borderRadius: 16, border: `1px solid ${BORDER}` },
-  columnHeader: { padding: "12px 16px", fontWeight: 800, fontSize: 15, letterSpacing: 1, borderBottom: "2px solid" },
-  count: { fontSize: 12, opacity: 0.7 },
-  columnBody: { padding: 10, display: "flex", flexDirection: "column", gap: 10, minHeight: 200 },
-  emptyCol: { textAlign: "center", padding: "40px 10px", color: TEXT_MUTED, fontSize: 13 },
-  card: { background: CARD, border: `1px solid ${BORDER}`, borderRadius: 14, padding: 14, animation: "popIn .25s ease" },
-  cardUrgent: { border: `2px solid ${RED}`, boxShadow: "0 0 0 3px rgba(239,68,68,0.15)" },
-  cardTop: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 },
-  orderId: { fontSize: 17, fontWeight: 800 },
-  urgentBadge: { fontSize: 10.5, fontWeight: 800, color: "#fff", background: RED, padding: "3px 9px", borderRadius: 20 },
-  meta: { fontSize: 11.5, color: TEXT_MUTED, marginBottom: 8, letterSpacing: 0.3 },
-  items: { display: "flex", flexDirection: "column", gap: 4, borderTop: `1px dashed ${BORDER}`, paddingTop: 8 },
-  itemRow: { fontSize: 15, fontWeight: 600 },
-  notes: { marginTop: 8, padding: "8px 10px", background: "rgba(245,158,11,0.1)", borderRadius: 8, fontSize: 12.5, color: "#fbbf24" },
-  actionBtn: (color) => ({ marginTop: 12, width: "100%", padding: 12, borderRadius: 10, border: "none", background: color, color: "#111", fontWeight: 800, fontSize: 13.5, cursor: "pointer", minHeight: 44 }),
-  waitingNote: { marginTop: 12, textAlign: "center", fontSize: 12, color: TEXT_MUTED, fontStyle: "italic" },
+const headerBtn = {
+  padding: "9px 14px", borderRadius: R_CTL, border: `1px solid ${EDGE}`, background: CARD_2,
+  color: T2, fontWeight: 700, fontSize: 12.5, cursor: "pointer", minHeight: 40,
+  textDecoration: "none", display: "inline-flex", alignItems: "center", fontFamily: "inherit",
 };
