@@ -28,6 +28,23 @@ const PAY_SEG = ["All", ...PAYMENT_STATUSES];
 const TYPE_OPTIONS = ["All", "DINE_IN", "TAKEAWAY", "ONLINE"];
 const PER_PAGE = 15;
 
+// Quick date-range presets — set the SAME startDate/endDate the custom date
+// inputs already use, so they compose with one filtering path instead of a
+// second parallel one. Rolling windows ending today, matching the Today/
+// Week/Month/Year convention already used on Insights (AnalyticsPage.jsx).
+const RANGE_PRESETS = ["All", "Today", "Week", "Month", "Year"];
+const RANGE_DAYS = { Today: 1, Week: 7, Month: 30, Year: 365 };
+const localISODate = (d) => {
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+};
+const presetDates = (key) => {
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(start.getDate() - (RANGE_DAYS[key] - 1));
+  return { start: localISODate(start), end: localISODate(end) };
+};
+
 const fmt = (n) => Math.round(n || 0).toLocaleString("en-IN");
 const formatPayment = (s) =>
   ({ PENDING_VERIFICATION: "Pending verification", PAID: "Paid", FAILED: "Failed" }[s] || s || "—");
@@ -372,8 +389,21 @@ export default function InvoicesPage() {
   const [typeF, setTypeF] = useState("All");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [quickRange, setQuickRange] = useState("All");
   const [page, setPage] = useState(1);
   const [openId, setOpenId] = useState(null);
+
+  const applyQuickRange = (key) => {
+    setQuickRange(key);
+    setPage(1);
+    if (key === "All") { setStartDate(""); setEndDate(""); return; }
+    const { start, end } = presetDates(key);
+    setStartDate(start); setEndDate(end);
+  };
+  // Editing a custom date directly supersedes whatever preset was active,
+  // so the segmented control doesn't keep showing a now-stale selection.
+  const editStartDate = (v) => { setStartDate(v); setQuickRange("All"); setPage(1); };
+  const editEndDate = (v) => { setEndDate(v); setQuickRange("All"); setPage(1); };
 
   const load = useCallback(() => {
     getAllOrders({ limit: 5000 })
@@ -440,7 +470,7 @@ export default function InvoicesPage() {
 
   const hasFilters = search || payF !== "All" || typeF !== "All" || startDate || endDate;
   const clearFilters = () => {
-    setSearch(""); setPayF("All"); setTypeF("All"); setStartDate(""); setEndDate(""); setPage(1);
+    setSearch(""); setPayF("All"); setTypeF("All"); setStartDate(""); setEndDate(""); setQuickRange("All"); setPage(1);
   };
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
@@ -506,11 +536,22 @@ export default function InvoicesPage() {
         >
           {TYPE_OPTIONS.map((t) => <option key={t} value={t}>{formatType(t)}</option>)}
         </select>
+        <div className="zc-seg" role="tablist" aria-label="Date range preset">
+          {RANGE_PRESETS.map((r) => (
+            <button
+              key={r} type="button" role="tab" aria-selected={quickRange === r}
+              className={quickRange === r ? "on" : ""}
+              onClick={() => applyQuickRange(r)}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
         <input type="date" className="zc-input" value={startDate} aria-label="From date"
-          onChange={(e) => { setStartDate(e.target.value); setPage(1); }} style={dateInputStyle(startDate)} />
+          onChange={(e) => editStartDate(e.target.value)} style={dateInputStyle(startDate)} />
         <span style={{ fontSize: 12, color: "var(--text-3)" }}>to</span>
         <input type="date" className="zc-input" value={endDate} min={startDate || undefined} aria-label="To date"
-          onChange={(e) => { setEndDate(e.target.value); setPage(1); }} style={dateInputStyle(endDate)} />
+          onChange={(e) => editEndDate(e.target.value)} style={dateInputStyle(endDate)} />
         <div style={{ flex: 1 }} />
         {hasFilters ? (
           <>
