@@ -34,6 +34,12 @@ export const getRecipeForMenuItem = (menuItemId) => api.get(`/admin/inventory/re
 export const saveRecipe           = (data) => api.post("/admin/inventory/recipes", data);
 export const deleteRecipe         = (id) => api.delete(`/admin/inventory/recipes/${id}`);
 
+// ── Purchase import (PDF/image → extracted lines → confirm) ──────────────
+export const extractPurchaseImport = (formData) =>
+  api.post("/admin/inventory/import/extract", formData);
+export const confirmPurchaseImport = (data) =>
+  api.post("/admin/inventory/import/confirm", data);
+
 // ── Suppliers ──────────────────────────────────────────────────────────────
 export const getSuppliers      = () => api.get("/admin/inventory/suppliers");
 export const createSupplier    = (data) => api.post("/admin/inventory/suppliers", data);

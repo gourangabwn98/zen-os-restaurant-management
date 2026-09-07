@@ -1,0 +1,11 @@
+import dns from "node:dns";
+dns.setServers(["1.1.1.1", "8.8.8.8"]);
+import "./config/env.js";
+import { getDB } from "./config/db.js";
+import { getModels } from "./config/getModels.js";
+const conn = await getDB(process.env.MONGO_URI);
+const { InventoryItem, StockPurchase } = getModels(conn);
+const items = await InventoryItem.countDocuments();
+const purchases = await StockPurchase.countDocuments();
+console.log(JSON.stringify({ items, purchases }));
+process.exit(0);

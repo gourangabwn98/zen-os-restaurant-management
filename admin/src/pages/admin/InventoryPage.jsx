@@ -49,6 +49,30 @@ if (typeof document !== "undefined" && !document.getElementById("inventory-page-
       .invp-pline > button { grid-column: 1 / -1; justify-self: end; }
       .invp-iline { grid-template-columns: 1fr auto; }
     }
+
+    /* ── Import Purchase — review list (ImportPurchaseModal.jsx) ── */
+    .impp-row-head {
+      display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 10px;
+      padding: 0 13px; font-size: 10px; color: var(--text-3); font-weight: 600;
+      letter-spacing: .06em; text-transform: uppercase;
+    }
+    .impp-item {
+      border: 1px solid var(--edge); border-radius: var(--r-row);
+      background: var(--grad-panel); overflow: hidden;
+    }
+    .impp-item.needs { border-color: var(--wait-line); }
+    .impp-row {
+      display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 10px;
+      align-items: center; padding: 10px 13px;
+    }
+    .impp-edit { padding: 13px; background: var(--card-2); }
+    @media (max-width: 720px) {
+      .impp-row-head { display: none; }
+      .impp-row { grid-template-columns: 1fr 1fr; row-gap: 8px; }
+      .impp-name { grid-column: 1 / -1; }
+      .impp-row > div:last-child { grid-column: 1 / -1; justify-content: flex-end; }
+      .impp-edit > div { grid-template-columns: 1fr !important; }
+    }
   `;
   document.head.appendChild(s);
 }

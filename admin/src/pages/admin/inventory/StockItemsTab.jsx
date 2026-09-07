@@ -9,6 +9,7 @@ import {
   Loading, ErrorBox, LevelBadge,
 } from "./invUI.jsx";
 import { inp, label, levelInk, money, num } from "./invKit.js";
+import ImportPurchaseModal from "./ImportPurchaseModal.jsx";
 
 const UNITS = ["g", "kg", "ml", "l", "pcs", "dozen", "packet", "box"];
 const LEVEL_SEG = [["All", "All"], ["OK", "Healthy"], ["LOW", "Low"], ["CRITICAL", "Critical"], ["OUT_OF_STOCK", "Out"]];
@@ -30,6 +31,7 @@ export default function StockItemsTab() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyItem);
   const [saving, setSaving] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   const [adjustTarget, setAdjustTarget] = useState(null);
   const [adjustForm, setAdjustForm] = useState({ newStock: "", type: "MANUAL_ADJUSTMENT", reason: "" });
@@ -133,6 +135,7 @@ export default function StockItemsTab() {
         <Seg options={LEVEL_SEG} value={level} onChange={(v) => { setLevel(v); resetPage(); }} ariaLabel="Stock status filter" />
         <Spacer />
         <Count>{filtered.length} of {items.length} item{items.length === 1 ? "" : "s"}</Count>
+        <button type="button" className="zc-btn" onClick={() => setShowImport(true)}>⇪ Import Purchase</button>
         <button type="button" className="zc-btn pri" onClick={openNew}>＋ Add stock item</button>
       </Toolbar>
 
@@ -273,6 +276,14 @@ export default function StockItemsTab() {
             </div>
           </div>
         </Modal>
+      )}
+
+      {showImport && (
+        <ImportPurchaseModal
+          inventoryItems={items}
+          onClose={() => setShowImport(false)}
+          onImported={load}
+        />
       )}
     </div>
   );

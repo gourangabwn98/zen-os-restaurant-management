@@ -22,6 +22,7 @@ import tableSessionRoutes from "./routes/tableSessionRoutes.js";
 import supportRoutes from "./routes/supportRoutes.js";
 import printerRoutes from "./routes/printerRoutes.js";
 import inventoryRoutes from "./routes/inventoryRoutes.js";
+import { warmUpOcr } from "./utils/purchaseImportExtract.js";
 import chefRoutes    from "./routes/chefRoutes.js";
 import employeeRoutes from "./routes/employeeRoutes.js";
 import kitchenRoutes  from "./routes/kitchenRoutes.js";
@@ -95,5 +96,6 @@ connectDB().then(() => {
 ║  DB: ${(process.env.MONGO_URI || "").split("/").pop().split("?")[0]}
 ╚══════════════════════════════════════════════════════╝
     `);
+    warmUpOcr(); // background — see utils/purchaseImportExtract.js
   });
 });

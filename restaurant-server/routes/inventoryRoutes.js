@@ -1,6 +1,7 @@
 import express from "express";
 import { protect } from "../middleware/authMiddleware.js";
 import { requireStaff, requireAdmin } from "../middleware/rbac.js";
+import { importUploadSingle } from "../middleware/importUploadMiddleware.js";
 import {
   getOverview,
   getSuppliers, createSupplier, updateSupplier, deleteSupplier,
@@ -11,6 +12,7 @@ import {
   getWastage, createWastage,
   getRecipes, getRecipeForMenuItem, upsertRecipe, deleteRecipe,
 } from "../controllers/inventoryController.js";
+import { extractPurchaseDocument, confirmPurchaseImport } from "../controllers/purchaseImportController.js";
 
 const router = express.Router();
 router.use(protect);
@@ -31,6 +33,13 @@ router.patch("/items/:id/adjust", requireStaff, adjustItemStock);
 router.get("/purchases",        requireStaff, getPurchases);
 router.get("/purchases/:id",    requireStaff, getPurchaseById);
 router.post("/purchases",       requireStaff, createPurchase);
+
+// Purchase import (PDF/image → extracted lines → reviewed → recordPurchase).
+// Admin-only: importing can create new InventoryItem definitions, which is
+// already an admin-only action (see POST /items above) — the import path
+// doesn't get a looser rule just because it's new.
+router.post("/import/extract",  requireAdmin, importUploadSingle("file"), extractPurchaseDocument);
+router.post("/import/confirm",  requireAdmin, confirmPurchaseImport);
 
 // Stock Movements (ledger) — read-only audit trail.
 router.get("/movements",        requireStaff, getMovements);
