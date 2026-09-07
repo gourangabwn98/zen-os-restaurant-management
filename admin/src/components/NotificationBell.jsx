@@ -15,7 +15,7 @@ const EVENT_META = {
   "table:cleared":         { icon: "🧹", label: (p) => `Table ${p.session?.tableNo ?? ""} cleared` },
 };
 
-export default function NotificationBell({ user, onNavigate }) {
+export default function NotificationBell({ user, onNavigate, inline = false }) {
   const [open, setOpen]     = useState(false);
   const [items, setItems]   = useState([]);
   const [unread, setUnread] = useState(0);
@@ -69,16 +69,42 @@ export default function NotificationBell({ user, onNavigate }) {
 
   if (!user) return null;
 
+  // Inline (sidebar) variant sits in normal flow next to the theme toggle;
+  // the dropdown itself still renders `position: fixed` — the sidebar's
+  // `overflow-y: auto` would otherwise clip anything wider than its 228px
+  // column, since setting one overflow axis forces the other off `visible`.
+  const wrapperStyle = inline
+    ? { position: "relative", display: "inline-flex" }
+    : { position: "fixed", top: 18, right: 24, zIndex: 200 };
+  const buttonStyle = inline
+    ? {
+        width: 34, height: 34, borderRadius: "var(--r-ctl)", border: "1px solid var(--edge)",
+        background: "var(--card-2)", color: "var(--text-2)", fontSize: 15, cursor: "pointer",
+        position: "relative", display: "flex", alignItems: "center", justifyContent: "center",
+      }
+    : {
+        width: 40, height: 40, borderRadius: "50%", border: `1px solid ${BORDER}`,
+        background: BG_CARD, color: TEXT_PRIMARY, fontSize: 17, cursor: "pointer",
+        position: "relative", display: "flex", alignItems: "center", justifyContent: "center",
+        boxShadow: "0 4px 14px rgba(0,0,0,0.25)",
+      };
+  const panelStyle = inline
+    ? {
+        position: "fixed", top: 68, left: 18, width: 300, maxHeight: 420, overflowY: "auto",
+        background: "var(--grad-modal)", border: "1px solid var(--edge-hi)", borderRadius: 14,
+        boxShadow: "var(--shadow-pop)", padding: 8, zIndex: 200,
+      }
+    : {
+        position: "absolute", top: 48, right: 0, width: 320, maxHeight: 420, overflowY: "auto",
+        background: BG_CARD, border: `1px solid ${BORDER}`, borderRadius: 14,
+        boxShadow: "0 20px 50px rgba(0,0,0,0.45)", padding: 8,
+      };
+
   return (
-    <div style={{ position: "fixed", top: 18, right: 24, zIndex: 200 }}>
+    <div style={wrapperStyle}>
       <button
         onClick={() => { setOpen((v) => !v); if (!open) setUnread(0); }}
-        style={{
-          width: 40, height: 40, borderRadius: "50%", border: `1px solid ${BORDER}`,
-          background: BG_CARD, color: TEXT_PRIMARY, fontSize: 17, cursor: "pointer",
-          position: "relative", display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: "0 4px 14px rgba(0,0,0,0.25)",
-        }}
+        style={buttonStyle}
         title="Notifications"
       >
         🔔
@@ -94,11 +120,7 @@ export default function NotificationBell({ user, onNavigate }) {
       </button>
 
       {open && (
-        <div style={{
-          position: "absolute", top: 48, right: 0, width: 320, maxHeight: 420, overflowY: "auto",
-          background: BG_CARD, border: `1px solid ${BORDER}`, borderRadius: 14,
-          boxShadow: "0 20px 50px rgba(0,0,0,0.45)", padding: 8,
-        }}>
+        <div style={panelStyle}>
           <div style={{ padding: "8px 10px", fontSize: 12, fontWeight: 700, color: TEXT_MUTED, textTransform: "uppercase", letterSpacing: 0.5 }}>
             Notifications
           </div>

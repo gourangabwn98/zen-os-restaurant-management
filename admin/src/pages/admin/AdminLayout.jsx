@@ -77,14 +77,15 @@ if (!document.getElementById("admin-layout-styles")) {
       height: 100vh; overflow-y: auto; }
     .side::after { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 200px;
       pointer-events: none; background: var(--glow-side); }
-    .side-brand { padding: 19px 18px 17px; display: flex; align-items: center; gap: 11px; position: relative; z-index: 1; }
-    .side-logo-img { width: 120px; height: 44px; object-fit: contain; flex-shrink: 0; }
-    .side-mk { width: 34px; height: 34px; border-radius: 11px; flex: none; display: grid; place-items: center;
-      font-weight: 800; font-size: 15px; color: #fff; background: var(--grad-btn);
+    .side-brand { padding: 19px 18px 14px; display: flex; align-items: center; gap: 11px; position: relative; z-index: 1; }
+    .side-mk { width: 38px; height: 38px; border-radius: 11px; flex: none; display: grid; place-items: center;
+      font-weight: 800; font-size: 15px; color: #fff; background: var(--grad-btn); overflow: hidden;
       box-shadow: 0 6px 18px -4px var(--violet-glow), inset 0 1px 0 rgba(255,255,255,.28); }
+    .side-mk img { width: 100%; height: 100%; object-fit: contain; }
     .side-nm { font-size: 15.5px; font-weight: 700; letter-spacing: -.02em; color: var(--text-1);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .side-sb { font-size: 11px; color: var(--text-3); margin-top: -2px; }
+    .side-toolbar { padding: 0 18px 15px; display: flex; align-items: center; gap: 8px; position: relative; z-index: 1; }
     .side-sp { flex: 1; }
     .side-who { margin: 10px 9px 0; padding: 11px; border-radius: var(--r-ctl); display: flex; align-items: center;
       gap: 10px; background: linear-gradient(140deg, rgba(255,255,255,.055), rgba(255,255,255,.01));
@@ -109,7 +110,7 @@ if (!document.getElementById("admin-layout-styles")) {
   document.head.appendChild(s);
 }
 
-function NavItem({ id, label, icon, active, count, onClick }) {
+function NavItem({ label, icon, active, count, onClick }) {
   return (
     <div className={`zc-nav${active ? " on" : ""}`} onClick={onClick}>
       <Icon id={icon} />{label}
@@ -159,20 +160,22 @@ export default function AdminLayout() {
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: BG_MAIN }}>
-      <NotificationBell user={user} onNavigate={() => setPage("orders")} />
       <aside className="side">
         <div className="side-brand">
-          {rLogo ? (
-            <img src={rLogo} alt={rName} className="side-logo-img" onError={(e) => { e.currentTarget.style.display = "none"; }} />
-          ) : (
-            <>
-              <div className="side-mk">{rName.charAt(0).toUpperCase()}</div>
-              <div style={{ minWidth: 0 }}>
-                <div className="side-nm">{rName}</div>
-                <div className="side-sb">Admin panel</div>
-              </div>
-            </>
-          )}
+          <div className="side-mk">
+            {rLogo
+              ? <img src={rLogo} alt={rName} onError={(e) => { e.currentTarget.style.display = "none"; }} />
+              : rName.charAt(0).toUpperCase()}
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div className="side-nm">{rName}</div>
+            <div className="side-sb">Admin panel</div>
+          </div>
+        </div>
+
+        <div className="side-toolbar">
+          <NotificationBell inline user={user} onNavigate={() => setPage("orders")} />
+          <ThemeToggle compact />
         </div>
 
         <div className="zc-navgrp">Service</div>
@@ -213,7 +216,6 @@ export default function AdminLayout() {
           <button type="button" className="side-foot-btn danger" onClick={handleLogout}>
             <span style={{ fontSize: 14 }}>⎋</span> Sign out
           </button>
-          <div style={{ padding: "4px 3px 0" }}><ThemeToggle /></div>
           <div className="side-version">{BRAND_NAME} · {BRAND_VERSION}</div>
         </div>
       </aside>
