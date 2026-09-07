@@ -97,3 +97,6 @@ export const editEmployee        = (id, body) => api.put(`/admin/employees/${id}
 export const setEmployeeStatus   = (id, status) => api.patch(`/admin/employees/${id}/status`, { status });
 export const getEmployeeStats    = (id) => api.get(`/admin/employees/${id}/stats`);
 export const getEmployeePerformance = (params) => api.get("/admin/employees/performance", { params });
+
+// ── Support tickets (Help & Support → Raise a ticket) ─────────────────────
+export const createSupportTicket = (body) => api.post("/support", body);
