@@ -1,659 +1,465 @@
-import { PRIMARY, PRIMARY_LIGHT, PRIMARY_MID, PRIMARY_DARK, GRADIENT_BTN } from "../../theme.js";
-import { useState, useEffect } from "react";
+// src/pages/admin/UsersPage.jsx
+// ─────────────────────────────────────────────────────────────────────────────
+// Zen OS "Users" — customers who have ordered, including guests. Migrated to
+// the shared design system (design-reference/zen-os-design-reference.html →
+// "Users" screen) to match Invoices / Dashboard, with the SAME columns and
+// stat cards as that reference: Registered / Repeat customers / Guest orders
+// / Highest spender, and a Customer / Phone / Orders / Lifetime / Average /
+// Last order / Type ledger.
+//
+// The reference mockup's per-customer numbers (orders, lifetime, average,
+// last order, registered-vs-guest) aren't fields on the User document itself
+// — they only exist once orders are attached to a customer. So this screen
+// now aggregates GET /admin/orders (already used by Invoices) per customer,
+// grouped by the registered account (order.user) or, for guests, by
+// guestPhone — and folds in every registered account from GET /admin/users
+// so accounts with zero orders still show up (and can still be deleted).
+// Nothing here is invented: every figure is a live aggregate of that data.
+// ─────────────────────────────────────────────────────────────────────────────
+import { useState, useEffect, useCallback, useMemo } from "react";
 import toast from "react-hot-toast";
-import { getAllUsers, deleteUser } from "../../services/adminService.js";
+import { getAllUsers, deleteUser, getAllOrders } from "../../services/adminService.js";
+import PageHeader from "./shared/PageHeader.jsx";
+import StatCard from "./shared/StatCard.jsx";
+import Loader from "./shared/Loader.jsx";
+import EmptyState from "./shared/EmptyState.jsx";
+import ErrorState from "./shared/ErrorState.jsx";
 
-const PINK = PRIMARY;
-const WHITE = "#1e1a2e";
+const PER_PAGE = 12;
+const TYPE_SEG = ["All", "Registered", "Guest"];
 
-const AVATAR_COLORS = [
-  { bg: "#E6F1FB", c: "#185FA5" },
-  { bg: "#FBEAF0", c: "#993556" },
-  { bg: "#EAF3DE", c: "#3B6D11" },
-  { bg: "#FAEEDA", c: "#854F0B" },
-  { bg: "#EEEDFE", c: "#3C3489" },
-  { bg: "#E1F5EE", c: "#085041" },
+const AVATAR_GRADS = [
+  "linear-gradient(140deg,#8B5CF6,#6D28D9)",
+  "linear-gradient(140deg,#22D3EE,#0891B2)",
+  "linear-gradient(140deg,#F0A93B,#D97706)",
+  "linear-gradient(140deg,#35D08A,#059669)",
+  "linear-gradient(140deg,#F2564D,#B91C1C)",
+  "linear-gradient(140deg,#6366F1,#4338CA)",
 ];
-const avc = (n) =>
-  AVATAR_COLORS[(n?.charCodeAt(0) || 0) % AVATAR_COLORS.length];
-const ini = (n) =>
-  !n || n === "Guest"
-    ? "G"
-    : n
-        .split(" ")
-        .map((w) => w[0])
-        .join("")
-        .toUpperCase()
-        .slice(0, 2);
+const avc = (n) => AVATAR_GRADS[(n?.charCodeAt(0) || 0) % AVATAR_GRADS.length];
+const ini = (n) => (!n || n === "Guest" ? "G" : n.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2));
+const fmt = (n) => Math.round(n || 0).toLocaleString("en-IN");
 
-const StatPill = ({ label, value, color }) => (
-  <div
-    style={{
-      background: "var(--color-background-secondary,#f5f5f5)",
-      borderRadius: 8,
-      padding: "12px 16px",
-    }}
-  >
-    <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>{label}</div>
-    <div
-      style={{
-        fontSize: 20,
-        fontWeight: 500,
-        color: color || "#f1f0f5",
-      }}
-    >
-      {value}
-    </div>
-  </div>
-);
+// ── page-scoped styles (tokens only — light / dark safe) ─────────────────────
+if (typeof document !== "undefined" && !document.getElementById("usr-styles")) {
+  const s = document.createElement("style");
+  s.id = "usr-styles";
+  s.textContent = `
+    .usr-idc { color: var(--text-3); font-size: 11px; }
+    .usr-who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .usr-who .av { width: 32px; height: 32px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 11.5px; font-weight: 700; color: #fff; }
+    .usr-who b { font-weight: 600; display: block; line-height: 1.3; color: var(--text-1); }
+    .usr-filters { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+    .zc-ledger tbody tr.usr-click { cursor: pointer; }
+    .usr-cards { display: none; }
+    @media (max-width: 860px) {
+      .usr-ledger-wrap { display: none; }
+      .usr-cards { display: block; }
+    }
+    .usr-ocard {
+      border: 1px solid var(--edge); border-radius: var(--r-row);
+      background: var(--grad-panel); padding: 12px 13px; margin-bottom: 8px; cursor: pointer;
+      transition: border-color .12s ease;
+    }
+    .usr-ocard:hover { border-color: var(--edge-hi); }
+  `;
+  document.head.appendChild(s);
+}
 
-// ── User detail card (expandable) ─────────────────────────────────────────────
-const UserDetail = ({ user, onDelete }) => (
-  <div
-    style={{
-      background: "rgba(233,30,140,.02)",
-      border: "0.5px solid rgba(233,30,140,.15)",
-      borderRadius: 10,
-      padding: 16,
-      marginTop: 2,
-      display: "grid",
-      gridTemplateColumns: "1fr 1fr",
-      gap: 16,
-    }}
-  >
-    <div>
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 500,
-          color: "#4b5563",
-          letterSpacing: 0.5,
-          textTransform: "uppercase",
-          marginBottom: 10,
-        }}
-      >
-        Account info
-      </div>
-      {[
-        { l: "User ID", v: user._id, vc: "#6b7280", small: true },
-        { l: "Name", v: user.name || "—" },
-        { l: "Phone", v: user.phone ? `+91 ${user.phone}` : "—" },
-        {
-          l: "Verified",
-          v: user.isVerified ? "Yes" : "No",
-          vc: user.isVerified ? "#3B6D11" : "#A32D2D",
-        },
-        {
-          l: "Veg Mode",
-          v: user.vegMode ? "On" : "Off",
-          vc: user.vegMode ? "#3B6D11" : "#6b7280",
-        },
-        { l: "Language", v: user.language || "English" },
-        {
-          l: "Joined",
-          v: new Date(user.createdAt).toLocaleDateString("en-IN", {
-            day: "2-digit",
-            month: "long",
-            year: "numeric",
-          }),
-        },
-      ].map((r) => (
-        <div
-          key={r.l}
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            padding: "6px 0",
-            borderBottom: "0.5px solid rgba(255,255,255,0.05)",
-            fontSize: 13,
-          }}
-        >
-          <span style={{ color: "#6b7280" }}>{r.l}</span>
-          <span
-            style={{
-              fontWeight: 500,
-              color: r.vc || "#f1f0f5",
-              fontSize: r.small ? 11 : 13,
-              fontFamily: r.small ? "monospace" : "inherit",
-            }}
-          >
-            {r.small ? r.v.slice(-8) + "…" : r.v}
+// ═══════════════════════════════════════════════════════════════════════════════
+// Customer detail modal — order aggregate, plus account info + delete for
+// registered customers whose full User document we have.
+// ═══════════════════════════════════════════════════════════════════════════════
+function CustomerDetailModal({ customer, busy, onClose, onDelete }) {
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  if (!customer) return null;
+  const u = customer.user;
+  const orderRows = [
+    ["Orders", customer.orderCount],
+    ["Lifetime", `₹${fmt(customer.lifetime)}`],
+    ["Average order", `₹${fmt(customer.average)}`],
+    [
+      "Last order",
+      customer.lastOrderAt
+        ? new Date(customer.lastOrderAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+        : "—",
+    ],
+  ];
+  const accountRows = u
+    ? [
+        ["User ID", `…${u._id.slice(-8)}`, true],
+        ["Verified", u.isVerified ? "Yes" : "No", false, u.isVerified ? "var(--ready-ink)" : "var(--stop-ink)"],
+        ["Veg mode", u.vegMode ? "On" : "Off", false, u.vegMode ? "var(--ready-ink)" : "var(--text-2)"],
+        ["Language", u.language || "English"],
+        [
+          "Joined",
+          u.createdAt
+            ? new Date(u.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })
+            : "—",
+        ],
+      ]
+    : [];
+
+  return (
+    <div className="zc-scrim" onClick={onClose}>
+      <div className="zc-modal" style={{ width: 480 }} onClick={(e) => e.stopPropagation()}>
+        <div className="mh">
+          <span style={{ width: 40, height: 40, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 14, fontWeight: 700, color: "#fff", background: avc(customer.name), flex: "none" }}>
+            {ini(customer.name)}
           </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="t">{customer.name}</div>
+            <div className="s">{customer.phone ? `+91 ${customer.phone}` : "No phone on file"}</div>
+          </div>
+          <span className={`zc-tag ${customer.registered ? "live" : "done"} sq`}>{customer.registered ? "Registered" : "Guest"}</span>
+          <button type="button" className="zc-x" onClick={onClose} aria-label="Close">✕</button>
         </div>
-      ))}
-    </div>
-    <div>
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 500,
-          color: "#4b5563",
-          letterSpacing: 0.5,
-          textTransform: "uppercase",
-          marginBottom: 10,
-        }}
-      >
-        Actions
-      </div>
-      <div
-        style={{
-          background: "#fff5f5",
-          border: "0.5px solid #fca5a5",
-          borderRadius: 10,
-          padding: 14,
-        }}
-      >
-        <div
-          style={{
-            fontSize: 13,
-            fontWeight: 500,
-            color: "#7f1d1d",
-            marginBottom: 6,
-          }}
-        >
-          Delete account
-        </div>
-        <div
-          style={{
-            fontSize: 12,
-            color: "#b91c1c",
-            marginBottom: 12,
-            lineHeight: 1.5,
-          }}
-        >
-          This will permanently remove the user. Their orders will remain in the
-          system.
-        </div>
-        <button
-          onClick={() => onDelete(user._id)}
-          style={{
-            width: "100%",
-            padding: "9px",
-            borderRadius: 8,
-            border: "none",
-            background: "#dc2626",
-            color: WHITE,
-            cursor: "pointer",
-            fontWeight: 600,
-            fontSize: 13,
-          }}
-        >
-          Delete user
-        </button>
-      </div>
-    </div>
-  </div>
-);
 
-// ── main page ─────────────────────────────────────────────────────────────────
+        <div className="mb">
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>Order history</div>
+          <div className="zc-panel" style={{ padding: "4px 14px", marginBottom: u ? 18 : 0 }}>
+            {orderRows.map(([k, v]) => (
+              <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderBottom: "1px solid var(--edge)", fontSize: 12.5 }}>
+                <span style={{ color: "var(--text-3)" }}>{k}</span>
+                <span className="tnum" style={{ fontWeight: 500, color: "var(--text-1)" }}>{v}</span>
+              </div>
+            ))}
+          </div>
+
+          {u && (
+            <>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>Account info</div>
+              <div className="zc-panel" style={{ padding: "4px 14px" }}>
+                {accountRows.map(([k, v, mono, color]) => (
+                  <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderBottom: "1px solid var(--edge)", fontSize: 12.5 }}>
+                    <span style={{ color: "var(--text-3)" }}>{k}</span>
+                    <span className={mono ? "tnum" : undefined} style={{ fontWeight: 500, color: color || "var(--text-1)", fontFamily: mono ? "monospace" : "inherit" }}>
+                      {v}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ marginTop: 16, padding: 14, borderRadius: "var(--r-ctl)", background: "var(--stop-fill)", border: "1px solid var(--stop-line)" }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--stop-ink)", marginBottom: 6 }}>Delete account</div>
+                <div style={{ fontSize: 12, color: "var(--text-2)", marginBottom: 12, lineHeight: 1.5 }}>
+                  This will permanently remove the user. Their orders will remain in the system.
+                </div>
+                <button type="button" className="zc-btn danger block" disabled={busy} onClick={() => onDelete(u._id)}>
+                  {busy ? "Deleting…" : "Delete user"}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="mf">
+          <button type="button" className="zc-btn pri" onClick={onClose}>Done</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN
+// ═══════════════════════════════════════════════════════════════════════════════
 export default function UsersPage() {
   const [users, setUsers] = useState([]);
+  const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [verFilter, setVerFilter] = useState("All");
-  const [expanded, setExpanded] = useState(null);
-  const [page, setPage] = useState(1);
-  const PER_PAGE = 12;
+  const [error, setError] = useState(false);
+  const [busyId, setBusyId] = useState(null);
 
-  useEffect(() => {
-    getAllUsers()
-      .then((r) => {
-        setUsers(r.data?.users || []);
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("All");
+  const [page, setPage] = useState(1);
+  const [openKey, setOpenKey] = useState(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    Promise.all([getAllUsers({ limit: 5000 }), getAllOrders({ limit: 5000 })])
+      .then(([uRes, oRes]) => {
+        setUsers(uRes.data?.users || []);
+        setOrders(oRes.data?.orders || []);
+        setError(false);
         setLoading(false);
       })
-      .catch(() => {
-        toast.error("Failed to load users");
-        setLoading(false);
-      });
+      .catch(() => { setError(true); setLoading(false); });
   }, []);
+  useEffect(() => { load(); }, [load]);
 
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this user permanently?")) return;
+    setBusyId(id);
     try {
       await deleteUser(id);
       setUsers((p) => p.filter((u) => u._id !== id));
-      setExpanded(null);
+      setOpenKey(null);
       toast.success("User deleted");
     } catch {
       toast.error("Delete failed");
+    } finally {
+      setBusyId(null);
     }
   };
 
-  const filtered = users.filter((u) => {
-    const q = search.toLowerCase();
-    const matchQ =
-      !q || u.name?.toLowerCase().includes(q) || u.phone?.includes(q);
-    const matchV =
-      verFilter === "All" ||
-      (verFilter === "Verified" && u.isVerified) ||
-      (verFilter === "Unverified" && !u.isVerified);
-    return matchQ && matchV;
+  // ── build one row per customer: registered accounts keyed by user id,
+  //    guests keyed by phone (or, lacking one, by that single order) ─────────
+  //
+  // For a WAITER/ADMIN-sourced order, `order.user` is the STAFF account that
+  // keyed the order in (services/orderService.js placeOrderTx sets
+  // `user: req.user._id` for whoever is authenticated when placing it) — the
+  // actual walk-in customer's identity lives in guestName/guestPhone. Only a
+  // CUSTOMER-sourced order's `user` is ever the customer's own account, so
+  // staff-sourced orders are always grouped as a guest, regardless of `user`.
+  const customers = useMemo(() => {
+    const map = new Map();
+    orders.forEach((o) => {
+      const staffPlaced = o.source === "WAITER" || o.source === "ADMIN";
+      const registered = !!o.user && !staffPlaced;
+      const phone = (registered ? o.user?.phone : o.guestPhone) || "";
+      const key = registered ? `u:${o.user._id}` : phone ? `g:${phone}` : `o:${o._id}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          key, registered, phone,
+          name: (registered ? o.user?.name : o.guestName) || "Guest",
+          userId: registered ? o.user?._id : null,
+          orders: [],
+        });
+      }
+      map.get(key).orders.push(o);
+    });
+    // fold in every registered account, including those with zero orders yet
+    users.forEach((u) => {
+      const key = `u:${u._id}`;
+      if (!map.has(key)) {
+        map.set(key, { key, registered: true, phone: u.phone || "", name: u.name || "—", userId: u._id, orders: [] });
+      }
+      map.get(key).user = u;
+    });
+    return Array.from(map.values())
+      .map((c) => {
+        const total = c.orders.reduce((s, o) => s + Number(o.total || 0), 0);
+        const count = c.orders.length;
+        const last = c.orders.reduce((latest, o) => (!latest || new Date(o.createdAt) > new Date(latest.createdAt) ? o : latest), null);
+        return { ...c, orderCount: count, lifetime: total, average: count ? total / count : 0, lastOrderAt: last?.createdAt || null };
+      })
+      .sort((a, b) => b.lifetime - a.lifetime || b.orderCount - a.orderCount);
+  }, [orders, users]);
+
+  const filtered = customers.filter((c) => {
+    const q = search.trim().toLowerCase();
+    const matchQ = !q || c.name?.toLowerCase().includes(q) || c.phone?.includes(q);
+    const matchT = typeFilter === "All" || (typeFilter === "Registered" ? c.registered : !c.registered);
+    return matchQ && matchT;
   });
 
-  const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
-  const totalPages = Math.ceil(filtered.length / PER_PAGE);
+  const hasFilters = search || typeFilter !== "All";
+  const clearFilters = () => { setSearch(""); setTypeFilter("All"); setPage(1); };
 
-  const stats = {
-    total: users.length,
-    verified: users.filter((u) => u.isVerified).length,
-    unverified: users.filter((u) => !u.isVerified).length,
-    vegMode: users.filter((u) => u.vegMode).length,
-  };
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+  const safePage = Math.min(page, totalPages);
+  const paginated = filtered.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+  const pageList = Array.from({ length: totalPages }, (_, i) => i + 1)
+    .filter((p) => p === 1 || p === totalPages || Math.abs(p - safePage) <= 1)
+    .reduce((acc, p, i, arr) => {
+      if (i > 0 && arr[i - 1] !== p - 1) acc.push("…");
+      acc.push(p);
+      return acc;
+    }, []);
+
+  const openCustomer = openKey ? customers.find((c) => c.key === openKey) || null : null;
+
+  // ── stats — live aggregates only ──────────────────────────────────────────
+  const now = new Date();
+  const registeredThisMonth = users.filter((u) => {
+    const d = u.createdAt && new Date(u.createdAt);
+    return d && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  }).length;
+  const repeatCustomers = customers.filter((c) => c.registered && c.orderCount > 1).length;
+  const returnRate = users.length ? Math.round((repeatCustomers / users.length) * 100) : 0;
+  const guestOrderCount = orders.filter((o) => !o.user || o.source === "WAITER" || o.source === "ADMIN").length;
+  const guestOrderPct = orders.length ? Math.round((guestOrderCount / orders.length) * 100) : 0;
+  const topSpender = customers.length ? customers[0] : null;
+
+  const STATS = [
+    { label: "Registered", value: fmt(users.length), grad: true, sub: `+${registeredThisMonth} this month` },
+    { label: "Repeat customers", value: fmt(repeatCustomers), color: "var(--ready-ink)", sub: `${returnRate}% return rate` },
+    { label: "Guest orders", value: `${guestOrderPct}%`, color: "var(--text-2)", sub: "No account created" },
+    {
+      label: "Highest spender",
+      value: topSpender ? `₹${fmt(topSpender.lifetime)}` : "—",
+      sub: topSpender ? `${topSpender.name} · ${topSpender.orderCount} order${topSpender.orderCount === 1 ? "" : "s"}` : "No orders yet",
+    },
+  ];
 
   return (
-    <>
-      {/* header */}
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ fontSize: 20, fontWeight: 500 }}>Users</div>
-        <div style={{ fontSize: 13, color: "#6b7280", marginTop: 3 }}>
-          All registered customers and guests
-        </div>
+    <div>
+      <PageHeader
+        title="Users"
+        sub={`${users.length} registered customer${users.length === 1 ? "" : "s"} · ${customers.length} have ordered`}
+      />
+
+      {/* stat row */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12, marginBottom: 20 }}>
+        {STATS.map((b, i) => <StatCard key={i} {...b} />)}
       </div>
 
-      {/* stats */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(4,minmax(0,1fr))",
-          gap: 12,
-          marginBottom: 20,
-        }}
-      >
-        <StatPill label="Total users" value={stats.total} color="#BA7517" />
-        <StatPill label="Verified" value={stats.verified} color="#1D9E75" />
-        <StatPill label="Unverified" value={stats.unverified} color="#BA7517" />
-        <StatPill label="Veg mode on" value={stats.vegMode} color={PINK} />
-      </div>
-
-      {/* filter bar */}
-      <div
-        style={{
-          background: "#1e1a2e",
-          border: "0.5px solid rgba(255,255,255,0.07)",
-          borderRadius: 12,
-          padding: 16,
-          marginBottom: 16,
-          display: "flex",
-          gap: 10,
-          flexWrap: "wrap",
-          alignItems: "center",
-        }}
-      >
+      {/* filters */}
+      <div className="usr-filters">
         <input
+          className="zc-input"
           value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPage(1);
-          }}
-          placeholder="Search by name or phone…"
-          style={{
-            flex: 1,
-            minWidth: 220,
-            padding: "9px 14px",
-            borderRadius: 8,
-            border: "0.5px solid rgba(0,0,0,.15)",
-            fontSize: 13,
-            outline: "none",
-            background: "#e8e6f1",
-          }}
+          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          placeholder="Search by name or phone"
+          aria-label="Search customers"
+          style={{ flex: 1, minWidth: 240 }}
         />
-        <select
-          value={verFilter}
-          onChange={(e) => {
-            setVerFilter(e.target.value);
-            setPage(1);
-          }}
-          style={{
-            padding: "9px 12px",
-            borderRadius: 8,
-            border: "0.5px solid rgba(0,0,0,.15)",
-            fontSize: 13,
-            background: "#ecebf4",
-            cursor: "pointer",
-          }}
-        >
-          <option value="All" >All users</option>
-          <option value="Verified">Verified only</option>
-          <option value="Unverified">Unverified only</option>
-        </select>
-        {(search || verFilter !== "All") && (
-          <button
-            onClick={() => {
-              setSearch("");
-              setVerFilter("All");
-              setPage(1);
-            }}
-            style={{
-              padding: "9px 14px",
-              borderRadius: 8,
-              border: `0.5px solid ${PINK}`,
-              color: PINK,
-              background: "#1e1a2e",
-              cursor: "pointer",
-              fontSize: 13,
-            }}
-          >
-            Clear ✕
-          </button>
+        <div className="zc-seg" role="tablist" aria-label="Customer type filter">
+          {TYPE_SEG.map((s) => (
+            <button
+              key={s} type="button" role="tab" aria-selected={typeFilter === s}
+              className={typeFilter === s ? "on" : ""}
+              onClick={() => { setTypeFilter(s); setPage(1); }}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+        <div style={{ flex: 1 }} />
+        {hasFilters ? (
+          <>
+            <span style={{ fontSize: 12, color: "var(--text-2)" }}>
+              <b style={{ color: "var(--accent-ink)" }}>{filtered.length}</b> of {customers.length}
+            </span>
+            <button type="button" className="zc-btn sm" onClick={clearFilters}>Clear ✕</button>
+          </>
+        ) : (
+          <span style={{ fontSize: 12, color: "var(--text-3)" }}>{customers.length} customers</span>
         )}
-        <span style={{ fontSize: 12, color: "#4b5563", marginLeft: "auto" }}>
-          {filtered.length} user{filtered.length !== 1 ? "s" : ""}
-        </span>
       </div>
 
-      {/* table */}
-      <div
-        style={{
-          background: "#1e1a2e",
-          border: "0.5px solid rgba(255,255,255,0.07)",
-          borderRadius: 12,
-          padding: 18,
-        }}
-      >
+      {/* list */}
+      <div className="zc-card">
+        <div className="zc-card-h">
+          <span className="t">Customers</span>
+          <span className="s">{loading ? "loading…" : error ? "unavailable" : `${filtered.length} matching`}</span>
+        </div>
+
         {loading ? (
-          <div style={{ textAlign: "center", padding: "48px", color: "#4b5563" }}>
-            Loading…
-          </div>
+          <div style={{ padding: "16px 18px" }}><Loader rows={8} /></div>
+        ) : error ? (
+          <ErrorState title="Could not load users"
+            sub="The server did not respond. Check that the backend is running, then try again."
+            onRetry={load} />
         ) : filtered.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "48px", color: "#374151" }}>
-            <div style={{ fontSize: 30, marginBottom: 8 }}>👤</div>
-            <div style={{ fontSize: 14 }}>No users found</div>
-          </div>
+          <EmptyState
+            icon={
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="8" r="3.5" /><path d="M5 20a7 7 0 0 1 14 0" />
+              </svg>
+            }
+            title={customers.length === 0 ? "No customers yet" : "No customers match"}
+            sub={customers.length === 0
+              ? "Customers appear here once they place an order or create an account."
+              : "Nothing matches these filters. Try clearing them."}
+            action={hasFilters ? <button type="button" className="zc-btn" onClick={clearFilters}>Clear filters</button> : null}
+          />
         ) : (
           <>
-            <div style={{ overflowX: "auto" }}>
-              <table
-                style={{
-                  width: "100%",
-                  borderCollapse: "collapse",
-                  fontSize: 13,
-                }}
-              >
+            {/* desktop / tablet ledger */}
+            <div className="usr-ledger-wrap" style={{ overflowX: "auto", padding: "6px 10px 8px" }}>
+              <table className="zc-ledger" style={{ minWidth: 760 }}>
                 <thead>
                   <tr>
-                    {[
-                      "",
-                      "Name",
-                      "Phone",
-                      "Verified",
-                      "Veg mode",
-                      "Language",
-                      "Joined",
-                      "",
-                    ].map((h, i) => (
-                      <th
-                        key={i}
-                        style={{
-                          textAlign: "left",
-                          padding: "9px 12px",
-                          fontSize: 11,
-                          color: "#6b7280",
-                          fontWeight: 500,
-                          borderBottom: "0.5px solid rgba(255,255,255,0.07)",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ))}
+                    <th>Customer</th>
+                    <th style={{ width: 140 }}>Phone</th>
+                    <th className="num" style={{ width: 90 }}>Orders</th>
+                    <th className="num" style={{ width: 110 }}>Lifetime</th>
+                    <th className="num" style={{ width: 100 }}>Average</th>
+                    <th style={{ width: 120 }}>Last order</th>
+                    <th style={{ width: 100 }}>Type</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {paginated.map((u) => {
-                    const isOpen = expanded === u._id;
-                    const av = avc(u.name || "G");
-                    return (
-                      <>
-                        <tr
-                          key={u._id}
-                          style={{
-                            borderBottom: isOpen
-                              ? "none"
-                              : "0.5px solid rgba(255,255,255,0.05)",
-                            background: isOpen
-                              ? "rgba(233,30,140,.02)"
-                              : "transparent",
-                          }}
-                        >
-                          {/* avatar */}
-                          <td style={{ padding: "12px 8px 12px 12px" }}>
-                            <div
-                              style={{
-                                width: 36,
-                                height: 36,
-                                borderRadius: "50%",
-                                background: av.bg,
-                                color: av.c,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                fontSize: 13,
-                                fontWeight: 500,
-                              }}
-                            >
-                              {ini(u.name)}
-                            </div>
-                          </td>
-                          <td style={{ padding: "12px" }}>
-                            <div style={{ fontWeight: 500 }}>
-                              {u.name || "—"}
-                            </div>
-                            <div style={{ fontSize: 11, color: "#4b5563" }}>
-                              ID …{u._id?.slice(-6)}
-                            </div>
-                          </td>
-                          <td style={{ padding: "12px", color: "#9ca3af" }}>
-                            {u.phone ? `+91 ${u.phone}` : "—"}
-                          </td>
-                          {/* verified */}
-                          <td style={{ padding: "12px" }}>
-                            <span
-                              style={{
-                                background: u.isVerified
-                                  ? "#EAF3DE"
-                                  : "#FAEEDA",
-                                color: u.isVerified ? "#3B6D11" : "#854F0B",
-                                padding: "3px 9px",
-                                borderRadius: 20,
-                                fontSize: 11,
-                                fontWeight: 500,
-                              }}
-                            >
-                              {u.isVerified ? "Verified" : "Pending"}
-                            </span>
-                          </td>
-                          {/* veg mode */}
-                          <td style={{ padding: "12px" }}>
-                            <div
-                              style={{
-                                width: 36,
-                                height: 20,
-                                borderRadius: 10,
-                                background: u.vegMode ? "#1D9E75" : "#ddd",
-                                position: "relative",
-                              }}
-                            >
-                              <div
-                                style={{
-                                  position: "absolute",
-                                  top: 2,
-                                  left: u.vegMode ? 18 : 2,
-                                  width: 16,
-                                  height: 16,
-                                  borderRadius: "50%",
-                                  background: "#1e1a2e",
-                                  boxShadow: "0 1px 2px rgba(0,0,0,.2)",
-                                }}
-                              />
-                            </div>
-                          </td>
-                          <td
-                            style={{
-                              padding: "12px",
-                              fontSize: 12,
-                              color: "#6b7280",
-                            }}
-                          >
-                            {u.language || "English"}
-                          </td>
-                          <td
-                            style={{
-                              padding: "12px",
-                              fontSize: 12,
-                              color: "#4b5563",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {u.createdAt
-                              ? new Date(u.createdAt).toLocaleDateString(
-                                  "en-IN",
-                                  {
-                                    day: "2-digit",
-                                    month: "short",
-                                    year: "numeric",
-                                  },
-                                )
-                              : "—"}
-                          </td>
-                          <td style={{ padding: "12px" }}>
-                            <button
-                              onClick={() => setExpanded(isOpen ? null : u._id)}
-                              style={{
-                                padding: "5px 12px",
-                                borderRadius: 8,
-                                fontSize: 12,
-                                cursor: "pointer",
-                                border: `0.5px solid ${isOpen ? PINK : "rgba(255,255,255,0.08)"}`,
-                                background: isOpen ? "#fbeaf0" : WHITE,
-                                color: isOpen
-                                  ? PINK
-                                  : "#f1f0f5",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {isOpen ? "Close ↑" : "View ↓"}
-                            </button>
-                          </td>
-                        </tr>
-                        {isOpen && (
-                          <tr
-                            key={`${u._id}-d`}
-                            style={{
-                              borderBottom: "0.5px solid rgba(255,255,255,0.05)",
-                            }}
-                          >
-                            <td
-                              colSpan={8}
-                              style={{ padding: "4px 12px 16px" }}
-                            >
-                              <UserDetail user={u} onDelete={handleDelete} />
-                            </td>
-                          </tr>
-                        )}
-                      </>
-                    );
-                  })}
+                  {paginated.map((c) => (
+                    <tr key={c.key} className="usr-click" onClick={() => setOpenKey(c.key)}>
+                      <td>
+                        <div className="usr-who">
+                          <span className="av" style={{ background: avc(c.name) }}>{ini(c.name)}</span>
+                          <div style={{ minWidth: 0 }}><b>{c.name}</b></div>
+                        </div>
+                      </td>
+                      <td style={{ color: "var(--text-2)", fontSize: 11.5 }}>{c.phone ? `+91 ${c.phone}` : "—"}</td>
+                      <td className="num" style={{ fontWeight: 600 }}>{c.orderCount}</td>
+                      <td className="money">₹{fmt(c.lifetime)}</td>
+                      <td className="num" style={{ color: "var(--text-2)" }}>₹{fmt(c.average)}</td>
+                      <td className="usr-idc">
+                        {c.lastOrderAt
+                          ? new Date(c.lastOrderAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })
+                          : "—"}
+                      </td>
+                      <td><span className={`zc-tag ${c.registered ? "live" : "done"} sq`}>{c.registered ? "Registered" : "Guest"}</span></td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
 
-            {/* pagination */}
+            {/* mobile cards */}
+            <div className="usr-cards" style={{ padding: "10px 12px 4px" }}>
+              {paginated.map((c) => (
+                <div key={c.key} className="usr-ocard" onClick={() => setOpenKey(c.key)}>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <span style={{ width: 32, height: 32, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 11.5, fontWeight: 700, color: "#fff", background: avc(c.name), flex: "none" }}>
+                      {ini(c.name)}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-1)" }}>{c.name}</div>
+                      <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 1 }}>
+                        {c.orderCount} order{c.orderCount === 1 ? "" : "s"} · ₹{fmt(c.lifetime)}
+                      </div>
+                    </div>
+                    <span className={`zc-tag ${c.registered ? "live" : "done"} sq`}>{c.registered ? "Registered" : "Guest"}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
             {totalPages > 1 && (
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "center",
-                  gap: 6,
-                  marginTop: 16,
-                  flexWrap: "wrap",
-                }}
-              >
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  style={{
-                    padding: "6px 14px",
-                    borderRadius: 8,
-                    border: "0.5px solid rgba(0,0,0,.12)",
-                    background: "#1e1a2e",
-                    cursor: page === 1 ? "not-allowed" : "pointer",
-                    color:
-                      page === 1 ? "#374151" : "#f1f0f5",
-                    fontSize: 13,
-                  }}
-                >
-                  ← Prev
-                </button>
-                {Array.from({ length: totalPages }, (_, i) => i + 1)
-                  .filter(
-                    (p) =>
-                      p === 1 || p === totalPages || Math.abs(p - page) <= 1,
-                  )
-                  .reduce((acc, p, i, arr) => {
-                    if (i > 0 && arr[i - 1] !== p - 1) acc.push("…");
-                    acc.push(p);
-                    return acc;
-                  }, [])
-                  .map((p, i) =>
-                    p === "…" ? (
-                      <span
-                        key={`e${i}`}
-                        style={{
-                          padding: "6px 4px",
-                          fontSize: 13,
-                          color: "#4b5563",
-                        }}
-                      >
-                        …
-                      </span>
-                    ) : (
-                      <button
-                        key={p}
-                        onClick={() => setPage(p)}
-                        style={{
-                          padding: "6px 12px",
-                          borderRadius: 8,
-                          fontSize: 13,
-                          cursor: "pointer",
-                          border: "none",
-                          background:
-                            page === p
-                              ? PINK
-                              : "var(--color-background-secondary,#f5f5f5)",
-                          color:
-                            page === p
-                              ? WHITE
-                              : "#f1f0f5",
-                          fontWeight: page === p ? 500 : 400,
-                        }}
-                      >
-                        {p}
-                      </button>
-                    ),
+              <div className="zc-tfoot" style={{ padding: "14px 18px 6px" }}>
+                <span>
+                  Showing {(safePage - 1) * PER_PAGE + 1}–{Math.min(safePage * PER_PAGE, filtered.length)} of {filtered.length}
+                </span>
+                <div className="zc-pager">
+                  <button type="button" disabled={safePage === 1} onClick={() => setPage((p) => Math.max(1, p - 1))} aria-label="Previous page">‹</button>
+                  {pageList.map((p, i) =>
+                    p === "…"
+                      ? <span key={`g${i}`} className="gap">…</span>
+                      : <button type="button" key={p} className={safePage === p ? "on" : ""} onClick={() => setPage(p)}>{p}</button>,
                   )}
-                <button
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
-                  style={{
-                    padding: "6px 14px",
-                    borderRadius: 8,
-                    border: "0.5px solid rgba(0,0,0,.12)",
-                    background: "#1e1a2e",
-                    cursor: page === totalPages ? "not-allowed" : "pointer",
-                    color:
-                      page === totalPages
-                        ? "#374151"
-                        : "#f1f0f5",
-                    fontSize: 13,
-                  }}
-                >
-                  Next →
-                </button>
+                  <button type="button" disabled={safePage === totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} aria-label="Next page">›</button>
+                </div>
               </div>
             )}
           </>
         )}
       </div>
-    </>
+
+      {openCustomer && (
+        <CustomerDetailModal
+          customer={openCustomer}
+          busy={!!openCustomer.user && busyId === openCustomer.user._id}
+          onClose={() => setOpenKey(null)}
+          onDelete={handleDelete}
+        />
+      )}
+    </div>
   );
 }

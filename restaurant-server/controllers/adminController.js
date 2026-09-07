@@ -124,13 +124,17 @@ export const updateOrderStatus = async (req, res) => {
 };
 
 // ── GET /api/admin/users ──────────────────────────────────────────────────────
+// This is the customer directory (Admin → Users) — admin/waiter/chef accounts
+// are managed separately under Admin → Employees, so only role: "customer"
+// belongs here.
 export const getAllUsers = async (req, res) => {
   try {
     const { User } = req.models;
     const { page = 1, limit = 20 } = req.query;
+    const filter = { role: "customer" };
     const [users, total] = await Promise.all([
-      User.find().sort({ createdAt: -1 }).skip((page-1)*limit).limit(Number(limit)).select("-otp -otpExpiry -password"),
-      User.countDocuments(),
+      User.find(filter).sort({ createdAt: -1 }).skip((page-1)*limit).limit(Number(limit)).select("-otp -otpExpiry -password"),
+      User.countDocuments(filter),
     ]);
     res.json({ users, total });
   } catch (err) {
