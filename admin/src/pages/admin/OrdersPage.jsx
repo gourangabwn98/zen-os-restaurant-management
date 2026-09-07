@@ -10,6 +10,7 @@ import { consumePendingOrderFocus } from "../../services/orderFocus.js";
 import CombinedBillModal from "./shared/CombinedBillModal.jsx";
 import { statusKind } from "./shared/statusKind.js";
 import ErrorState from "./shared/ErrorState.jsx";
+import EmptyState from "./shared/EmptyState.jsx";
 import { getMenu, getCategories } from "../../services/menuService.js";
 
 // ── add this to adminService.js if not already there ─────────────────────────
@@ -74,7 +75,6 @@ const getCategoryRank = (cat) => {
 
 const avc = (n) => AVATAR_GRADS[(n?.charCodeAt(0)||0) % AVATAR_GRADS.length];
 const ini = (n) => !n||n==="Guest" ? "G" : n.split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
-const inp = { padding:"9px 12px", borderRadius:10, border:`1px solid ${BDR}`, fontSize:13, outline:"none", background:CARD2, color:T1, width:"100%", boxSizing:"border-box" };
 const fmt = (n) => Math.round(n||0).toLocaleString("en-IN");
 
 // ── Display formatters (keep raw values for logic, format only for text) ───
@@ -136,8 +136,15 @@ const Badge = ({ label, map, format }) => {
 };
 
 // ── BillMetric — compact reference-style pill (Billing's two dense rows) ──────
-const BillMetric = ({ label, value, caption, tone, grad }) => (
-  <div className="zc-metric sm">
+const BillMetric = ({ label, value, caption, tone, grad, onClick }) => (
+  <div
+    className="zc-metric sm"
+    onClick={onClick}
+    role={onClick ? "button" : undefined}
+    tabIndex={onClick ? 0 : undefined}
+    onKeyDown={onClick ? (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onClick()) : undefined}
+    style={onClick ? { cursor: "pointer" } : undefined}
+  >
     <div className="k">{label}</div>
     <div
       className={`v tnum${grad ? " gr" : ""}`}
@@ -472,72 +479,64 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null }) => {
   };
 
   return (
-    <div style={{ position:"fixed", inset:0, background:"var(--scrim)", zIndex:999,
-      display:"flex", alignItems:"center", justifyContent:"center",
-      padding:12, backdropFilter:"blur(6px)" }}>
+    <div className="zc-scrim" style={{ padding:12 }}>
 
-      <div style={{ background:"var(--surface)", borderRadius:20, width:"100%", maxWidth:1300,
-        height:"92vh", display:"flex", flexDirection:"column",
-        border:`1px solid var(--violet-mid)`,
-        boxShadow:"var(--shadow-pop)", overflow:"hidden" }}>
+      <div className="zc-modal" style={{ width:"100%", maxWidth:1300, height:"92vh",
+        display:"flex", flexDirection:"column", overflow:"hidden" }}>
 
-        {/* ── TOP BAR — search only ── */}
-        <div style={{ display:"flex", alignItems:"center", gap:12,
-          padding:"14px 20px", borderBottom:`1px solid ${BDR}`,
-          background:"var(--card)", flexShrink:0 }}>
+        {/* ── TOP BAR ── */}
+        <div style={{ display:"flex", alignItems:"center", gap:14,
+          padding:"14px 20px", borderBottom:"1px solid var(--edge)", flexShrink:0 }}>
 
-          <div style={{ flex:1, display:"flex", alignItems:"center", gap:8,
-            background:CARD2, border:`1px solid ${BDR}`, borderRadius:10,
-            padding:"7px 14px" }}>
-            <span style={{ fontSize:16 }}>🔍</span>
-            <input value={search} onChange={e=>setSearch(e.target.value)}
-              placeholder="Search items..."
-              style={{ flex:1, background:"transparent", border:"none",
-                outline:"none", fontSize:13, color:T1 }}/>
-            {search && <button onClick={()=>setSearch("")}
-              style={{ background:"none", border:"none", color:T3,
-                cursor:"pointer", fontSize:14 }}>✕</button>}
+          <div style={{ flexShrink:0 }}>
+            <div style={{ fontSize:16, fontWeight:700, letterSpacing:"-.02em", color:"var(--text-1)" }}>New order</div>
+            <div style={{ fontSize:11.5, color:"var(--text-3)" }}>Select items to add</div>
           </div>
 
-          <button className="op-btn" onClick={onClose} style={{ width:34, height:34, borderRadius:"50%",
-            border:`1px solid ${BDR}`, background:CARD, cursor:"pointer",
-            display:"flex", alignItems:"center", justifyContent:"center",
-            color:T2, fontSize:16, flexShrink:0 }}>✕</button>
+          <div style={{ flex:1, display:"flex", alignItems:"center", gap:8 }}>
+            <span style={{ fontSize:16 }}>🔍</span>
+            <input value={search} onChange={e=>setSearch(e.target.value)}
+              placeholder="Search items…" className="zc-input" />
+            {search && <button onClick={()=>setSearch("")}
+              className="zc-btn ghost sm" style={{ flexShrink:0 }}>✕</button>}
+          </div>
+
+          <button type="button" className="zc-x" onClick={onClose} aria-label="Close">✕</button>
         </div>
 
         {/* ── MAIN CONTENT ── */}
         <div style={{ display:"flex", flex:1, overflow:"hidden" }}>
 
           {/* ── LEFT: Category tabs (vertical) ── */}
-          <div className="op-scroll" style={{ width:150, background:"var(--bg)",
-            borderRight:`1px solid ${BDR}`,
-            display:"flex", flexDirection:"column",
-            overflowY:"auto", flexShrink:0 }}>
+          <div className="op-scroll" style={{ width:132, background:"var(--surface)",
+            borderRight:"1px solid var(--edge)",
+            display:"flex", flexDirection:"column", gap:4,
+            overflowY:"auto", flexShrink:0, padding:"10px 8px" }}>
             {categories.map(cat=>{
               const active = selCat===cat;
               const count  = cat==="All" ? mi.length : mi.filter(m=>m.category===cat).length;
               return (
                 <button key={cat} onClick={()=>setSelCat(cat)} style={{
-                  padding:"14px 8px", border:"none", cursor:"pointer",
-                  background:active?`var(--violet-weak)`:"transparent",
-                  borderLeft:active?`3px solid ${PINK}`:"3px solid transparent",
+                  padding:"10px 6px", border:"none", borderRadius:"var(--r-ctl)", cursor:"pointer",
+                  background:active?"var(--grad-btn)":"transparent",
+                  boxShadow:active?"0 4px 12px -4px var(--violet-glow)":"none",
                   display:"flex", flexDirection:"column",
-                  alignItems:"center", gap:4, transition:"all .15s",
+                  alignItems:"center", gap:4, transition:"var(--theme-transition)",
                 }}>
                   {(() => {
                     const icon = getCatIcon(cat);
                     return icon?.startsWith?.("http")
                       ? <img src={icon} alt={cat}
                           onError={e=>e.target.style.display="none"}
-                          style={{ width:36, height:36, borderRadius:8, objectFit:"cover" }}/>
-                      : <span style={{ fontSize:22 }}>{icon}</span>;
+                          style={{ width:32, height:32, borderRadius:7, objectFit:"cover" }}/>
+                      : <span style={{ fontSize:19 }}>{icon}</span>;
                   })()}
-                  <span style={{ fontSize:10, fontWeight:active?700:500,
-                    color:active?PINK:T2, textAlign:"center",
+                  <span style={{ fontSize:10.5, fontWeight:active?700:500,
+                    color:active?"#fff":"var(--text-2)", textAlign:"center",
                     lineHeight:1.2, wordBreak:"break-word" }}>
                     {cat}
                   </span>
-                  <span style={{ fontSize:9, color:T3 }}>{count}</span>
+                  <span style={{ fontSize:9, color:active?"rgba(255,255,255,.75)":"var(--text-3)" }}>{count}</span>
                 </button>
               );
             })}
@@ -547,61 +546,40 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null }) => {
           <div className="op-scroll" style={{ flex:1, overflowY:"auto", padding:16 }}>
 
             <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap", alignItems:"center" }}>
-              <div style={{ display:"flex", gap:3, background:CARD2, padding:3,
-                borderRadius:20, border:`1px solid ${BDR}` }}>
+              <div className="zc-seg">
                 {[["All","🍽️ All"],["Veg","🟢 Veg"],["Non Veg","🔴 Non Veg"]].map(([v,label])=>(
-                  <button key={v} onClick={()=>setVegFilter(v)} style={{
-                    padding:"5px 12px", borderRadius:16, border:"none",
-                    cursor:"pointer", fontSize:12, fontWeight:600,
-                    background:vegFilter===v
-                      ? (v==="Veg"?"var(--ready-line)"
-                        : v==="Non Veg"?"var(--stop-line)"
-                        : PINK)
-                      : "transparent",
-                    color:vegFilter===v
-                      ? (v==="Veg"?"var(--ready-ink)"
-                        : v==="Non Veg"?"var(--stop-ink)"
-                        : "#fff")
-                      : T2,
-                    transition:"all .15s",
-                  }}>{label}</button>
+                  <button key={v} onClick={()=>setVegFilter(v)} style={vegFilter===v ? {
+                    background: v==="Veg" ? "var(--ready-fill)" : v==="Non Veg" ? "var(--stop-fill)" : "var(--grad-btn)",
+                    color: v==="Veg" ? "var(--ready-ink)" : v==="Non Veg" ? "var(--stop-ink)" : "#fff",
+                    fontWeight:600,
+                  } : undefined}>{label}</button>
                 ))}
               </div>
 
               {(isBeverageCat || selCat==="All") && (
-                <div style={{ display:"flex", gap:3, background:CARD2, padding:3,
-                  borderRadius:20, border:`1px solid ${BDR}` }}>
+                <div className="zc-seg">
                   {[["All","All"],["Hot","🔥 Hot"],["Cold","🧊 Cold"]].map(([v,label])=>(
-                    <button key={v} onClick={()=>setTempFilter(v)} style={{
-                      padding:"5px 12px", borderRadius:16, border:"none",
-                      cursor:"pointer", fontSize:12, fontWeight:600,
-                      background:tempFilter===v
-                        ? (v==="Hot"?"var(--wait-line)"
-                          : v==="Cold"?"var(--live-line)"
-                          : PINK)
-                        : "transparent",
-                      color:tempFilter===v
-                        ? (v==="Hot"?"var(--wait-ink)"
-                          : v==="Cold"?"var(--live-ink)"
-                          : "#fff")
-                        : T2,
-                    }}>{label}</button>
+                    <button key={v} onClick={()=>setTempFilter(v)} style={tempFilter===v ? {
+                      background: v==="Hot" ? "var(--wait-fill)" : v==="Cold" ? "var(--live-fill)" : "var(--grad-btn)",
+                      color: v==="Hot" ? "var(--wait-ink)" : v==="Cold" ? "var(--live-ink)" : "#fff",
+                      fontWeight:600,
+                    } : undefined}>{label}</button>
                   ))}
                 </div>
               )}
 
-              <span style={{ fontSize:12, color:T3, alignSelf:"center" }}>
+              <span style={{ fontSize:12, color:"var(--text-3)", alignSelf:"center" }}>
                 {filtered.length} item{filtered.length!==1?"s":""}
               </span>
             </div>
 
             {menuLoading ? (
-              <div style={{ textAlign:"center", padding:60, color:T3 }}>
-                <div style={{ fontSize:32, marginBottom:8 }}>⏳</div>
-                Loading menu...
+              <div style={{ textAlign:"center", padding:60, color:"var(--text-3)" }}>
+                <div className="zc-spin" style={{ margin:"0 auto 14px" }} />
+                Loading menu…
               </div>
             ) : filtered.length===0 ? (
-              <div style={{ textAlign:"center", padding:60, color:T3 }}>
+              <div style={{ textAlign:"center", padding:60, color:"var(--text-3)" }}>
                 <div style={{ fontSize:32, marginBottom:8 }}>📭</div>
                 No items found
               </div>
@@ -614,12 +592,12 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null }) => {
                   const inCart = qty > 0;
                   return (
                     <div key={m._id} className="op-menu-card" style={{
-                      background:inCart?`var(--violet-faint)`:CARD2,
-                      border:`2px solid ${inCart?PINK:BDR}`,
-                      borderRadius:RADIUS, overflow:"hidden",
+                      background:inCart?"var(--violet-faint)":"var(--card-2)",
+                      border:`1px solid ${inCart?"var(--violet-line)":"var(--edge)"}`,
+                      borderRadius:"var(--r-card)", overflow:"hidden",
                       cursor:"pointer",
                       display:"flex", flexDirection:"column",
-                      position:"relative",
+                      position:"relative", transition:"var(--theme-transition)",
                     }}>
                       <div style={{ height:100, background:"var(--card-2)",
                         display:"flex", alignItems:"center", justifyContent:"center",
@@ -634,46 +612,41 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null }) => {
 
                       {inCart && (
                         <div style={{ position:"absolute", top:8, right:8,
-                          background:PINK, color:"#fff", borderRadius:"50%",
+                          background:"var(--grad-btn)", color:"#fff", borderRadius:"50%",
                           width:24, height:24, display:"flex",
                           alignItems:"center", justifyContent:"center",
-                          fontSize:12, fontWeight:700 }}>{qty}</div>
+                          fontSize:12, fontWeight:700, boxShadow:"0 4px 10px -4px var(--violet-glow)" }}>{qty}</div>
                       )}
 
                       <div style={{ padding:"10px 10px 6px", flex:1 }}>
-                        <div style={{ fontWeight:600, fontSize:13, color:T1,
+                        <div style={{ fontWeight:600, fontSize:13, color:"var(--text-1)",
                           lineHeight:1.3, marginBottom:3 }}>{m.name}</div>
-                        <div style={{ fontSize:11, color:T3 }}>{m.category}</div>
-                        <div style={{ fontWeight:700, fontSize:15, color:PINK,
+                        <div style={{ fontSize:11, color:"var(--text-3)" }}>{m.category}</div>
+                        <div style={{ fontWeight:700, fontSize:15, color:"var(--text-1)",
                           marginTop:4 }}>₹{m.price}</div>
                       </div>
 
                       <div style={{ padding:"0 8px 10px",
                         display:"flex", alignItems:"center", gap:6 }}>
                         {qty===0 ? (
-                          <button className="op-btn" onClick={()=>addItem(m)} style={{
-                            flex:1, padding:"8px 0", borderRadius:10,
-                            background:"var(--grad-btn)",
-                            color:"#fff", border:"none", cursor:"pointer",
-                            fontWeight:700, fontSize:13,
-                          }}>+ Add</button>
+                          <button className="zc-btn pri sm" onClick={()=>addItem(m)} style={{ flex:1, justifyContent:"center" }}>+ Add</button>
                         ) : (
                           <>
                             <button onClick={()=>removeItem(m._id)} style={{
-                              width:32, height:32, borderRadius:"50%",
-                              border:`2px solid ${PINK}`, background:"transparent",
-                              color:PINK, cursor:"pointer", fontWeight:700,
+                              width:30, height:30, borderRadius:"50%",
+                              border:"1px solid var(--violet-line)", background:"var(--violet-weak)",
+                              color:"var(--accent-ink)", cursor:"pointer", fontWeight:700,
                               fontSize:18, display:"flex", alignItems:"center",
                               justifyContent:"center",
                             }}>−</button>
-                            <span style={{ flex:1, textAlign:"center",
-                              fontWeight:700, fontSize:16, color:T1 }}>{qty}</span>
+                            <span className="tnum" style={{ flex:1, textAlign:"center",
+                              fontWeight:700, fontSize:16, color:"var(--text-1)" }}>{qty}</span>
                             <button onClick={()=>addItem(m)} style={{
-                              width:32, height:32, borderRadius:"50%",
-                              background:PINK, color:"#fff", border:"none",
+                              width:30, height:30, borderRadius:"50%",
+                              background:"var(--grad-btn)", color:"#fff", border:"none",
                               cursor:"pointer", fontWeight:700, fontSize:18,
                               display:"flex", alignItems:"center",
-                              justifyContent:"center",
+                              justifyContent:"center", boxShadow:"0 4px 10px -4px var(--violet-glow)",
                             }}>+</button>
                           </>
                         )}
@@ -686,18 +659,18 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null }) => {
           </div>
 
           {/* ── RIGHT: Cart + Order details ── */}
-          <div style={{ width:280, background:"var(--card)",
-            borderLeft:`1px solid ${BDR}`,
+          <div style={{ width:290, background:"var(--grad-rail)",
+            borderLeft:"1px solid var(--edge)",
             display:"flex", flexDirection:"column", flexShrink:0 }}>
 
             {/* Cart header */}
             <div style={{ padding:"14px 14px 10px",
-              borderBottom:`1px solid ${BDR}`, flexShrink:0 }}>
+              borderBottom:"1px solid var(--edge)", flexShrink:0 }}>
               <div style={{ display:"flex", justifyContent:"space-between",
                 alignItems:"center" }}>
-                <div style={{ fontWeight:700, fontSize:15, color:T1 }}>
+                <div style={{ fontWeight:700, fontSize:15, color:"var(--text-1)" }}>
                   🛒 Cart
-                  {totalQty>0 && <span style={{ marginLeft:8, background:PINK,
+                  {totalQty>0 && <span className="tnum" style={{ marginLeft:8, background:"var(--grad-btn)",
                     color:"#fff", borderRadius:"50%", width:20, height:20,
                     display:"inline-flex", alignItems:"center",
                     justifyContent:"center", fontSize:11, fontWeight:700,
@@ -712,73 +685,64 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null }) => {
             </div>
 
             {/* Order details */}
-            <div style={{ padding:"12px 14px", borderBottom:`1px solid ${BDR}`,
+            <div style={{ padding:"12px 14px", borderBottom:"1px solid var(--edge)",
               flexShrink:0, display:"flex", flexDirection:"column", gap:8 }}>
 
               {/* Order type */}
-              <div style={{ display:"flex", gap:6, background:CARD2, padding:4,
-                borderRadius:10, border:`1px solid ${BDR}` }}>
+              <div className="zc-seg" style={{ width:"100%" }}>
                 {ORDER_TYPE_OPTIONS.map(({value,label,icon})=>(
-                  <button key={value} onClick={()=>setOrderType(value)} style={{
-                    flex:1, padding:"7px 0", borderRadius:8, cursor:"pointer",
-                    fontWeight:700, fontSize:12, border:"none",
-                    background:orderType===value?PINK:"transparent",
-                    color:orderType===value?"#fff":T2, transition:"all .15s",
-                  }}>{icon} {label}</button>
+                  <button key={value} onClick={()=>setOrderType(value)}
+                    className={orderType===value ? "on" : ""} style={{ flex:1, justifyContent:"center" }}>
+                    {icon} {label}
+                  </button>
                 ))}
               </div>
 
               {/* Table number — only for Dining */}
               {orderType==="DINE_IN" && (
                 <div style={{ display:"flex", alignItems:"center", gap:8,
-                  background:CARD2, border:`1px solid ${tableNo?PINK:BDR}`,
-                  borderRadius:10, padding:"6px 14px" }}>
-                  <span style={{ fontSize:13, color:T2, fontWeight:500 }}>Table</span>
+                  background:"var(--card-2)", border:`1px solid ${tableNo?"var(--violet-line)":"var(--edge)"}`,
+                  borderRadius:"var(--r-ctl)", padding:"6px 14px" }}>
+                  <span style={{ fontSize:13, color:"var(--text-2)", fontWeight:500 }}>Table</span>
                   <input type="number" min={1} value={tableNo}
                     onChange={e=>setTableNo(e.target.value)}
                     placeholder="No."
                     style={{ flex:1, background:"transparent", border:"none",
-                      outline:"none", fontSize:15, fontWeight:700, color:T1,
+                      outline:"none", fontSize:15, fontWeight:700, color:"var(--text-1)",
                       textAlign:"center" }}/>
                 </div>
               )}
 
               {/* Customer name */}
               <input value={customerName} onChange={e=>setCustomerName(e.target.value)}
-                placeholder="Customer name"
-                style={inp}/>
+                placeholder="Customer name" className="zc-input" />
 
               {/* Customer phone */}
               <input value={customerPhone}
                 onChange={e=>setCustomerPhone(e.target.value.replace(/\D/g,""))}
-                maxLength={10} placeholder="Phone number"
-                style={inp}/>
+                maxLength={10} placeholder="Phone number" className="zc-input" />
 
               {/* Payment Method */}
-              <div style={{ display:"flex", gap:4, background:CARD2, padding:3,
-                borderRadius:8, border:`1px solid ${BDR}` }}>
+              <div className="zc-seg" style={{ width:"100%" }}>
                 {["Cash","Online"].map(m=>(
-                  <button key={m} onClick={()=>setPaymentMethod(m)} style={{
-                    flex:1, padding:"6px 0", borderRadius:6, cursor:"pointer",
-                    fontWeight:600, fontSize:12, border:"none",
-                    background:paymentMethod===m?PINK:"transparent",
-                    color:paymentMethod===m?"#fff":T2,
-                  }}>{m==="Cash"?"💵 Cash":"📱 Online"}</button>
+                  <button key={m} onClick={()=>setPaymentMethod(m)}
+                    className={paymentMethod===m ? "on" : ""} style={{ flex:1, justifyContent:"center" }}>
+                    {m==="Cash"?"💵 Cash":"📱 Online"}
+                  </button>
                 ))}
               </div>
 
               {/* Payment Status */}
-              <div style={{ display:"flex", gap:4, background:CARD2, padding:3,
-                borderRadius:8, border:`1px solid ${BDR}` }}>
+              <div className="zc-seg" style={{ width:"100%" }}>
                 {PAYMENT_STATUS_OPTIONS.map(({value,label,icon})=>{
                   const st = PAY_STYLE[value] || DEFAULT_STATUS_STYLE;
                   const active = paymentStatus===value;
                   return (
                     <button key={value} onClick={()=>setPaymentStatus(value)} style={{
-                      flex:1, padding:"6px 0", borderRadius:6, cursor:"pointer",
-                      fontWeight:600, fontSize:12, border:"none",
+                      flex:1, justifyContent:"center",
                       background:active?st.bg:"transparent",
-                      color:active?st.color:T2,
+                      color:active?st.color:"var(--text-2)",
+                      fontWeight:active?600:500,
                     }}>{icon} {label}</button>
                   );
                 })}
@@ -795,7 +759,7 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null }) => {
             {/* Cart items */}
             <div className="op-scroll" style={{ flex:1, overflowY:"auto", padding:"10px 14px" }}>
               {cart.length===0 ? (
-                <div style={{ textAlign:"center", padding:"40px 0", color:T3 }}>
+                <div style={{ textAlign:"center", padding:"40px 0", color:"var(--text-3)" }}>
                   <div style={{ fontSize:36, marginBottom:8 }}>🛒</div>
                   <div style={{ fontSize:13 }}>No items yet</div>
                   <div style={{ fontSize:11, marginTop:4 }}>Tap items to add</div>
@@ -803,34 +767,32 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null }) => {
               ) : (
                 <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
                   {cart.map(c=>(
-                    <div key={c.item._id} style={{
-                      display:"flex", alignItems:"center", gap:8,
-                      padding:"8px 10px", borderRadius:10,
-                      background:CARD, border:`1px solid ${BDR}`,
+                    <div key={c.item._id} className="zc-panel" style={{
+                      display:"flex", alignItems:"center", gap:8, padding:"8px 10px",
                     }}>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:13, fontWeight:600, color:T1,
+                        <div style={{ fontSize:13, fontWeight:600, color:"var(--text-1)",
                           overflow:"hidden", textOverflow:"ellipsis",
                           whiteSpace:"nowrap" }}>{c.item.name}</div>
-                        <div style={{ fontSize:11, color:T3 }}>
+                        <div className="tnum" style={{ fontSize:11, color:"var(--text-3)" }}>
                           ₹{c.item.price} × {c.qty}
                         </div>
                       </div>
-                      <div style={{ fontWeight:700, color:PINK, fontSize:13,
+                      <div className="tnum" style={{ fontWeight:700, color:"var(--text-1)", fontSize:13,
                         minWidth:44, textAlign:"right" }}>
                         ₹{c.item.price*c.qty}
                       </div>
                       <div style={{ display:"flex", alignItems:"center", gap:4 }}>
                         <button onClick={()=>removeItem(c.item._id)} style={{
                           width:24, height:24, borderRadius:"50%",
-                          border:`1.5px solid ${BDR}`, background:CARD2,
-                          color:T2, cursor:"pointer", fontWeight:700,
+                          border:"1px solid var(--edge)", background:"var(--card-2)",
+                          color:"var(--text-2)", cursor:"pointer", fontWeight:700,
                           fontSize:14, display:"flex", alignItems:"center",
                           justifyContent:"center",
                         }}>−</button>
                         <button onClick={()=>addItem(c.item)} style={{
                           width:24, height:24, borderRadius:"50%",
-                          background:PINK, color:"#fff", border:"none",
+                          background:"var(--grad-btn)", color:"#fff", border:"none",
                           cursor:"pointer", fontWeight:700, fontSize:14,
                           display:"flex", alignItems:"center",
                           justifyContent:"center",
@@ -845,42 +807,33 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null }) => {
             {/* Bill summary + Place order */}
             {cart.length>0 && (
               <div style={{ padding:"12px 14px 16px",
-                borderTop:`1px solid ${BDR}`, flexShrink:0 }}>
+                borderTop:"1px solid var(--edge)", flexShrink:0 }}>
                 <div style={{ display:"flex", flexDirection:"column", gap:5,
                   marginBottom:12 }}>
-                  <div style={{ display:"flex", justifyContent:"space-between",
-                    fontSize:12, color:T2 }}>
+                  <div className="tnum" style={{ display:"flex", justifyContent:"space-between",
+                    fontSize:12, color:"var(--text-2)" }}>
                     <span>Subtotal</span><span>₹{subtotal}</span>
                   </div>
-                  {tax>0 && <div style={{ display:"flex",
-                    justifyContent:"space-between", fontSize:12, color:T2 }}>
+                  {tax>0 && <div className="tnum" style={{ display:"flex",
+                    justifyContent:"space-between", fontSize:12, color:"var(--text-2)" }}>
                     <span>GST ({gstRate}%)</span><span>₹{tax}</span>
                   </div>}
-                  {scAmt>0 && <div style={{ display:"flex",
-                    justifyContent:"space-between", fontSize:12, color:T2 }}>
+                  {scAmt>0 && <div className="tnum" style={{ display:"flex",
+                    justifyContent:"space-between", fontSize:12, color:"var(--text-2)" }}>
                     <span>Service</span><span>₹{scAmt}</span>
                   </div>}
-                  <div style={{ display:"flex", justifyContent:"space-between",
+                  <div className="tnum" style={{ display:"flex", justifyContent:"space-between",
                     fontWeight:700, fontSize:17, paddingTop:8,
-                    borderTop:`1px solid ${BDR}`, marginTop:4 }}>
-                    <span style={{ color:T1 }}>Total</span>
-                    <span style={{ color:PINK }}>₹{total}</span>
+                    borderTop:"1px solid var(--edge)", marginTop:4 }}>
+                    <span style={{ color:"var(--text-1)" }}>Total</span>
+                    <span className="zc-grad-text">₹{total}</span>
                   </div>
                 </div>
 
-                <button className="op-btn" onClick={handleSubmit}
+                <button className="zc-btn pri" onClick={handleSubmit}
                   disabled={loading||cart.length===0}
-                  style={{ width:"100%", padding:"14px 0", borderRadius:14,
-                    border:"none",
-                    background:loading||cart.length===0
-                      ?"var(--raise)"
-                      :"var(--grad-btn)",
-                    color:loading||cart.length===0?T3:"#fff",
-                    fontWeight:800, fontSize:15, cursor:"pointer",
-                    boxShadow:loading||cart.length===0
-                      ?"none":`0 6px 20px var(--violet-line)`,
-                  }}>
-                  {loading?"Placing...":`Place Order · ₹${total}`}
+                  style={{ width:"100%", justifyContent:"center", padding:"13px 0", fontSize:14 }}>
+                  {loading?"Placing…":`Place Order · ₹${total}`}
                 </button>
               </div>
             )}
@@ -1671,6 +1624,94 @@ const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPayment
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
+// AWAITING CONFIRMATION — Modal listing every PENDING_CONFIRMATION order
+// ══════════════════════════════════════════════════════════════════════════════
+const PendingOrdersModal = ({ orders, busy, onConfirm, onReject, onClose }) => {
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // Oldest first — the one that's been waiting longest is the one to act on first.
+  const sorted = [...orders].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+  return (
+    <div className="zc-scrim" onClick={onClose}>
+      <div className="zc-modal" style={{ width: 640, maxHeight: "84vh", display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
+        <div className="mh">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="t">Awaiting confirmation</div>
+            <div className="s">{orders.length} order{orders.length === 1 ? "" : "s"} yet to be confirmed</div>
+          </div>
+          <button type="button" className="zc-x" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+
+        <div className="mb" style={{ overflowY: "auto", flex: 1 }}>
+          {sorted.length === 0 ? (
+            <EmptyState
+              icon={<span style={{ fontSize: 26 }}>✅</span>}
+              title="Queue clear"
+              sub="No orders are waiting on a confirmation right now."
+            />
+          ) : (
+            <div style={{ display: "grid", gap: 10 }}>
+              {sorted.map((o) => {
+                const name = o.guestName || o.user?.name || "Guest";
+                const phone = o.guestPhone || o.user?.phone || null;
+                const waitMin = Math.max(0, Math.round((new Date().getTime() - new Date(o.createdAt).getTime()) / 60000));
+                const overdue = waitMin >= 10;
+                return (
+                  <div key={o._id} className="zc-panel" style={{ padding: 13, borderColor: overdue ? "var(--stop-line)" : undefined }}>
+                    <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                      <div style={{
+                        width: 32, height: 32, borderRadius: "50%", background: avc(name), color: "#fff",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 12, fontWeight: 700, flexShrink: 0,
+                      }}>{ini(name)}</div>
+
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)" }}>{name}</div>
+                          <div className="tnum" style={{ fontSize: 14, fontWeight: 700, color: "var(--text-1)", flexShrink: 0 }}>₹{Math.round(o.total)}</div>
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 1 }}>
+                          {o.orderId} · {phone ? `+91 ${phone}` : "No phone"}
+                        </div>
+                        <div style={{ fontSize: 11.5, color: "var(--text-2)", marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {o.items?.map((i) => `${i.name} ×${i.qty}`).join(", ") || "—"}
+                        </div>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
+                          {o.tableNo
+                            ? <span className="zc-tag vio sq">T{o.tableNo}</span>
+                            : <span className="zc-tag done sq">{formatStatus(o.orderType) || "Takeaway"}</span>}
+                          <span className={`zc-tag ${overdue ? "stop" : "wait"}`}><i />Waiting {waitMin} min</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", gap: 8, marginTop: 11 }}>
+                      <button type="button" className="zc-btn pri sm" style={{ flex: 1, justifyContent: "center" }}
+                        disabled={busy} onClick={() => onConfirm(o)}>
+                        ✓ Confirm
+                      </button>
+                      <button type="button" className="zc-btn danger sm" style={{ flex: 1, justifyContent: "center" }}
+                        disabled={busy} onClick={() => onReject(o)}>
+                        ✕ Reject
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
 // MAIN ORDERS PAGE
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -1701,6 +1742,7 @@ export default function OrdersPage() {
   const [error, setError] = useState(false);
   const [online, setOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
   const [actionBusy, setActionBusy] = useState(false);
+  const [showPending, setShowPending] = useState(false);
   const PER_PAGE=15;
 
   // ── Insert-or-update one order in local state, keyed by Mongo _id ──────────
@@ -1932,6 +1974,7 @@ export default function OrdersPage() {
       value: countStatus("PENDING_CONFIRMATION"),
       caption: oldestAwaitingMin ? `Oldest waiting ${oldestAwaitingMin} min` : "Queue clear",
       tone: "var(--wait-ink)",
+      onClick: () => setShowPending(true),
     },
     {
       label: "Ready to serve",
@@ -2400,6 +2443,16 @@ export default function OrdersPage() {
           value={showCombinedBill.value}
           onClose={() => setShowCombinedBill(null)}
           onPaymentChange={fetchOrders}
+        />
+      )}
+
+      {showPending && (
+        <PendingOrdersModal
+          orders={orders.filter((o) => o.status === "PENDING_CONFIRMATION")}
+          busy={actionBusy}
+          onConfirm={handleConfirm}
+          onReject={handleReject}
+          onClose={() => setShowPending(false)}
         />
       )}
     </div>
