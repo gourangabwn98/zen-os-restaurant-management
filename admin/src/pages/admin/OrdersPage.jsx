@@ -2123,8 +2123,8 @@ export default function OrdersPage() {
             {activeOrders.length} order{activeOrders.length !== 1 ? "s" : ""} on the floor
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span className="zc-live-dot" style={online ? undefined : { color: "var(--stop-ink)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "nowrap" }}>
+          <span className="zc-live-dot" style={{ flexShrink: 0, ...(online ? undefined : { color: "var(--stop-ink)" }) }}>
             <i style={online ? undefined : { background: "var(--stop)", boxShadow: "0 0 9px var(--stop)" }} />
             {online ? "Live" : "Offline"}
           </span>
@@ -2133,9 +2133,9 @@ export default function OrdersPage() {
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             placeholder="Search order, customer or phone"
-            style={{ minWidth: 190, maxWidth: 260 }}
+            style={{ flex: 1, minWidth: 120, maxWidth: 260 }}
           />
-          <button type="button" className="zc-btn pri" onClick={() => openNewOrder()}>
+          <button type="button" className="zc-btn pri" onClick={() => openNewOrder()} style={{ flexShrink: 0, whiteSpace: "nowrap" }}>
             ＋ New order
             <span style={{ fontSize: 10, fontWeight: 700, background: "var(--edge-hi)", padding: "1px 5px", borderRadius: 5 }}>N</span>
           </button>
