@@ -170,14 +170,14 @@ export default function AdminLayout() {
               ? <img src={rLogo} alt={rName} onError={(e) => { e.currentTarget.style.display = "none"; }} />
               : rName.charAt(0).toUpperCase()}
           </div>
-          <div style={{ minWidth: 0 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
             <div className="side-nm">{rName}</div>
             <div className="side-sb">Admin panel</div>
           </div>
+          <NotificationBell inline user={user} onNavigate={() => setPage("orders")} />
         </div>
 
         <div className="side-toolbar">
-          <NotificationBell inline user={user} onNavigate={() => setPage("orders")} />
           <ThemeToggle compact />
         </div>
 
