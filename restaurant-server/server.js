@@ -48,8 +48,16 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 // ── Health check ──────────────────────────────────────────────────────────────
+// Includes the deployed commit SHA (Render sets RENDER_GIT_COMMIT automatically
+// on every deploy) so a "did my push actually deploy?" question can be answered
+// by curling this instead of guessing from symptoms.
 app.get("/api/health", (_, res) =>
-  res.json({ status: "OK", time: new Date(), mode: "single-restaurant" })
+  res.json({
+    status: "OK",
+    time: new Date(),
+    mode: "single-restaurant",
+    commit: process.env.RENDER_GIT_COMMIT || null,
+  })
 );
 
 // ── Routes ────────────────────────────────────────────────────────────────────
