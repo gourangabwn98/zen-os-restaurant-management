@@ -50,8 +50,10 @@ const STATUSES = ["All","PENDING_CONFIRMATION","CONFIRMED","PREPARING","READY","
 const ACTIVE_ORDER_STATUSES = ["PENDING_CONFIRMATION","CONFIRMED","PREPARING","READY","DELIVERED"];
 // Admin has full override authority server-side (see the `role === "admin"`
 // bypass in restaurant-server/utils/orderStateMachine.js validateTransition)
-// — every status is offered here and the backend accepts any jump.
-const ALL_STATUSES = STATUSES.filter(s => s !== "All");
+// — every status is offered here and the backend accepts any jump, except
+// PENDING_CONFIRMATION is never offered as an update target (that status is
+// only ever the order's starting point, not something to switch back to).
+const ALL_STATUSES = STATUSES.filter(s => s !== "All" && s !== "PENDING_CONFIRMATION");
 const PAYMENT_STATUSES = ["All","PAID","PENDING_VERIFICATION","FAILED"];
 const ORDER_TYPES = ["All","DINE_IN","TAKEAWAY"];
 
