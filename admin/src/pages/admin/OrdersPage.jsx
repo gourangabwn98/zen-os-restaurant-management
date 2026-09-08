@@ -48,6 +48,10 @@ const TYPE_STYLE   = mkStyleMap(["DINE_IN", "TAKEAWAY", "ONLINE"]);
 
 const STATUSES = ["All","PENDING_CONFIRMATION","CONFIRMED","PREPARING","READY","DELIVERED","COMPLETED","CANCELLED"];
 const ACTIVE_ORDER_STATUSES = ["PENDING_CONFIRMATION","CONFIRMED","PREPARING","READY","DELIVERED"];
+// Admin has full override authority server-side (see the `role === "admin"`
+// bypass in restaurant-server/utils/orderStateMachine.js validateTransition)
+// — every status is offered here and the backend accepts any jump.
+const ALL_STATUSES = STATUSES.filter(s => s !== "All");
 const PAYMENT_STATUSES = ["All","PAID","PENDING_VERIFICATION","FAILED"];
 const ORDER_TYPES = ["All","DINE_IN","TAKEAWAY"];
 
@@ -271,7 +275,7 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
           {/* controls — status / payment / method (all preserved) */}
           <DLabel>Update order status</DLabel>
           <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:16 }}>
-            {STATUSES.filter(s => s !== "All" && s !== order.status).map(s => {
+            {ALL_STATUSES.filter(s => s !== order.status).map(s => {
               const st = STATUS_STYLE[s] || DEFAULT_STATUS_STYLE;
               return (
                 <button key={s} type="button" className="op-chip" onClick={()=>onStatusChange(order._id, s)}
@@ -1533,7 +1537,7 @@ const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPayment
             <div style={{ fontSize:10, color:T3, fontWeight:600, letterSpacing:1,
               textTransform:"uppercase", marginBottom:6 }}>Order Status</div>
             <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
-              {STATUSES.filter(s=>s!=="All").filter(s=>s!==order.status).map(s => {
+              {ALL_STATUSES.filter(s => s !== order.status).map(s => {
                   const st = STATUS_STYLE[s] || DEFAULT_STATUS_STYLE;
                   return (
                     <button key={s} className="op-chip" onClick={()=>{ onStatusChange(order._id,s); }}

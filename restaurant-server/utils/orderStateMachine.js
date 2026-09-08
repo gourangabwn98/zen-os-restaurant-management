@@ -6,7 +6,27 @@
 // between controllers.
 //
 //   PENDING_CONFIRMATION → CONFIRMED → PREPARING → READY → DELIVERED → COMPLETED
-//                        ↘ CANCELLED (only from the first three states)
+//                        ↘ CANCELLED (only from the first three states, for
+//                          non-admin roles)
+//
+// Admin has full override authority: an admin may move an order to ANY
+// other status at all (forward, backward, or sideways into/out of
+// CANCELLED) to correct a mis-click or a support dispute — see the
+// `role === "admin"` bypass in validateTransition below. Every other role
+// (waiter/chef/customer) stays restricted to the explicit TRANSITIONS /
+// TRANSITION_ROLES maps exactly as before.
+//
+// An admin override is always a pure `status` field flip — it never
+// re-runs or reverses side effects (stock deduction, KOT job creation) on
+// its own. The two operations that DO have real side effects — the first
+// real PENDING_CONFIRMATION → CONFIRMED confirmation (deducts stock,
+// creates the KOT job) and cancellation of a live order (reverses any
+// stock already deducted) — are still routed through confirmOrderTx /
+// cancelOrderTx respectively (see services/orderService.js), and only when
+// actually applicable. Any other admin jump (e.g. reviving a CANCELLED
+// order, or jumping straight to DELIVERED) changes only the status field
+// and audit trail — it does not retroactively create a KOT job or move
+// stock.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const ORDER_STATUSES = [
@@ -22,7 +42,9 @@ export const ORDER_STATUSES = [
 export const ORDER_SOURCES = ["CUSTOMER", "WAITER", "ADMIN"];
 export const ORDER_TYPES   = ["DINE_IN", "TAKEAWAY", "ONLINE"];
 
-// Map of status -> statuses it may legally move to next.
+// Map of status -> statuses it may legally move to next, for non-admin
+// roles (waiter/chef/customer). Admin bypasses this map entirely — see the
+// `role === "admin"` check in validateTransition below.
 const TRANSITIONS = {
   PENDING_CONFIRMATION: ["CONFIRMED", "CANCELLED"],
   CONFIRMED:            ["PREPARING", "CANCELLED"],
@@ -33,8 +55,9 @@ const TRANSITIONS = {
   CANCELLED:            [],
 };
 
-// Which roles may perform which transition. "*" = any authenticated staff
-// (admin/waiter). Customers are handled separately (see canCustomerCancel).
+// Which roles may perform which transition. Consulted only for non-admin
+// roles (admin already short-circuited above). Customers are handled
+// separately (see canCustomerCancel).
 const TRANSITION_ROLES = {
   "PENDING_CONFIRMATION->CONFIRMED": ["admin", "waiter"],
   "PENDING_CONFIRMATION->CANCELLED": ["admin", "waiter", "customer"],
@@ -80,6 +103,10 @@ export const validateTransition = (fromStatus, toStatus, role) => {
   if (fromStatus === toStatus) {
     return { ok: false, code: 400, message: `Order is already "${toStatus}"` };
   }
+
+  // Admin override: any status -> any other (distinct, valid) status is
+  // allowed. See the header comment for what this does and does not do.
+  if (role === "admin") return { ok: true };
 
   const allowedNext = TRANSITIONS[fromStatus] || [];
   if (!allowedNext.includes(toStatus)) {

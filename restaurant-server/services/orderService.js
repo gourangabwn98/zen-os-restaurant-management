@@ -368,20 +368,29 @@ export const cancelOrderTx = async ({ req, orderId, reason }) => {
  * Still fully validated + atomic via a conditional findOneAndUpdate.
  */
 export const transitionOrderStatusTx = async ({ req, orderId, toStatus, note }) => {
-  if (toStatus === "CONFIRMED") return confirmOrderTx({ req, orderId });
-  if (toStatus === "CANCELLED") {
-    const order = await cancelOrderTx({ req, orderId, reason: note });
-    return { order };
-  }
-
   const { Order } = req.models;
-  const role = getRoleFromUser(req.user);
   const current = await Order.findById(orderId);
   if (!current) {
     const err = new Error("Order not found");
     err.statusCode = 404;
     throw err;
   }
+
+  // The real, first-time confirmation — the only path that creates the KOT
+  // job and deducts stock — is routed through confirmOrderTx exactly as
+  // before. An admin correcting a LATER order back to CONFIRMED (e.g.
+  // PREPARING → CONFIRMED) is a plain status fix: that side-effecting work
+  // already ran once and must not run again, so it falls through to the
+  // generic flip below instead of re-entering confirmOrderTx.
+  if (toStatus === "CONFIRMED" && current.status === "PENDING_CONFIRMATION") {
+    return confirmOrderTx({ req, orderId });
+  }
+  if (toStatus === "CANCELLED") {
+    const order = await cancelOrderTx({ req, orderId, reason: note });
+    return { order };
+  }
+
+  const role = getRoleFromUser(req.user);
   assertValidTransition(current.status, toStatus, role);
 
   const actor = buildActor(req.user);

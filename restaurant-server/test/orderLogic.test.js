@@ -64,15 +64,20 @@ const run = async () => {
     assert.equal(r.ok, true);
   });
 
-  await test("cannot skip straight from PENDING_CONFIRMATION to READY", () => {
-    const r = validateTransition("PENDING_CONFIRMATION", "READY", "admin");
+  await test("waiter cannot skip straight from PENDING_CONFIRMATION to READY", () => {
+    const r = validateTransition("PENDING_CONFIRMATION", "READY", "waiter");
     assert.equal(r.ok, false);
     assert.equal(r.code, 400);
   });
 
-  await test("cannot transition out of a terminal state", () => {
-    const r = validateTransition("COMPLETED", "CANCELLED", "admin");
+  await test("waiter cannot transition out of a terminal state", () => {
+    const r = validateTransition("COMPLETED", "CANCELLED", "waiter");
     assert.equal(r.ok, false);
+  });
+
+  await test("admin CAN skip straight from PENDING_CONFIRMATION to READY, and out of a terminal state", () => {
+    assert.equal(validateTransition("PENDING_CONFIRMATION", "READY", "admin").ok, true);
+    assert.equal(validateTransition("COMPLETED", "CANCELLED", "admin").ok, true);
   });
 
   await test("cannot transition to the same status", () => {
@@ -94,9 +99,9 @@ const run = async () => {
     }
   });
 
-  await test("assertValidTransition throws with a statusCode on an illegal move", () => {
+  await test("assertValidTransition throws with a statusCode on an illegal move (non-admin)", () => {
     assert.throws(
-      () => assertValidTransition("COMPLETED", "PREPARING", "admin"),
+      () => assertValidTransition("COMPLETED", "PREPARING", "waiter"),
       (err) => err.statusCode === 400 || err.statusCode === 500
     );
   });
@@ -105,6 +110,30 @@ const run = async () => {
     assert.equal(isTerminalStatus("COMPLETED"), true);
     assert.equal(isTerminalStatus("CANCELLED"), true);
     assert.equal(isTerminalStatus("PENDING_CONFIRMATION"), false);
+  });
+
+  await test("admin override: admin may move an order to ANY other status, forward or backward", () => {
+    assert.equal(validateTransition("CONFIRMED", "PENDING_CONFIRMATION", "admin").ok, true);
+    assert.equal(validateTransition("PREPARING", "CONFIRMED", "admin").ok, true);
+    assert.equal(validateTransition("READY", "PREPARING", "admin").ok, true);
+    assert.equal(validateTransition("DELIVERED", "READY", "admin").ok, true);
+    assert.equal(validateTransition("COMPLETED", "DELIVERED", "admin").ok, true);
+    // Not just one step back — any jump at all, e.g. straight to DELIVERED
+    // from PENDING_CONFIRMATION, or reviving a CANCELLED order.
+    assert.equal(validateTransition("PENDING_CONFIRMATION", "DELIVERED", "admin").ok, true);
+    assert.equal(validateTransition("CANCELLED", "CONFIRMED", "admin").ok, true);
+    assert.equal(validateTransition("COMPLETED", "PENDING_CONFIRMATION", "admin").ok, true);
+    // Same-status "transition" is still rejected even for admin.
+    assert.equal(validateTransition("CONFIRMED", "CONFIRMED", "admin").ok, false);
+  });
+
+  await test("non-admin roles remain restricted to the explicit forward-only map", () => {
+    assert.equal(validateTransition("CONFIRMED", "PENDING_CONFIRMATION", "waiter").ok, false);
+    assert.equal(validateTransition("PREPARING", "CONFIRMED", "chef").ok, false);
+    assert.equal(validateTransition("READY", "PREPARING", "waiter").ok, false);
+    assert.equal(validateTransition("DELIVERED", "READY", "waiter").ok, false);
+    assert.equal(validateTransition("COMPLETED", "DELIVERED", "waiter").ok, false);
+    assert.equal(validateTransition("PENDING_CONFIRMATION", "DELIVERED", "waiter").ok, false);
   });
 
   await test("every canonical status appears in ORDER_STATUSES", () => {
