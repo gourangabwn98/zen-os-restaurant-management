@@ -46,22 +46,25 @@ const Icon = ({ id }) => (
   </svg>
 );
 
-// Grouped the same way as the reference sidebar: Service / Money / Setup, then
-// a separate Settings section pinned to the bottom.
-const SERVICE_NAV = [
-  { id: "orders", label: "Billing", icon: "billing", badgeKey: "active" },
+// Four groups: Operations (the floor — billing, tables, kitchen, dashboard,
+// invoices, inventory), Management (staff/customers/menu config), Finance
+// (Insights), then Settings pinned to the bottom.
+const OPERATIONS_NAV_A = [
+  { id: "orders", label: "My Billing", icon: "billing", badgeKey: "active" },
   { id: "tables", label: "Table Map", icon: "tables", badgeKey: "tables" },
 ];
-const MONEY_NAV = [
+const OPERATIONS_NAV_B = [
   { id: "dashboard", label: "Dashboard", icon: "dash" },
   { id: "invoices", label: "Invoices", icon: "invoices" },
-  { id: "analytics", label: "Insights", icon: "insights" },
-];
-const SETUP_NAV = [
-  { id: "menu", label: "Menu Items", icon: "menu" },
   { id: "inventory", label: "Inventory", icon: "inventory" },
+];
+const MANAGEMENT_NAV = [
   { id: "employees", label: "Employees", icon: "employees" },
   { id: "users", label: "Users", icon: "users" },
+  { id: "menu", label: "Menu Items", icon: "menu" },
+];
+const FINANCE_NAV = [
+  { id: "analytics", label: "Insights", icon: "insights" },
 ];
 const SETTINGS_NAV = [
   { id: "profile", label: "Profile", icon: "profile" },
@@ -178,21 +181,24 @@ export default function AdminLayout() {
           <ThemeToggle compact />
         </div>
 
-        <div className="zc-navgrp">Service</div>
-        {SERVICE_NAV.map((n) => (
+        <div className="zc-navgrp">Operations</div>
+        {OPERATIONS_NAV_A.map((n) => (
           <NavItem key={n.id} {...n} active={page === n.id} count={badgeFor(n.badgeKey)} onClick={() => setPage(n.id)} />
         ))}
         <a href="/kitchen" target="_blank" rel="noopener noreferrer" className="zc-nav" style={{ textDecoration: "none" }}>
           <Icon id="chef" />Kitchen Display
         </a>
-
-        <div className="zc-navgrp">Money</div>
-        {MONEY_NAV.map((n) => (
+        {OPERATIONS_NAV_B.map((n) => (
           <NavItem key={n.id} {...n} active={page === n.id} onClick={() => setPage(n.id)} />
         ))}
 
-        <div className="zc-navgrp">Setup</div>
-        {SETUP_NAV.map((n) => (
+        <div className="zc-navgrp">Management</div>
+        {MANAGEMENT_NAV.map((n) => (
+          <NavItem key={n.id} {...n} active={page === n.id} onClick={() => setPage(n.id)} />
+        ))}
+
+        <div className="zc-navgrp">Finance</div>
+        {FINANCE_NAV.map((n) => (
           <NavItem key={n.id} {...n} active={page === n.id} onClick={() => setPage(n.id)} />
         ))}
 
