@@ -47,7 +47,7 @@ const presetDates = (key) => {
 
 const fmt = (n) => Math.round(n || 0).toLocaleString("en-IN");
 const formatPayment = (s) =>
-  ({ PENDING_VERIFICATION: "Pending verification", PAID: "Paid", FAILED: "Failed" }[s] || s || "—");
+  ({ PENDING_VERIFICATION: "Pending invoice", PAID: "Paid", FAILED: "Failed" }[s] || s || "—");
 const formatType = (s) =>
   ({ DINE_IN: "Dine-in", TAKEAWAY: "Takeaway", ONLINE: "Online", All: "All types" }[s] || s || "—");
 
@@ -488,7 +488,7 @@ export default function InvoicesPage() {
 
   const STATS = [
     { label: "Collected", value: `₹${fmt(totalCollected)}`, grad: true, sub: `${paid.length} paid invoice${paid.length === 1 ? "" : "s"}` },
-    { label: "Pending verification", value: fmt(pendingVerif.length), color: "var(--stop-ink)", sub: `₹${fmt(pendingTotal)} unconfirmed` },
+    { label: "Pending invoices", value: fmt(pendingVerif.length), color: "var(--stop-ink)", sub: `₹${fmt(pendingTotal)} unconfirmed` },
     { label: "Failed", value: fmt(failed.length), color: "var(--stop-ink)", sub: failed.length ? `₹${fmt(failedTotal)} · retry or void` : "None" },
     { label: "Total invoices", value: fmt(invoiceOrders.length), color: "var(--text-2)", sub: "Completed or paid" },
   ];
@@ -562,7 +562,7 @@ export default function InvoicesPage() {
           </>
         ) : (
           <span style={{ fontSize: 12, color: "var(--text-3)" }}>
-            {pendingVerif.length} need verification
+            {pendingVerif.length} pending invoice{pendingVerif.length === 1 ? "" : "s"}
           </span>
         )}
       </div>
