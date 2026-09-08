@@ -1933,81 +1933,116 @@ export default function OrdersPage() {
   const paginated=displayedOrders.slice((page-1)*PER_PAGE,page*PER_PAGE);
   const totalPages=Math.ceil(displayedOrders.length/PER_PAGE);
 
-  // ── Billing pill data — all real aggregates ───────────────────────────────
+  // ── Live floor state — deliberately ALL-TIME, not today-only ───────────────
+  // tableOrderMap (above) already ignores the calendar day so a table stays
+  // "occupied" for an order still active from before midnight; these two
+  // mirror that for the page header / Table Map card subtitle. The stat-row
+  // pills below are the ones scoped to today, per the admin's request.
   const now = new Date();
+  const activeOrders = orders.filter((o) => ACTIVE_ORDER_STATUSES.includes(o.status));
+  const occupiedTables = Object.keys(tableOrderMap).length;
+
+  // ── Billing pill data — all real aggregates, ALL scoped to today ───────────
   const todayOrders = orders.filter((o) => new Date(o.createdAt).toDateString() === now.toDateString());
   const countStatus = (s, todayOnly) =>
     (todayOnly ? todayOrders : orders).filter((o) => o.status === s).length;
-  const activeOrders = orders.filter((o) => ACTIVE_ORDER_STATUSES.includes(o.status));
-  const dueOrders = orders.filter(
+  const valueOfStatus = (s, todayOnly) =>
+    (todayOnly ? todayOrders : orders)
+      .filter((o) => o.status === s)
+      .reduce((sum, o) => sum + Number(o.total || 0), 0);
+  const todayActiveOrders = todayOrders.filter((o) => ACTIVE_ORDER_STATUSES.includes(o.status));
+  const todayActiveValue = todayActiveOrders.reduce((s, o) => s + Number(o.total || 0), 0);
+  const dueOrdersToday = todayOrders.filter(
     (o) => o.paymentStatus === "PENDING_VERIFICATION" && o.status !== "CANCELLED",
   );
-  const dueTotal = dueOrders.reduce((s, o) => s + Number(o.total || 0), 0);
+  const dueTotalToday = dueOrdersToday.reduce((s, o) => s + Number(o.total || 0), 0);
+  const todayOrdersValue = todayOrders.reduce((s, o) => s + Number(o.total || 0), 0);
   const collectedToday = todayOrders
     .filter((o) => o.paymentStatus === "PAID")
     .reduce((s, o) => s + Number(o.total || 0), 0);
-  const occupiedTables = Object.keys(tableOrderMap).length;
-  const floorTotal = activeOrders
-    .filter((o) => o.orderType === "DINE_IN")
-    .reduce((s, o) => s + Number(o.total || 0), 0);
-  const readyLabels = activeOrders
+  const todayDineIn = todayActiveOrders.filter((o) => o.orderType === "DINE_IN" && o.tableNo);
+  const occupiedTablesToday = new Set(todayDineIn.map((o) => Number(o.tableNo))).size;
+  const floorTotalToday = todayDineIn.reduce((s, o) => s + Number(o.total || 0), 0);
+  const readyLabelsToday = todayActiveOrders
     .filter((o) => o.status === "READY")
     .map((o) => (o.tableNo ? `T${o.tableNo}` : "Takeaway"));
   const oldestAwaitingMin = (() => {
-    const pending = orders.filter((o) => o.status === "PENDING_CONFIRMATION");
+    const pending = todayOrders.filter((o) => o.status === "PENDING_CONFIRMATION");
     if (!pending.length) return null;
     const oldest = Math.min(...pending.map((o) => new Date(o.createdAt).getTime()));
     return Math.max(1, Math.round((now.getTime() - oldest) / 60000));
   })();
 
+  // Row 1 — today's operational snapshot.
   const STAT_ROW = [
     {
-      label: "Open tables",
-      value: occupiedTables,
-      caption: tables.length
-        ? `of ${tables.length} · ₹${fmt(floorTotal)} on the floor`
-        : `₹${fmt(floorTotal)} on the floor`,
+      label: "Payment due",
+      value: dueOrdersToday.length,
+      caption: `of ${todayOrders.length} today · ₹${fmt(dueTotalToday)} outstanding`,
+      tone: "var(--stop-ink)",
+    },
+    {
+      label: "Active orders",
+      value: todayActiveOrders.length,
+      caption: `of ${todayOrders.length} today · ₹${fmt(todayActiveValue)} in progress`,
       grad: true,
     },
     {
       label: "Awaiting confirmation",
-      value: countStatus("PENDING_CONFIRMATION"),
+      value: countStatus("PENDING_CONFIRMATION", true),
       caption: oldestAwaitingMin ? `Oldest waiting ${oldestAwaitingMin} min` : "Queue clear",
       tone: "var(--wait-ink)",
       onClick: () => setShowPending(true),
     },
     {
-      label: "Ready to serve",
-      value: countStatus("READY"),
-      caption: readyLabels.length ? readyLabels.slice(0, 4).join(", ") : "None waiting",
-      tone: "var(--ready-ink)",
+      label: "Total orders",
+      value: todayOrders.length,
+      caption: `₹${fmt(todayOrdersValue)} today · ₹${fmt(collectedToday)} collected`,
+      grad: true,
     },
     {
-      label: "Payment due",
-      value: dueOrders.length,
-      caption: `₹${fmt(dueTotal)} outstanding`,
-      tone: "var(--stop-ink)",
-    },
-    {
-      label: "Active orders",
-      value: activeOrders.length,
-      caption: `₹${fmt(collectedToday)} collected today`,
+      label: "Open tables",
+      value: occupiedTablesToday,
+      caption: tables.length
+        ? `of ${tables.length} · ₹${fmt(floorTotalToday)} on the floor`
+        : `₹${fmt(floorTotalToday)} on the floor`,
       grad: true,
     },
   ];
 
+  // Row 2 — today's order-status funnel.
   const STAGE_ROW = [
-    { label: "Pending", s: "PENDING_CONFIRMATION" },
-    { label: "Confirmed", s: "CONFIRMED" },
-    { label: "Preparing", s: "PREPARING" },
-    { label: "Ready", s: "READY" },
-    { label: "Delivered", s: "DELIVERED" },
-    { label: "Completed today", s: "COMPLETED", todayOnly: true },
-  ].map(({ label, s, todayOnly }) => ({
-    label,
-    value: countStatus(s, todayOnly),
-    tone: KIND_INK[statusKind(s)],
-  }));
+    {
+      label: "Preparing",
+      value: countStatus("PREPARING", true),
+      caption: `₹${fmt(valueOfStatus("PREPARING", true))} in the kitchen`,
+      tone: KIND_INK[statusKind("PREPARING")],
+    },
+    {
+      label: "Ready to serve",
+      value: countStatus("READY", true),
+      caption: readyLabelsToday.length ? readyLabelsToday.slice(0, 4).join(", ") : "None waiting",
+      tone: KIND_INK[statusKind("READY")],
+    },
+    {
+      label: "Delivered",
+      value: countStatus("DELIVERED", true),
+      caption: `₹${fmt(valueOfStatus("DELIVERED", true))} out with waiter`,
+      tone: KIND_INK[statusKind("DELIVERED")],
+    },
+    {
+      label: "Completed today",
+      value: countStatus("COMPLETED", true),
+      caption: `₹${fmt(valueOfStatus("COMPLETED", true))} billed today`,
+      tone: KIND_INK[statusKind("COMPLETED")],
+    },
+    {
+      label: "Cancelled",
+      value: countStatus("CANCELLED", true),
+      caption: `of ${todayOrders.length} today · ₹${fmt(valueOfStatus("CANCELLED", true))} lost`,
+      tone: KIND_INK[statusKind("CANCELLED")],
+    },
+  ];
 
   const clearFilters = () => {
     setSearch(""); setFilter("All"); setTypeF("All"); setPayF("All");
@@ -2448,7 +2483,7 @@ export default function OrdersPage() {
 
       {showPending && (
         <PendingOrdersModal
-          orders={orders.filter((o) => o.status === "PENDING_CONFIRMATION")}
+          orders={todayOrders.filter((o) => o.status === "PENDING_CONFIRMATION")}
           busy={actionBusy}
           onConfirm={handleConfirm}
           onReject={handleReject}
