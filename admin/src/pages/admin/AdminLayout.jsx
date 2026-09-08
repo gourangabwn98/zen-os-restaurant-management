@@ -240,7 +240,7 @@ export default function AdminLayout() {
           </div>
         ) : (
           <>
-            {page === "dashboard"  && <OpsAlertsPanel />}
+            {page === "dashboard"  && <OpsAlertsPanel onNavigate={setPage} />}
             {page === "dashboard"  && <DashboardPage data={dashboardData} />}
             {page === "orders"     && <OrdersPage />}
             {page === "tables"     && <TablesPage />}
