@@ -190,6 +190,24 @@ const orderSchema = new mongoose.Schema({
 
   paymentStatus:  { type: String, enum: ["PENDING_VERIFICATION","PAID","FAILED"], default: "PENDING_VERIFICATION" },
   paymentMethod:  { type: String, enum: ["Cash","Online"], default: "Cash" },
+
+  // ── Online payment gateway (PhonePe) ─────────────────────────────────────
+  // Present only for orders where the customer started an online payment. The
+  // gateway result (via a checksum-verified callback OR our own signed status
+  // query) is what flips paymentStatus → PAID — see services/paymentService.js.
+  // `state` is the gateway attempt's own lifecycle, NOT the order's
+  // paymentStatus: a FAILED attempt leaves paymentStatus at
+  // PENDING_VERIFICATION so cash / a retry still works.
+  payment: {
+    provider:              { type: String, enum: ["NONE","PHONEPE"], default: "NONE" },
+    merchantTransactionId: { type: String, default: "" },
+    phonepeTransactionId:  { type: String, default: "" },
+    state:                 { type: String, enum: ["CREATED","PENDING","SUCCESS","FAILED"], default: "CREATED" },
+    amount:                { type: Number, default: 0 }, // paise, server-derived from order.total
+    lastCheckedAt:         { type: Date, default: null },
+    raw:                   { type: mongoose.Schema.Types.Mixed, default: null }, // last gateway code, no PII
+  },
+
   rating:         { type: Number, min: 1, max: 5 },
   cancelDeadline: { type: Date },
   notes:          { type: String, default: "" },
@@ -244,6 +262,11 @@ orderSchema.index(
 );
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ tableSession: 1 });
+// PhonePe callbacks/status polls look an order up by its gateway txn id.
+orderSchema.index(
+  { "payment.merchantTransactionId": 1 },
+  { partialFilterExpression: { "payment.merchantTransactionId": { $type: "string" } } },
+);
 
 // Order number: assigned here as a backstop for any `.save()` path, but always
 // via the atomic counter (utils/orderNumber.js) — never the old racy

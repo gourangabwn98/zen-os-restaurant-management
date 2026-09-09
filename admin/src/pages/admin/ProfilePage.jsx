@@ -411,16 +411,19 @@ export default function ProfilePage() {
             </div>}
           />
 
-          {/* Payment — UPI */}
-          <SectionCard title="Payment — UPI" sub="Direct deep link — no payment gateway"
+          {/* Payment — UPI + PhonePe */}
+          <SectionCard title="Payment" sub="PhonePe gateway + UPI deep-link fallback"
             editing={editing.payment} onEdit={() => startEdit("payment")} onCancel={() => cancelEdit("payment")} onSave={() => saveSection("payment")}
             viewContent={<div>
               <Kv pairs={[
-                ["UPI ID", profile.upiId || "Not set — customers won't see the online payment option"],
+                ["PhonePe gateway", profile.phonePeEnabled
+                  ? "Active — customers pay online, orders auto-confirm as Paid on a verified PhonePe result"
+                  : "Off — set PHONEPE_MERCHANT_ID / PHONEPE_SALT_KEY in the backend .env to enable"],
+                ["UPI ID (fallback)", profile.upiId || "Not set — used only when the PhonePe gateway is off"],
                 ["Payee name", profile.upiPayeeName || profile.restaurantName || "—"],
               ]} />
               <div style={{ marginTop: 16, padding: "12px 14px", borderRadius: "var(--r-ctl)", fontSize: 11.5, color: "var(--text-2)", background: "var(--wait-fill)", border: "1px solid var(--wait-line)" }}>
-                Opening the UPI app is never treated as proof of payment. Orders stay at <b style={{ color: "var(--wait-ink)" }}>Pending verification</b> until an admin or waiter confirms against the bank receipt.
+                A UPI deep-link payment is never proof of payment — those orders stay at <b style={{ color: "var(--wait-ink)" }}>Pending verification</b> until an admin or waiter confirms against the bank receipt. Only a checksum-verified PhonePe result marks an order <b style={{ color: "var(--ready-ink)" }}>Paid</b> automatically.
               </div>
             </div>}
             editContent={<div className="prof-edit-grid">

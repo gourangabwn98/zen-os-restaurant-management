@@ -15,6 +15,7 @@ import { initSocket } from "./sockets/socket.js";
 import authRoutes    from "./routes/authRoutes.js";
 import menuRoutes    from "./routes/menuRoutes.js";
 import orderRoutes   from "./routes/orderRoutes.js";
+import paymentRoutes from "./routes/paymentRoutes.js";
 import invoiceRoutes from "./routes/invoiceRoutes.js";
 import adminRoutes   from "./routes/adminRoutes.js";
 import tableRoutes   from "./routes/tableRoutes.js";
@@ -64,6 +65,7 @@ app.get("/api/health", (_, res) =>
 app.use("/api/auth",              authRoutes);
 app.use("/api/menu",              menuRoutes);
 app.use("/api/orders",            orderRoutes);
+app.use("/api/payments",          paymentRoutes);
 app.use("/api/invoices",          invoiceRoutes);
 app.use("/api/admin/tables",      tableRoutes);
 app.use("/api/admin/table-sessions", tableSessionRoutes);

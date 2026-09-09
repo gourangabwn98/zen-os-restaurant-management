@@ -1,6 +1,7 @@
 // controllers/profileController.js
 import cloudinary  from "../config/cloudinary.js";
 import streamifier from "streamifier";
+import { isPhonePeConfigured } from "../services/paymentService.js";
 
 const uploadToCloudinary = (buffer, folder = "restaurant") =>
   new Promise((resolve, reject) => {
@@ -17,7 +18,7 @@ export const getRestaurantProfile = async (req, res) => {
     const { RestaurantProfile } = req.models;
     const profile = await RestaurantProfile.findOne();
     if (!profile) return res.status(404).json({ message: "Profile not found" });
-    res.json({ data: profile });
+    res.json({ data: { ...profile.toObject(), phonePeEnabled: isPhonePeConfigured() } });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 

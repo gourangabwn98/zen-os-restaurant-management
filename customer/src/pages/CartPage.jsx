@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAppState } from "../context/AppState.jsx";
 import { placeOrder, saveGuestOrderToken, newIdempotencyKey } from "../services/orderService.js";
+import { getRestaurantProfile } from "../services/restaurantService.js";
 import { EmptyState } from "../components/StateViews.jsx";
 import TableBadge from "../components/TableBadge.jsx";
 import { PINK, PINK_LIGHT, TEXT_MUTED, TEXT_FAINT, BORDER, NAV_HEIGHT } from "../theme.js";
@@ -17,6 +18,13 @@ export default function CartPage() {
   const [paymentMethod, setPaymentMethod] = useState("Cash");
   const [placing, setPlacing] = useState(false);
   const [idemKey] = useState(newIdempotencyKey);
+  const [phonePeEnabled, setPhonePeEnabled] = useState(false);
+
+  useEffect(() => {
+    getRestaurantProfile()
+      .then((r) => setPhonePeEnabled(Boolean(r.data?.data?.phonePeEnabled)))
+      .catch(() => {});
+  }, []);
 
   // Table verification (see useTableSession) can resolve asynchronously
   // after this page has already mounted with its initial guess — keep
@@ -163,13 +171,17 @@ export default function CartPage() {
                 color: paymentMethod === m ? PINK : TEXT_MUTED, fontWeight: 700, fontSize: 13,
               }}
             >
-              {m === "Cash" ? "💵 Cash at restaurant" : "📱 UPI (pay after ordering)"}
+              {m === "Cash"
+                ? "💵 Cash at restaurant"
+                : phonePeEnabled ? "📱 Pay online (PhonePe)" : "📱 UPI (pay after ordering)"}
             </button>
           ))}
         </div>
         {paymentMethod === "Online" && (
           <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 8 }}>
-            You'll get a UPI payment link after placing the order. The restaurant confirms receipt manually — your order isn't marked paid just by opening the link.
+            {phonePeEnabled
+              ? "After placing the order you'll pay securely via PhonePe. Your order is marked paid automatically once PhonePe confirms."
+              : "You'll get a UPI payment link after placing the order. The restaurant confirms receipt manually — your order isn't marked paid just by opening the link."}
           </div>
         )}
       </Section>

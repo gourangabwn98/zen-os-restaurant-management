@@ -32,11 +32,13 @@ export const subscribeToOrder = (orderId, guestOrderToken, onUpdate) => {
   s.on("order:confirmed", handler);
   s.on("order:status_changed", handler);
   s.on("order:cancelled", handler);
+  s.on("order:payment_changed", handler);
 
   return () => {
     s.off("order:confirmed", handler);
     s.off("order:status_changed", handler);
     s.off("order:cancelled", handler);
+    s.off("order:payment_changed", handler);
   };
 };
 

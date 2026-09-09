@@ -2,6 +2,7 @@ import express from "express";
 import { getRestaurantProfile, updateRestaurantProfile, uploadRestaurantLogo } from "../controllers/profileController.js";
 import { protect, dbFromHeader } from "../middleware/authMiddleware.js";
 import { requireAdmin } from "../middleware/rbac.js";
+import { isPhonePeConfigured } from "../services/paymentService.js";
 // import { uploadMiddleware } from "../middleware/uploadMiddleware.js";
 import { upload } from "../middleware/uploadMiddleware.js";
 const router = express.Router();
@@ -26,7 +27,10 @@ router.get("/restaurant/profile", dbFromHeader, async (req, res) => {
     const { RestaurantProfile } = req.models;
     const profile = await RestaurantProfile.findOne();
     if (!profile) return res.status(404).json({ message: "Profile not found" });
-    res.json({ success: true, data: profile });
+    // `phonePeEnabled` reflects backend .env config (the salt key is a secret,
+    // so it lives there, not on the profile document). The customer app uses
+    // it to decide whether to offer "Pay with PhonePe".
+    res.json({ success: true, data: { ...profile.toObject(), phonePeEnabled: isPhonePeConfigured() } });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

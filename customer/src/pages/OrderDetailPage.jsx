@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 import { getOrder, cancelOrder, getGuestOrderToken } from "../services/orderService.js";
+import { initiatePhonePePayment, getPhonePePaymentStatus } from "../services/paymentService.js";
 import { getRestaurantProfile } from "../services/restaurantService.js";
 import { subscribeToOrder } from "../services/socketService.js";
 import { useAppState } from "../context/AppState.jsx";
@@ -19,12 +20,14 @@ const paymentColor = (s) => (s === "PAID" ? GREEN : s === "FAILED" ? RED : AMBER
 export default function OrderDetailPage() {
   const { id } = useParams();
   const nav = useNavigate();
+  const { search } = useLocation();
   const { auth } = useAppState();
 
   const [order, setOrder]   = useState(null);
   const [profile, setProfile] = useState(null);
   const [error, setError]   = useState(null);
   const [cancelling, setCancelling] = useState(false);
+  const [payBusy, setPayBusy] = useState(false);
   const [showBill, setShowBill] = useState(false);
 
   const load = useCallback(() => {
@@ -45,6 +48,50 @@ export default function OrderDetailPage() {
     const poll = setInterval(load, 15000);
     return () => { unsubscribe(); clearInterval(poll); };
   }, [id, load]);
+
+  // ── Returned from PhonePe's hosted page (?payment=phonepe) ──────────────
+  // The redirect landing is NOT proof of payment — the backend does its own
+  // checksum-signed status check. We just poll it for a few seconds so the
+  // page reflects the outcome without waiting for the socket / 15s poll.
+  useEffect(() => {
+    if (!new URLSearchParams(search).get("payment")) return;
+    let stopped = false;
+    let tries = 0;
+    const tick = async () => {
+      tries += 1;
+      try {
+        const { data } = await getPhonePePaymentStatus(id);
+        if (data?.paymentStatus === "PAID") {
+          if (!stopped) { toast.success("Payment received — thank you!"); load(); }
+          return;
+        }
+        if (data?.paymentState === "FAILED") {
+          if (!stopped) { toast.error("Payment didn't go through — you can try again or pay cash."); load(); }
+          return;
+        }
+      } catch { /* transient — keep trying */ }
+      if (!stopped && tries < 6) setTimeout(tick, 2500);
+      else if (!stopped) load();
+    };
+    tick();
+    return () => { stopped = true; };
+  }, [search, id, load]);
+
+  const startPhonePe = async () => {
+    setPayBusy(true);
+    try {
+      const { data } = await initiatePhonePePayment(order._id);
+      if (data?.redirectUrl) {
+        window.location.href = data.redirectUrl;
+      } else {
+        toast.error("Couldn't start the payment. Please try again.");
+        setPayBusy(false);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Couldn't start the payment. Please try again.");
+      setPayBusy(false);
+    }
+  };
 
   const canCancel = order && order.status === "PENDING_CONFIRMATION";
 
@@ -105,7 +152,15 @@ export default function OrderDetailPage() {
 
         {order.paymentMethod === "Online" && order.paymentStatus !== "PAID" && (
           <>
-            {upiLink ? (
+            {profile?.phonePeEnabled ? (
+              <button onClick={startPhonePe} disabled={payBusy} style={{
+                display: "block", width: "100%", textAlign: "center", marginTop: 12, padding: "12px",
+                borderRadius: 10, border: "none", background: payBusy ? "#b98cc9" : PINK, color: "#fff",
+                fontWeight: 800, fontSize: 13.5, cursor: payBusy ? "not-allowed" : "pointer",
+              }}>
+                {payBusy ? "Starting…" : `Pay ₹${order.total} with PhonePe`}
+              </button>
+            ) : upiLink ? (
               <a href={upiLink} style={{
                 display: "block", textAlign: "center", marginTop: 12, padding: "12px", borderRadius: 10,
                 background: PINK, color: "#fff", fontWeight: 800, fontSize: 13.5, textDecoration: "none",
@@ -118,7 +173,9 @@ export default function OrderDetailPage() {
               </div>
             )}
             <div style={{ fontSize: 10.5, color: TEXT_FAINT, marginTop: 8, lineHeight: 1.5 }}>
-              Opening the UPI app doesn't confirm your payment automatically — our staff verifies receipt and updates this once confirmed.
+              {profile?.phonePeEnabled
+                ? "You'll be taken to PhonePe to pay securely. This page updates on its own once payment is confirmed."
+                : "Opening the UPI app doesn't confirm your payment automatically — our staff verifies receipt and updates this once confirmed."}
             </div>
           </>
         )}

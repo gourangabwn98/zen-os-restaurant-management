@@ -101,17 +101,55 @@ adding chef to the existing `staff` room. If you add a new staff-room
 event that a chef also needs, mirror it into the kitchen room with the
 sensitive fields removed — don't just widen `isStaff`.
 
-## Payment (UPI)
+## Payment
 
-No payment gateway, ever. `RestaurantProfile.upiId` /
-`upiPayeeName` are admin-configurable (`Admin → Profile → Payment`),
-stored in the database (not an env var, because an admin needs to change
+Two payment paths, in priority order:
+
+**1. PhonePe Payment Gateway (`services/paymentService.js`, `/api/payments/*`).**
+Hosted `PAY_PAGE` checkout, salt-key (`X-VERIFY`) flow. Credentials
+(`PHONEPE_MERCHANT_ID`, `PHONEPE_SALT_KEY`, `PHONEPE_SALT_INDEX`,
+`PHONEPE_ENV`) live in the **backend `.env`** — the salt key is a secret,
+same category as `JWT_SECRET`, so it does **not** go on `RestaurantProfile`.
+The public profile endpoint exposes only a derived boolean
+`phonePeEnabled`; the customer app shows "Pay with PhonePe" when it's true.
+Flow: customer hits `POST /api/payments/phonepe/initiate` → we call
+PhonePe `/pg/v1/pay` with a per-attempt `merchantTransactionId` and an
+amount **re-derived from `order.total` server-side** (never the client) →
+customer is redirected to PhonePe → PhonePe reports the outcome via a
+server-to-server callback (`POST /api/payments/phonepe/callback`) and/or
+our own signed status query (`GET /pg/v1/status/...`, triggered by the
+customer's `GET /api/payments/phonepe/status/:orderId` poll on return).
+
+**The redirect landing back on our URL is never proof of payment** — same
+principle as the old UPI rule. An order's `paymentStatus` becomes `PAID`
+automatically **only** when a checksum-verified PhonePe result reports
+`PAYMENT_SUCCESS`, applied via `applyPhonePeResult()` — a single atomic
+conditional `findOneAndUpdate` (`payment.state != SUCCESS → SUCCESS`),
+never check-then-save, so callback + poll + admin re-check racing each
+other is safe (mirrors the `KOTJob` idempotency pattern). A `FAILED`
+gateway attempt deliberately leaves `paymentStatus` at
+`PENDING_VERIFICATION` so cash / a retry still works. `order.payment`
+(sub-doc: `provider`, `merchantTransactionId`, `phonepeTransactionId`,
+`state`, `amount`, `raw`) is the gateway attempt's own lifecycle — do not
+confuse `payment.state` with the order's `paymentStatus`. The callback
+route has no JWT — it is authenticated solely by verifying `X-VERIFY`
+against the raw body with a constant-time compare; reject a mismatch.
+
+**2. UPI deep link (fallback, when PhonePe is off).**
+`RestaurantProfile.upiId` / `upiPayeeName` are admin-configurable
+(`Admin → Profile → Payment`), stored in the database (an admin changes
 them without a redeploy). The customer app builds a raw `upi://pay?...`
 deep link client-side. **Opening the UPI app is never treated as proof of
-payment** — an order's `paymentStatus` only ever becomes `PAID` via an
-explicit admin/waiter action (`PATCH /admin/orders/:id/payment`), which
-validates the value against the enum strictly (reject anything else, don't
-silently accept it).
+payment** — those orders stay at `PENDING_VERIFICATION` until an explicit
+admin/waiter action (`PATCH /admin/orders/:id/payment`), which validates
+the value against the enum strictly (reject anything else, don't silently
+accept it). That manual action still exists and is still authoritative for
+both paths.
+
+Do **not** add a second/third gateway by copying this — if you must,
+extend `paymentService.js` with the same "verified result only, atomic
+apply" contract. No gateway may ever mark an order `PAID` on anything less
+than a checksum-verified success.
 
 ## OTP / SMS provider selection
 
@@ -210,7 +248,9 @@ cd print-service && npm start
 Every app has a `.env.example` — copy to `.env`, fill in real values,
 never commit the real file. See each app's `.env.example` for the full
 list; the backend's covers `MONGO_URI`, `JWT_SECRET`, Firebase (customer +
-admin login), Cloudinary (images), Twilio/MSG91 (employee OTP + WhatsApp).
+admin login), Cloudinary (images), Twilio/MSG91 (employee OTP + WhatsApp),
+PhonePe (`PHONEPE_*` + `PUBLIC_API_URL` for the gateway callback URL, plus
+the already-present `CLIENT_URL` for the post-payment redirect).
 
 ## Before touching these files, read them fully first
 
