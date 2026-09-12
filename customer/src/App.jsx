@@ -11,7 +11,7 @@ import ProfilePage from "./pages/ProfilePage.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
 import FavoritesPage from "./pages/FavoritesPage.jsx";
 import { BG_PRIMARY } from "./theme.js";
-
+//hello
 const NO_NAV_ROUTES = ["/login"];
 
 function Shell({ children }) {
