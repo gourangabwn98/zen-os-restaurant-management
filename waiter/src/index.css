@@ -1,6 +1,50 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'DM Sans', sans-serif; background: #f4f5f7; color: #111; -webkit-tap-highlight-color: transparent; }
+html, body { background: #08070C; }
+body { font-family: 'DM Sans', sans-serif; color: #fff; -webkit-tap-highlight-color: transparent; overflow-x: hidden; }
 input, textarea, select, button { font-family: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
 ::-webkit-scrollbar { display: none; }
+
+a { color: inherit; }
+::placeholder { color: rgba(255,255,255,0.35); }
+
+*:focus-visible {
+  outline: 2px solid #3B82F6;
+  outline-offset: 2px;
+}
+
 @keyframes spin { to { transform: rotate(360deg); } }
-@keyframes fadeUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+@keyframes fadeUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+@keyframes scaleIn { from { opacity:0; transform:scale(.96); } to { opacity:1; transform:scale(1); } }
+@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.45); }
+  50%      { box-shadow: 0 0 0 8px rgba(59,130,246,0); }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 37%, rgba(255,255,255,0.05) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+
+/* Layout — the only rules media queries require; colors/spacing stay inline. */
+.app-shell { max-width: 560px; }
+@media (min-width: 700px)  { .app-shell { max-width: 820px; } }
+@media (min-width: 1024px) { .app-shell { max-width: 1180px; } }
+
+.tables-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+@media (min-width: 700px)  { .tables-grid { grid-template-columns: repeat(4, 1fr); gap: 14px; } }
+@media (min-width: 1024px) { .tables-grid { grid-template-columns: repeat(6, 1fr); gap: 16px; } }
+
+.menu-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+@media (min-width: 700px)  { .menu-grid { grid-template-columns: repeat(2, 1fr); } }
+
+/* Fixed-position bars (bottom nav, floating action bars) sit inside the
+   viewport, so they need their own matching max-width to stay aligned
+   with content on wide screens instead of stretching edge-to-edge. */
+.floating-bar { max-width: 528px; margin-left: auto; margin-right: auto; }
+@media (min-width: 700px)  { .floating-bar { max-width: 788px; } }
+@media (min-width: 1024px) { .floating-bar { max-width: 1148px; } }
+
+.hide-scrollbar { scrollbar-width: none; }

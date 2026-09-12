@@ -4,8 +4,10 @@ import toast from "react-hot-toast";
 import { getAllOrders, confirmOrder } from "../services/orderService.js";
 import { getSocket } from "../services/socketService.js";
 import OrderCard from "../components/OrderCard.jsx";
+import Chip from "../components/ui/Chip.jsx";
+import PrimaryButton from "../components/ui/PrimaryButton.jsx";
 import { Loader, ErrorState, EmptyState } from "../components/StateViews.jsx";
-import { BLUE, BLUE_LIGHT, TEXT_MUTED, BORDER, NAV_HEIGHT } from "../theme.js";
+import { NAV_HEIGHT } from "../theme.js";
 
 const FILTERS = [
   { key: "ALL",                   label: "All" },
@@ -68,53 +70,38 @@ export default function OrdersPage() {
 
   return (
     <div style={{ paddingBottom: NAV_HEIGHT + 90 }}>
-      <div style={{ padding: "16px 16px 4px", fontSize: 18, fontWeight: 800 }}>Orders</div>
+      <div style={{ padding: "20px 16px 4px", fontSize: 19, fontWeight: 800, color: "#fff" }}>Orders</div>
 
-      <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "10px 16px" }}>
+      <div className="hide-scrollbar" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "12px 16px" }}>
         {FILTERS.map((f) => (
-          <button
+          <Chip
             key={f.key}
+            active={filter === f.key}
             onClick={() => setFilter(f.key)}
-            style={{
-              flexShrink: 0, padding: "7px 14px", borderRadius: 20, fontSize: 12, fontWeight: 700,
-              border: `1.5px solid ${filter === f.key ? BLUE : BORDER}`,
-              background: filter === f.key ? BLUE_LIGHT : "#fff",
-              color: filter === f.key ? BLUE : TEXT_MUTED, cursor: "pointer", position: "relative",
-            }}
+            badge={f.key === "PENDING_CONFIRMATION" ? pendingCount : null}
           >
             {f.label}
-            {f.key === "PENDING_CONFIRMATION" && pendingCount > 0 && (
-              <span style={{
-                marginLeft: 6, background: "#dc2626", color: "#fff", fontSize: 9.5, fontWeight: 800,
-                borderRadius: 10, padding: "1px 6px",
-              }}>
-                {pendingCount}
-              </span>
-            )}
-          </button>
+          </Chip>
         ))}
       </div>
 
       {list.length === 0 ? (
         <EmptyState icon="🧾" title="No orders here" sub="Try a different filter" />
       ) : (
-        <div style={{ padding: "0 16px" }}>
+        <div style={{ padding: "4px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
           {list.map((o) => (
-            <div key={o._id} onClick={() => nav(`/order/${o._id}`)} style={{ cursor: "pointer" }}>
+            <div key={o._id}>
               <OrderCard order={o} onClick={() => nav(`/order/${o._id}`)} />
               {o.status === "PENDING_CONFIRMATION" && (
-                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: -8, marginBottom: 8 }}>
-                  <button
+                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+                  <PrimaryButton
+                    variant="success"
                     disabled={busyId === o._id}
                     onClick={(e) => handleQuickConfirm(e, o)}
-                    style={{
-                      padding: "7px 16px", borderRadius: 10, border: "none", background: "#16a34a",
-                      color: "#fff", fontWeight: 800, fontSize: 12, cursor: busyId === o._id ? "not-allowed" : "pointer",
-                      opacity: busyId === o._id ? 0.6 : 1,
-                    }}
+                    style={{ padding: "8px 18px", fontSize: 12 }}
                   >
                     {busyId === o._id ? "Confirming…" : "✓ Confirm Order"}
-                  </button>
+                  </PrimaryButton>
                 </div>
               )}
             </div>

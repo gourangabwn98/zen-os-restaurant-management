@@ -5,7 +5,11 @@ import { getMenu, getMenuCategories } from "../services/menuService.js";
 import { getAllTables } from "../services/tableService.js";
 import { placeOrder, newIdempotencyKey } from "../services/orderService.js";
 import { Loader, EmptyState } from "../components/StateViews.jsx";
-import { BLUE, BLUE_LIGHT, TEXT_MUTED, TEXT_FAINT, BORDER, NAV_HEIGHT } from "../theme.js";
+import GlassCard from "../components/ui/GlassCard.jsx";
+import PrimaryButton from "../components/ui/PrimaryButton.jsx";
+import Chip from "../components/ui/Chip.jsx";
+import QtyStepper, { AddButton } from "../components/ui/QtyStepper.jsx";
+import { ACCENT, ACCENT_SOFT, ACCENT_GRADIENT, TEXT_MUTED, TEXT_FAINT, GLASS_BG, GLASS_BORDER, NAV_HEIGHT } from "../theme.js";
 
 export default function NewOrderPage() {
   const nav = useNavigate();
@@ -95,26 +99,30 @@ export default function NewOrderPage() {
   if (reviewing) {
     return (
       <div style={{ paddingBottom: NAV_HEIGHT + 120 }}>
-        <div style={{ padding: "16px 16px 4px", display: "flex", alignItems: "center", gap: 10 }}>
-          <button onClick={() => setReviewing(false)} style={backBtn}>←</button>
-          <div style={{ fontSize: 18, fontWeight: 800 }}>Review Order</div>
+        <div style={{ padding: "18px 16px 4px", display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={() => setReviewing(false)} aria-label="Back" style={backBtn}>←</button>
+          <div style={{ fontSize: 18, fontWeight: 800, color: "#fff" }}>Review Order</div>
         </div>
 
-        <div style={{ padding: "8px 16px" }}>
+        <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
           {cart.map((c) => (
-            <div key={c.item._id} style={{ padding: "10px 0", borderBottom: `1px solid ${BORDER}` }}>
+            <GlassCard key={c.item._id} style={{ padding: "12px 14px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ fontWeight: 700, fontSize: 13.5 }}>{c.item.name} × {c.qty}</div>
-                <div style={{ fontWeight: 700, fontSize: 13.5 }}>₹{c.item.price * c.qty}</div>
+                <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff" }}>{c.item.name} × {c.qty}</div>
+                <div style={{ fontWeight: 800, fontSize: 13.5, color: ACCENT }}>₹{c.item.price * c.qty}</div>
               </div>
               <input
                 value={c.notes} onChange={(e) => setNotes(c.item._id, e.target.value)}
                 placeholder="Add note (e.g. less spicy)…"
-                style={{ marginTop: 6, width: "100%", padding: "8px 10px", fontSize: 12.5, borderRadius: 8, border: `1px solid ${BORDER}`, boxSizing: "border-box" }}
+                style={{
+                  marginTop: 8, width: "100%", padding: "9px 11px", fontSize: 12.5, borderRadius: 10,
+                  border: `1px solid ${GLASS_BORDER}`, background: "rgba(255,255,255,0.05)", color: "#fff",
+                  boxSizing: "border-box", fontFamily: "inherit",
+                }}
               />
-            </div>
+            </GlassCard>
           ))}
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 0", fontWeight: 800, fontSize: 15 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 4px 0", fontWeight: 800, fontSize: 16, color: "#fff" }}>
             <span>Total</span><span>₹{subtotal}</span>
           </div>
         </div>
@@ -123,21 +131,25 @@ export default function NewOrderPage() {
           <label style={{ fontSize: 11.5, fontWeight: 700, color: TEXT_FAINT, display: "block", marginBottom: 6 }}>Customer name (optional)</label>
           <input
             value={customerName} onChange={(e) => setCustomerName(e.target.value)}
-            placeholder="Walk-in guest" style={{ width: "100%", padding: "11px 13px", borderRadius: 10, border: `1px solid ${BORDER}`, fontSize: 14, boxSizing: "border-box" }}
+            placeholder="Walk-in guest"
+            style={{
+              width: "100%", padding: "12px 14px", borderRadius: 12, border: `1px solid ${GLASS_BORDER}`,
+              fontSize: 14, boxSizing: "border-box", background: GLASS_BG, color: "#fff",
+            }}
           />
           <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 10 }}>
             {orderType === "DINE_IN" ? `Dine-in · Table ${tableNo}` : "Takeaway"} · this order is confirmed immediately and a KOT is sent to the kitchen.
           </div>
         </div>
 
-        <div style={{ position: "fixed", left: 0, right: 0, bottom: NAV_HEIGHT, padding: "12px 16px", background: "#fff", borderTop: `1px solid ${BORDER}` }}>
-          <button onClick={handlePlace} disabled={!canPlace || placing} style={{
-            width: "100%", padding: 15, borderRadius: 14, border: "none", background: BLUE,
-            color: "#fff", fontWeight: 800, fontSize: 14.5,
-            opacity: !canPlace || placing ? 0.5 : 1, cursor: !canPlace || placing ? "not-allowed" : "pointer",
-          }}>
+        <div className="floating-bar" style={{
+          position: "fixed", left: 14, right: 14, bottom: NAV_HEIGHT + 4, padding: "12px 14px", zIndex: 30,
+          background: "rgba(12,10,20,0.85)", backdropFilter: "blur(20px)", border: `1px solid ${GLASS_BORDER}`,
+          borderRadius: 18, boxShadow: "0 12px 32px rgba(0,0,0,0.45)",
+        }}>
+          <PrimaryButton onClick={handlePlace} disabled={!canPlace || placing} style={{ width: "100%" }}>
             {placing ? "Placing…" : `Place Order · ₹${subtotal}`}
-          </button>
+          </PrimaryButton>
         </div>
       </div>
     );
@@ -145,20 +157,20 @@ export default function NewOrderPage() {
 
   return (
     <div style={{ paddingBottom: NAV_HEIGHT + (itemCount > 0 ? 90 : 16) }}>
-      <div style={{ padding: "16px 16px 4px", display: "flex", alignItems: "center", gap: 10 }}>
-        <button onClick={() => nav(-1)} style={backBtn}>←</button>
-        <div style={{ fontSize: 18, fontWeight: 800 }}>New Order</div>
+      <div style={{ padding: "18px 16px 4px", display: "flex", alignItems: "center", gap: 10 }}>
+        <button onClick={() => nav(-1)} aria-label="Back" style={backBtn}>←</button>
+        <div style={{ fontSize: 18, fontWeight: 800, color: "#fff" }}>New Order</div>
       </div>
 
       {/* Order type + table */}
-      <div style={{ padding: "10px 16px" }}>
-        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+      <div style={{ padding: "12px 16px" }}>
+        <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
           {["DINE_IN", "TAKEAWAY"].map((t) => (
             <button key={t} onClick={() => setOrderType(t)} style={{
-              flex: 1, padding: "10px", borderRadius: 10, cursor: "pointer",
-              border: `1.5px solid ${orderType === t ? BLUE : BORDER}`,
-              background: orderType === t ? BLUE_LIGHT : "#fff",
-              color: orderType === t ? BLUE : TEXT_MUTED, fontWeight: 700, fontSize: 12.5,
+              flex: 1, padding: "12px", borderRadius: 12, cursor: "pointer",
+              border: `1.5px solid ${orderType === t ? "rgba(59,130,246,0.5)" : GLASS_BORDER}`,
+              background: orderType === t ? ACCENT_SOFT : GLASS_BG,
+              color: orderType === t ? ACCENT : TEXT_MUTED, fontWeight: 700, fontSize: 12.5,
             }}>
               {t === "DINE_IN" ? "🍽️ Dine-in" : "🛍️ Takeaway"}
             </button>
@@ -167,11 +179,12 @@ export default function NewOrderPage() {
 
         {orderType === "DINE_IN" && (
           <select value={tableNo} onChange={(e) => setTableNo(e.target.value)} style={{
-            width: "100%", padding: "11px 13px", borderRadius: 10, border: `1px solid ${BORDER}`, fontSize: 14,
+            width: "100%", padding: "12px 14px", borderRadius: 12, border: `1px solid ${GLASS_BORDER}`,
+            fontSize: 14, background: GLASS_BG, color: "#fff",
           }}>
-            <option value="">Select a table…</option>
+            <option value="" style={{ color: "#111" }}>Select a table…</option>
             {tables.map((t) => (
-              <option key={t.tableNo} value={t.tableNo}>
+              <option key={t.tableNo} value={t.tableNo} style={{ color: "#111" }}>
                 Table {t.tableNo} ({t.seats} seats){t.occupancyStatus === "OCCUPIED" ? " — occupied, adding to it" : ""}
               </option>
             ))}
@@ -184,12 +197,15 @@ export default function NewOrderPage() {
         <input
           value={search} onChange={(e) => setSearch(e.target.value)}
           placeholder="Search menu…"
-          style={{ width: "100%", padding: "10px 14px", borderRadius: 12, border: `1px solid ${BORDER}`, fontSize: 14, boxSizing: "border-box" }}
+          style={{
+            width: "100%", padding: "11px 15px", borderRadius: 14, border: `1px solid ${GLASS_BORDER}`,
+            fontSize: 14, boxSizing: "border-box", background: GLASS_BG, color: "#fff",
+          }}
         />
       </div>
 
       {categories.length > 0 && (
-        <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "8px 16px" }}>
+        <div className="hide-scrollbar" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "10px 16px" }}>
           <Chip active={!category} onClick={() => setCategory("")}>All</Chip>
           {categories.map((c) => (
             <Chip key={c.category} active={category === c.category} onClick={() => setCategory(c.category)}>{c.category}</Chip>
@@ -197,50 +213,41 @@ export default function NewOrderPage() {
         </div>
       )}
 
-      <div style={{ padding: "0 16px" }}>
+      <div style={{ padding: "4px 16px 0" }}>
         {items === null && <Loader label="Loading menu…" />}
         {items !== null && grouped.length === 0 && <EmptyState icon="🔎" title="No items found" />}
         {grouped.map(([cat, catItems]) => (
-          <div key={cat} style={{ marginBottom: 6 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: TEXT_MUTED, textTransform: "uppercase", padding: "12px 0 4px" }}>{cat}</div>
-            {catItems.map((it) => {
-              const qty = getQty(it._id);
-              const outOfStock = it.stockTracked && !it.stockAvailable;
-              return (
-                <div key={it._id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${BORDER}`, opacity: outOfStock ? 0.5 : 1 }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: 13.5 }}>{it.name}</div>
-                    <div style={{ fontSize: 12, color: TEXT_FAINT }}>₹{it.price}{outOfStock ? " · Out of stock" : ""}</div>
-                  </div>
-                  {!outOfStock && (
-                    qty > 0 ? (
-                      <div style={{ display: "flex", alignItems: "center", gap: 12, border: `1.5px solid ${BLUE}`, borderRadius: 8, padding: "5px 12px" }}>
-                        <button onClick={() => adjustQty(it, -1)} style={stepBtn}>−</button>
-                        <span style={{ fontWeight: 700, fontSize: 13, minWidth: 14, textAlign: "center" }}>{qty}</span>
-                        <button onClick={() => adjustQty(it, 1)} style={stepBtn}>+</button>
-                      </div>
-                    ) : (
-                      <button onClick={() => adjustQty(it, 1)} style={{
-                        padding: "8px 16px", borderRadius: 8, border: `1.5px solid ${BLUE}`, background: "#fff",
-                        color: BLUE, fontWeight: 800, fontSize: 12, cursor: "pointer",
-                      }}>
-                        ADD
-                      </button>
-                    )
-                  )}
-                </div>
-              );
-            })}
+          <div key={cat} style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "#fff", letterSpacing: 0.3, padding: "12px 2px 6px" }}>{cat}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {catItems.map((it) => {
+                const qty = getQty(it._id);
+                const outOfStock = it.stockTracked && !it.stockAvailable;
+                return (
+                  <GlassCard key={it._id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", opacity: outOfStock ? 0.5 : 1 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff" }}>{it.name}</div>
+                      <div style={{ fontSize: 12, color: TEXT_FAINT, marginTop: 2 }}>₹{it.price}{outOfStock ? " · Out of stock" : ""}</div>
+                    </div>
+                    {!outOfStock && (
+                      qty > 0
+                        ? <QtyStepper qty={qty} size="sm" onDec={() => adjustQty(it, -1)} onInc={() => adjustQty(it, 1)} />
+                        : <AddButton size="sm" onClick={() => adjustQty(it, 1)} />
+                    )}
+                  </GlassCard>
+                );
+              })}
+            </div>
           </div>
         ))}
       </div>
 
       {itemCount > 0 && (
-        <button onClick={() => setReviewing(true)} style={{
-          position: "fixed", left: 16, right: 16, bottom: NAV_HEIGHT + 12, zIndex: 30,
-          background: BLUE, color: "#fff", border: "none", borderRadius: 14, padding: "14px 18px",
+        <button onClick={() => setReviewing(true)} className="floating-bar" style={{
+          position: "fixed", left: 16, right: 16, bottom: NAV_HEIGHT + 14, zIndex: 30,
+          background: ACCENT_GRADIENT, color: "#fff", border: "none", borderRadius: 18, padding: "15px 20px",
           display: "flex", alignItems: "center", justifyContent: "space-between", fontWeight: 800, fontSize: 14,
-          cursor: "pointer", boxShadow: "0 8px 20px rgba(37,99,235,0.35)",
+          cursor: "pointer", boxShadow: "0 12px 28px rgba(59,130,246,0.45)",
         }}>
           <span>{itemCount} item{itemCount > 1 ? "s" : ""} · ₹{subtotal}</span>
           <span>Review →</span>
@@ -250,15 +257,7 @@ export default function NewOrderPage() {
   );
 }
 
-const Chip = ({ active, onClick, children }) => (
-  <button onClick={onClick} style={{
-    flexShrink: 0, padding: "7px 15px", borderRadius: 20, fontSize: 12.5, fontWeight: 700,
-    border: `1.5px solid ${active ? BLUE : BORDER}`,
-    background: active ? BLUE_LIGHT : "#fff", color: active ? BLUE : TEXT_MUTED, cursor: "pointer",
-  }}>
-    {children}
-  </button>
-);
-
-const stepBtn = { border: "none", background: "none", color: BLUE, fontWeight: 800, fontSize: 15, cursor: "pointer", width: 16 };
-const backBtn = { border: "none", background: "none", fontSize: 20, cursor: "pointer", color: TEXT_MUTED };
+const backBtn = {
+  width: 36, height: 36, borderRadius: "50%", border: `1px solid ${GLASS_BORDER}`,
+  background: GLASS_BG, fontSize: 17, cursor: "pointer", color: "#fff",
+};

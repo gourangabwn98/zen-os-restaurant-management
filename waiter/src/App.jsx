@@ -9,7 +9,7 @@ import OrdersPage from "./pages/OrdersPage.jsx";
 import NewOrderPage from "./pages/NewOrderPage.jsx";
 import OrderDetailPage from "./pages/OrderDetailPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
-import { BG } from "./theme.js";
+import { BG_PRIMARY } from "./theme.js";
 
 function RequireAuth({ children }) {
   const { auth } = useAppState();
@@ -24,17 +24,19 @@ function Shell() {
   const showNav = auth.isLoggedIn && pathname !== "/login";
 
   return (
-    <div style={{ minHeight: "100vh", background: BG, maxWidth: 560, margin: "0 auto", position: "relative" }}>
-      <Routes>
-        <Route path="/login" element={auth.isLoggedIn ? <Navigate to="/tables" replace /> : <LoginPage />} />
-        <Route path="/tables" element={<RequireAuth><TablesPage /></RequireAuth>} />
-        <Route path="/orders" element={<RequireAuth><OrdersPage /></RequireAuth>} />
-        <Route path="/new-order" element={<RequireAuth><NewOrderPage /></RequireAuth>} />
-        <Route path="/order/:id" element={<RequireAuth><OrderDetailPage /></RequireAuth>} />
-        <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
-        <Route path="*" element={<Navigate to={auth.isLoggedIn ? "/tables" : "/login"} replace />} />
-      </Routes>
-      {showNav && <BottomNav />}
+    <div style={{ minHeight: "100vh", background: BG_PRIMARY }}>
+      <div className="app-shell" style={{ margin: "0 auto", position: "relative" }}>
+        <Routes>
+          <Route path="/login" element={auth.isLoggedIn ? <Navigate to="/tables" replace /> : <LoginPage />} />
+          <Route path="/tables" element={<RequireAuth><TablesPage /></RequireAuth>} />
+          <Route path="/orders" element={<RequireAuth><OrdersPage /></RequireAuth>} />
+          <Route path="/new-order" element={<RequireAuth><NewOrderPage /></RequireAuth>} />
+          <Route path="/order/:id" element={<RequireAuth><OrderDetailPage /></RequireAuth>} />
+          <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
+          <Route path="*" element={<Navigate to={auth.isLoggedIn ? "/tables" : "/login"} replace />} />
+        </Routes>
+        {showNav && <BottomNav />}
+      </div>
     </div>
   );
 }
