@@ -5,7 +5,8 @@ import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
 import { auth as firebaseAuth } from "../firebase.js";
 import { firebaseVerify } from "../services/authService.js";
 import { useAppState } from "../context/AppState.jsx";
-import { PINK, TEXT_MUTED, TEXT_FAINT, BORDER } from "../theme.js";
+import PrimaryButton from "../components/ui/PrimaryButton.jsx";
+import { ACCENT, TEXT_MUTED, TEXT_FAINT, GLASS_BG, GLASS_BORDER } from "../theme.js";
 
 export default function LoginPage() {
   const nav = useNavigate();
@@ -75,17 +76,24 @@ export default function LoginPage() {
   const handleResend = () => { if (timer > 0) return; handleBack(); setTimeout(handleSend, 100); };
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", padding: 24 }}>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", padding: 24, position: "relative" }}>
       <div id="recaptcha-container" />
 
       <button onClick={() => nav(-1)} style={{
-        position: "absolute", top: 18, left: 18, border: "none", background: "none",
-        fontSize: 20, cursor: "pointer", color: TEXT_MUTED,
+        position: "absolute", top: 20, left: 20, width: 38, height: 38, borderRadius: "50%",
+        border: `1px solid ${GLASS_BORDER}`, background: GLASS_BG, fontSize: 17, cursor: "pointer", color: "#fff",
       }}>←</button>
 
-      <div style={{ textAlign: "center", marginBottom: 28 }}>
-        <div style={{ fontSize: 40 }}>🍽️</div>
-        <div style={{ fontWeight: 800, fontSize: 19, marginTop: 8 }}>
+      <div style={{ textAlign: "center", marginBottom: 30 }}>
+        <div style={{
+          width: 64, height: 64, margin: "0 auto 12px", borderRadius: "50%",
+          background: "linear-gradient(135deg, #FF9F1C 0%, #FF8A00 100%)",
+          display: "flex", alignItems: "center", justifyContent: "center", fontSize: 30,
+          boxShadow: "0 0 0 1px rgba(255,138,0,0.35), 0 10px 28px rgba(255,138,0,0.4)",
+        }}>
+          🍽️
+        </div>
+        <div style={{ fontWeight: 800, fontSize: 19, color: "#fff" }}>
           {step === "phone" ? "Log in to order" : "Verify your number"}
         </div>
         <div style={{ fontSize: 12.5, color: TEXT_FAINT, marginTop: 4 }}>
@@ -108,7 +116,7 @@ export default function LoginPage() {
               />
             </div>
           </Field>
-          <Btn onClick={handleSend} loading={loading}>Send OTP →</Btn>
+          <PrimaryButton onClick={handleSend} loading={loading}>{loading ? "Please wait…" : "Send OTP →"}</PrimaryButton>
         </>
       ) : (
         <>
@@ -122,15 +130,17 @@ export default function LoginPage() {
             onKeyDown={(e) => e.key === "Enter" && handleVerify()}
             placeholder="• • • • • •" inputMode="numeric" autoFocus
             style={{
-              width: "100%", padding: 16, borderRadius: 12, textAlign: "center", fontSize: 26,
-              letterSpacing: 10, fontWeight: 800, border: `2px solid ${otp.length === 6 ? PINK : BORDER}`,
-              boxSizing: "border-box", marginBottom: 18,
+              width: "100%", padding: 16, borderRadius: 14, textAlign: "center", fontSize: 26,
+              letterSpacing: 10, fontWeight: 800, border: `2px solid ${otp.length === 6 ? ACCENT : GLASS_BORDER}`,
+              boxSizing: "border-box", marginBottom: 18, background: GLASS_BG, color: "#fff",
             }}
           />
-          <Btn id="verify-btn" onClick={handleVerify} loading={loading}>Verify & Continue ✓</Btn>
+          <PrimaryButton id="verify-btn" onClick={handleVerify} loading={loading}>
+            {loading ? "Please wait…" : "Verify & Continue ✓"}
+          </PrimaryButton>
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14 }}>
             <button onClick={handleBack} style={linkBtn}>← Change number</button>
-            <button onClick={handleResend} disabled={timer > 0} style={{ ...linkBtn, color: timer > 0 ? TEXT_FAINT : PINK }}>
+            <button onClick={handleResend} disabled={timer > 0} style={{ ...linkBtn, color: timer > 0 ? TEXT_FAINT : ACCENT }}>
               {timer > 0 ? `Resend in ${Math.floor(timer / 60)}:${String(timer % 60).padStart(2, "0")}` : "Resend OTP"}
             </button>
           </div>
@@ -147,19 +157,9 @@ const Field = ({ label, children }) => (
   </div>
 );
 
-const Btn = ({ children, onClick, loading, id }) => (
-  <button id={id} onClick={onClick} disabled={loading} style={{
-    width: "100%", padding: 15, borderRadius: 14, border: "none",
-    background: loading ? "#f3c9d8" : PINK, color: "#fff", fontWeight: 800, fontSize: 14.5,
-    cursor: loading ? "not-allowed" : "pointer",
-  }}>
-    {loading ? "Please wait…" : children}
-  </button>
-);
-
 const inputStyle = {
-  padding: "13px 14px", borderRadius: 12, border: `1px solid ${BORDER}`, fontSize: 15,
-  boxSizing: "border-box", fontFamily: "inherit", width: "100%",
+  padding: "13px 14px", borderRadius: 14, border: `1px solid ${GLASS_BORDER}`, fontSize: 15,
+  boxSizing: "border-box", fontFamily: "inherit", width: "100%", background: GLASS_BG, color: "#fff",
 };
 
 const linkBtn = { border: "none", background: "none", fontSize: 12.5, fontWeight: 700, cursor: "pointer", color: TEXT_MUTED };

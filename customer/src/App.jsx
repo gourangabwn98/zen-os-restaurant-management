@@ -9,7 +9,8 @@ import OrderDetailPage from "./pages/OrderDetailPage.jsx";
 import HelpPage from "./pages/HelpPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
-import { BG } from "./theme.js";
+import FavoritesPage from "./pages/FavoritesPage.jsx";
+import { BG_PRIMARY } from "./theme.js";
 
 const NO_NAV_ROUTES = ["/login"];
 
@@ -18,9 +19,11 @@ function Shell({ children }) {
   const showNav = !NO_NAV_ROUTES.includes(pathname);
 
   return (
-    <div style={{ minHeight: "100vh", background: BG, maxWidth: 560, margin: "0 auto", position: "relative" }}>
-      {children}
-      {showNav && <BottomNav />}
+    <div style={{ minHeight: "100vh", background: BG_PRIMARY }}>
+      <div className="app-shell" style={{ margin: "0 auto", position: "relative" }}>
+        {children}
+        {showNav && <BottomNav />}
+      </div>
     </div>
   );
 }
@@ -37,6 +40,7 @@ export default function App() {
           <Routes>
             <Route path="/"          element={<HomePage />} />
             <Route path="/cart"      element={<CartPage />} />
+            <Route path="/favorites" element={<FavoritesPage />} />
             <Route path="/orders"    element={<OrdersPage />} />
             <Route path="/order/:id" element={<OrderDetailPage />} />
             <Route path="/help"      element={<HelpPage />} />

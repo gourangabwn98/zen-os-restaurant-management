@@ -42,7 +42,11 @@ export const io = initSocket(server);
 app.use(cors({
   origin: "*",
   methods: ["GET","POST","PUT","DELETE","OPTIONS","PATCH"],
-  allowedHeaders: ["Content-Type","Authorization"],
+  // x-guest-order-token lets a logged-out guest view/cancel their own order
+  // (see services/orderService.js assertCanViewOrder) — without it in the
+  // allowlist, the browser's CORS preflight blocks the request outright and
+  // the customer app's order page fails with "Couldn't load this order".
+  allowedHeaders: ["Content-Type","Authorization","x-guest-order-token"],
 }));
 
 app.use(express.json({ limit: "10mb" }));

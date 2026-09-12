@@ -1,4 +1,4 @@
-import { PINK, GREEN, RED, TEXT_FAINT, BORDER } from "../theme.js";
+import { ACCENT, ACCENT_GRADIENT, RED, TEXT_FAINT, GLASS_BORDER } from "../theme.js";
 
 const STEPS = [
   { key: "PENDING_CONFIRMATION", label: "Waiting for confirmation", icon: "🕒" },
@@ -34,10 +34,16 @@ export default function StatusStepper({ status }) {
   const activeIdx = idx === -1 ? 0 : idx;
 
   return (
-    <div style={{ padding: "20px 16px 8px" }}>
-      <div style={{ textAlign: "center", marginBottom: 22 }}>
-        <div style={{ fontSize: 46 }}>{STEPS[activeIdx]?.icon}</div>
-        <div style={{ fontWeight: 800, fontSize: 16, marginTop: 6 }}>{STEPS[activeIdx]?.label}</div>
+    <div style={{ padding: "24px 16px 8px" }}>
+      <div style={{ textAlign: "center", marginBottom: 26 }}>
+        <div style={{
+          width: 64, height: 64, margin: "0 auto 10px", borderRadius: "50%",
+          background: ACCENT_GRADIENT, display: "flex", alignItems: "center",
+          justifyContent: "center", fontSize: 28, boxShadow: "0 0 0 1px rgba(255,138,0,0.35), 0 10px 28px rgba(255,138,0,0.4)",
+        }}>
+          {STEPS[activeIdx]?.icon}
+        </div>
+        <div style={{ fontWeight: 800, fontSize: 16, marginTop: 6, color: "#fff" }}>{STEPS[activeIdx]?.label}</div>
         <div style={{ fontSize: 12.5, color: TEXT_FAINT, marginTop: 3 }}>{MESSAGES[status]}</div>
       </div>
 
@@ -47,20 +53,22 @@ export default function StatusStepper({ status }) {
             {i > 0 && (
               <div style={{
                 position: "absolute", top: 9, right: "50%", width: "100%", height: 2,
-                background: i <= activeIdx ? PINK : BORDER, zIndex: 0,
+                background: i <= activeIdx ? ACCENT : GLASS_BORDER, zIndex: 0,
+                boxShadow: i <= activeIdx ? "0 0 8px rgba(255,138,0,0.5)" : "none",
               }} />
             )}
             <div style={{
               width: 20, height: 20, borderRadius: "50%", zIndex: 1,
-              background: i <= activeIdx ? PINK : "#fff",
-              border: `2px solid ${i <= activeIdx ? PINK : BORDER}`,
+              background: i <= activeIdx ? ACCENT_GRADIENT : "rgba(255,255,255,0.06)",
+              border: `2px solid ${i <= activeIdx ? ACCENT : GLASS_BORDER}`,
               display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: i === activeIdx ? "0 0 10px rgba(255,138,0,0.6)" : "none",
             }}>
               {i < activeIdx && <span style={{ color: "#fff", fontSize: 10, fontWeight: 900 }}>✓</span>}
               {i === activeIdx && <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff" }} />}
             </div>
             <div style={{
-              fontSize: 9.5, textAlign: "center", marginTop: 6, color: i <= activeIdx ? PINK : TEXT_FAINT,
+              fontSize: 9.5, textAlign: "center", marginTop: 6, color: i <= activeIdx ? ACCENT : TEXT_FAINT,
               fontWeight: i === activeIdx ? 800 : 500, lineHeight: 1.3,
             }}>
               {s.label}

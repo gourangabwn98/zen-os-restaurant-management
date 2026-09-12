@@ -6,7 +6,10 @@ import { placeOrder, saveGuestOrderToken, newIdempotencyKey } from "../services/
 import { getRestaurantProfile } from "../services/restaurantService.js";
 import { EmptyState } from "../components/StateViews.jsx";
 import TableBadge from "../components/TableBadge.jsx";
-import { PINK, PINK_LIGHT, TEXT_MUTED, TEXT_FAINT, BORDER, NAV_HEIGHT } from "../theme.js";
+import GlassCard from "../components/ui/GlassCard.jsx";
+import QtyStepper from "../components/ui/QtyStepper.jsx";
+import PrimaryButton from "../components/ui/PrimaryButton.jsx";
+import { ACCENT, ACCENT_SOFT, TEXT_MUTED, TEXT_FAINT, GLASS_BG, GLASS_BORDER, NAV_HEIGHT } from "../theme.js";
 
 export default function CartPage() {
   const nav = useNavigate();
@@ -76,11 +79,11 @@ export default function CartPage() {
 
   if (cart.itemCount === 0) {
     return (
-      <div style={{ paddingTop: 40 }}>
+      <div style={{ paddingTop: 60 }}>
         <EmptyState
           icon="🛒" title="Your cart is empty" sub="Add something tasty from the menu"
           action={
-            <button onClick={() => nav("/")} style={primaryBtnStyle}>Browse Menu</button>
+            <PrimaryButton onClick={() => nav("/")} style={{ width: "auto", padding: "13px 28px" }}>Browse Menu</PrimaryButton>
           }
         />
       </div>
@@ -88,30 +91,35 @@ export default function CartPage() {
   }
 
   return (
-    <div style={{ paddingBottom: NAV_HEIGHT + 120 }}>
-      <div style={{ padding: "16px 16px 4px", fontSize: 18, fontWeight: 800 }}>Your Cart</div>
+    <div style={{ paddingBottom: NAV_HEIGHT + 130 }}>
+      <div style={{ padding: "20px 16px 10px", fontSize: 19, fontWeight: 800, color: "#fff" }}>Your Cart</div>
 
       {/* ── Items ── */}
-      <div style={{ padding: "8px 16px" }}>
+      <div style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: 10 }}>
         {cart.cart.map((c) => (
-          <div key={c.item._id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: `1px solid ${BORDER}` }}>
+          <GlassCard key={c.item._id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px" }}>
+            <div style={{
+              width: 52, height: 52, borderRadius: 12, overflow: "hidden", flexShrink: 0,
+              background: "rgba(255,255,255,0.05)", display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              {c.item.image
+                ? <img src={c.item.image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                : <span style={{ fontSize: 20 }}>🍽️</span>}
+            </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: 13.5 }}>{c.item.name}</div>
-              <div style={{ fontSize: 12, color: TEXT_FAINT }}>₹{c.item.price} each{c.notes ? ` · "${c.notes}"` : ""}</div>
+              <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff" }}>{c.item.name}</div>
+              <div style={{ fontSize: 12, color: TEXT_FAINT, marginTop: 2 }}>₹{c.item.price} each{c.notes ? ` · "${c.notes}"` : ""}</div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, border: `1.5px solid ${PINK}`, borderRadius: 8, padding: "4px 10px" }}>
-              <button onClick={() => cart.removeItem(c.item._id)} style={qtyBtn}>−</button>
-              <span style={{ fontWeight: 700, fontSize: 13, minWidth: 14, textAlign: "center" }}>{c.qty}</span>
-              <button onClick={() => cart.addItem(c.item, 1)} style={qtyBtn}>+</button>
-            </div>
-            <div style={{ width: 54, textAlign: "right", fontWeight: 700, fontSize: 13 }}>₹{c.item.price * c.qty}</div>
-          </div>
+            <QtyStepper qty={c.qty} size="sm" onDec={() => cart.removeItem(c.item._id)} onInc={() => cart.addItem(c.item, 1)} />
+            <div style={{ width: 54, textAlign: "right", fontWeight: 800, fontSize: 13, color: ACCENT }}>₹{c.item.price * c.qty}</div>
+          </GlassCard>
         ))}
-        <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0", fontWeight: 800, fontSize: 14 }}>
+
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 4px 0", fontWeight: 800, fontSize: 15, color: "#fff" }}>
           <span>Subtotal</span>
           <span>₹{cart.subtotal}</span>
         </div>
-        <div style={{ fontSize: 11, color: TEXT_FAINT, marginTop: -8 }}>{gstNote}</div>
+        <div style={{ fontSize: 11, color: TEXT_FAINT, padding: "0 4px" }}>{gstNote}</div>
       </div>
 
       {/* ── Customer details ── */}
@@ -127,7 +135,7 @@ export default function CartPage() {
         </Field>
         {!auth.isLoggedIn && (
           <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 2 }}>
-            Ordering as guest. <span onClick={() => nav("/profile")} style={{ color: PINK, fontWeight: 700, cursor: "pointer" }}>Log in</span> to save order history.
+            Ordering as guest. <span onClick={() => nav("/profile")} style={{ color: ACCENT, fontWeight: 700, cursor: "pointer" }}>Log in</span> to save order history.
           </div>
         )}
       </Section>
@@ -144,8 +152,8 @@ export default function CartPage() {
         ) : (
           <div>
             <div style={{
-              padding: "12px 14px", borderRadius: 10, border: `1.5px solid ${PINK}`,
-              background: PINK_LIGHT, fontSize: 13, fontWeight: 700, color: PINK,
+              padding: "13px 14px", borderRadius: 14, border: `1.5px solid rgba(255,138,0,0.4)`,
+              background: ACCENT_SOFT, fontSize: 13, fontWeight: 700, color: ACCENT,
               display: "flex", alignItems: "center", gap: 8,
             }}>
               🛍️ Takeaway — you'll collect this order at the restaurant
@@ -165,10 +173,10 @@ export default function CartPage() {
               key={m}
               onClick={() => setPaymentMethod(m)}
               style={{
-                flex: 1, padding: "12px 10px", borderRadius: 10, cursor: "pointer",
-                border: `1.5px solid ${paymentMethod === m ? PINK : BORDER}`,
-                background: paymentMethod === m ? PINK_LIGHT : "#fff",
-                color: paymentMethod === m ? PINK : TEXT_MUTED, fontWeight: 700, fontSize: 13,
+                flex: 1, padding: "13px 10px", borderRadius: 14, cursor: "pointer",
+                border: `1.5px solid ${paymentMethod === m ? "rgba(255,138,0,0.5)" : GLASS_BORDER}`,
+                background: paymentMethod === m ? ACCENT_SOFT : GLASS_BG,
+                color: paymentMethod === m ? ACCENT : TEXT_MUTED, fontWeight: 700, fontSize: 13,
               }}
             >
               {m === "Cash"
@@ -187,25 +195,25 @@ export default function CartPage() {
       </Section>
 
       {/* ── Place order ── */}
-      <div style={{
-        position: "fixed", left: 0, right: 0, bottom: NAV_HEIGHT, padding: "12px 16px",
-        background: "#fff", borderTop: `1px solid ${BORDER}`, zIndex: 30,
-      }}>
-        <button onClick={handlePlace} disabled={!canPlace || placing} style={{
-          ...primaryBtnStyle, width: "100%",
-          opacity: !canPlace || placing ? 0.5 : 1,
-          cursor: !canPlace || placing ? "not-allowed" : "pointer",
-        }}>
+      <div
+        className="floating-bar"
+        style={{
+          position: "fixed", left: 14, right: 14, bottom: NAV_HEIGHT + 4, padding: "12px 14px", zIndex: 30,
+          background: "rgba(12,10,20,0.85)", backdropFilter: "blur(20px)", border: `1px solid ${GLASS_BORDER}`,
+          borderRadius: 18, boxShadow: "0 12px 32px rgba(0,0,0,0.45)",
+        }}
+      >
+        <PrimaryButton onClick={handlePlace} disabled={!canPlace || placing}>
           {placing ? "Placing order…" : `Place Order · ₹${cart.subtotal}`}
-        </button>
+        </PrimaryButton>
       </div>
     </div>
   );
 }
 
 const Section = ({ title, children }) => (
-  <div style={{ padding: "14px 16px", borderTop: `8px solid #f7f7f8` }}>
-    <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12 }}>{title}</div>
+  <div style={{ padding: "18px 16px", borderTop: `8px solid rgba(255,255,255,0.03)` }}>
+    <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12, color: "#fff" }}>{title}</div>
     {children}
   </div>
 );
@@ -218,13 +226,6 @@ const Field = ({ label, children }) => (
 );
 
 const inputStyle = {
-  width: "100%", padding: "11px 13px", borderRadius: 10, border: `1px solid ${BORDER}`,
-  fontSize: 14, boxSizing: "border-box", fontFamily: "inherit",
-};
-
-const qtyBtn = { border: "none", background: "none", color: PINK, fontWeight: 800, fontSize: 15, cursor: "pointer", width: 16 };
-
-const primaryBtnStyle = {
-  padding: "14px 20px", borderRadius: 14, border: "none", background: PINK,
-  color: "#fff", fontWeight: 800, fontSize: 14.5,
+  width: "100%", padding: "12px 14px", borderRadius: 12, border: `1px solid ${GLASS_BORDER}`,
+  fontSize: 14, boxSizing: "border-box", fontFamily: "inherit", background: GLASS_BG, color: "#fff",
 };
