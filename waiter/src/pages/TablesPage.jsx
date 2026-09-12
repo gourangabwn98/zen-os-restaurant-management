@@ -7,7 +7,17 @@ import OrderCard from "../components/OrderCard.jsx";
 import GlassCard from "../components/ui/GlassCard.jsx";
 import PrimaryButton from "../components/ui/PrimaryButton.jsx";
 import { Loader, ErrorState, EmptyState } from "../components/StateViews.jsx";
+import { statusColor } from "../components/StatusBadge.jsx";
+import { runningTotal, formatElapsed } from "../utils/tableSession.js";
 import { ACCENT, TEXT_MUTED, TEXT_FAINT, GLASS_BORDER, NAV_HEIGHT } from "../theme.js";
+
+// Only the ring colors that actually appear on an OCCUPIED table — an
+// available table is already self-evident from its "Available" label/icon.
+const LEGEND = [
+  { label: "Needs confirmation",        color: statusColor("PENDING_CONFIRMATION") },
+  { label: "Confirmed",                 color: statusColor("CONFIRMED") },
+  { label: "Preparing / Ready / Out",   color: statusColor("PREPARING") },
+];
 
 export default function TablesPage() {
   const nav = useNavigate();
@@ -67,9 +77,20 @@ export default function TablesPage() {
           </div>
         )}
       </div>
-      <div style={{ padding: "4px 16px 14px", fontSize: 12, color: TEXT_FAINT }}>
+      <div style={{ padding: "4px 16px 4px", fontSize: 12, color: TEXT_FAINT }}>
         Tap a table to view its orders or clear it once everything's settled.
       </div>
+
+      {tables.length > 0 && (
+        <div className="hide-scrollbar" style={{ display: "flex", gap: 14, overflowX: "auto", padding: "6px 16px 16px" }}>
+          {LEGEND.map((l) => (
+            <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: l.color, boxShadow: `0 0 6px ${l.color}` }} />
+              <span style={{ fontSize: 10.5, color: TEXT_FAINT, fontWeight: 600, whiteSpace: "nowrap" }}>{l.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {tables.length === 0 ? (
         <EmptyState icon="🍽️" title="No tables set up yet" sub="Ask an admin to add tables" />
@@ -88,16 +109,26 @@ export default function TablesPage() {
       {selectedTable && (
         <div style={{ margin: "20px 16px 0" }}>
           <GlassCard padding={0} style={{ overflow: "hidden" }}>
-            <div style={{ padding: "14px 16px", borderBottom: `1px solid ${GLASS_BORDER}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontWeight: 800, fontSize: 14, color: "#fff" }}>Table {selectedTable.tableNo}</div>
-              {selectedSession ? (
-                <PrimaryButton variant="success" onClick={() => handleClear(selectedSession)} disabled={clearing} style={{ padding: "8px 16px", fontSize: 11.5 }}>
-                  {clearing ? "Clearing…" : "🧹 Clear Table"}
-                </PrimaryButton>
-              ) : (
-                <PrimaryButton onClick={() => nav(`/new-order?table=${selectedTable.tableNo}`)} style={{ padding: "8px 16px", fontSize: 11.5 }}>
-                  + New Order
-                </PrimaryButton>
+            <div style={{ padding: "14px 16px", borderBottom: `1px solid ${GLASS_BORDER}` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontWeight: 800, fontSize: 14, color: "#fff" }}>Table {selectedTable.tableNo}</div>
+                {selectedSession ? (
+                  <PrimaryButton variant="success" onClick={() => handleClear(selectedSession)} disabled={clearing} style={{ padding: "8px 16px", fontSize: 11.5 }}>
+                    {clearing ? "Clearing…" : "🧹 Clear Table"}
+                  </PrimaryButton>
+                ) : (
+                  <PrimaryButton onClick={() => nav(`/new-order?table=${selectedTable.tableNo}`)} style={{ padding: "8px 16px", fontSize: 11.5 }}>
+                    + New Order
+                  </PrimaryButton>
+                )}
+              </div>
+
+              {selectedSession && (
+                <div style={{ display: "flex", gap: 16, marginTop: 10, fontSize: 11.5, color: TEXT_MUTED }}>
+                  <span>🧾 <b style={{ color: "#fff" }}>{(selectedSession.orders || []).length}</b> order{(selectedSession.orders || []).length === 1 ? "" : "s"}</span>
+                  <span>⏱ <b style={{ color: "#fff" }}>{formatElapsed(selectedSession.openedAt) || "—"}</b> occupied</span>
+                  <span>💰 <b style={{ color: ACCENT }}>₹{runningTotal(selectedSession.orders)}</b> running</span>
+                </div>
               )}
             </div>
 

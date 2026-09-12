@@ -21,6 +21,13 @@ a { color: inherit; }
   0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.45); }
   50%      { box-shadow: 0 0 0 8px rgba(59,130,246,0); }
 }
+/* A table with an order still awaiting confirmation is the single most
+   urgent thing on the tables board — a soft amber pulse on its border
+   makes it findable at a glance without opening it. */
+@keyframes pulseAmberGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(251,191,36,0.5); }
+  50%      { box-shadow: 0 0 0 7px rgba(251,191,36,0); }
+}
 
 .skeleton {
   background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 37%, rgba(255,255,255,0.05) 63%);
