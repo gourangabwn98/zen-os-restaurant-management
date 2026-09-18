@@ -39,7 +39,11 @@ const ICONS = {
   users:     <><circle cx="12" cy="8" r="3.5" /><path d="M5 20a7 7 0 0 1 14 0" /></>,
   profile:   <><circle cx="12" cy="12" r="3" /><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4" /></>,
   help:      <><circle cx="12" cy="12" r="9" /><path d="M9.5 9.5a2.5 2.5 0 1 1 3 2.4V14" /><path d="M12 17.5v.01" /></>,
-  more:      <><circle cx="12" cy="5" r="1.4" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" /><circle cx="12" cy="19" r="1.4" fill="currentColor" stroke="none" /></>,
+  // Sidebar toggle — a panel glyph with a chevron pointing the direction the
+  // click will move things, so "open" and "close" are visually distinct
+  // rather than the same icon rotated.
+  sidebarClose: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /><path d="M14.5 9l-2.5 3 2.5 3" /></>,
+  sidebarOpen:  <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /><path d="M12 9l2.5 3-2.5 3" /></>,
 };
 const Icon = ({ id }) => (
   <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -81,11 +85,16 @@ if (!document.getElementById("admin-layout-styles")) {
       height: 100vh; overflow-y: auto; }
     .side::after { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 200px;
       pointer-events: none; background: var(--glow-side); }
-    .side-toggle-fab { position: fixed; top: 16px; z-index: 60; width: 34px; height: 34px;
-      display: flex; align-items: center; justify-content: center; border-radius: 50%;
-      border: 1px solid var(--edge); background: var(--card); color: var(--text-2); cursor: pointer;
-      box-shadow: 0 4px 14px -4px rgba(0,0,0,.25); transition: var(--theme-transition), left .18s ease; }
-    .side-toggle-fab:hover { background: var(--raise); color: var(--text-1); }
+    /* Reserves its own flex column when the sidebar is hidden — the toggle
+       button lives here, never floating on top of the main content, so a
+       page's own title/header text is never covered by it. */
+    .side-mini { width: 52px; flex: none; display: flex; flex-direction: column; align-items: center;
+      padding-top: 19px; background: var(--grad-rail); border-right: 1px solid var(--edge);
+      position: sticky; top: 0; height: 100vh; }
+    .side-toggle-btn { width: 34px; height: 34px; flex: none; display: flex; align-items: center;
+      justify-content: center; border-radius: var(--r-ctl); border: 1px solid var(--edge);
+      background: transparent; color: var(--text-2); cursor: pointer; transition: var(--theme-transition); }
+    .side-toggle-btn:hover { background: var(--raise); color: var(--text-1); }
     .side-brand { padding: 19px 18px 14px; display: flex; align-items: center; gap: 11px; position: relative; z-index: 1; }
     .side-mk { width: 38px; height: 38px; border-radius: 11px; flex: none; display: grid; place-items: center;
       font-weight: 800; font-size: 15px; color: #fff; background: var(--grad-btn); overflow: hidden;
@@ -94,7 +103,8 @@ if (!document.getElementById("admin-layout-styles")) {
     .side-nm { font-size: 15.5px; font-weight: 700; letter-spacing: -.02em; color: var(--text-1);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .side-sb { font-size: 11px; color: var(--text-3); margin-top: -2px; }
-    .side-toolbar { padding: 0 18px 15px; display: flex; align-items: center; gap: 8px; position: relative; z-index: 1; }
+    .side-toolbar { padding: 0 18px 15px; display: flex; align-items: center; gap: 8px; position: relative; z-index: 1;
+      justify-content: space-between; }
     .side-sp { flex: 1; }
     .side-who { margin: 10px 9px 0; padding: 11px; border-radius: var(--r-ctl); display: flex; align-items: center;
       gap: 10px; background: linear-gradient(140deg, rgba(255,255,255,.055), rgba(255,255,255,.01));
@@ -172,11 +182,13 @@ export default function AdminLayout() {
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: BG_MAIN }}>
-      <button type="button" className="side-toggle-fab" onClick={() => setSidebarOpen((o) => !o)}
-        title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-        style={{ left: sidebarOpen ? 210 : 16 }}>
-        <Icon id="more" />
-      </button>
+      {!sidebarOpen && (
+        <div className="side-mini">
+          <button type="button" className="side-toggle-btn" onClick={() => setSidebarOpen(true)} title="Show sidebar">
+            <Icon id="sidebarOpen" />
+          </button>
+        </div>
+      )}
 
       {sidebarOpen && (
         <aside className="side">
@@ -194,7 +206,10 @@ export default function AdminLayout() {
           </div>
 
           <div className="side-toolbar">
-            <ThemeToggle compact />
+            <div style={{ flex: 1, minWidth: 0 }}><ThemeToggle compact /></div>
+            <button type="button" className="side-toggle-btn" onClick={() => setSidebarOpen(false)} title="Hide sidebar">
+              <Icon id="sidebarClose" />
+            </button>
           </div>
 
           <div className="zc-navgrp">Operations</div>
