@@ -70,20 +70,6 @@ if (typeof document !== "undefined" && !document.getElementById("menu-styles")) 
     .menu-switch.on { background: var(--ready); box-shadow: 0 0 14px -2px var(--ready); }
     .menu-switch i { position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; transition: left .15s ease; }
     .menu-switch.on i { left: 17px; }
-    .menu-drop {
-      width: 100%; border-radius: var(--r-ctl); border: 1px solid var(--edge);
-      background: var(--card-2); overflow: hidden;
-    }
-    .menu-dropitem {
-      display: flex; align-items: center; justify-content: space-between; gap: 8px;
-      padding: 9px 12px; cursor: pointer; font-size: 12.5px; color: var(--text-2);
-      border-bottom: 1px solid var(--edge); transition: background .12s ease;
-    }
-    .menu-dropitem:last-child { border-bottom: 0; }
-    .menu-dropitem:hover { background: var(--raise); }
-    .menu-dropitem.on { background: var(--violet-weak); color: var(--accent-ink); font-weight: 600; }
-    .menu-dropitem button { background: none; border: 0; cursor: pointer; color: var(--text-3); font-size: 13px; padding: 0 4px; line-height: 1; }
-    .menu-dropitem button:hover { color: var(--stop-ink); }
   `;
   document.head.appendChild(s);
 }
@@ -166,6 +152,7 @@ function ImageUploadBox({ currentUrl, file, onFileChange }) {
 // ── category picker: choose / create / delete (feature preserved) ───────────
 function CategoryPicker({ value, categories, onChange, onOpenCreate, onDeleteCategory }) {
   const [confirm, setConfirm] = useState(null);
+  const selected = categories.find((c) => c.name === value) || null;
 
   const doDelete = async () => {
     try {
@@ -184,19 +171,21 @@ function CategoryPicker({ value, categories, onChange, onOpenCreate, onDeleteCat
         <label style={{ fontSize: 11.5, color: "var(--text-2)", fontWeight: 500 }}>Category *</label>
         <button type="button" onClick={onOpenCreate} className="zc-btn ghost sm" style={{ padding: "3px 10px" }}>＋ New</button>
       </div>
-      <div className="menu-drop">
-        {categories.length === 0 ? (
-          <div style={{ padding: "10px 12px", fontSize: 12.5, color: "var(--text-3)" }}>No categories — create one first</div>
-        ) : (
-          categories.map((c) => (
-            <div key={c._id} className={`menu-dropitem${value === c.name ? " on" : ""}`} onClick={() => onChange(c.name)}>
-              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {value === c.name && <span style={{ fontSize: 9 }}>●</span>}{c.name}
-              </span>
-              <button type="button" title={`Delete "${c.name}"`}
-                onClick={(e) => { e.stopPropagation(); setConfirm(c); }}>✕</button>
-            </div>
-          ))
+      <div style={{ display: "flex", gap: 8 }}>
+        <select className="zc-select" style={{ flex: 1 }} value={value || ""} disabled={categories.length === 0}
+          onChange={(e) => onChange(e.target.value)}>
+          {categories.length === 0 ? (
+            <option value="">No categories — create one first</option>
+          ) : (
+            <>
+              {!value && <option value="" disabled>Select a category…</option>}
+              {categories.map((c) => <option key={c._id} value={c.name}>{c.name}</option>)}
+            </>
+          )}
+        </select>
+        {selected && (
+          <button type="button" className="zc-btn ghost sm" title={`Delete "${selected.name}"`}
+            onClick={() => setConfirm(selected)}>✕</button>
         )}
       </div>
 
