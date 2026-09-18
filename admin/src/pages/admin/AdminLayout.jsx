@@ -39,6 +39,7 @@ const ICONS = {
   users:     <><circle cx="12" cy="8" r="3.5" /><path d="M5 20a7 7 0 0 1 14 0" /></>,
   profile:   <><circle cx="12" cy="12" r="3" /><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4" /></>,
   help:      <><circle cx="12" cy="12" r="9" /><path d="M9.5 9.5a2.5 2.5 0 1 1 3 2.4V14" /><path d="M12 17.5v.01" /></>,
+  more:      <><circle cx="12" cy="5" r="1.4" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" /><circle cx="12" cy="19" r="1.4" fill="currentColor" stroke="none" /></>,
 };
 const Icon = ({ id }) => (
   <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -50,7 +51,7 @@ const Icon = ({ id }) => (
 // invoices, inventory), Management (staff/customers/menu config), Finance
 // (Insights), then Settings pinned to the bottom.
 const OPERATIONS_NAV_A = [
-  { id: "orders", label: "My Billing", icon: "billing", badgeKey: "active" },
+  { id: "orders", label: "Orders", icon: "billing", badgeKey: "active" },
   { id: "tables", label: "Table Map", icon: "tables", badgeKey: "tables" },
 ];
 const OPERATIONS_NAV_B = [
@@ -80,6 +81,11 @@ if (!document.getElementById("admin-layout-styles")) {
       height: 100vh; overflow-y: auto; }
     .side::after { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 200px;
       pointer-events: none; background: var(--glow-side); }
+    .side-toggle-fab { position: fixed; top: 16px; z-index: 60; width: 34px; height: 34px;
+      display: flex; align-items: center; justify-content: center; border-radius: 50%;
+      border: 1px solid var(--edge); background: var(--card); color: var(--text-2); cursor: pointer;
+      box-shadow: 0 4px 14px -4px rgba(0,0,0,.25); transition: var(--theme-transition), left .18s ease; }
+    .side-toggle-fab:hover { background: var(--raise); color: var(--text-1); }
     .side-brand { padding: 19px 18px 14px; display: flex; align-items: center; gap: 11px; position: relative; z-index: 1; }
     .side-mk { width: 38px; height: 38px; border-radius: 11px; flex: none; display: grid; place-items: center;
       font-weight: 800; font-size: 15px; color: #fff; background: var(--grad-btn); overflow: hidden;
@@ -130,6 +136,9 @@ export default function AdminLayout() {
   const [dashboardData, setDashboardData] = useState(null);
   const [loading, setLoading]         = useState(true);
   const [restaurant, setRestaurant]   = useState(null);
+  // Full sidebar show/hide, persisted across sessions.
+  const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem("adminSidebarOpen") !== "0");
+  useEffect(() => { localStorage.setItem("adminSidebarOpen", sidebarOpen ? "1" : "0"); }, [sidebarOpen]);
 
   useEffect(() => {
     if (!user) { navigate("/login"); return; }
@@ -163,68 +172,76 @@ export default function AdminLayout() {
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: BG_MAIN }}>
-      <aside className="side">
-        <div className="side-brand">
-          <div className="side-mk">
-            {rLogo
-              ? <img src={rLogo} alt={rName} onError={(e) => { e.currentTarget.style.display = "none"; }} />
-              : rName.charAt(0).toUpperCase()}
-          </div>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="side-nm">{rName}</div>
-            <div className="side-sb">Admin panel</div>
-          </div>
-          <NotificationBell inline user={user} onNavigate={() => setPage("orders")} />
-        </div>
+      <button type="button" className="side-toggle-fab" onClick={() => setSidebarOpen((o) => !o)}
+        title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+        style={{ left: sidebarOpen ? 210 : 16 }}>
+        <Icon id="more" />
+      </button>
 
-        <div className="side-toolbar">
-          <ThemeToggle compact />
-        </div>
-
-        <div className="zc-navgrp">Operations</div>
-        {OPERATIONS_NAV_A.map((n) => (
-          <NavItem key={n.id} {...n} active={page === n.id} count={badgeFor(n.badgeKey)} onClick={() => setPage(n.id)} />
-        ))}
-        <a href="/kitchen" target="_blank" rel="noopener noreferrer" className="zc-nav" style={{ textDecoration: "none" }}>
-          <Icon id="chef" />Kitchen Display
-        </a>
-        {OPERATIONS_NAV_B.map((n) => (
-          <NavItem key={n.id} {...n} active={page === n.id} onClick={() => setPage(n.id)} />
-        ))}
-
-        <div className="zc-navgrp">Management</div>
-        {MANAGEMENT_NAV.map((n) => (
-          <NavItem key={n.id} {...n} active={page === n.id} onClick={() => setPage(n.id)} />
-        ))}
-
-        <div className="zc-navgrp">Finance</div>
-        {FINANCE_NAV.map((n) => (
-          <NavItem key={n.id} {...n} active={page === n.id} onClick={() => setPage(n.id)} />
-        ))}
-
-        <div className="side-sp" />
-        <div className="zc-navgrp">Settings</div>
-        {SETTINGS_NAV.map((n) => (
-          <NavItem key={n.id} {...n} active={page === n.id} onClick={() => setPage(n.id)} />
-        ))}
-
-        {user && (
-          <div className="side-who">
-            <div className="av">{(user.name || user.email || "A").charAt(0).toUpperCase()}</div>
-            <div style={{ minWidth: 0 }}>
-              <div className="n">{user.name || "Admin"}</div>
-              <div className="r">{user.email || user.phone || ""}</div>
+      {sidebarOpen && (
+        <aside className="side">
+          <div className="side-brand">
+            <div className="side-mk">
+              {rLogo
+                ? <img src={rLogo} alt={rName} onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                : rName.charAt(0).toUpperCase()}
             </div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div className="side-nm">{rName}</div>
+              <div className="side-sb">Admin panel</div>
+            </div>
+            <NotificationBell inline user={user} onNavigate={() => setPage("orders")} />
           </div>
-        )}
 
-        <div className="side-foot">
-          <button type="button" className="side-foot-btn danger" onClick={handleLogout}>
-            <span style={{ fontSize: 14 }}>⎋</span> Sign out
-          </button>
-          <div className="side-version">{BRAND_NAME} · {BRAND_VERSION}</div>
-        </div>
-      </aside>
+          <div className="side-toolbar">
+            <ThemeToggle compact />
+          </div>
+
+          <div className="zc-navgrp">Operations</div>
+          {OPERATIONS_NAV_A.map((n) => (
+            <NavItem key={n.id} {...n} active={page === n.id} count={badgeFor(n.badgeKey)} onClick={() => setPage(n.id)} />
+          ))}
+          <a href="/kitchen" target="_blank" rel="noopener noreferrer" className="zc-nav" style={{ textDecoration: "none" }}>
+            <Icon id="chef" />Kitchen Display
+          </a>
+          {OPERATIONS_NAV_B.map((n) => (
+            <NavItem key={n.id} {...n} active={page === n.id} onClick={() => setPage(n.id)} />
+          ))}
+
+          <div className="zc-navgrp">Management</div>
+          {MANAGEMENT_NAV.map((n) => (
+            <NavItem key={n.id} {...n} active={page === n.id} onClick={() => setPage(n.id)} />
+          ))}
+
+          <div className="zc-navgrp">Finance</div>
+          {FINANCE_NAV.map((n) => (
+            <NavItem key={n.id} {...n} active={page === n.id} onClick={() => setPage(n.id)} />
+          ))}
+
+          <div className="side-sp" />
+          <div className="zc-navgrp">Settings</div>
+          {SETTINGS_NAV.map((n) => (
+            <NavItem key={n.id} {...n} active={page === n.id} onClick={() => setPage(n.id)} />
+          ))}
+
+          {user && (
+            <div className="side-who">
+              <div className="av">{(user.name || user.email || "A").charAt(0).toUpperCase()}</div>
+              <div style={{ minWidth: 0 }}>
+                <div className="n">{user.name || "Admin"}</div>
+                <div className="r">{user.email || user.phone || ""}</div>
+              </div>
+            </div>
+          )}
+
+          <div className="side-foot">
+            <button type="button" className="side-foot-btn danger" onClick={handleLogout}>
+              <span style={{ fontSize: 14 }}>⎋</span> Sign out
+            </button>
+            <div className="side-version">{BRAND_NAME} · {BRAND_VERSION}</div>
+          </div>
+        </aside>
+      )}
 
       {/* ── Main content ── */}
       <main style={{

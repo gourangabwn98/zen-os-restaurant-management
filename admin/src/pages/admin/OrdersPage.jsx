@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 import {
   getAllOrders, getRestaurantProfile, updateOrderStatus,
   getAllTables, printOrderBill, confirmOrder, rejectOrder,
+  getOpenTableSessions,
 } from "../../services/adminService.js";
 import { placeOrder, newIdempotencyKey } from "../../services/orderService.js";
 import { getSocket } from "../../services/socketService.js";
@@ -82,6 +83,19 @@ const getCategoryRank = (cat) => {
 const avc = (n) => AVATAR_GRADS[(n?.charCodeAt(0)||0) % AVATAR_GRADS.length];
 const ini = (n) => !n||n==="Guest" ? "G" : n.split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
 const fmt = (n) => Math.round(n||0).toLocaleString("en-IN");
+
+// ── Table occupancy timer ("how long has this table been captured") ────────
+// Driven by the table's open TableSession (openedAt), not order status — a
+// table stays "captured" across multiple rounds/orders until it's cleared.
+const formatDuration = (ms) => {
+  const mins = Math.max(0, Math.floor(ms / 60000));
+  if (mins < 60) return `${mins}m`;
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+};
+// Reuses the same wait/stop semantic-kind palette as order status elsewhere
+// on this page: under 45m is normal, 45–90m worth watching, 90m+ flags a
+// table likely overdue for a check-in or clearing.
+const durationKind = (mins) => (mins >= 90 ? "stop" : mins >= 45 ? "wait" : "done");
 
 // ── Display formatters (keep raw values for logic, format only for text) ───
 const formatStatus = (s="") =>
@@ -1317,7 +1331,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
 // MULTI-ORDER TABLE VIEW
 // ══════════════════════════════════════════════════════════════════════════════
 
-const MultiOrderTableView = ({ orders, tableNo, onStatusChange, onPaymentChange, onCombinedBill, onAddItems, onNewOrder }) => {
+const MultiOrderTableView = ({ orders, tableNo, session, nowTick, onStatusChange, onPaymentChange, onCombinedBill, onAddItems, onNewOrder }) => {
   const [expandedOrder, setExpandedOrder] = useState(null);
 
   if (orders.length === 0) {
@@ -1346,13 +1360,24 @@ const MultiOrderTableView = ({ orders, tableNo, onStatusChange, onPaymentChange,
   return (
     <div style={{ marginTop:14 }}>
 
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10, flexWrap:"wrap", gap:6 }}>
         <span style={{ fontSize:11, fontWeight:600, color:T2, letterSpacing:1, textTransform:"uppercase" }}>
           Table {tableNo} · {orders.length} order{orders.length!==1?"s":""}
         </span>
-        <span style={{ fontSize:10, color:T3 }}>
-          {paidOrders.length} paid · {unpaidOrders.length} pending
-        </span>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          {session && (
+            <span className="zc-tag" style={{
+              background:KIND_FILL[durationKind(Math.floor((nowTick - new Date(session.openedAt).getTime())/60000))],
+              color:KIND_INK[durationKind(Math.floor((nowTick - new Date(session.openedAt).getTime())/60000))],
+              border:`1px solid ${KIND_LINE[durationKind(Math.floor((nowTick - new Date(session.openedAt).getTime())/60000))]}`,
+            }}>
+              ⏱ {formatDuration(nowTick - new Date(session.openedAt).getTime())} captured
+            </span>
+          )}
+          <span style={{ fontSize:10, color:T3 }}>
+            {paidOrders.length} paid · {unpaidOrders.length} pending
+          </span>
+        </div>
       </div>
 
       {unpaidOrders.length > 0 && (
@@ -1745,6 +1770,9 @@ export default function OrdersPage() {
   const [tableSelected,setTableSelected]=useState(null);
   const [showCombinedBill, setShowCombinedBill] = useState(null);
   const [showTables, setShowTables] = useState(true);
+  const [tableSessions, setTableSessions] = useState([]);
+  // Ticks every 30s purely to re-render live "captured" timers — no refetch.
+  const [nowTick, setNowTick] = useState(() => Date.now());
   const [error, setError] = useState(false);
   const [online, setOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
   const [actionBusy, setActionBusy] = useState(false);
@@ -1768,6 +1796,19 @@ export default function OrdersPage() {
   const fetchTables=useCallback(()=>{ getAllTables().then(r=>{setTables(r.data?.tables||[]);setTablesLoading(false);}).catch(()=>setTablesLoading(false)); },[]);
   useEffect(()=>{ fetchTables(); },[fetchTables]);
 
+  // Open table sessions drive the "captured since" timer — polled (a table
+  // clearing is also pushed via socket below) since sessions open/close far
+  // more often than the table list itself.
+  const fetchTableSessions = useCallback(() => {
+    getOpenTableSessions().then(r => setTableSessions(r.data?.sessions||[])).catch(()=>{});
+  }, []);
+  useEffect(() => {
+    fetchTableSessions();
+    const iv = setInterval(fetchTableSessions, 30000);
+    return () => clearInterval(iv);
+  }, [fetchTableSessions]);
+  useEffect(() => { const iv = setInterval(()=>setNowTick(Date.now()), 30000); return () => clearInterval(iv); }, []);
+
   const fetchOrders=useCallback(()=>{
     getAllOrders({ limit:10000 })
       .then(r=>{ setOrders(r.data?.orders||[]); setError(false); setLoading(false); })
@@ -1783,17 +1824,23 @@ export default function OrdersPage() {
     const socket = getSocket();
     if (!socket) return;
 
-    const onNew        = (p)=>{ if (p?.order) upsertOrder(p.order); };
-    const onConfirmed  = (p)=>{ if (p?.order) upsertOrder(p.order); };
+    // A new/confirmed dine-in order can open a fresh session on a
+    // previously-free table — refresh sessions so its timer starts right away.
+    const onNew        = (p)=>{ if (p?.order) { upsertOrder(p.order); fetchTableSessions(); } };
+    const onConfirmed  = (p)=>{ if (p?.order) { upsertOrder(p.order); fetchTableSessions(); } };
     const onStatus     = (p)=>{ if (p?.order) upsertOrder(p.order); };
     const onCancelled  = (p)=>{ if (p?.order) upsertOrder(p.order); };
     const onPayment    = (p)=>{ if (p?.order) upsertOrder(p.order); };
+    // A table clearing (or a fresh session opening on a new order) changes
+    // the "captured since" timer immediately — don't wait for the 30s poll.
+    const onTableCleared = () => fetchTableSessions();
 
     socket.on("order:new",             onNew);
     socket.on("order:confirmed",       onConfirmed);
     socket.on("order:status_changed",  onStatus);
     socket.on("order:cancelled",       onCancelled);
     socket.on("order:payment_changed", onPayment);
+    socket.on("table:cleared",         onTableCleared);
 
     return ()=>{
       socket.off("order:new",             onNew);
@@ -1801,8 +1848,9 @@ export default function OrdersPage() {
       socket.off("order:status_changed",  onStatus);
       socket.off("order:cancelled",       onCancelled);
       socket.off("order:payment_changed", onPayment);
+      socket.off("table:cleared",         onTableCleared);
     };
-  },[upsertOrder]);
+  },[upsertOrder, fetchTableSessions]);
 
   // ── Clicking a notification (in NotificationBell) opens that order here ────
   const [pendingFocus, setPendingFocus] = useState(null); // { _id?, orderId? }
@@ -1935,6 +1983,10 @@ export default function OrdersPage() {
     });
 
   const selectedTableOrders = tableSelected ? tableOrderMap[tableSelected] || [] : [];
+
+  const sessionMap = {};
+  tableSessions.forEach(s => { sessionMap[Number(s.tableNo)] = s; });
+  const selectedTableSession = tableSelected ? sessionMap[tableSelected] || null : null;
 
   const paginated=displayedOrders.slice((page-1)*PER_PAGE,page*PER_PAGE);
   const totalPages=Math.ceil(displayedOrders.length/PER_PAGE);
@@ -2115,7 +2167,7 @@ export default function OrdersPage() {
       <div style={{ display: "flex", alignItems: "flex-start", gap: 13, marginBottom: 18, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 180 }}>
           <h1 style={{ fontSize: 21, fontWeight: 700, letterSpacing: "-.025em", color: "var(--text-1)", margin: 0 }}>
-            Billing
+            My Billing
           </h1>
           <div style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 3 }}>
             {now.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}
@@ -2238,6 +2290,9 @@ export default function OrdersPage() {
                     const isSel = tableSelected === t.tableNo;
                     const tTotal = tOrders.reduce((s, o) => s + Number(o.total || 0), 0);
                     const hasDue = tOrders.some((o) => o.paymentStatus === "PENDING_VERIFICATION");
+                    const session = sessionMap[t.tableNo] || null;
+                    const capturedMs = session ? nowTick - new Date(session.openedAt).getTime() : null;
+                    const capturedKind = capturedMs != null ? durationKind(Math.floor(capturedMs / 60000)) : null;
                     let kind = null;
                     if (occupied) {
                       const counts = {};
@@ -2258,6 +2313,11 @@ export default function OrdersPage() {
                         )}
                         <div className="no">T{t.tableNo}</div>
                         <div className="st">{occupied ? `${tOrders.length} order${tOrders.length !== 1 ? "s" : ""}` : `${t.seats || 4} seats`}</div>
+                        {session && (
+                          <div style={{ fontSize: 9.5, fontWeight: 700, color: KIND_INK[capturedKind], marginTop: 1 }}>
+                            ⏱ {formatDuration(capturedMs)}
+                          </div>
+                        )}
                         <div className="ft">
                           {occupied
                             ? <><span className="amt tnum">₹{Math.round(tTotal)}</span><span style={{ fontSize: 10, color: hasDue ? "var(--stop-ink)" : "var(--text-3)" }}>{hasDue ? "Due" : "Open"}</span></>
@@ -2276,6 +2336,8 @@ export default function OrdersPage() {
               <MultiOrderTableView
                 orders={selectedTableOrders}
                 tableNo={tableSelected}
+                session={selectedTableSession}
+                nowTick={nowTick}
                 onStatusChange={(id, s) => { handleStatusChange(id, s); }}
                 onPaymentChange={handlePaymentChange}
                 onCombinedBill={(mode, value) => setShowCombinedBill({ mode, value })}
