@@ -5,7 +5,9 @@ import {
   getAllOrders, updateOrderStatus, getAllInvoices, updateInvoiceStatus,
   getAllTables, createTable, updateTable, deleteTable, regenerateQR,
   getOpenTableSessions, clearTableSession,
+  getWaitlist, addWaitlistEntry, seatWaitlistEntry, cancelWaitlistEntry,
 } from "../../services/adminService.js";
+import { getSocket } from "../../services/socketService.js";
 
 // ── Dark tokens ───────────────────────────────────────────────────────────────
 const PINK       = PRIMARY;
@@ -528,6 +530,179 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
   );
 };
 
+// ── Waitlist / walk-in queue ────────────────────────────────────────────────
+const WAIT_STYLE = {
+  WAITING:  { bg:"rgba(245,158,11,0.15)", border:"#f59e0b", tc:"#fbbf24", label:"Waiting"  },
+  NOTIFIED: { bg:"rgba(59,130,246,0.15)", border:"#378ADD", tc:"#93c5fd", label:"Notified" },
+};
+
+const timeAgo = (date) => {
+  const mins = Math.max(0, Math.round((Date.now() - new Date(date).getTime()) / 60000));
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m wait`;
+  return `${Math.floor(mins / 60)}h ${mins % 60}m wait`;
+};
+
+const WaitlistRow = ({ entry, freeTables, onSeat, onCancel, busy }) => {
+  const [picking, setPicking] = useState(false);
+  const s = WAIT_STYLE[entry.status] || WAIT_STYLE.WAITING;
+  const eligible = freeTables.filter(t => t.seats >= entry.partySize);
+
+  return (
+    <div style={{ background:CARD2, border:`1px solid ${BORDER}`, borderRadius:12, padding:"12px 14px", marginBottom:8 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+        <div style={{ minWidth:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+            <span style={{ fontWeight:700, fontSize:13.5, color:T1 }}>{entry.guestName}</span>
+            <span className="tag" style={{ background:PINK_LIGHT, color:"#c4b5fd", border:`1px solid ${PINK}44` }}>
+              👥 {entry.partySize}
+            </span>
+            <span className="tag" style={{ background:s.bg, color:s.tc, border:`1.5px solid ${s.border}` }}>{s.label}</span>
+          </div>
+          <div style={{ fontSize:11.5, color:T3, marginTop:4 }}>
+            {entry.guestPhone && <span>{entry.guestPhone} · </span>}
+            <span>{timeAgo(entry.createdAt)}</span>
+            {entry.notes && <span> · {entry.notes}</span>}
+          </div>
+        </div>
+        <div style={{ display:"flex", gap:6, flexShrink:0 }}>
+          <button onClick={() => setPicking(p => !p)} disabled={busy || eligible.length === 0}
+            className="btn-ghost-dark" style={{ color: eligible.length ? GREEN : T3,
+              borderColor: eligible.length ? "rgba(16,185,129,0.3)" : BORDER,
+              opacity: busy || eligible.length === 0 ? 0.5 : 1 }}>
+            {busy ? <span className="spinner" /> : "Seat"}
+          </button>
+          <button onClick={() => onCancel(entry._id)} disabled={busy} className="btn-ghost-dark"
+            style={{ color:"#f87171", borderColor:"rgba(239,68,68,0.3)" }}>✕</button>
+        </div>
+      </div>
+
+      {picking && (
+        <div style={{ marginTop:10, paddingTop:10, borderTop:`1px dashed ${BORDER}`, display:"flex", gap:6, flexWrap:"wrap" }}>
+          {eligible.length === 0 ? (
+            <span style={{ fontSize:12, color:T3 }}>No free table fits a party of {entry.partySize} yet.</span>
+          ) : eligible.map(t => (
+            <button key={t.tableNo} onClick={() => { onSeat(entry._id, t.tableNo); setPicking(false); }}
+              className="btn-ghost-dark" style={{ color:GREEN, borderColor:"rgba(16,185,129,0.3)" }}>
+              T{t.tableNo} · {t.seats} seats
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+function WaitlistPanel({ entries, freeTables, suggestion, onDismissSuggestion, onAdd, onSeat, onCancel }) {
+  const [showModal, setShowModal] = useState(false);
+  const [name, setName]   = useState("");
+  const [phone, setPhone] = useState("");
+  const [size, setSize]   = useState("2");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [busyId, setBusyId] = useState(null);
+
+  const reset = () => { setName(""); setPhone(""); setSize("2"); setNotes(""); };
+
+  const handleAdd = async () => {
+    if (!name.trim()) return toast.error("Guest name required");
+    setSaving(true);
+    try {
+      await onAdd({ guestName:name.trim(), guestPhone:phone.trim(), partySize:parseInt(size,10), notes });
+      setShowModal(false); reset();
+    } finally { setSaving(false); }
+  };
+
+  const handleSeat = async (id, tableNo) => { setBusyId(id); try { await onSeat(id, tableNo); } finally { setBusyId(null); } };
+  const handleCancel = async (id) => {
+    if (!window.confirm("Remove this party from the queue?")) return;
+    setBusyId(id); try { await onCancel(id); } finally { setBusyId(null); }
+  };
+
+  return (
+    <div style={{ background:CARD, borderRadius:16, padding:20, marginBottom:20, border:`1px solid ${BORDER}` }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <div style={{ fontWeight:700, fontSize:15, color:T1 }}>🧍 Walk-in Queue</div>
+          {entries.length > 0 && (
+            <span className="tag" style={{ background:"rgba(245,158,11,0.15)", color:"#fbbf24", border:"1px solid rgba(245,158,11,0.3)" }}>
+              {entries.length} waiting
+            </span>
+          )}
+        </div>
+        <button onClick={() => setShowModal(true)} className="btn-ghost-dark"
+          style={{ color:"#c4b5fd", borderColor:`${PINK}44`, background:PINK_LIGHT, padding:"7px 14px" }}>
+          + Add to Queue
+        </button>
+      </div>
+
+      {suggestion && (
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, flexWrap:"wrap",
+          padding:"10px 14px", background:GREEN_LIGHT, border:"1px solid rgba(16,185,129,0.3)", borderRadius:10, marginBottom:14 }}>
+          <span style={{ fontSize:12.5, color:"#34d399" }}>
+            🟢 Table {suggestion.tableNo} just freed up ({suggestion.seats} seats) — seat{" "}
+            <strong>{suggestion.suggestedEntry.guestName}</strong> (party of {suggestion.suggestedEntry.partySize})?
+          </span>
+          <div style={{ display:"flex", gap:8 }}>
+            <button onClick={() => { handleSeat(suggestion.suggestedEntry._id, suggestion.tableNo); onDismissSuggestion(); }}
+              style={{ padding:"6px 14px", borderRadius:8, border:"none", background:"#16a34a", color:"#fff",
+                fontWeight:700, fontSize:11.5, cursor:"pointer" }}>
+              Seat now
+            </button>
+            <button onClick={onDismissSuggestion} className="btn-ghost-dark">Dismiss</button>
+          </div>
+        </div>
+      )}
+
+      {entries.length === 0 ? (
+        <div style={{ textAlign:"center", padding:"20px 0", color:T3, fontSize:13 }}>No one's waiting right now.</div>
+      ) : entries.map(e => (
+        <WaitlistRow key={e._id} entry={e} freeTables={freeTables}
+          onSeat={handleSeat} onCancel={handleCancel} busy={busyId === e._id} />
+      ))}
+
+      {showModal && (
+        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+          <div className="modal-box" style={{ width:380 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize:18, fontWeight:700, color:T1, marginBottom:18 }}>Add Walk-in to Queue</div>
+
+            <label style={{ fontSize:12, color:T2, fontWeight:600, display:"block", marginBottom:6 }}>Guest Name</label>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Rohan"
+              className="input-dark" style={{ marginBottom:14 }} />
+
+            <label style={{ fontSize:12, color:T2, fontWeight:600, display:"block", marginBottom:6 }}>Phone (optional)</label>
+            <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="e.g. 98765xxxxx"
+              className="input-dark" style={{ marginBottom:14 }} />
+
+            <label style={{ fontSize:12, color:T2, fontWeight:600, display:"block", marginBottom:6 }}>Party Size</label>
+            <input type="number" min="1" value={size} onChange={e => setSize(e.target.value)}
+              className="input-dark" style={{ marginBottom:14 }} />
+
+            <label style={{ fontSize:12, color:T2, fontWeight:600, display:"block", marginBottom:6 }}>Notes (optional)</label>
+            <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g. wants a window table"
+              className="input-dark" style={{ marginBottom:20 }} />
+
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={() => setShowModal(false)} className="btn-ghost-dark"
+                style={{ flex:1, padding:12, borderRadius:10, justifyContent:"center", display:"flex" }}>
+                Cancel
+              </button>
+              <button onClick={handleAdd} disabled={saving} style={{
+                flex:1, padding:12, borderRadius:10,
+                background: saving ? "#374151" : `linear-gradient(135deg,${PINK},#5b21b6)`,
+                color:"#fff", border:"none", fontWeight:700, cursor:"pointer", fontSize:14,
+                opacity:saving?.6:1, display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+              }}>
+                {saving ? <><span className="spinner" />Adding…</> : "Add to Queue"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── StatCard ──────────────────────────────────────────────────────────────────
 const StatCard = ({ label, val, color }) => (
   <div style={{ background:CARD, borderRadius:12, padding:"14px 18px",
@@ -551,20 +726,24 @@ export default function TablesPage() {
   const [newSeats,   setNewSeats]   = useState("4");
   const [creating,   setCreating]   = useState(false);
   const [qrTable,    setQrTable]    = useState(null);
+  const [waitlist,   setWaitlist]   = useState([]);
+  const [freedSuggestion, setFreedSuggestion] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
       setError(null);
-      const [ordersRes, invoicesRes, tablesRes, sessionsRes] = await Promise.all([
+      const [ordersRes, invoicesRes, tablesRes, sessionsRes, waitlistRes] = await Promise.all([
         getAllOrders({ limit:100 }),
         getAllInvoices().catch(()=>({ data:{ invoices:[] } })),
         getAllTables().catch(()=>({ data:{ tables:[] } })),
         getOpenTableSessions().catch(()=>({ data:{ sessions:[] } })),
+        getWaitlist().catch(()=>({ data:{ entries:[] } })),
       ]);
       const orders   = ordersRes?.data?.orders||[];
       const invoices = invoicesRes?.data?.invoices||[];
       const dbTables = tablesRes?.data?.tables||[];
       const sessions = sessionsRes?.data?.sessions||[];
+      setWaitlist(waitlistRes?.data?.entries||[]);
 
       // NOTE: orderType/status moved to DINE_IN / the new canonical status
       // enum in Phase 1 — this must match those, not the old "Dining" /
@@ -595,6 +774,21 @@ export default function TablesPage() {
 
   useEffect(() => { fetchData(); const iv=setInterval(fetchData,30000); return()=>clearInterval(iv); }, [fetchData]);
 
+  // ── Realtime: a table clearing elsewhere (or here) can surface a queue
+  // match instantly instead of waiting for the next 30s poll.
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+    const onWaitlist = () => fetchData();
+    const onFreed = (p) => { if (p?.suggestedEntry) setFreedSuggestion(p); fetchData(); };
+    socket.on("waitlist:updated", onWaitlist);
+    socket.on("table:freed", onFreed);
+    return () => {
+      socket.off("waitlist:updated", onWaitlist);
+      socket.off("table:freed", onFreed);
+    };
+  }, [fetchData]);
+
   const handleStatusChange  = async (id, ns) => { try { await updateOrderStatus(id,ns); toast.success(`→ ${ns}`); await fetchData(); setSelected(null); } catch { toast.error("Update failed"); } };
   const handleInvChange     = async (id, ns) => { try { await updateInvoiceStatus(id,ns); toast.success(`Invoice → ${ns}`); await fetchData(); } catch { toast.error("Invoice update failed"); } };
   const handleToggleStatus  = async (tableNo) => { const t=tables.find(t=>t.tableNo===tableNo); if(!t)return; const ns=t.status==="Active"?"Inactive":"Active"; try { await updateTable(tableNo,{status:ns}); toast.success(`Table ${tableNo} → ${ns}`); fetchData(); } catch { toast.error("Failed to update"); } };
@@ -604,13 +798,33 @@ export default function TablesPage() {
     if (!session?._id) return;
     if (!window.confirm(`Clear Table ${session.tableNo}? This closes the table's session.`)) return;
     try {
-      await clearTableSession(session._id);
+      const { data } = await clearTableSession(session._id);
       toast.success(`Table ${session.tableNo} cleared`);
+      if (data?.suggestedEntry) {
+        setFreedSuggestion({ tableNo: session.tableNo, seats: selectedConf?.seats, suggestedEntry: data.suggestedEntry });
+      }
       await fetchData();
       setSelected(null);
     } catch (e) {
       toast.error(e.response?.data?.message || "Cannot clear table — it may still have active orders");
     }
+  };
+
+  const handleAddWaitlist = async (body) => {
+    try { await addWaitlistEntry(body); toast.success(`${body.guestName} added to queue`); await fetchData(); }
+    catch (e) { toast.error(e.response?.data?.message || "Failed to add to queue"); }
+  };
+  const handleSeatWaitlist = async (id, tableNo) => {
+    try {
+      await seatWaitlistEntry(id, tableNo);
+      toast.success(`Seated at Table ${tableNo}`);
+      setFreedSuggestion(null);
+      await fetchData();
+    } catch (e) { toast.error(e.response?.data?.message || "Failed to seat — table may already be taken"); }
+  };
+  const handleCancelWaitlist = async (id) => {
+    try { await cancelWaitlistEntry(id); toast.success("Removed from queue"); await fetchData(); }
+    catch (e) { toast.error(e.response?.data?.message || "Failed to remove"); }
   };
 
   const handleCreate = async () => {
@@ -630,6 +844,8 @@ export default function TablesPage() {
 
   const activeTables  = tables.filter(t=>t.status==="Active"||!t.status);
   const occupied      = activeTables.filter(t=>tableMap[t.tableNo]).length;
+  const freeTables    = activeTables.filter(t=>(t.occupancyStatus||"AVAILABLE")==="AVAILABLE")
+    .map(t=>({ tableNo:t.tableNo, seats:t.seats }));
   const revenue       = Object.values(tableMap).reduce((s,o)=>s+Number(o.total||0),0);
   const pendingCount  = Object.values(invoiceMap).filter(i=>i.invoiceStatus?.toLowerCase()==="pending").length;
   const selectedConf  = selected ? tables.find(t=>t.tableNo===selected) : null;
@@ -709,6 +925,17 @@ export default function TablesPage() {
           </div>
         ))}
       </div>
+
+      {/* Walk-in queue */}
+      <WaitlistPanel
+        entries={waitlist}
+        freeTables={freeTables}
+        suggestion={freedSuggestion}
+        onDismissSuggestion={()=>setFreedSuggestion(null)}
+        onAdd={handleAddWaitlist}
+        onSeat={handleSeatWaitlist}
+        onCancel={handleCancelWaitlist}
+      />
 
       {/* Floor plan */}
       <div style={{ background:BG_FLOOR, borderRadius:18, padding:32,

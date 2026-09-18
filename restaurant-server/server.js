@@ -20,6 +20,7 @@ import invoiceRoutes from "./routes/invoiceRoutes.js";
 import adminRoutes   from "./routes/adminRoutes.js";
 import tableRoutes   from "./routes/tableRoutes.js";
 import tableSessionRoutes from "./routes/tableSessionRoutes.js";
+import waitlistRoutes from "./routes/waitlistRoutes.js";
 import supportRoutes from "./routes/supportRoutes.js";
 import printerRoutes from "./routes/printerRoutes.js";
 import inventoryRoutes from "./routes/inventoryRoutes.js";
@@ -73,6 +74,7 @@ app.use("/api/payments",          paymentRoutes);
 app.use("/api/invoices",          invoiceRoutes);
 app.use("/api/admin/tables",      tableRoutes);
 app.use("/api/admin/table-sessions", tableSessionRoutes);
+app.use("/api/admin/waitlist",    waitlistRoutes);
 app.use("/api/admin/inventory",   inventoryRoutes);
 app.use("/api/admin/chefs",       chefRoutes);
 // New Employee Management system (Admin → Employees) — supersedes the old

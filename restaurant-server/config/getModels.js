@@ -511,6 +511,27 @@ const invoiceSchema = new mongoose.Schema({
   notes:          { type: String, default: "" },
 }, { timestamps: true });
 
+// ── Table waitlist / walk-in queue (Phase 6) ────────────────────────────────
+// A walk-in party who can't be seated immediately because every table that
+// fits them is occupied. Entries stay WAITING (or NOTIFIED, once staff has
+// flagged a suggested table for them) until a staff member explicitly seats
+// or cancels them — seating is never automatic, see waitlistService.js.
+const waitlistEntrySchema = new mongoose.Schema({
+  guestName:   { type: String, required: true, trim: true },
+  guestPhone:  { type: String, default: "" },
+  partySize:   { type: Number, required: true, min: 1 },
+  notes:       { type: String, default: "" },
+  status:      { type: String, enum: ["WAITING","NOTIFIED","SEATED","CANCELLED"], default: "WAITING" },
+  // Set only once seated — which table actually absorbed this party.
+  tableNo:     { type: Number, default: null },
+  notifiedAt:  { type: Date, default: null },
+  seatedAt:    { type: Date, default: null },
+  cancelledAt: { type: Date, default: null },
+  createdBy:   { type: actorSchema, default: () => ({}) },
+}, { timestamps: true });
+
+waitlistEntrySchema.index({ status: 1, createdAt: 1 });
+
 // ── Support tickets (Phase 3 — customer Help form) ─────────────────────────
 const supportTicketSchema = new mongoose.Schema({
   name:    { type: String, default: "" },
@@ -541,6 +562,7 @@ export function getModels(conn) {
     PrinterDevice:     conn.models.PrinterDevice     || conn.model("PrinterDevice",     printerDeviceSchema),
     Invoice:           conn.models.Invoice           || conn.model("Invoice",           invoiceSchema),
     SupportTicket:     conn.models.SupportTicket     || conn.model("SupportTicket",     supportTicketSchema),
+    WaitlistEntry:     conn.models.WaitlistEntry     || conn.model("WaitlistEntry",     waitlistEntrySchema),
 
     // ── Inventory (Phase 2) ────────────────────────────────────────────────
     Supplier:          conn.models.Supplier          || conn.model("Supplier",          supplierSchema),

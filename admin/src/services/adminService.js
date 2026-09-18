@@ -100,3 +100,10 @@ export const getEmployeePerformance = (params) => api.get("/admin/employees/perf
 
 // ── Support tickets (Help & Support → Raise a ticket) ─────────────────────
 export const createSupportTicket = (body) => api.post("/support", body);
+
+// ── Table waitlist / walk-in queue ─────────────────────────────────────────
+export const getWaitlist        = (params) => api.get("/admin/waitlist", { params });
+export const addWaitlistEntry   = (body) => api.post("/admin/waitlist", body);
+export const notifyWaitlistEntry= (id) => api.post(`/admin/waitlist/${id}/notify`);
+export const seatWaitlistEntry  = (id, tableNo) => api.post(`/admin/waitlist/${id}/seat`, { tableNo });
+export const cancelWaitlistEntry= (id) => api.post(`/admin/waitlist/${id}/cancel`);

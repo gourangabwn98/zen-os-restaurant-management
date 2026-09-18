@@ -367,6 +367,18 @@ export const emitTableCleared = (tenantKey, session) => {
   emit(rooms.staff(tenantKey), "table:cleared", { session });
 };
 
+// ── Waitlist / walk-in queue (Phase 6) ────────────────────────────────────
+export const emitWaitlistUpdated = (tenantKey, entry) => {
+  emit(rooms.staff(tenantKey), "waitlist:updated", { entry });
+};
+
+// Fired right after a table is cleared, alongside emitTableCleared, when a
+// waiting party fits it — lets the Tables board prompt "seat X now?" without
+// staff having to notice the free table and cross-check the queue manually.
+export const emitTableFreed = (tenantKey, { tableNo, seats, suggestedEntry }) => {
+  emit(rooms.staff(tenantKey), "table:freed", { tableNo, seats, suggestedEntry });
+};
+
 // ── Inventory alerts (Phase 2) ────────────────────────────────────────────
 export const emitInventoryAlert = (tenantKey, { item, level }) => {
   emit(rooms.staff(tenantKey), "inventory:alert", { item, level });

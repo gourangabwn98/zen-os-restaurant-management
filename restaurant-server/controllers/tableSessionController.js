@@ -1,7 +1,8 @@
 // controllers/tableSessionController.js
 import { getOpenSessionForTable, closeTableSession, listOpenSessions } from "../services/tableSessionService.js";
+import { findNextMatch } from "../services/waitlistService.js";
 import { buildActor } from "../services/orderService.js";
-import { emitTableCleared } from "../sockets/socket.js";
+import { emitTableCleared, emitTableFreed } from "../sockets/socket.js";
 
 // ── GET /api/admin/table-sessions ─────────────────────────────────────────
 // All currently-open sessions at once — powers the Tables board (which
@@ -34,11 +35,21 @@ export const getTableSession = async (req, res) => {
 // to the session has reached a terminal state (see tableSessionService).
 export const closeSession = async (req, res) => {
   try {
-    const { TableSession, Order, Table } = req.models;
+    const { TableSession, Order, Table, WaitlistEntry } = req.models;
     const actor = buildActor(req.user);
     const session = await closeTableSession({ TableSession, Order, Table, sessionId: req.params.id, actor });
     emitTableCleared(req.tenantKey, session);
-    res.json({ message: "Table cleared", session });
+
+    // Suggest (never auto-seat) the longest-waiting queue entry that fits
+    // this table now that it's free — see services/waitlistService.js.
+    let suggestedEntry = null;
+    const table = await Table.findById(session.table);
+    if (table) {
+      suggestedEntry = await findNextMatch({ WaitlistEntry }, table.seats);
+      emitTableFreed(req.tenantKey, { tableNo: table.tableNo, seats: table.seats, suggestedEntry });
+    }
+
+    res.json({ message: "Table cleared", session, suggestedEntry });
   } catch (err) {
     res.status(err.statusCode || 500).json({ message: err.message, code: err.code });
   }
