@@ -55,6 +55,18 @@ export const isPushEnabled = () =>
   localStorage.getItem(STORAGE.pushOptIn) === "1" &&
   typeof Notification !== "undefined" && Notification.permission === "granted";
 
+/** iOS Safari only supports web push for a site running standalone (added
+ * to the Home Screen), never a regular Safari tab — no VAPID key or config
+ * fix changes this, it's an Apple platform restriction. Lets the UI show
+ * the real fix instead of a generic "check your browser settings" message
+ * that doesn't apply here. */
+export const needsIosHomeScreenInstall = () => {
+  const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isStandalone = window.navigator.standalone === true
+    || window.matchMedia("(display-mode: standalone)").matches;
+  return isIos && !isStandalone;
+};
+
 /** Foreground handler — background messages are shown by the service
  * worker instead (see onBackgroundMessage in public/firebase-messaging-sw.js). */
 export const onForegroundMessage = async (cb) => {
