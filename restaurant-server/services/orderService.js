@@ -10,7 +10,8 @@
 import { priceOrder } from "../utils/pricing.js";
 import { normalizeOrderType, assertValidTransition } from "../utils/orderStateMachine.js";
 import { createKotJobForOrder } from "./kotService.js";
-import { findOrOpenTableSession } from "./tableSessionService.js";
+import { findOrOpenTableSession, closeTableSession } from "./tableSessionService.js";
+import { findNextMatch } from "./waitlistService.js";
 import { signGuestOrderToken, verifyGuestOrderToken } from "../utils/guestOrderToken.js";
 import { deductStockForOrder, reverseStockForOrder } from "./inventoryService.js";
 
@@ -368,7 +369,7 @@ export const cancelOrderTx = async ({ req, orderId, reason }) => {
  * Still fully validated + atomic via a conditional findOneAndUpdate.
  */
 export const transitionOrderStatusTx = async ({ req, orderId, toStatus, note }) => {
-  const { Order } = req.models;
+  const { Order, TableSession, Table, WaitlistEntry } = req.models;
   const current = await Order.findById(orderId);
   if (!current) {
     const err = new Error("Order not found");
@@ -415,7 +416,39 @@ export const transitionOrderStatusTx = async ({ req, orderId, toStatus, note }) 
     throw err;
   }
 
-  return { order: updated };
+  // ── Auto-clear the table (Phase 2) ──────────────────────────────────────
+  // A waiter/admin no longer has to remember to "clear the table" by hand —
+  // the moment the LAST active order on a table's session reaches COMPLETED,
+  // the session closes itself here, the same way the manual "clear table"
+  // button always worked (see tableSessionService.closeTableSession — it
+  // still refuses to close while any other order on the session is
+  // non-terminal, so a table with several running orders only frees up once
+  // every one of them is done). We surface the closed session (and a
+  // waitlist suggestion, if any) so the caller can emit the same realtime
+  // events the manual clear used to.
+  let closedTableSession = null;
+  let freedTable = null;
+  let suggestedEntry = null;
+  if (toStatus === "COMPLETED" && updated.tableSession) {
+    try {
+      closedTableSession = await closeTableSession({
+        TableSession, Order, Table, sessionId: updated.tableSession, actor,
+      });
+      freedTable = await Table.findById(closedTableSession.table);
+      if (freedTable) {
+        suggestedEntry = await findNextMatch({ WaitlistEntry }, freedTable.seats);
+      }
+    } catch (err) {
+      // The order's own status flip above already committed — a hiccup
+      // freeing the table (another order on the session still active, a
+      // concurrent close, a dangling session reference) must never surface
+      // as a failure to complete THIS order. Expected 400s (still-active /
+      // already-closed) are silent; anything else is logged for visibility.
+      if (err.statusCode !== 400) console.error("Auto-clear table on order completion failed:", err);
+    }
+  }
+
+  return { order: updated, closedTableSession, freedTable, suggestedEntry };
 };
 
 // ── Ownership check for read access ───────────────────────────────────────

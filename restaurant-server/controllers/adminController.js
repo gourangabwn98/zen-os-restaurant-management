@@ -4,7 +4,7 @@ import { transitionOrderStatusTx, buildActor } from "../services/orderService.js
 import {
   emitOrderStatusChanged, emitOrderCancelled, emitOrderConfirmed,
   emitKotCreated, emitBillPrint, emitPaymentStatusChanged, emitTableCleared,
-  emitInventoryAlert,
+  emitTableFreed, emitInventoryAlert,
 } from "../sockets/socket.js";
 
 // ── GET /api/admin/dashboard ──────────────────────────────────────────────────
@@ -103,7 +103,10 @@ export const updateOrderStatus = async (req, res) => {
     const toStatus = req.body.status;
     const previousStatus = (await req.models.Order.findById(req.params.id).select("status"))?.status;
 
-    const { order, kotJob, kotCreated, inventoryAlerts } = await transitionOrderStatusTx({
+    const {
+      order, kotJob, kotCreated, inventoryAlerts,
+      closedTableSession, freedTable, suggestedEntry,
+    } = await transitionOrderStatusTx({
       req, orderId: req.params.id, toStatus, note: req.body.note,
     });
 
@@ -115,6 +118,16 @@ export const updateOrderStatus = async (req, res) => {
       emitOrderCancelled(req.tenantKey, order, order.cancelReason);
     } else {
       emitOrderStatusChanged(req.tenantKey, order, previousStatus);
+    }
+
+    // Order completion just auto-cleared its table — same realtime events
+    // the manual "clear table" button used to fire (see
+    // tableSessionController.closeSession).
+    if (closedTableSession) {
+      emitTableCleared(req.tenantKey, closedTableSession);
+      if (freedTable) {
+        emitTableFreed(req.tenantKey, { tableNo: freedTable.tableNo, seats: freedTable.seats, suggestedEntry });
+      }
     }
 
     res.json(order);

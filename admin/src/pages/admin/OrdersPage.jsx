@@ -3,7 +3,6 @@ import toast from "react-hot-toast";
 import {
   getAllOrders, getRestaurantProfile, updateOrderStatus,
   getAllTables, printOrderBill, confirmOrder, rejectOrder,
-  getOpenTableSessions,
 } from "../../services/adminService.js";
 import { placeOrder, newIdempotencyKey } from "../../services/orderService.js";
 import { getSocket } from "../../services/socketService.js";
@@ -84,9 +83,9 @@ const avc = (n) => AVATAR_GRADS[(n?.charCodeAt(0)||0) % AVATAR_GRADS.length];
 const ini = (n) => !n||n==="Guest" ? "G" : n.split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
 const fmt = (n) => Math.round(n||0).toLocaleString("en-IN");
 
-// ── Table occupancy timer ("how long has this table been captured") ────────
-// Driven by the table's open TableSession (openedAt), not order status — a
-// table stays "captured" across multiple rounds/orders until it's cleared.
+// ── Order timer ("how long since this table's order was placed") ──────────
+// Driven by the earliest still-active order's createdAt at that table, so a
+// free table (no active order) never shows a time.
 const formatDuration = (ms) => {
   const mins = Math.max(0, Math.floor(ms / 60000));
   if (mins < 60) return `${mins}m`;
@@ -98,8 +97,10 @@ const formatDuration = (ms) => {
 const durationKind = (mins) => (mins >= 90 ? "stop" : mins >= 45 ? "wait" : "done");
 
 // ── Display formatters (keep raw values for logic, format only for text) ───
+// CONFIRMED is shown to staff as "Placed" — the raw enum value is untouched
+// (see restaurant-server/utils/orderStateMachine.js), this is display-only.
 const formatStatus = (s="") =>
-  s.replace(/_/g," ").toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  s === "CONFIRMED" ? "Placed" : s.replace(/_/g," ").toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
 const formatPayment = (s) => ({ PAID:"Paid", PENDING_VERIFICATION:"Pending", FAILED:"Failed" }[s] || formatStatus(s));
 const formatOrderType = (s) => ({ DINE_IN:"Dine In", TAKEAWAY:"Takeaway", All:"All" }[s] || formatStatus(s));
 
@@ -235,14 +236,14 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
                   Awaiting your confirmation
                 </div>
                 <div style={{ fontSize:11.5, color:T2, marginTop:2 }}>
-                  Confirming sends the KOT to the kitchen and deducts stock.
+                  Placing it sends the KOT to the kitchen and deducts stock.
                 </div>
               </div>
               <button type="button" className="op-btn" disabled={actionBusy}
                 onClick={()=>onConfirm?.(order)}
                 style={{ padding:"9px 18px", borderRadius:10, border:"none", cursor:actionBusy?"wait":"pointer",
                   background:"var(--grad-btn)", color:"#fff", fontWeight:800, fontSize:13 }}>
-                {actionBusy ? "Working…" : "✓ Confirm Order"}
+                {actionBusy ? "Working…" : "✓ Place Order"}
               </button>
               <button type="button" className="op-btn" disabled={actionBusy}
                 onClick={()=>onReject?.(order)}
@@ -1331,7 +1332,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
 // MULTI-ORDER TABLE VIEW
 // ══════════════════════════════════════════════════════════════════════════════
 
-const MultiOrderTableView = ({ orders, tableNo, session, nowTick, onStatusChange, onPaymentChange, onCombinedBill, onAddItems, onNewOrder }) => {
+const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPaymentChange, onCombinedBill, onAddItems, onNewOrder }) => {
   const [expandedOrder, setExpandedOrder] = useState(null);
 
   if (orders.length === 0) {
@@ -1357,6 +1358,12 @@ const MultiOrderTableView = ({ orders, tableNo, session, nowTick, onStatusChange
   const paidTotal   = paidOrders.reduce((s,o) => s + Number(o.total||0), 0);
   const dueTotal    = grandTotal - paidTotal;
 
+  // Time since the order was placed — the earliest still-active order at
+  // this table, not a table-session concept.
+  const placedAtMs = Math.min(...orders.map(o => new Date(o.createdAt).getTime()));
+  const placedMs   = nowTick - placedAtMs;
+  const placedKind = durationKind(Math.floor(placedMs / 60000));
+
   return (
     <div style={{ marginTop:14 }}>
 
@@ -1365,15 +1372,11 @@ const MultiOrderTableView = ({ orders, tableNo, session, nowTick, onStatusChange
           Table {tableNo} · {orders.length} order{orders.length!==1?"s":""}
         </span>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          {session && (
-            <span className="zc-tag" style={{
-              background:KIND_FILL[durationKind(Math.floor((nowTick - new Date(session.openedAt).getTime())/60000))],
-              color:KIND_INK[durationKind(Math.floor((nowTick - new Date(session.openedAt).getTime())/60000))],
-              border:`1px solid ${KIND_LINE[durationKind(Math.floor((nowTick - new Date(session.openedAt).getTime())/60000))]}`,
-            }}>
-              ⏱ {formatDuration(nowTick - new Date(session.openedAt).getTime())} captured
-            </span>
-          )}
+          <span className="zc-tag" style={{
+            background:KIND_FILL[placedKind], color:KIND_INK[placedKind], border:`1px solid ${KIND_LINE[placedKind]}`,
+          }}>
+            ⏱ {formatDuration(placedMs)} since placed
+          </span>
           <span style={{ fontSize:10, color:T3 }}>
             {paidOrders.length} paid · {unpaidOrders.length} pending
           </span>
@@ -1398,6 +1401,7 @@ const MultiOrderTableView = ({ orders, tableNo, session, nowTick, onStatusChange
               onPaymentChange={onPaymentChange}
               onCombinedBill={onCombinedBill}
               onAddItems={onAddItems}
+              nowTick={nowTick}
             />
           ))}
         </div>
@@ -1421,6 +1425,7 @@ const MultiOrderTableView = ({ orders, tableNo, session, nowTick, onStatusChange
               onPaymentChange={onPaymentChange}
               onCombinedBill={onCombinedBill}
               onAddItems={onAddItems}
+              nowTick={nowTick}
             />
           ))}
         </div>
@@ -1490,12 +1495,14 @@ const MultiOrderTableView = ({ orders, tableNo, session, nowTick, onStatusChange
 };
 
 // ── OrderCard — individual order row inside table view ─────────────────────────
-const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPaymentChange, onCombinedBill, onAddItems }) => {
+const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPaymentChange, onCombinedBill, onAddItems, nowTick }) => {
   const displayName  = order.user?.name || order.guestName || `Order ${idx+1}`;
   const displayPhone = order.guestPhone||order.user?.phone ||  null;
   const av           = avc(displayName);
   const isPaid       = order.paymentStatus === "PAID";
   const canAddItems  = ["CONFIRMED","PREPARING","READY"].includes(order.status);
+  const placedMs     = nowTick != null ? nowTick - new Date(order.createdAt).getTime() : null;
+  const placedKindThis = placedMs != null ? durationKind(Math.floor(placedMs / 60000)) : null;
 
   const borderColor = isPaid ? "var(--ready-line)" : "var(--wait-line)";
   const bgColor     = isPaid ? "var(--ready-fill)" : "var(--wait-fill)";
@@ -1523,7 +1530,14 @@ const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPayment
 
         <div style={{ textAlign:"right", flexShrink:0 }}>
           <div style={{ fontSize:14, fontWeight:700, color:PINK }}>₹{Math.round(order.total)}</div>
-          <div style={{ display:"flex", gap:4, justifyContent:"flex-end", marginTop:3 }}>
+          <div style={{ display:"flex", gap:4, justifyContent:"flex-end", marginTop:3, flexWrap:"wrap" }}>
+            {placedMs != null && (
+              <span className="zc-tag" style={{
+                background:KIND_FILL[placedKindThis], color:KIND_INK[placedKindThis], border:`1px solid ${KIND_LINE[placedKindThis]}`,
+              }}>
+                ⏱ {formatDuration(placedMs)}
+              </span>
+            )}
             <Badge label={order.paymentStatus} map={PAY_STYLE} format={formatPayment}/>
             <Badge label={order.status} map={STATUS_STYLE} format={formatStatus}/>
           </div>
@@ -1724,7 +1738,7 @@ const PendingOrdersModal = ({ orders, busy, onConfirm, onReject, onClose }) => {
                     <div style={{ display: "flex", gap: 8, marginTop: 11 }}>
                       <button type="button" className="zc-btn pri sm" style={{ flex: 1, justifyContent: "center" }}
                         disabled={busy} onClick={() => onConfirm(o)}>
-                        ✓ Confirm
+                        ✓ Place
                       </button>
                       <button type="button" className="zc-btn danger sm" style={{ flex: 1, justifyContent: "center" }}
                         disabled={busy} onClick={() => onReject(o)}>
@@ -1770,8 +1784,7 @@ export default function OrdersPage() {
   const [tableSelected,setTableSelected]=useState(null);
   const [showCombinedBill, setShowCombinedBill] = useState(null);
   const [showTables, setShowTables] = useState(true);
-  const [tableSessions, setTableSessions] = useState([]);
-  // Ticks every 30s purely to re-render live "captured" timers — no refetch.
+  // Ticks every 30s purely to re-render live "since placed" timers — no refetch.
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [error, setError] = useState(false);
   const [online, setOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
@@ -1796,17 +1809,6 @@ export default function OrdersPage() {
   const fetchTables=useCallback(()=>{ getAllTables().then(r=>{setTables(r.data?.tables||[]);setTablesLoading(false);}).catch(()=>setTablesLoading(false)); },[]);
   useEffect(()=>{ fetchTables(); },[fetchTables]);
 
-  // Open table sessions drive the "captured since" timer — polled (a table
-  // clearing is also pushed via socket below) since sessions open/close far
-  // more often than the table list itself.
-  const fetchTableSessions = useCallback(() => {
-    getOpenTableSessions().then(r => setTableSessions(r.data?.sessions||[])).catch(()=>{});
-  }, []);
-  useEffect(() => {
-    fetchTableSessions();
-    const iv = setInterval(fetchTableSessions, 30000);
-    return () => clearInterval(iv);
-  }, [fetchTableSessions]);
   useEffect(() => { const iv = setInterval(()=>setNowTick(Date.now()), 30000); return () => clearInterval(iv); }, []);
 
   const fetchOrders=useCallback(()=>{
@@ -1824,23 +1826,17 @@ export default function OrdersPage() {
     const socket = getSocket();
     if (!socket) return;
 
-    // A new/confirmed dine-in order can open a fresh session on a
-    // previously-free table — refresh sessions so its timer starts right away.
-    const onNew        = (p)=>{ if (p?.order) { upsertOrder(p.order); fetchTableSessions(); } };
-    const onConfirmed  = (p)=>{ if (p?.order) { upsertOrder(p.order); fetchTableSessions(); } };
+    const onNew        = (p)=>{ if (p?.order) upsertOrder(p.order); };
+    const onConfirmed  = (p)=>{ if (p?.order) upsertOrder(p.order); };
     const onStatus     = (p)=>{ if (p?.order) upsertOrder(p.order); };
     const onCancelled  = (p)=>{ if (p?.order) upsertOrder(p.order); };
     const onPayment    = (p)=>{ if (p?.order) upsertOrder(p.order); };
-    // A table clearing (or a fresh session opening on a new order) changes
-    // the "captured since" timer immediately — don't wait for the 30s poll.
-    const onTableCleared = () => fetchTableSessions();
 
     socket.on("order:new",             onNew);
     socket.on("order:confirmed",       onConfirmed);
     socket.on("order:status_changed",  onStatus);
     socket.on("order:cancelled",       onCancelled);
     socket.on("order:payment_changed", onPayment);
-    socket.on("table:cleared",         onTableCleared);
 
     return ()=>{
       socket.off("order:new",             onNew);
@@ -1848,9 +1844,8 @@ export default function OrdersPage() {
       socket.off("order:status_changed",  onStatus);
       socket.off("order:cancelled",       onCancelled);
       socket.off("order:payment_changed", onPayment);
-      socket.off("table:cleared",         onTableCleared);
     };
-  },[upsertOrder, fetchTableSessions]);
+  },[upsertOrder]);
 
   // ── Clicking a notification (in NotificationBell) opens that order here ────
   const [pendingFocus, setPendingFocus] = useState(null); // { _id?, orderId? }
@@ -1983,10 +1978,6 @@ export default function OrdersPage() {
     });
 
   const selectedTableOrders = tableSelected ? tableOrderMap[tableSelected] || [] : [];
-
-  const sessionMap = {};
-  tableSessions.forEach(s => { sessionMap[Number(s.tableNo)] = s; });
-  const selectedTableSession = tableSelected ? sessionMap[tableSelected] || null : null;
 
   const paginated=displayedOrders.slice((page-1)*PER_PAGE,page*PER_PAGE);
   const totalPages=Math.ceil(displayedOrders.length/PER_PAGE);
@@ -2134,11 +2125,11 @@ export default function OrdersPage() {
       <div style={{ display: "flex", gap: 5, justifyContent: "flex-end" }} onClick={(e) => e.stopPropagation()}>
         {o.status === "PENDING_CONFIRMATION" && (
           <>
-            <button type="button" className="op-btn" title="Confirm order" disabled={actionBusy}
+            <button type="button" className="op-btn" title="Place order" disabled={actionBusy}
               onClick={() => handleConfirm(o)}
               style={{ padding: "5px 10px", borderRadius: 8, border: "none", background: "var(--grad-btn)",
                 color: "#fff", fontWeight: 800, fontSize: 12, cursor: actionBusy ? "wait" : "pointer" }}>
-              ✓ Confirm
+              ✓ Place
             </button>
             <button type="button" className="op-btn" title="Reject order" disabled={actionBusy}
               onClick={() => handleReject(o)}
@@ -2290,9 +2281,11 @@ export default function OrdersPage() {
                     const isSel = tableSelected === t.tableNo;
                     const tTotal = tOrders.reduce((s, o) => s + Number(o.total || 0), 0);
                     const hasDue = tOrders.some((o) => o.paymentStatus === "PENDING_VERIFICATION");
-                    const session = sessionMap[t.tableNo] || null;
-                    const capturedMs = session ? nowTick - new Date(session.openedAt).getTime() : null;
-                    const capturedKind = capturedMs != null ? durationKind(Math.floor(capturedMs / 60000)) : null;
+                    const allPaid = occupied && tOrders.every((o) => o.paymentStatus === "PAID");
+                    // Time since the order was placed — the earliest still-active
+                    // order at this table — not a table-session concept.
+                    const placedMs = occupied ? nowTick - Math.min(...tOrders.map((o) => new Date(o.createdAt).getTime())) : null;
+                    const placedKind = placedMs != null ? durationKind(Math.floor(placedMs / 60000)) : null;
                     let kind = null;
                     if (occupied) {
                       const counts = {};
@@ -2301,11 +2294,19 @@ export default function OrdersPage() {
                       kind = statusKind(dom);
                     }
                     const cls = !occupied ? " free" : isSel ? " sel" : hasDue ? " due" : "";
+                    // Selected/due keep their own dedicated styling; any other
+                    // occupied table is tinted by its dominant order status
+                    // (same wait/live/ready/done/stop palette used everywhere
+                    // else on this page) instead of one flat "occupied" look.
+                    const tileStyle = occupied && !isSel && !hasDue
+                      ? { background: KIND_FILL[kind], borderColor: KIND_LINE[kind] }
+                      : undefined;
                     return (
                       <button
                         type="button"
                         key={t.tableNo}
                         className={`zc-tbl${cls}`}
+                        style={tileStyle}
                         onClick={() => setTableSelected(isSel ? null : t.tableNo)}
                       >
                         {occupied && (
@@ -2313,14 +2314,14 @@ export default function OrdersPage() {
                         )}
                         <div className="no">T{t.tableNo}</div>
                         <div className="st">{occupied ? `${tOrders.length} order${tOrders.length !== 1 ? "s" : ""}` : `${t.seats || 4} seats`}</div>
-                        {session && (
-                          <div style={{ fontSize: 9.5, fontWeight: 700, color: KIND_INK[capturedKind], marginTop: 1 }}>
-                            ⏱ {formatDuration(capturedMs)}
+                        {occupied && (
+                          <div style={{ fontSize: 9.5, fontWeight: 700, color: KIND_INK[placedKind], marginTop: 1 }}>
+                            ⏱ {formatDuration(placedMs)}
                           </div>
                         )}
                         <div className="ft">
                           {occupied
-                            ? <><span className="amt tnum">₹{Math.round(tTotal)}</span><span style={{ fontSize: 10, color: hasDue ? "var(--stop-ink)" : "var(--text-3)" }}>{hasDue ? "Due" : "Open"}</span></>
+                            ? <><span className="amt tnum" style={{ color: hasDue ? "var(--stop-ink)" : KIND_INK[kind] }}>₹{Math.round(tTotal)}</span><span style={{ fontSize: 10, color: hasDue ? "var(--stop-ink)" : KIND_INK[kind] }}>{hasDue ? "Due" : allPaid ? "Paid" : "Open"}</span></>
                             : <span style={{ fontSize: 11, color: "var(--text-3)" }}>Free</span>}
                         </div>
                       </button>
@@ -2336,7 +2337,6 @@ export default function OrdersPage() {
               <MultiOrderTableView
                 orders={selectedTableOrders}
                 tableNo={tableSelected}
-                session={selectedTableSession}
                 nowTick={nowTick}
                 onStatusChange={(id, s) => { handleStatusChange(id, s); }}
                 onPaymentChange={handlePaymentChange}

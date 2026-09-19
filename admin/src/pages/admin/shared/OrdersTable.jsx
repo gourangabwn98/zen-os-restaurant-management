@@ -153,7 +153,7 @@ export default function OrdersTable({ rows: initialRows, hideAction = false }) {
                     {isPending ? (
                       <div style={{ display: "flex", gap: 6 }}>
                         <button disabled={isBusy} onClick={() => handleConfirm(o)} style={confirmBtnStyle}>
-                          {isBusy ? "…" : "✓ Confirm"}
+                          {isBusy ? "…" : "✓ Place"}
                         </button>
                         <button disabled={isBusy} onClick={() => handleReject(o)} style={rejectBtnStyle}>
                           ✕

@@ -55,7 +55,7 @@ const GUIDES = [
     ],
   },
   {
-    icon: "📦", label: "Handling orders", desc: "Confirm, prepare, deliver, complete",
+    icon: "📦", label: "Handling orders", desc: "Place, prepare, deliver, complete",
     steps: [
       "Go to Billing — it shows the floor and active orders.",
       "Click “＋ New order” to place one for a walk-in or phone-in customer.",

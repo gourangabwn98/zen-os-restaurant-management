@@ -16,7 +16,7 @@ const ALL_STATUSES = [
 ];
 const STATUS_LABEL = {
   PENDING_CONFIRMATION: "Pending",
-  CONFIRMED: "Confirmed",
+  CONFIRMED: "Placed",
   PREPARING: "Preparing",
   READY: "Ready",
   DELIVERED: "Delivered",

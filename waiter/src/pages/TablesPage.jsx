@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import toast from "react-hot-toast";
-import { getAllTables, getOpenTableSessions, clearTableSession } from "../services/tableService.js";
+import { getAllTables, getOpenTableSessions } from "../services/tableService.js";
 import TableCard from "../components/TableCard.jsx";
 import OrderCard from "../components/OrderCard.jsx";
 import GlassCard from "../components/ui/GlassCard.jsx";
@@ -15,7 +14,7 @@ import { ACCENT, TEXT_MUTED, TEXT_FAINT, GLASS_BORDER, NAV_HEIGHT } from "../the
 // available table is already self-evident from its "Available" label/icon.
 const LEGEND = [
   { label: "Needs confirmation",        color: statusColor("PENDING_CONFIRMATION") },
-  { label: "Confirmed",                 color: statusColor("CONFIRMED") },
+  { label: "Placed",                    color: statusColor("CONFIRMED") },
   { label: "Preparing / Ready / Out",   color: statusColor("PREPARING") },
 ];
 
@@ -25,7 +24,6 @@ export default function TablesPage() {
   const [sessions, setSessions] = useState({});
   const [error, setError]     = useState(null);
   const [selected, setSelected] = useState(null);
-  const [clearing, setClearing] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -46,20 +44,6 @@ export default function TablesPage() {
     return () => clearInterval(iv);
   }, [load]);
 
-  const handleClear = async (session) => {
-    if (!session?._id) return;
-    if (!window.confirm(`Clear Table ${session.tableNo}? This closes the session.`)) return;
-    setClearing(true);
-    try {
-      await clearTableSession(session._id);
-      toast.success(`Table ${session.tableNo} cleared`);
-      setSelected(null);
-      load();
-    } catch (err) {
-      toast.error(err.response?.data?.message || "Cannot clear — some orders are still active");
-    } finally { setClearing(false); }
-  };
-
   if (error) return <ErrorState message={error} onRetry={load} />;
   if (tables === null) return <Loader label="Loading tables…" />;
 
@@ -78,7 +62,7 @@ export default function TablesPage() {
         )}
       </div>
       <div style={{ padding: "4px 16px 4px", fontSize: 12, color: TEXT_FAINT }}>
-        Tap a table to view its orders or clear it once everything's settled.
+        Tap a table to view its orders — it frees up on its own once every order is completed.
       </div>
 
       {tables.length > 0 && (
@@ -112,11 +96,7 @@ export default function TablesPage() {
             <div style={{ padding: "14px 16px", borderBottom: `1px solid ${GLASS_BORDER}` }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ fontWeight: 800, fontSize: 14, color: "#fff" }}>Table {selectedTable.tableNo}</div>
-                {selectedSession ? (
-                  <PrimaryButton variant="success" onClick={() => handleClear(selectedSession)} disabled={clearing} style={{ padding: "8px 16px", fontSize: 11.5 }}>
-                    {clearing ? "Clearing…" : "🧹 Clear Table"}
-                  </PrimaryButton>
-                ) : (
+                {!selectedSession && (
                   <PrimaryButton onClick={() => nav(`/new-order?table=${selectedTable.tableNo}`)} style={{ padding: "8px 16px", fontSize: 11.5 }}>
                     + New Order
                   </PrimaryButton>

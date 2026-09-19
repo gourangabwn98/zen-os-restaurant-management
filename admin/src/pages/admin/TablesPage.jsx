@@ -23,18 +23,29 @@ const T1         = "#f1f0f5";
 const T2         = "#9ca3af";
 const T3         = "#4b5563";
 
+// Keys MUST match the canonical order-status enum (see
+// restaurant-server/utils/orderStateMachine.js) — this file previously kept
+// its own legacy "Placed"/"Preparing"/… keys from before the status rename,
+// which meant every real order status (PENDING_CONFIRMATION, CONFIRMED, …)
+// missed this lookup entirely and silently fell back to the "Empty"/Free
+// style, so a table with a brand-new order looked free on the floor plan.
 const STATUS_STYLE = {
-  Empty:    { bg:"rgba(255,255,255,0.04)", border:"rgba(255,255,255,0.12)", tc:"#6b7280",  label:"Free"      },
-  Placed:   { bg:"rgba(56,122,221,0.15)",  border:"#378ADD",               tc:"#60a5fa",  label:"Placed"    },
-  Preparing:{ bg:"rgba(186,117,23,0.15)",  border:"#BA7517",               tc:"#fbbf24",  label:"Preparing" },
-  Ready:    { bg:"rgba(16,185,129,0.15)",  border:"#10b981",               tc:"#34d399",  label:"Ready"     },
-  Delivered:{ bg:"rgba(16,185,129,0.15)",  border:"#10b981",               tc:"#34d399",  label:"Delivered" },
-  Completed:{ bg:"rgba(107,114,128,0.15)", border:"#4b5563",               tc:"#9ca3af",  label:"Completed" },
-  Cancelled:{ bg:"rgba(239,68,68,0.15)",   border:"#ef4444",               tc:"#f87171",  label:"Cancelled" },
+  Empty:                { bg:"rgba(255,255,255,0.04)", border:"rgba(255,255,255,0.12)", tc:"#6b7280",  label:"Free"      },
+  PENDING_CONFIRMATION: { bg:"rgba(56,122,221,0.15)",  border:"#378ADD",               tc:"#60a5fa",  label:"Awaiting confirmation" },
+  CONFIRMED:            { bg:"rgba(56,122,221,0.15)",  border:"#378ADD",               tc:"#60a5fa",  label:"Placed"    },
+  PREPARING:            { bg:"rgba(186,117,23,0.15)",  border:"#BA7517",               tc:"#fbbf24",  label:"Preparing" },
+  READY:                { bg:"rgba(16,185,129,0.15)",  border:"#10b981",               tc:"#34d399",  label:"Ready"     },
+  DELIVERED:            { bg:"rgba(16,185,129,0.15)",  border:"#10b981",               tc:"#34d399",  label:"Delivered" },
+  COMPLETED:            { bg:"rgba(107,114,128,0.15)", border:"#4b5563",               tc:"#9ca3af",  label:"Completed" },
+  CANCELLED:            { bg:"rgba(239,68,68,0.15)",   border:"#ef4444",               tc:"#f87171",  label:"Cancelled" },
 };
 
-const ACTIVE_STATUSES = ["Placed","Preparing","Ready","Delivered"];
-const ALL_STATUSES    = ["Placed","Preparing","Ready","Delivered","Completed","Cancelled"];
+// Non-terminal statuses — a table with an order in any of these is occupied.
+const ACTIVE_STATUSES = ["PENDING_CONFIRMATION","CONFIRMED","PREPARING","READY","DELIVERED"];
+// Targets offered on the "Update Order" buttons. PENDING_CONFIRMATION is
+// deliberately excluded — it's only ever an order's starting point, never
+// something to switch back to (see CLAUDE.md).
+const ALL_STATUSES    = ["CONFIRMED","PREPARING","READY","DELIVERED","COMPLETED","CANCELLED"];
 
 // ── Inject styles ─────────────────────────────────────────────────────────────
 if (!document.getElementById("tables-page-styles")) {
@@ -445,7 +456,7 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
               textTransform:"uppercase", marginBottom:10 }}>Current Status</div>
             <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:20 }}>
               <span className="tag" style={{ background:s.bg, color:s.tc, border:`1.5px solid ${s.border}` }}>
-                {order.status}
+                {s.label}
               </span>
               <span className="tag" style={{ background:"rgba(139,92,246,0.15)", color:"#c4b5fd",
                 border:"1px solid rgba(139,92,246,0.3)" }}>Dining</span>
@@ -460,12 +471,12 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
               textTransform:"uppercase", marginBottom:10 }}>Update Order</div>
             <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:22 }}>
               {ALL_STATUSES.filter(st=>st!==order.status).map(st => {
-                const stl = STATUS_STYLE[st]||{ bg:"rgba(107,114,128,0.15)", border:"#4b5563", tc:"#9ca3af" };
+                const stl = STATUS_STYLE[st]||{ bg:"rgba(107,114,128,0.15)", border:"#4b5563", tc:"#9ca3af", label:st };
                 return (
                   <button key={st} className="status-btn" onClick={()=>handleStatus(st)}
                     disabled={updating}
                     style={{ background:stl.bg, borderColor:stl.border, color:stl.tc }}>
-                    {updating ? <span className="spinner" /> : st}
+                    {updating ? <span className="spinner" /> : stl.label}
                   </button>
                 );
               })}

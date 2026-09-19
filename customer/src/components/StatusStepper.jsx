@@ -2,7 +2,7 @@ import { ACCENT, ACCENT_GRADIENT, RED, TEXT_FAINT, GLASS_BORDER } from "../theme
 
 const STEPS = [
   { key: "PENDING_CONFIRMATION", label: "Waiting for confirmation", icon: "🕒" },
-  { key: "CONFIRMED",            label: "Confirmed",                icon: "✅" },
+  { key: "CONFIRMED",            label: "Placed",                    icon: "✅" },
   { key: "PREPARING",            label: "Preparing",                 icon: "👨‍🍳" },
   { key: "READY",                label: "Ready",                      icon: "🔔" },
   { key: "DELIVERED",            label: "Delivered",                   icon: "🍽️" },
@@ -11,7 +11,7 @@ const STEPS = [
 
 const MESSAGES = {
   PENDING_CONFIRMATION: "Waiting for restaurant confirmation…",
-  CONFIRMED: "The kitchen has confirmed your order.",
+  CONFIRMED: "Your order has been placed.",
   PREPARING: "Your food is being prepared.",
   READY: "Your order is ready!",
   DELIVERED: "Enjoy your meal!",

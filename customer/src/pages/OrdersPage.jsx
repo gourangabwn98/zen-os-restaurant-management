@@ -11,7 +11,7 @@ const ACTIVE_STATUSES = ["PENDING_CONFIRMATION", "CONFIRMED", "PREPARING", "READ
 
 const STATUS_LABEL = {
   PENDING_CONFIRMATION: "Awaiting confirmation",
-  CONFIRMED: "Confirmed",
+  CONFIRMED: "Placed",
   PREPARING: "Preparing",
   READY: "Ready",
   DELIVERED: "Delivered",

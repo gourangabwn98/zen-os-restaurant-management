@@ -4,7 +4,7 @@
 const OPTIONS = [
   ["All", "All"],
   ["PENDING_CONFIRMATION", "Pending confirmation"],
-  ["CONFIRMED", "Confirmed"],
+  ["CONFIRMED", "Placed"],
   ["PREPARING", "Preparing"],
   ["READY", "Ready"],
   ["DELIVERED", "Delivered"],

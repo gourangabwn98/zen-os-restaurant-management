@@ -100,7 +100,7 @@ export default function OrdersPage() {
                     onClick={(e) => handleQuickConfirm(e, o)}
                     style={{ padding: "8px 18px", fontSize: 12 }}
                   >
-                    {busyId === o._id ? "Confirming…" : "✓ Confirm Order"}
+                    {busyId === o._id ? "Placing…" : "✓ Place Order"}
                   </PrimaryButton>
                 </div>
               )}

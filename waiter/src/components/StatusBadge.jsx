@@ -2,7 +2,7 @@ import { AMBER, GREEN, RED, ACCENT } from "../theme.js";
 
 export const STATUS_LABEL = {
   PENDING_CONFIRMATION: "Awaiting confirmation",
-  CONFIRMED: "Confirmed",
+  CONFIRMED: "Placed",
   PREPARING: "Preparing",
   READY: "Ready",
   DELIVERED: "Delivered",

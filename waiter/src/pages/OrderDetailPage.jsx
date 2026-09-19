@@ -184,7 +184,7 @@ export default function OrderDetailPage() {
       <div style={{ margin: "0 16px", display: "flex", flexDirection: "column", gap: 10 }}>
         {isPending && (
           <div style={{ display: "flex", gap: 10 }}>
-            <PrimaryButton disabled={busy} onClick={handleConfirm} variant="success" style={{ flex: 1 }}>✓ Confirm Order</PrimaryButton>
+            <PrimaryButton disabled={busy} onClick={handleConfirm} variant="success" style={{ flex: 1 }}>✓ Place Order</PrimaryButton>
             <PrimaryButton disabled={busy} onClick={handleReject} variant="danger" style={{ flex: 1 }}>✕ Reject</PrimaryButton>
           </div>
         )}
