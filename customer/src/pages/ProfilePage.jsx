@@ -72,7 +72,8 @@ function LoggedInView({ nav, auth }) {
         if (ok) toast.success("You'll now get offer notifications");
         else toast.error("Enable notifications in your browser settings to turn this on");
       }
-    } catch {
+    } catch (err) {
+      console.error("Notification toggle failed:", err);
       toast.error("Couldn't update notification settings");
     } finally {
       setPushBusy(false);
