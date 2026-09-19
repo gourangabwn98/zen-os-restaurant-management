@@ -12,12 +12,16 @@ export const STATUS_LABEL = {
 
 const MUTED_HEX = "#9CA3AF";
 
+// Same wait(amber) / live(blue) / ready(green) / done(grey) / stop(red)
+// grouping as statusKind on the admin side (admin/src/pages/admin/shared/
+// statusKind.js) — PREPARING groups with PENDING_CONFIRMATION as "still
+// waiting on something", not with READY/DELIVERED.
 export const statusColor = (s) => {
   if (s === "CANCELLED") return RED;
   if (s === "COMPLETED") return MUTED_HEX;
-  if (s === "PENDING_CONFIRMATION") return AMBER;
+  if (s === "PENDING_CONFIRMATION" || s === "PREPARING") return AMBER;
   if (s === "CONFIRMED") return ACCENT;
-  return GREEN;
+  return GREEN; // READY, DELIVERED
 };
 
 export default function StatusBadge({ status, style }) {

@@ -1,10 +1,15 @@
-import StatusBadge from "./StatusBadge.jsx";
+import StatusBadge, { statusColor } from "./StatusBadge.jsx";
 import GlassCard from "./ui/GlassCard.jsx";
 import { ACCENT, ACCENT_SOFT, TEXT_FAINT, TEXT_MUTED } from "../theme.js";
 
 export default function OrderCard({ order, onClick, style }) {
+  // Same rule as the admin table map / order rail: the card itself is
+  // tinted by the order's own status, not left a flat glass panel.
+  const c = statusColor(order.status);
   return (
-    <GlassCard onClick={onClick} style={{ padding: "14px 16px", ...style }}>
+    <GlassCard onClick={onClick} style={{
+      padding: "14px 16px", background: `${c}14`, border: `1px solid ${c}40`, ...style,
+    }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>

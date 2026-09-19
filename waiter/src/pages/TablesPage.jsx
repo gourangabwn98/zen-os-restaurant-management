@@ -7,7 +7,7 @@ import GlassCard from "../components/ui/GlassCard.jsx";
 import PrimaryButton from "../components/ui/PrimaryButton.jsx";
 import { Loader, ErrorState, EmptyState } from "../components/StateViews.jsx";
 import { statusColor } from "../components/StatusBadge.jsx";
-import { runningTotal, formatElapsed } from "../utils/tableSession.js";
+import { activeOrders, runningTotal, earliestOrderTime, formatElapsed } from "../utils/tableSession.js";
 import { ACCENT, TEXT_MUTED, TEXT_FAINT, GLASS_BORDER, NAV_HEIGHT } from "../theme.js";
 
 // Only the ring colors that actually appear on an OCCUPIED table — an
@@ -62,7 +62,7 @@ export default function TablesPage() {
         )}
       </div>
       <div style={{ padding: "4px 16px 4px", fontSize: 12, color: TEXT_FAINT }}>
-        Tap a table to view its orders — it frees up on its own once every order is completed.
+        Tap a table to view its orders or start a new one — even if it's already occupied. It frees up on its own once every order is completed.
       </div>
 
       {tables.length > 0 && (
@@ -96,25 +96,31 @@ export default function TablesPage() {
             <div style={{ padding: "14px 16px", borderBottom: `1px solid ${GLASS_BORDER}` }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ fontWeight: 800, fontSize: 14, color: "#fff" }}>Table {selectedTable.tableNo}</div>
-                {!selectedSession && (
-                  <PrimaryButton onClick={() => nav(`/new-order?table=${selectedTable.tableNo}`)} style={{ padding: "8px 16px", fontSize: 11.5 }}>
-                    + New Order
-                  </PrimaryButton>
-                )}
+                {/* A table already having a customer's order doesn't block a
+                    waiter from starting another one at the same table (a new
+                    round, or a second guest joining) — placeOrderTx reuses
+                    the table's existing open session either way. */}
+                <PrimaryButton onClick={() => nav(`/new-order?table=${selectedTable.tableNo}`)} style={{ padding: "8px 16px", fontSize: 11.5 }}>
+                  {selectedSession ? "+ Add Order" : "+ New Order"}
+                </PrimaryButton>
               </div>
 
-              {selectedSession && (
-                <div style={{ display: "flex", gap: 16, marginTop: 10, fontSize: 11.5, color: TEXT_MUTED }}>
-                  <span>🧾 <b style={{ color: "#fff" }}>{(selectedSession.orders || []).length}</b> order{(selectedSession.orders || []).length === 1 ? "" : "s"}</span>
-                  <span>⏱ <b style={{ color: "#fff" }}>{formatElapsed(selectedSession.openedAt) || "—"}</b> occupied</span>
-                  <span>💰 <b style={{ color: ACCENT }}>₹{runningTotal(selectedSession.orders)}</b> running</span>
-                </div>
-              )}
+              {selectedSession && (() => {
+                const liveOrders = activeOrders(selectedSession.orders);
+                const placedAt = earliestOrderTime(selectedSession.orders);
+                return (
+                  <div style={{ display: "flex", gap: 16, marginTop: 10, fontSize: 11.5, color: TEXT_MUTED }}>
+                    <span>🧾 <b style={{ color: "#fff" }}>{liveOrders.length}</b> order{liveOrders.length === 1 ? "" : "s"}</span>
+                    {placedAt && <span>⏱ <b style={{ color: "#fff" }}>{formatElapsed(placedAt)}</b> since placed</span>}
+                    <span>💰 <b style={{ color: ACCENT }}>₹{runningTotal(selectedSession.orders)}</b> running</span>
+                  </div>
+                );
+              })()}
             </div>
 
             {selectedSession ? (
               <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
-                {(selectedSession.orders || []).map((o) => (
+                {activeOrders(selectedSession.orders).map((o) => (
                   <OrderCard key={o._id} order={o} onClick={() => nav(`/order/${o._id}`)} />
                 ))}
               </div>
