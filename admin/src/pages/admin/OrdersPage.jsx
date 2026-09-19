@@ -1499,13 +1499,17 @@ const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPayment
   const displayName  = order.user?.name || order.guestName || `Order ${idx+1}`;
   const displayPhone = order.guestPhone||order.user?.phone ||  null;
   const av           = avc(displayName);
-  const isPaid       = order.paymentStatus === "PAID";
   const canAddItems  = ["CONFIRMED","PREPARING","READY"].includes(order.status);
   const placedMs     = nowTick != null ? nowTick - new Date(order.createdAt).getTime() : null;
   const placedKindThis = placedMs != null ? durationKind(Math.floor(placedMs / 60000)) : null;
 
-  const borderColor = isPaid ? "var(--ready-line)" : "var(--wait-line)";
-  const bgColor     = isPaid ? "var(--ready-fill)" : "var(--wait-fill)";
+  // Card color reflects the order's own status (same wait/live/ready/done/
+  // stop palette as the table map and every status badge elsewhere) rather
+  // than just paid/unpaid, so a glance at the rail shows what stage each
+  // order is at, not only whether it's settled.
+  const cardKind    = statusKind(order.status);
+  const borderColor = KIND_LINE[cardKind];
+  const bgColor     = KIND_FILL[cardKind];
 
   return (
     <div style={{ marginBottom:6, borderRadius:RADIUS, overflow:"hidden",
