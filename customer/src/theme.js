@@ -37,4 +37,8 @@ export const STORAGE = {
   customerUser:  "customerUser",
   tableCtx:      "sohoj_table_ctx", // { tableNo, tableToken, label }
   favorites:     "sohoj_favorites_v1",
+  // "1" once the customer has opted into offer push notifications — lets
+  // App.jsx silently refresh a rotated FCM token on future visits without
+  // asking them to retoggle it (see services/notificationService.js).
+  pushOptIn:     "sohoj_push_opt_in",
 };

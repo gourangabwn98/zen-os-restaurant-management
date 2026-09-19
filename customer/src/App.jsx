@@ -1,6 +1,8 @@
+import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
-import { Toaster } from "react-hot-toast";
-import { AppStateProvider } from "./context/AppState.jsx";
+import toast, { Toaster } from "react-hot-toast";
+import { AppStateProvider, useAppState } from "./context/AppState.jsx";
+import { enablePushNotifications, isPushEnabled, onForegroundMessage } from "./services/notificationService.js";
 import BottomNav from "./components/BottomNav.jsx";
 import HomePage from "./pages/HomePage.jsx";
 import CartPage from "./pages/CartPage.jsx";
@@ -17,6 +19,21 @@ const NO_NAV_ROUTES = ["/login"];
 function Shell({ children }) {
   const { pathname } = useLocation();
   const showNav = !NO_NAV_ROUTES.includes(pathname);
+  const { auth } = useAppState();
+
+  // Refreshes a rotated FCM token silently for a customer who already
+  // opted in on a previous visit — no re-prompt, no UI. Also surfaces a
+  // toast for any offer that arrives while the app is open in the
+  // foreground (a closed/background tab gets an OS notification instead,
+  // via public/firebase-messaging-sw.js).
+  useEffect(() => {
+    if (auth.isLoggedIn && isPushEnabled()) enablePushNotifications();
+
+    let unsubscribe = () => {};
+    onForegroundMessage(({ title, body }) => toast(`${title || "New offer"}${body ? ` — ${body}` : ""}`))
+      .then((unsub) => { unsubscribe = unsub; });
+    return () => unsubscribe();
+  }, [auth.isLoggedIn]);
 
   return (
     <div style={{ minHeight: "100vh", background: BG_PRIMARY }}>

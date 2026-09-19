@@ -231,21 +231,11 @@
 // controllers/authController.js
 import jwt      from "jsonwebtoken";
 import bcrypt   from "bcryptjs";
-import admin    from "firebase-admin";
+import admin    from "../utils/firebaseAdmin.js";
 import sendOTP, { isConsoleProvider } from "../utils/sendOTP.js";
 import { getDB }     from "../config/db.js";
 import { getModels } from "../config/getModels.js";
 const waiterCache = new Map();
-// ── Firebase Admin init ───────────────────────────────────────────────────────
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId:   process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey:  process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-    }),
-  });
-}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 // Single-restaurant mode: the JWT identifies the user only. The server always

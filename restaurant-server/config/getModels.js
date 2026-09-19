@@ -43,6 +43,13 @@ const userSchema = new mongoose.Schema({
   // Lets an admin deactivate a waiter's access without deleting the account.
   status:     { type: String, enum: ["Active","Inactive"], default: "Active" },
   lastLoginAt:{ type: Date },
+  // ── Push notification opt-in (offers broadcast) ───────────────────────────
+  // One customer may have several devices/browsers subscribed at once (phone
+  // + laptop), so this is an array, not a single token. Populated only via
+  // services/notificationService.js — never written directly by a
+  // controller — so subscribe/unsubscribe always stays in sync with the
+  // matching Firebase Cloud Messaging topic subscription.
+  pushTokens: { type: [String], default: [] },
 }, { timestamps: true });
 
 // Small reusable "who did this" subdocument — used for audit fields on Order.
@@ -544,6 +551,17 @@ const supportTicketSchema = new mongoose.Schema({
   status:  { type: String, enum: ["OPEN","RESOLVED"], default: "OPEN" },
 }, { timestamps: true });
 
+// A sent-offer log — one row per admin broadcast (services/notificationService.js).
+// recipientCount is a best-effort snapshot of how many customers were
+// opted in at send time, not a delivery receipt — FCM topic sends don't
+// report per-device delivery back to the sender.
+const notificationLogSchema = new mongoose.Schema({
+  title:          { type: String, required: true, trim: true },
+  body:           { type: String, required: true, trim: true },
+  sentBy:         actorSchema,
+  recipientCount: { type: Number, default: 0 },
+}, { timestamps: true });
+
 // ── Main function: returns all models bound to a specific DB connection ────────
 export function getModels(conn) {
   if (!conn) throw new Error("No DB connection provided to getModels()");
@@ -563,6 +581,7 @@ export function getModels(conn) {
     Invoice:           conn.models.Invoice           || conn.model("Invoice",           invoiceSchema),
     SupportTicket:     conn.models.SupportTicket     || conn.model("SupportTicket",     supportTicketSchema),
     WaitlistEntry:     conn.models.WaitlistEntry     || conn.model("WaitlistEntry",     waitlistEntrySchema),
+    NotificationLog:   conn.models.NotificationLog   || conn.model("NotificationLog",   notificationLogSchema),
 
     // ── Inventory (Phase 2) ────────────────────────────────────────────────
     Supplier:          conn.models.Supplier          || conn.model("Supplier",          supplierSchema),

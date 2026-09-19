@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import { useAppState } from "../context/AppState.jsx";
 import { updateProfile } from "../services/authService.js";
 import { disconnectSocket } from "../services/socketService.js";
+import { enablePushNotifications, disablePushNotifications, isPushEnabled } from "../services/notificationService.js";
 import GlassCard from "../components/ui/GlassCard.jsx";
 import PrimaryButton from "../components/ui/PrimaryButton.jsx";
 import { ACCENT, ACCENT_SOFT, ACCENT_GRADIENT, TEXT_MUTED, TEXT_FAINT, GLASS_BORDER, NAV_HEIGHT } from "../theme.js";
@@ -55,6 +56,28 @@ function LoggedInView({ nav, auth }) {
   const [editing, setEditing] = useState(false);
   const [name, setName]       = useState(auth.user.name || "");
   const [saving, setSaving]   = useState(false);
+  const [pushOn, setPushOn]   = useState(isPushEnabled);
+  const [pushBusy, setPushBusy] = useState(false);
+
+  const handleTogglePush = async () => {
+    setPushBusy(true);
+    try {
+      if (pushOn) {
+        await disablePushNotifications();
+        setPushOn(false);
+        toast.success("Offer notifications turned off");
+      } else {
+        const ok = await enablePushNotifications();
+        setPushOn(ok);
+        if (ok) toast.success("You'll now get offer notifications");
+        else toast.error("Enable notifications in your browser settings to turn this on");
+      }
+    } catch {
+      toast.error("Couldn't update notification settings");
+    } finally {
+      setPushBusy(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!name.trim()) return toast.error("Name can't be empty");
@@ -123,6 +146,35 @@ function LoggedInView({ nav, auth }) {
               </button>
             )}
           </div>
+        </GlassCard>
+      </div>
+
+      <div style={{ margin: "8px 16px" }}>
+        <GlassCard style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 18 }}>🔔</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>Offer Notifications</div>
+            <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 1 }}>
+              Get notified about offers, even when the app is closed
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleTogglePush}
+            disabled={pushBusy}
+            aria-label="Toggle offer notifications"
+            style={{
+              width: 42, height: 24, borderRadius: 20, position: "relative", flex: "none", border: "none",
+              cursor: pushBusy ? "wait" : "pointer", padding: 0,
+              background: pushOn ? ACCENT_GRADIENT : "rgba(255,255,255,0.14)",
+              opacity: pushBusy ? 0.6 : 1, transition: "background .15s",
+            }}
+          >
+            <span style={{
+              position: "absolute", top: 3, left: pushOn ? 21 : 3, width: 18, height: 18, borderRadius: "50%",
+              background: "#fff", transition: "left .15s",
+            }} />
+          </button>
         </GlassCard>
       </div>
 

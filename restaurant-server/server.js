@@ -30,6 +30,7 @@ import employeeRoutes from "./routes/employeeRoutes.js";
 import kitchenRoutes  from "./routes/kitchenRoutes.js";
 import profileRoutes from "./routes/profileRoutes.js";
 import catagoryRoutes from "./routes/catagoryRoutes.js";
+import notificationRoutes from "./routes/notificationRoutes.js";
 import { errorHandler, notFound } from "./middleware/errorMiddleware.js";
 
 const app    = express();
@@ -87,6 +88,7 @@ app.use("/api/admin",             adminRoutes);
 app.use("/api/categories",        catagoryRoutes);
 app.use("/api/support",           supportRoutes);
 app.use("/api/admin/printer",     printerRoutes);
+app.use("/api/notifications",     notificationRoutes);
 
 app.get("/api/test-whatsapp/:phone", async (req, res) => {
   const { sendWhatsAppBill } = await import("./utils/sendWhatsAppBill.js");
