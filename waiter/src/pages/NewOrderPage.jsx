@@ -101,7 +101,7 @@ export default function NewOrderPage() {
       <div style={{ paddingBottom: NAV_HEIGHT + 120 }}>
         <div style={{ padding: "18px 16px 4px", display: "flex", alignItems: "center", gap: 10 }}>
           <button onClick={() => setReviewing(false)} aria-label="Back" style={backBtn}>←</button>
-          <div style={{ fontSize: 18, fontWeight: 800, color: "#fff" }}>Review Order</div>
+          <div style={{ fontSize: 21, fontWeight: 800, color: "#fff", letterSpacing: -0.4 }}>Review Order</div>
         </div>
 
         <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -122,8 +122,9 @@ export default function NewOrderPage() {
               />
             </GlassCard>
           ))}
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 4px 0", fontWeight: 800, fontSize: 16, color: "#fff" }}>
-            <span>Total</span><span>₹{subtotal}</span>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "10px 4px 0", fontWeight: 800, color: "#fff" }}>
+            <span style={{ fontSize: 14 }}>Total</span>
+            <span style={{ fontSize: 22, fontVariantNumeric: "tabular-nums", letterSpacing: -0.4 }}>₹{subtotal}</span>
           </div>
         </div>
 
@@ -159,7 +160,7 @@ export default function NewOrderPage() {
     <div style={{ paddingBottom: NAV_HEIGHT + (itemCount > 0 ? 90 : 16) }}>
       <div style={{ padding: "18px 16px 4px", display: "flex", alignItems: "center", gap: 10 }}>
         <button onClick={() => nav(-1)} aria-label="Back" style={backBtn}>←</button>
-        <div style={{ fontSize: 18, fontWeight: 800, color: "#fff" }}>New Order</div>
+        <div style={{ fontSize: 21, fontWeight: 800, color: "#fff", letterSpacing: -0.4 }}>New Order</div>
       </div>
 
       {/* Order type + table */}
@@ -220,11 +221,14 @@ export default function NewOrderPage() {
           <div key={cat} style={{ marginBottom: 10 }}>
             <div style={{ fontSize: 12, fontWeight: 800, color: "#fff", letterSpacing: 0.3, padding: "12px 2px 6px" }}>{cat}</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {catItems.map((it) => {
+              {catItems.map((it, i) => {
                 const qty = getQty(it._id);
                 const outOfStock = it.stockTracked && !it.stockAvailable;
                 return (
-                  <GlassCard key={it._id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", opacity: outOfStock ? 0.5 : 1 }}>
+                  <GlassCard
+                    key={it._id} className="stagger-item"
+                    style={{ "--i": i, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", opacity: outOfStock ? 0.5 : 1 }}
+                  >
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff" }}>{it.name}</div>
                       <div style={{ fontSize: 12, color: TEXT_FAINT, marginTop: 2 }}>₹{it.price}{outOfStock ? " · Out of stock" : ""}</div>
@@ -249,7 +253,7 @@ export default function NewOrderPage() {
           display: "flex", alignItems: "center", justifyContent: "space-between", fontWeight: 800, fontSize: 14,
           cursor: "pointer", boxShadow: "0 12px 28px rgba(59,130,246,0.45)",
         }}>
-          <span>{itemCount} item{itemCount > 1 ? "s" : ""} · ₹{subtotal}</span>
+          <span style={{ fontVariantNumeric: "tabular-nums" }}>{itemCount} item{itemCount > 1 ? "s" : ""} · ₹{subtotal}</span>
           <span>Review →</span>
         </button>
       )}

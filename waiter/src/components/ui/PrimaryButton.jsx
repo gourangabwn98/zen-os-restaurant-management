@@ -1,4 +1,4 @@
-import { ACCENT_GRADIENT, ACCENT_GLOW, GREEN, RED } from "../../theme.js";
+import { ACCENT_GRADIENT, ACCENT_GLOW, GREEN, RED, EASE_SNAP } from "../../theme.js";
 
 export default function PrimaryButton({
   children,
@@ -19,7 +19,7 @@ export default function PrimaryButton({
     fontWeight: 800,
     fontSize: 14.5,
     cursor: isBusy ? "not-allowed" : "pointer",
-    transition: "transform .12s ease, opacity .15s ease",
+    transition: `transform .15s ${EASE_SNAP}, opacity .15s ease`,
     opacity: isBusy ? 0.55 : 1,
   };
 

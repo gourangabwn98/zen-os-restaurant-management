@@ -238,6 +238,22 @@ export const getMyToday = async ({ AttendanceSession, employeeId }) => {
   return summarizeAttendanceSessions(sessions);
 };
 
+/** Same self-service summary as getMyToday, but for an arbitrary date range
+ * (defaults to today) — backs the Activity tab's "online timing" / "break
+ * timing" cards. Deliberately reuses summarizeAttendanceSessions rather
+ * than getEmployeeHistory's closedDays-only totals: a still-OPEN session
+ * for "today" should count its live elapsed time immediately, not wait
+ * until the waiter ends duty. */
+export const getMySummaryForRange = async ({ AttendanceSession, employeeId, from, to }) => {
+  const range = dayRangeFilter(from, to);
+  const filter = { employee: employeeId };
+  if (range) filter.loginAt = range;
+  else { const { start, end } = todayRange(); filter.loginAt = { $gte: start, $lte: end }; }
+
+  const sessions = await AttendanceSession.find(filter).sort({ loginAt: 1 });
+  return summarizeAttendanceSessions(sessions);
+};
+
 // ── Admin reads ──────────────────────────────────────────────────────────────
 
 const EMPLOYEE_ROLES_ALL = ["admin", "waiter", "chef"];

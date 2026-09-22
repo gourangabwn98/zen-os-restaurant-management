@@ -70,7 +70,7 @@ export default function OrdersPage() {
 
   return (
     <div style={{ paddingBottom: NAV_HEIGHT + 90 }}>
-      <div style={{ padding: "20px 16px 4px", fontSize: 19, fontWeight: 800, color: "#fff" }}>Orders</div>
+      <div style={{ padding: "20px 16px 4px", fontSize: 25, fontWeight: 800, color: "#fff", letterSpacing: -0.5 }}>Orders</div>
 
       <div className="hide-scrollbar" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "12px 16px" }}>
         {FILTERS.map((f) => (
@@ -89,8 +89,8 @@ export default function OrdersPage() {
         <EmptyState icon="🧾" title="No orders here" sub="Try a different filter" />
       ) : (
         <div style={{ padding: "4px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
-          {list.map((o) => (
-            <div key={o._id}>
+          {list.map((o, i) => (
+            <div key={o._id} className="stagger-item" style={{ "--i": i }}>
               <OrderCard order={o} onClick={() => nav(`/order/${o._id}`)} />
               {o.status === "PENDING_CONFIRMATION" && (
                 <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>

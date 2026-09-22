@@ -24,6 +24,17 @@ export const GREEN = "#34D399";
 export const AMBER  = "#FBBF24";
 export const RED   = "#F87171";
 
+// Per-status gradients — used sparingly (a stat's own accent, a status
+// badge's glow) so live/ready/wait states read as distinct colors, not just
+// the one blue everything else uses.
+export const GREEN_GRADIENT = "linear-gradient(135deg, #4ADE80 0%, #16A34A 100%)";
+export const AMBER_GRADIENT = "linear-gradient(135deg, #FCD34D 0%, #D97706 100%)";
+export const RED_GRADIENT   = "linear-gradient(135deg, #FB7185 0%, #DC2626 100%)";
+
+// CRED-style snap: fast out, no overshoot — used for press states and
+// list-entry stagger so motion feels deliberate rather than bouncy.
+export const EASE_SNAP = "cubic-bezier(.16,1,.3,1)";
+
 export const RADIUS_SM = 10;
 export const RADIUS_MD = 16;
 export const RADIUS_LG = 22;

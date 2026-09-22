@@ -8,12 +8,14 @@ export default function GlassCard({
   padding,
   soft = false,
   as = "div",
+  className = "",
   ...rest
 }) {
   const Tag = as;
   return (
     <Tag
       onClick={onClick}
+      className={onClick ? `pressable ${className}`.trim() : className || undefined}
       style={{
         background: soft ? "rgba(255,255,255,0.05)" : GLASS_BG,
         border: `1px solid ${GLASS_BORDER}`,

@@ -171,3 +171,39 @@ export const getEmployeePerformance = async ({ User, Order, from, to, role }) =>
     };
   }));
 };
+
+/** A waiter's own order activity for a date range (defaults to "today") —
+ * backs the Activity tab's "My orders" / "My collection" / "Unpaid" /
+ * "Cancelled" cards. Attribution mirrors getEmployeeTodayStats: orders are
+ * "mine" via confirmedBy.id (the waiter who actually placed/confirmed
+ * them), scoped by confirmedAt — except cancelled orders, which are scoped
+ * by cancelledBy.id/cancelledAt instead, since an order can be cancelled
+ * before it was ever confirmed (no confirmedBy set yet) and orderService's
+ * cancelOrder() records its own actor/timestamp for exactly that reason. */
+export const getWaiterOrderActivity = async ({ Order, employeeId, from, to }) => {
+  const { start, end } = resolveRange(from, to);
+  const idMatch = { $eq: employeeId };
+  const FIELDS = "orderId total tableNo orderType status paymentStatus confirmedAt cancelledAt cancelReason";
+
+  const [ordersCount, collectionAgg, unpaidOrders, cancelledOrders] = await Promise.all([
+    Order.countDocuments({ "confirmedBy.id": idMatch, confirmedAt: { $gte: start, $lte: end } }),
+    Order.aggregate([
+      { $match: { "confirmedBy.id": employeeId, confirmedAt: { $gte: start, $lte: end }, paymentStatus: "PAID" } },
+      { $group: { _id: null, total: { $sum: "$total" } } },
+    ]),
+    Order.find({
+      "confirmedBy.id": idMatch, confirmedAt: { $gte: start, $lte: end },
+      paymentStatus: "PENDING_VERIFICATION", status: { $ne: "CANCELLED" },
+    }).select(FIELDS).sort({ confirmedAt: -1 }).limit(100),
+    Order.find({
+      "cancelledBy.id": idMatch, cancelledAt: { $gte: start, $lte: end },
+    }).select(FIELDS).sort({ cancelledAt: -1 }).limit(100),
+  ]);
+
+  return {
+    ordersCount,
+    collection: collectionAgg[0]?.total || 0,
+    unpaidOrders, unpaidCount: unpaidOrders.length,
+    cancelledOrders, cancelledCount: cancelledOrders.length,
+  };
+};

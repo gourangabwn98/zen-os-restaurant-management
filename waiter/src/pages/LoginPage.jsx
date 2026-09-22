@@ -63,7 +63,7 @@ export default function LoginPage() {
         }}>
           🧑‍🍳
         </div>
-        <div style={{ fontWeight: 800, fontSize: 19, color: "#fff" }}>
+        <div style={{ fontWeight: 800, fontSize: 21, color: "#fff", letterSpacing: -0.4 }}>
           {step === "phone" ? "Waiter Login" : `Hi ${staffName || "there"}, verify your number`}
         </div>
         <div style={{ fontSize: 12.5, color: TEXT_FAINT, marginTop: 4 }}>

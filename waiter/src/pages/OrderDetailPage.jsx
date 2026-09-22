@@ -121,7 +121,7 @@ export default function OrderDetailPage() {
     <div style={{ paddingBottom: 40 }}>
       <div style={{ padding: "20px 16px 0", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: "#fff" }}>{order.orderId}</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: "#fff", letterSpacing: -0.4 }}>{order.orderId}</div>
           <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 2 }}>
             {order.orderType === "DINE_IN" ? `Dine-in · Table ${order.tableNo}` : "Takeaway"} · {order.source}
           </div>
@@ -151,13 +151,14 @@ export default function OrderDetailPage() {
       <div style={{ margin: "14px 16px" }}>
         <GlassCard style={{ padding: "14px 16px" }}>
           {(order.items || []).map((it, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 13, color: "#fff" }}>
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 13.5, color: "#fff" }}>
               <span>{it.name} × {it.qty}{it.notes ? <span style={{ color: TEXT_FAINT }}> · "{it.notes}"</span> : ""}</span>
-              <span style={{ fontWeight: 600 }}>₹{it.price * it.qty}</span>
+              <span style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>₹{it.price * it.qty}</span>
             </div>
           ))}
-          <div style={{ borderTop: `1px dashed ${GLASS_BORDER}`, marginTop: 8, paddingTop: 8, display: "flex", justifyContent: "space-between", fontWeight: 800, color: "#fff" }}>
-            <span>Total</span><span style={{ color: ACCENT }}>₹{order.total}</span>
+          <div style={{ borderTop: `1px dashed ${GLASS_BORDER}`, marginTop: 8, paddingTop: 8, display: "flex", justifyContent: "space-between", alignItems: "baseline", fontWeight: 800, color: "#fff" }}>
+            <span style={{ fontSize: 14 }}>Total</span>
+            <span style={{ color: ACCENT, fontSize: 23, fontVariantNumeric: "tabular-nums", letterSpacing: -0.4 }}>₹{order.total}</span>
           </div>
         </GlassCard>
       </div>

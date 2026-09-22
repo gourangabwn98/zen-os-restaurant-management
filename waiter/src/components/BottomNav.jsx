@@ -1,10 +1,37 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import { ACCENT, ACCENT_GRADIENT, GLASS_BG, GLASS_BORDER, TEXT_FAINT, NAV_HEIGHT } from "../theme.js";
+import { ACCENT, ACCENT_GRADIENT, ACCENT_SOFT, GLASS_BG, GLASS_BORDER, TEXT_FAINT, NAV_HEIGHT, EASE_SNAP } from "../theme.js";
+
+// Minimal line icons (stroke="currentColor") instead of emoji — emoji render
+// inconsistently across OS/fonts and read as "default app", not the premium
+// custom feel the rest of this theme goes for.
+const TablesIcon = ({ size = 19 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="4" width="7" height="7" rx="1.5" /><rect x="14" y="4" width="7" height="7" rx="1.5" />
+    <rect x="3" y="13" width="7" height="7" rx="1.5" /><rect x="14" y="13" width="7" height="7" rx="1.5" />
+  </svg>
+);
+const OrdersIcon = ({ size = 19 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3z" />
+    <path d="M9 8h6M9 12h6" />
+  </svg>
+);
+const ProfileIcon = ({ size = 19 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="8" r="3.5" /><path d="M4.5 20c1.4-3.7 4.3-5.5 7.5-5.5s6.1 1.8 7.5 5.5" />
+  </svg>
+);
+const ActivityIcon = ({ size = 19 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 20V10M12 20V4M20 20v-6" />
+  </svg>
+);
 
 const TABS = [
-  { to: "/tables",  label: "Tables",  icon: "🍽️", end: true },
-  { to: "/orders",  label: "Orders",  icon: "🧾" },
-  { to: "/profile", label: "Profile", icon: "👤" },
+  { to: "/tables",   label: "Tables",   Icon: TablesIcon, end: true },
+  { to: "/orders",   label: "Orders",   Icon: OrdersIcon },
+  { to: "/profile",  label: "Profile",  Icon: ProfileIcon },
+  { to: "/activity", label: "Activity", Icon: ActivityIcon },
 ];
 
 export default function BottomNav() {
@@ -49,15 +76,27 @@ export default function BottomNav() {
             key={t.to}
             to={t.to}
             end={t.end}
+            className="pressable"
             style={({ isActive }) => ({
               flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
-              justifyContent: "center", gap: 3, textDecoration: "none",
+              justifyContent: "center", gap: 4, textDecoration: "none",
               color: isActive ? ACCENT : TEXT_FAINT, fontSize: 10, fontWeight: 700,
-              textShadow: isActive ? "0 0 12px rgba(59,130,246,0.6)" : "none",
+              transition: `color .18s ${EASE_SNAP}`,
             })}
           >
-            <span style={{ fontSize: 18 }}>{t.icon}</span>
-            {t.label}
+            {({ isActive }) => (
+              <>
+                <span style={{
+                  width: 34, height: 26, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center",
+                  background: isActive ? ACCENT_SOFT : "transparent",
+                  boxShadow: isActive ? "0 0 14px rgba(59,130,246,0.35)" : "none",
+                  transition: `all .18s ${EASE_SNAP}`,
+                }}>
+                  <t.Icon />
+                </span>
+                {t.label}
+              </>
+            )}
           </NavLink>
         ))}
       </nav>

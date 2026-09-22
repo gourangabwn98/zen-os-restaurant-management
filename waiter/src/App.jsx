@@ -9,6 +9,7 @@ import OrdersPage from "./pages/OrdersPage.jsx";
 import NewOrderPage from "./pages/NewOrderPage.jsx";
 import OrderDetailPage from "./pages/OrderDetailPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
+import ActivityPage from "./pages/ActivityPage.jsx";
 import { BG_PRIMARY } from "./theme.js";
 //test
 
@@ -34,6 +35,7 @@ function Shell() {
           <Route path="/new-order" element={<RequireAuth><NewOrderPage /></RequireAuth>} />
           <Route path="/order/:id" element={<RequireAuth><OrderDetailPage /></RequireAuth>} />
           <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
+          <Route path="/activity" element={<RequireAuth><ActivityPage /></RequireAuth>} />
           <Route path="*" element={<Navigate to={auth.isLoggedIn ? "/tables" : "/login"} replace />} />
         </Routes>
         {showNav && <BottomNav />}

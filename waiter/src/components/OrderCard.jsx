@@ -34,7 +34,7 @@ export default function OrderCard({ order, onClick, style }) {
           </div>
         </div>
         <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <div style={{ fontWeight: 800, fontSize: 14, color: ACCENT }}>₹{order.total}</div>
+          <div style={{ fontWeight: 800, fontSize: 17, color: ACCENT, fontVariantNumeric: "tabular-nums", letterSpacing: -0.3 }}>₹{order.total}</div>
           <div style={{ marginTop: 6 }}><StatusBadge status={order.status} /></div>
         </div>
       </div>

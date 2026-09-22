@@ -5,8 +5,7 @@ import { useAppState } from "../context/AppState.jsx";
 import { disconnectSocket } from "../services/socketService.js";
 import { getMyDashboard } from "../services/authService.js";
 import GlassCard from "../components/ui/GlassCard.jsx";
-import DutyPanel from "../components/DutyPanel.jsx";
-import { ACCENT, ACCENT_GRADIENT, TEXT_FAINT, NAV_HEIGHT } from "../theme.js";
+import { ACCENT, ACCENT_GRADIENT, ACCENT_GLOW, TEXT_FAINT, NAV_HEIGHT } from "../theme.js";
 
 export default function ProfilePage() {
   const nav = useNavigate();
@@ -27,19 +26,20 @@ export default function ProfilePage() {
 
   return (
     <div style={{ paddingBottom: NAV_HEIGHT + 20 }}>
-      <div style={{ padding: "20px 16px 10px", fontSize: 19, fontWeight: 800, color: "#fff" }}>Profile</div>
+      <div style={{ padding: "20px 16px 10px", fontSize: 25, fontWeight: 800, color: "#fff", letterSpacing: -0.5 }}>Profile</div>
 
       <div style={{ margin: "12px 16px" }}>
         <GlassCard style={{ padding: "22px 18px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <div style={{
-              width: 54, height: 54, borderRadius: "50%", background: ACCENT_GRADIENT,
-              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 800, color: "#fff",
+              width: 58, height: 58, borderRadius: "50%", background: ACCENT_GRADIENT,
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 23, fontWeight: 800, color: "#fff",
+              boxShadow: ACCENT_GLOW, flexShrink: 0,
             }}>
               {(auth.user?.name || "?").charAt(0).toUpperCase()}
             </div>
             <div>
-              <div style={{ fontWeight: 800, fontSize: 16, color: "#fff" }}>{auth.user?.name || "Waiter"}</div>
+              <div style={{ fontWeight: 800, fontSize: 17.5, color: "#fff", letterSpacing: -0.3 }}>{auth.user?.name || "Waiter"}</div>
               <div style={{ fontSize: 12.5, color: TEXT_FAINT, marginTop: 2 }}>+91 {auth.user?.phone}</div>
               <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 1, textTransform: "capitalize" }}>{auth.user?.role || "waiter"}</div>
             </div>
@@ -52,10 +52,6 @@ export default function ProfilePage() {
           {auth.user.restaurantName}
         </div>
       )}
-
-      <div style={{ margin: "0 16px 16px" }}>
-        <DutyPanel />
-      </div>
 
       {stats && (
         <div style={{ margin: "0 16px 16px" }}>
@@ -85,8 +81,8 @@ export default function ProfilePage() {
 }
 
 const StatBox = ({ label, value }) => (
-  <GlassCard style={{ textAlign: "center", padding: "16px 6px" }}>
-    <div style={{ fontSize: 21, fontWeight: 800, color: ACCENT }}>{value ?? 0}</div>
+  <GlassCard style={{ textAlign: "center", padding: "18px 6px" }}>
+    <div style={{ fontSize: 26, fontWeight: 800, color: ACCENT, fontVariantNumeric: "tabular-nums", letterSpacing: -0.5 }}>{value ?? 0}</div>
     <div style={{ fontSize: 10, color: TEXT_FAINT, marginTop: 4 }}>{label}</div>
   </GlassCard>
 );

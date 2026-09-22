@@ -1,7 +1,7 @@
 import express from "express";
 import {
   addEmployee, getEmployees, getEmployeeById, editEmployee,
-  toggleEmployeeStatus, getEmployeeStatsById, getPerformanceReport, getMyDashboard,
+  toggleEmployeeStatus, getEmployeeStatsById, getPerformanceReport, getMyDashboard, getMyActivity,
 } from "../controllers/employeeController.js";
 import { protect } from "../middleware/authMiddleware.js";
 import { requireAdmin, requireEmployee } from "../middleware/rbac.js";
@@ -12,6 +12,7 @@ router.use(protect);
 // Self-service — any employee, their own data only. Mounted before the
 // :id routes so "/me/dashboard" is never swallowed by the :id param matcher.
 router.get("/me/dashboard", requireEmployee, getMyDashboard);
+router.get("/me/activity",  requireEmployee, getMyActivity);
 
 // Admin-only — creating/managing OTHER people's accounts and viewing
 // performance across staff is structural/sensitive, matches how table and

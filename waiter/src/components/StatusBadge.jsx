@@ -30,9 +30,9 @@ export default function StatusBadge({ status, style }) {
     <span style={{
       display: "inline-flex", alignItems: "center", gap: 5,
       fontSize: 10.5, fontWeight: 800, color: c, background: `${c}1f`, border: `1px solid ${c}40`,
-      padding: "4px 10px", borderRadius: 20, whiteSpace: "nowrap", ...style,
+      padding: "4px 10px", borderRadius: 20, whiteSpace: "nowrap", boxShadow: `0 0 10px ${c}30`, ...style,
     }}>
-      <span style={{ width: 6, height: 6, borderRadius: "50%", background: c }} />
+      <span style={{ width: 6, height: 6, borderRadius: "50%", background: c, boxShadow: `0 0 6px ${c}` }} />
       {STATUS_LABEL[status] || status}
     </span>
   );

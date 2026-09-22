@@ -1,30 +1,23 @@
-// src/components/DutyPanel.jsx — "My Duty" attendance/presence panel.
-// Resumes an already-open session on mount (login/refresh/reconnect never
-// creates a duplicate — see restaurant-server/services/attendanceService.js).
-// Starting duty is always an explicit tap, never automatic on login.
+// src/components/DutyPanel.jsx — compact "My Duty" toggle, lives on the
+// Tables page header (not Profile) so a waiter can clock in/out without
+// leaving the screen they actually work from. Resumes an already-open
+// session on mount (login/refresh/reconnect never creates a duplicate —
+// see restaurant-server/services/attendanceService.js). Starting/ending
+// duty is always an explicit tap, never automatic.
 import { useState, useEffect, useCallback, useRef } from "react";
 import toast from "react-hot-toast";
-import GlassCard from "./ui/GlassCard.jsx";
-import PrimaryButton from "./ui/PrimaryButton.jsx";
 import { getMyDuty, startDuty, startBreak, endBreak, endDuty } from "../services/dutyService.js";
 import { getSocket } from "../services/socketService.js";
-import { GREEN, AMBER, RED, TEXT, TEXT_FAINT } from "../theme.js";
+import { GREEN, AMBER, RED, EASE_SNAP } from "../theme.js";
+import { formatDuration } from "../utils/dateRange.js";
 
 const HEARTBEAT_INTERVAL_MS = 30000;
 
 const STATUS_META = {
-  ONLINE:  { color: GREEN, label: "ONLINE", dot: "🟢" },
-  BREAK:   { color: AMBER, label: "ON BREAK", dot: "🟡" },
-  OFFLINE: { color: RED,   label: "OFF DUTY", dot: "🔴" },
+  ONLINE:  { color: GREEN, label: "On duty" },
+  BREAK:   { color: AMBER, label: "On break" },
+  OFFLINE: { color: RED,   label: "Off duty" },
 };
-
-const fmtDuration = (totalSeconds) => {
-  const s = Math.max(0, Math.round(totalSeconds || 0));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  return `${String(h).padStart(2, "0")}h ${String(m).padStart(2, "0")}m`;
-};
-const fmtTime = (d) => (d ? new Date(d).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "—");
 
 // Working/break seconds so far, computed client-side between server
 // refetches so the timer ticks smoothly without polling every second.
@@ -56,15 +49,11 @@ export default function DutyPanel() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  // Live ticking clock for the working/break timers — purely local display,
-  // never written anywhere; the server value is re-synced via refresh().
   useEffect(() => {
     const iv = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(iv);
   }, []);
 
-  // Heartbeat while a session is open, plus listening for this employee's
-  // own attendance updates from other tabs/devices.
   useEffect(() => {
     const socket = getSocket();
     if (!socket) return;
@@ -104,58 +93,63 @@ export default function DutyPanel() {
   const status = session ? session.presenceStatus : "OFFLINE";
   const meta = STATUS_META[status];
   const { workingSeconds, breakSeconds } = liveElapsed(session, nowMs);
+  const timeLabel = status === "BREAK" ? formatDuration(breakSeconds) : session ? formatDuration(workingSeconds) : null;
+
+  const handleToggle = () => {
+    if (session) {
+      if (!window.confirm("End your duty for today?")) return;
+      act("end", endDuty);
+    } else {
+      act("start", startDuty);
+    }
+  };
 
   return (
-    <GlassCard style={{ padding: "18px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: TEXT_FAINT, letterSpacing: 0.4 }}>MY DUTY</div>
-        <div style={{ fontSize: 13, fontWeight: 800, color: meta.color }}>{meta.dot} {meta.label}</div>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+        <span style={{ width: 8, height: 8, borderRadius: "50%", background: meta.color, boxShadow: `0 0 8px ${meta.color}`, flexShrink: 0 }} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 800, fontSize: 12.5, color: "#E8ECF2" }}>{meta.label}</div>
+          {timeLabel && (
+            <div style={{ fontSize: 10.5, color: "#9AA4B2", fontVariantNumeric: "tabular-nums" }}>
+              {status === "BREAK" ? "Break · " : "Working · "}{timeLabel}
+            </div>
+          )}
+        </div>
       </div>
 
-      {session ? (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-          <Stat label={status === "BREAK" ? "Break started" : "Started"}
-                value={status === "BREAK"
-                  ? fmtTime((session.breaks || []).find((b) => !b.endedAt)?.startedAt)
-                  : fmtTime(session.loginAt)} />
-          <Stat label="Working" value={fmtDuration(workingSeconds)} />
-          {status === "BREAK" && <Stat label="Break duration" value={fmtDuration(breakSeconds)} />}
-        </div>
-      ) : (
-        <div style={{ fontSize: 12.5, color: TEXT_FAINT, marginBottom: 16 }}>
-          You're not on duty. Start your shift to begin tracking attendance.
-        </div>
-      )}
-
-      <div style={{ display: "flex", gap: 10 }}>
-        {!session && (
-          <PrimaryButton variant="success" style={{ flex: 1 }} disabled={busy} onClick={() => act("start", startDuty)}>
-            Start Duty
-          </PrimaryButton>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+        {status === "ONLINE" && (
+          <button onClick={() => act("breakStart", startBreak)} disabled={busy} style={miniBtn}>Break</button>
         )}
-        {session?.presenceStatus === "ONLINE" && (
-          <>
-            <PrimaryButton variant="outline" style={{ flex: 1 }} disabled={busy} onClick={() => act("breakStart", startBreak)}>
-              Start Break
-            </PrimaryButton>
-            <PrimaryButton variant="danger" style={{ flex: 1 }} disabled={busy} onClick={() => act("end", endDuty)}>
-              End Duty
-            </PrimaryButton>
-          </>
+        {status === "BREAK" && (
+          <button onClick={() => act("breakEnd", endBreak)} disabled={busy} style={miniBtn}>Resume</button>
         )}
-        {session?.presenceStatus === "BREAK" && (
-          <PrimaryButton variant="solid" style={{ flex: 1 }} disabled={busy} onClick={() => act("breakEnd", endBreak)}>
-            Resume Duty
-          </PrimaryButton>
-        )}
+        <Switch on={!!session} disabled={busy} color={meta.color} onClick={handleToggle} />
       </div>
-    </GlassCard>
+    </div>
   );
 }
 
-const Stat = ({ label, value }) => (
-  <div>
-    <div style={{ fontSize: 17, fontWeight: 800, color: TEXT }}>{value}</div>
-    <div style={{ fontSize: 10.5, color: TEXT_FAINT, marginTop: 2 }}>{label}</div>
-  </div>
-);
+function Switch({ on, onClick, disabled, color }) {
+  return (
+    <button
+      type="button" onClick={onClick} disabled={disabled} aria-pressed={on} aria-label={on ? "End duty" : "Start duty"}
+      style={{
+        width: 46, height: 26, borderRadius: 999, border: "none", padding: 0, position: "relative", flexShrink: 0,
+        background: on ? color : "rgba(255,255,255,0.16)", cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.6 : 1, transition: `background .2s ${EASE_SNAP}`,
+      }}
+    >
+      <span style={{
+        position: "absolute", top: 3, left: on ? 23 : 3, width: 20, height: 20, borderRadius: "50%",
+        background: "#fff", boxShadow: "0 2px 6px rgba(0,0,0,0.3)", transition: `left .2s ${EASE_SNAP}`,
+      }} />
+    </button>
+  );
+}
+
+const miniBtn = {
+  minHeight: 32, padding: "0 12px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.16)",
+  background: "rgba(255,255,255,0.06)", color: "#E8ECF2", fontSize: 11.5, fontWeight: 700, cursor: "pointer",
+};

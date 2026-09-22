@@ -1,8 +1,9 @@
 // controllers/employeeController.js
 import {
   createEmployee, updateEmployee, setEmployeeStatus, listEmployees,
-  getEmployeeTodayStats, getEmployeePerformance, EMPLOYEE_ROLES,
+  getEmployeeTodayStats, getEmployeePerformance, getWaiterOrderActivity, EMPLOYEE_ROLES,
 } from "../services/employeeService.js";
+import { getMySummaryForRange } from "../services/attendanceService.js";
 import { getRoleFromUser } from "../services/orderService.js";
 
 // ── Admin: manage employees ─────────────────────────────────────────────────
@@ -84,6 +85,29 @@ export const getPerformanceReport = async (req, res) => {
     res.json({ performance });
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+};
+
+// GET /api/employees/me/activity?from=&to= — waiter's own Activity tab.
+// Own data only: employeeId is always req.user._id, never taken from the
+// query string, same rule as getMyDashboard below.
+export const getMyActivity = async (req, res) => {
+  try {
+    const { Order, AttendanceSession } = req.models;
+    const { from, to } = req.query;
+    const employeeId = req.user._id;
+
+    const [orders, duty] = await Promise.all([
+      getWaiterOrderActivity({ Order, employeeId, from, to }),
+      getMySummaryForRange({ AttendanceSession, employeeId, from, to }),
+    ]);
+
+    res.json({
+      orders,
+      duty: { workingSeconds: duty.totalWorkingSeconds, breakSeconds: duty.totalBreakSeconds },
+    });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message });
   }
 };
 
