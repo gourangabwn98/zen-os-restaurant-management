@@ -61,12 +61,14 @@ export const toggleEmployeeStatus = async (req, res) => {
   }
 };
 
+// GET /api/admin/employees/:id/stats?from=YYYY-MM-DD&to=YYYY-MM-DD
 export const getEmployeeStatsById = async (req, res) => {
   try {
     const { User, Order } = req.models;
+    const { from, to } = req.query;
     const employee = await User.findOne({ _id: req.params.id, role: { $in: EMPLOYEE_ROLES } });
     if (!employee) return res.status(404).json({ message: "Employee not found" });
-    const stats = await getEmployeeTodayStats({ Order, employeeId: employee._id, role: employee.role });
+    const stats = await getEmployeeTodayStats({ Order, employeeId: employee._id, role: employee.role, from, to });
     res.json({ employee: { _id: employee._id, name: employee.name, role: employee.role }, stats });
   } catch (err) {
     res.status(500).json({ message: err.message });

@@ -97,11 +97,26 @@ const todayRange = () => {
   return { start, end };
 };
 
-/** One employee's own "today" stats — used by both the Waiter and Kitchen
- * apps' self-service dashboard. Counts by the field that actually names
- * THIS employee for each stage, never a generic "a waiter did this". */
-export const getEmployeeTodayStats = async ({ Order, employeeId, role }) => {
-  const { start, end } = todayRange();
+/** Parses "from"/"to" query params (plain "YYYY-MM-DD" dates) as LOCAL day
+ * boundaries, matching todayRange()'s local-time convention — not UTC
+ * midnight, which would silently shift results by a day in most timezones.
+ * Falls back to today when either bound is missing. */
+const resolveRange = (from, to) => {
+  if (!from && !to) return todayRange();
+  const start = from ? new Date(`${from}T00:00:00`) : (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
+  const end   = to   ? new Date(`${to}T23:59:59.999`) : (() => { const d = new Date(); d.setHours(23,59,59,999); return d; })();
+  return { start, end };
+};
+
+/** One employee's stats for a date range (defaults to "today") — used by the
+ * Waiter/Kitchen self-service dashboards (always "today") and the admin
+ * Employees "Stats" panel (optionally a custom range). Live-state counts
+ * (currently PREPARING/READY/active) are never range-scoped — they reflect
+ * the order's current state, not history, so a past date range wouldn't mean
+ * anything for them. Counts by the field that actually names THIS employee
+ * for each stage, never a generic "a waiter did this". */
+export const getEmployeeTodayStats = async ({ Order, employeeId, role, from, to }) => {
+  const { start, end } = resolveRange(from, to);
   const idMatch = { $eq: employeeId };
 
   if (role === "chef") {

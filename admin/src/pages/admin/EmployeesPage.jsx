@@ -183,35 +183,91 @@ function EmployeeFormModal({ employee, onClose, onSaved }) {
   );
 }
 
+// Local-day "YYYY-MM-DD" (never toISOString(), which shifts by the UTC
+// offset and can land on the wrong day near midnight).
+const toDateInput = (d) => {
+  const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, "0"), day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d; };
+
+const RANGE_PRESETS = [
+  { key: "today",     label: "Today",       range: () => ({ from: toDateInput(new Date()), to: toDateInput(new Date()) }) },
+  { key: "yesterday", label: "Yesterday",   range: () => ({ from: toDateInput(daysAgo(1)), to: toDateInput(daysAgo(1)) }) },
+  { key: "week",      label: "Last 7 Days", range: () => ({ from: toDateInput(daysAgo(6)), to: toDateInput(new Date()) }) },
+  { key: "month",     label: "Last 30 Days", range: () => ({ from: toDateInput(daysAgo(29)), to: toDateInput(new Date()) }) },
+];
+
 function StatsModal({ employee, onClose }) {
   const [stats, setStats] = useState(null);
+  const [preset, setPreset] = useState("today");
+  const [from, setFrom] = useState(() => RANGE_PRESETS[0].range().from);
+  const [to, setTo] = useState(() => RANGE_PRESETS[0].range().to);
 
   useEffect(() => {
-    getEmployeeStats(employee._id).then(({ data }) => setStats(data.stats)).catch(() => toast.error("Couldn't load stats"));
-  }, [employee._id]);
+    setStats(null);
+    getEmployeeStats(employee._id, { from, to })
+      .then(({ data }) => setStats(data.stats))
+      .catch(() => toast.error("Couldn't load stats"));
+  }, [employee._id, from, to]);
+
+  const applyPreset = (key) => {
+    setPreset(key);
+    const r = RANGE_PRESETS.find((p) => p.key === key).range();
+    setFrom(r.from); setTo(r.to);
+  };
+
+  const handleFrom = (v) => { setPreset(""); setFrom(v); if (to < v) setTo(v); };
+  const handleTo = (v) => { setPreset(""); setTo(v); if (from > v) setFrom(v); };
 
   const isChef = employee.role === "chef";
+  const rangeLabel = RANGE_PRESETS.find((p) => p.key === preset)?.label
+    ?? (from === to ? from : `${from} → ${to}`);
 
   return (
     <Modal onClose={onClose} title={`${employee.name}'s Stats`}>
-      <div style={{ fontSize: 12, color: TEXT_MUTED, marginBottom: 14, textTransform: "uppercase", fontWeight: 700 }}>
-        {CATEGORY_LABEL[employee.role]} · Today
+      <div style={{ fontSize: 12, color: TEXT_MUTED, marginBottom: 12, textTransform: "uppercase", fontWeight: 700 }}>
+        {CATEGORY_LABEL[employee.role]} · {rangeLabel}
       </div>
+
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+        {RANGE_PRESETS.map((p) => (
+          <button
+            key={p.key}
+            onClick={() => applyPreset(p.key)}
+            style={{
+              ...smallBtnStyle, flex: "0 0 auto", padding: "6px 10px",
+              background: preset === p.key ? PRIMARY : "transparent",
+              color: preset === p.key ? "#fff" : TEXT_PRIMARY,
+              borderColor: preset === p.key ? PRIMARY : BORDER,
+            }}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
+        <input type="date" value={from} max={to} onChange={(e) => handleFrom(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+        <span style={{ color: TEXT_MUTED, fontSize: 12 }}>to</span>
+        <input type="date" value={to} min={from} max={toDateInput(new Date())} onChange={(e) => handleTo(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+      </div>
+
       {!stats ? (
         <div style={{ color: TEXT_MUTED, fontSize: 13 }}>Loading…</div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           {isChef ? (
             <>
-              <StatBox label="Prepared Today" value={stats.preparedToday} />
-              <StatBox label="Preparing" value={stats.preparing} />
-              <StatBox label="Ready" value={stats.ready} />
+              <StatBox label="Prepared" value={stats.preparedToday} />
+              <StatBox label="Preparing (live)" value={stats.preparing} />
+              <StatBox label="Ready (live)" value={stats.ready} />
               <StatBox label="Completed" value={stats.completedToday} />
             </>
           ) : (
             <>
-              <StatBox label="Orders Today" value={stats.ordersToday} />
-              <StatBox label="Active" value={stats.pending} />
+              <StatBox label="Orders" value={stats.ordersToday} />
+              <StatBox label="Active (live)" value={stats.pending} />
               <StatBox label="Completed" value={stats.completed} />
             </>
           )}
