@@ -9,8 +9,11 @@ dns.setServers(["1.1.1.1", "8.8.8.8"]);
 import express    from "express";
 import cors       from "cors";
 import "./config/env.js";
-import { connectDB } from "./config/db.js";
-import { initSocket } from "./sockets/socket.js";
+import { connectDB, getDB } from "./config/db.js";
+import { getModels } from "./config/getModels.js";
+import { tenantKeyFromUri } from "./utils/tenantKey.js";
+import { initSocket, emitAttendanceUpdated } from "./sockets/socket.js";
+import { sweepStaleAttendanceSessions } from "./services/attendanceService.js";
 
 import authRoutes    from "./routes/authRoutes.js";
 import menuRoutes    from "./routes/menuRoutes.js";
@@ -31,6 +34,7 @@ import kitchenRoutes  from "./routes/kitchenRoutes.js";
 import profileRoutes from "./routes/profileRoutes.js";
 import catagoryRoutes from "./routes/catagoryRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
+import attendanceRoutes from "./routes/attendanceRoutes.js";
 import { errorHandler, notFound } from "./middleware/errorMiddleware.js";
 
 const app    = express();
@@ -89,6 +93,7 @@ app.use("/api/categories",        catagoryRoutes);
 app.use("/api/support",           supportRoutes);
 app.use("/api/admin/printer",     printerRoutes);
 app.use("/api/notifications",     notificationRoutes);
+app.use("/api/attendance",        attendanceRoutes);
 
 app.get("/api/test-whatsapp/:phone", async (req, res) => {
   const { sendWhatsAppBill } = await import("./utils/sendWhatsAppBill.js");
@@ -115,5 +120,34 @@ connectDB().then(() => {
 ╚══════════════════════════════════════════════════════╝
     `);
     warmUpOcr(); // background — see utils/purchaseImportExtract.js
+    startAttendanceHeartbeatSweep();
   });
 });
+
+// ── Employee attendance heartbeat sweep ─────────────────────────────────────
+// Closes any duty session whose heartbeat has gone quiet for longer than the
+// grace period built into sweepStaleAttendanceSessions (browser closed
+// unexpectedly, device lost connectivity, etc.) — see
+// services/attendanceService.js for why this uses lastSeenAt, never "now",
+// as the logout time.
+const ATTENDANCE_SWEEP_INTERVAL_MS = 2 * 60 * 1000;
+const startAttendanceHeartbeatSweep = () => {
+  setInterval(async () => {
+    try {
+      const mongoUri = process.env.MONGO_URI;
+      const conn = await getDB(mongoUri);
+      const { AttendanceSession } = getModels(conn);
+      const closed = await sweepStaleAttendanceSessions({ AttendanceSession });
+      const tenantKey = tenantKeyFromUri(mongoUri);
+      for (const session of closed) {
+        emitAttendanceUpdated(tenantKey, {
+          action: "HEARTBEAT_TIMEOUT",
+          session,
+          employee: { _id: session.employee, name: session.employeeName, role: session.role },
+        });
+      }
+    } catch (err) {
+      console.error("attendance heartbeat sweep failed:", err.message);
+    }
+  }, ATTENDANCE_SWEEP_INTERVAL_MS);
+};

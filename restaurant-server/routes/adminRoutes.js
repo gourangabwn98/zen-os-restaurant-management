@@ -6,6 +6,10 @@ import {
   getAllUsers, deleteUser, getAllInvoices, updateInvoiceStatus,
   addItemsToOrder, getCombinedBill, printBill,
 } from "../controllers/adminController.js";
+import {
+  getAdminAttendanceToday, getAdminAttendanceHistory,
+  getAdminAttendanceEmployee, getAdminAttendanceSummary,
+} from "../controllers/attendanceController.js";
 
 const router = express.Router();
 router.use(protect);
@@ -24,5 +28,11 @@ router.post("/orders/:id/print-bill",requireStaff, printBill);
 // Admin only — account/user management
 router.get("/users",         requireAdmin, getAllUsers);
 router.delete("/users/:id",  requireAdmin, deleteUser);
+
+// Admin only — employee attendance monitoring (Admin → Employees → Attendance)
+router.get("/attendance/today",         requireAdmin, getAdminAttendanceToday);
+router.get("/attendance/summary",       requireAdmin, getAdminAttendanceSummary);
+router.get("/attendance/employee/:id",  requireAdmin, getAdminAttendanceEmployee);
+router.get("/attendance",               requireAdmin, getAdminAttendanceHistory);
 
 export default router;

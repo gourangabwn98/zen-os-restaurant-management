@@ -14,6 +14,7 @@ import NotificationsPage from "./NotificationsPage.jsx";
 import InvoicesPage   from "./InvoicesPage.jsx";
 import AnalyticsPage  from "./AnalyticsPage.jsx";
 import EmployeesPage   from "./EmployeesPage.jsx";
+import AttendancePage  from "./AttendancePage.jsx";
 import InventoryPage  from "./InventoryPage.jsx";
 import ProfilePage    from "./ProfilePage.jsx";
 import HelpPage       from "./HelpPage.jsx";
@@ -37,6 +38,7 @@ const ICONS = {
   menu:      <path d="M4 5h16M4 12h16M4 19h10" />,
   inventory: <><path d="M3 7l9-4 9 4v10l-9 4-9-4z" /><path d="M3 7l9 4 9-4M12 11v10" /></>,
   employees: <><circle cx="9" cy="8" r="3" /><path d="M3 20a6 6 0 0 1 12 0" /><path d="M16 8h5M18.5 5.5v5" /></>,
+  attendance: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></>,
   users:     <><circle cx="12" cy="8" r="3.5" /><path d="M5 20a7 7 0 0 1 14 0" /></>,
   bell:      <><path d="M6 8a6 6 0 0 1 12 0c0 4 1.5 6 2 7H4c.5-1 2-3 2-7Z" /><path d="M10 19a2 2 0 0 0 4 0" /></>,
   profile:   <><circle cx="12" cy="12" r="3" /><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4" /></>,
@@ -67,6 +69,7 @@ const OPERATIONS_NAV_B = [
 ];
 const MANAGEMENT_NAV = [
   { id: "employees", label: "Employees", icon: "employees" },
+  { id: "attendance", label: "Attendance", icon: "attendance" },
   { id: "users", label: "Users", icon: "users" },
   { id: "menu", label: "Menu Items", icon: "menu" },
   { id: "notifications", label: "Offers", icon: "bell" },
@@ -281,6 +284,7 @@ export default function AdminLayout() {
             {page === "tables"     && <TablesPage />}
             {page === "menu"       && <MenuAdminPage />}
             {page === "employees"  && <EmployeesPage />}
+            {page === "attendance" && <AttendancePage />}
             {page === "inventory"  && <InventoryPage />}
             {page === "users"      && <UsersPage />}
             {page === "notifications" && <NotificationsPage />}

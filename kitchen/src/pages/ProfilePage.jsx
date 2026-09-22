@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { getMyDashboard } from "../services/kitchenService.js";
 import { useAppState } from "../context/AppState.jsx";
 import { disconnectSocket } from "../services/socketService.js";
+import DutyPanel from "../components/DutyPanel.jsx";
 import { CARD, BORDER, TEXT_MUTED, AMBER } from "../theme.js";
 
 export default function ProfilePage() {
@@ -26,6 +27,10 @@ export default function ProfilePage() {
         <div style={{ fontSize: 40 }}>🧑‍🍳</div>
         <div style={{ fontSize: 20, fontWeight: 800, marginTop: 8 }}>Welcome {auth.user?.name}</div>
         <div style={{ fontSize: 12.5, color: TEXT_MUTED, marginTop: 2, textTransform: "uppercase" }}>Role: {auth.user?.role}</div>
+      </div>
+
+      <div style={{ marginTop: 18 }}>
+        <DutyPanel />
       </div>
 
       <div style={{ marginTop: 18, background: CARD, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 20 }}>

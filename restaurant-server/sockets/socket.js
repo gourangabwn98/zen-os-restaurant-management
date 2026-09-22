@@ -28,12 +28,16 @@
 //       Printer-key sockets only. Updates the persisted job's status —
 //       PENDING → PRINTING → PRINTED/FAILED — and the device's last-seen
 //       heartbeat. This is the single place print outcomes are recorded.
+//   employee:attendance:heartbeat
+//       Staff/chef sockets only. Sent every ~30s while on duty; updates
+//       AttendanceSession.lastSeenAt. See services/attendanceService.js.
 //
 // Server-emitted events (see emitters at the bottom):
 //   order:new / order:confirmed / order:status_changed / order:cancelled
 //   order:payment_changed / table:cleared / inventory:alert
 //   kot:created  { jobId, jobType:"KOT", order:{...}, items }   → staff + printers room
 //   bill:print   { jobId, jobType:"BILL", order:{...}, ... }    → staff + printers room
+//   employee:attendance:updated { action, session, employee }  → staff room
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Server } from "socket.io";
@@ -43,6 +47,7 @@ import { getModels } from "../config/getModels.js";
 import { tenantKeyFromUri, rooms } from "../utils/tenantKey.js";
 import { verifyGuestOrderToken } from "../utils/guestOrderToken.js";
 import { verifyPrinterKey, markPrinterSeen } from "../services/printerDeviceService.js";
+import { recordHeartbeat } from "../services/attendanceService.js";
 
 let ioInstance = null;
 
@@ -153,6 +158,23 @@ export const initSocket = (httpServer) => {
         } catch {
           /* ignore — silently refuse the subscription */
         }
+      }
+    });
+
+    // ── Employee attendance heartbeat ────────────────────────────────────────
+    // Sent every ~30s by the Waiter/Kitchen/Admin app while an employee is on
+    // duty. One cheap single-field conditional update — see
+    // services/attendanceService.js.recordHeartbeat (never a per-second
+    // write). Staff/chef only; a customer/guest/printer socket sending this
+    // is simply ignored, never trusted to name its own employeeId.
+    socket.on("employee:attendance:heartbeat", async () => {
+      if (!socket.isStaff && !socket.isChef) return;
+      try {
+        const conn = await getDB(process.env.MONGO_URI);
+        const { AttendanceSession } = getModels(conn);
+        await recordHeartbeat({ AttendanceSession, employeeId: socket.userId });
+      } catch (err) {
+        console.error("attendance heartbeat failed:", err.message);
       }
     });
 
@@ -382,4 +404,15 @@ export const emitTableFreed = (tenantKey, { tableNo, seats, suggestedEntry }) =>
 // ── Inventory alerts (Phase 2) ────────────────────────────────────────────
 export const emitInventoryAlert = (tenantKey, { item, level }) => {
   emit(rooms.staff(tenantKey), "inventory:alert", { item, level });
+};
+
+// ── Employee attendance ────────────────────────────────────────────────────
+// One canonical event carrying an `action` discriminator
+// (START/BREAK_START/BREAK_END/END/HEARTBEAT_TIMEOUT) rather than a
+// separate wire event per transition — mirrors emitOrderStatusChanged's
+// single-event-plus-context shape. Staff room only (admin+waiter, already
+// trusted with each other's operational data); a chef never sees another
+// employee's attendance, matching the kitchen room's stricter scope.
+export const emitAttendanceUpdated = (tenantKey, { action, session, employee }) => {
+  emit(rooms.staff(tenantKey), "employee:attendance:updated", { action, session, employee });
 };

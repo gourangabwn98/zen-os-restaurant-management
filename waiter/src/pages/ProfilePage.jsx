@@ -5,6 +5,7 @@ import { useAppState } from "../context/AppState.jsx";
 import { disconnectSocket } from "../services/socketService.js";
 import { getMyDashboard } from "../services/authService.js";
 import GlassCard from "../components/ui/GlassCard.jsx";
+import DutyPanel from "../components/DutyPanel.jsx";
 import { ACCENT, ACCENT_GRADIENT, TEXT_FAINT, NAV_HEIGHT } from "../theme.js";
 
 export default function ProfilePage() {
@@ -51,6 +52,10 @@ export default function ProfilePage() {
           {auth.user.restaurantName}
         </div>
       )}
+
+      <div style={{ margin: "0 16px 16px" }}>
+        <DutyPanel />
+      </div>
 
       {stats && (
         <div style={{ margin: "0 16px 16px" }}>

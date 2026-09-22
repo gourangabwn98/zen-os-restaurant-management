@@ -20,6 +20,7 @@ import { useNavigate, Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import { getSocket, disconnectSocket } from "../services/socketService.js";
 import { getKitchenOrders, updateKitchenOrderStatus } from "../services/kitchenService.js";
+import { getMyDuty } from "../services/dutyService.js";
 import { useAppState } from "../context/AppState.jsx";
 import {
   playNewOrderAlert, playUrgentOrderAlert, unlockAudio, isAudioUnlocked,
@@ -54,6 +55,42 @@ function useNow() {
     return () => clearInterval(t);
   }, []);
   return now;
+}
+
+// Compact duty/presence status for the header pill — the full Start/Break/
+// End controls live on the Profile page (see components/DutyPanel.jsx);
+// this just keeps the board's always-visible header honest about it and
+// sends the attendance heartbeat while a session is open.
+const DUTY_HEARTBEAT_MS = 30000;
+function useDutyStatus() {
+  const [presenceStatus, setPresenceStatus] = useState(null); // null = loading/off duty
+  const [sessionStatus, setSessionStatus] = useState(null);
+
+  const refresh = useCallback(() => {
+    getMyDuty()
+      .then(({ data }) => {
+        setPresenceStatus(data.session?.presenceStatus || "OFFLINE");
+        setSessionStatus(data.session?.status || null);
+      })
+      .catch(() => setPresenceStatus("OFFLINE"));
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+    const sendHeartbeat = () => { if (sessionStatus === "OPEN") socket.emit("employee:attendance:heartbeat"); };
+    const hb = setInterval(sendHeartbeat, DUTY_HEARTBEAT_MS);
+    sendHeartbeat();
+    socket.on("employee:attendance:updated", refresh);
+    return () => {
+      clearInterval(hb);
+      socket.off("employee:attendance:updated", refresh);
+    };
+  }, [sessionStatus, refresh]);
+
+  return presenceStatus;
 }
 
 function Tag({ tone, children }) {
@@ -163,6 +200,7 @@ export default function KitchenBoardPage() {
   const [busyId, setBusyId] = useState(null);
   const seenJobIds = useRef(new Set());
   const now = useNow();
+  const dutyStatus = useDutyStatus();
 
   const upsertOrderSilently = useCallback((order) => {
     const key = order._id || order.orderId;
@@ -299,6 +337,13 @@ export default function KitchenBoardPage() {
         </div>
 
         <div style={{ flex: 1 }} />
+        {dutyStatus && (
+          <Link to="/profile" style={{ textDecoration: "none" }}>
+            <Tag tone={dutyStatus === "ONLINE" ? "ready" : dutyStatus === "BREAK" ? "wait" : "stop"}>
+              {dutyStatus === "ONLINE" ? "On Duty" : dutyStatus === "BREAK" ? "On Break" : "Off Duty"}
+            </Tag>
+          </Link>
+        )}
         <Tag tone={connected ? "ready" : "stop"}>{connected ? "Connected" : "Reconnecting…"}</Tag>
         <span style={{ fontSize: 12.5, color: T2 }}>{auth.user?.name}{auth.user?.name ? " · " : ""}{auth.user?.role || "chef"}</span>
         <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-.03em", fontVariantNumeric: "tabular-nums" }}>{clockStr}</div>

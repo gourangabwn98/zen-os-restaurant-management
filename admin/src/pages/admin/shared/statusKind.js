@@ -26,6 +26,12 @@ export const STATUS_KIND = {
   DINE_IN: "vio",
   TAKEAWAY: "vio",
   ONLINE: "vio",
+  // employee attendance presence (Admin → Employees → Attendance). Only
+  // BREAK/OFFLINE go here — "ONLINE" is already taken above by the
+  // order-type enum, so attendance screens pass `kind="ready"` explicitly
+  // via Badge's `kind` override instead of relying on this lookup for it.
+  BREAK: "wait",
+  OFFLINE: "stop",
   // legacy strings still present in historic data
   Placed: "live",
   Preparing: "wait",

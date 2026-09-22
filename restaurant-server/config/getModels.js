@@ -551,6 +551,56 @@ const supportTicketSchema = new mongoose.Schema({
   status:  { type: String, enum: ["OPEN","RESOLVED"], default: "OPEN" },
 }, { timestamps: true });
 
+// ── Employee attendance / presence / break tracking ────────────────────────
+// One document per continuous duty session for one employee (admin/waiter/
+// chef). `status` is the SESSION lifecycle (OPEN while on duty in any form,
+// CLOSED once ended) — kept deliberately separate from `presenceStatus`
+// (ONLINE/BREAK/OFFLINE, the UI-facing state) so the "one active session per
+// employee" invariant below can be expressed as a simple partial unique
+// index, exactly like TableSession's "one open session per table" above.
+const attendanceBreakSchema = new mongoose.Schema({
+  startedAt:       { type: Date, required: true },
+  endedAt:         { type: Date, default: null },
+  durationSeconds: { type: Number, default: 0 },
+}, { _id: false });
+
+const attendanceSessionSchema = new mongoose.Schema({
+  employee:     { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  role:         { type: String, enum: ["admin","waiter","chef"], required: true },
+  // Denormalized snapshot at session-start time, same convenience pattern as
+  // Order.waiterName — lets admin list/history views render without a join.
+  employeeName: { type: String, default: "" },
+  status:       { type: String, enum: ["OPEN","CLOSED"], default: "OPEN" },
+  presenceStatus: { type: String, enum: ["ONLINE","BREAK","OFFLINE"], default: "ONLINE" },
+  loginAt:      { type: Date, required: true, default: Date.now },
+  logoutAt:     { type: Date, default: null },
+  // Updated by the heartbeat socket event (utils/tenantKey.js rooms.staff
+  // sockets) roughly every 30s while on duty. Never written on a
+  // per-second cadence — see services/attendanceService.js.
+  lastSeenAt:   { type: Date, default: Date.now },
+  breaks:       { type: [attendanceBreakSchema], default: [] },
+  totalBreakSeconds:   { type: Number, default: 0 },
+  // Net working time = (logoutAt - loginAt) - totalBreakSeconds, computed
+  // once at close time (services/attendanceService.js) and stored — never
+  // recomputed live by a client clock.
+  totalWorkingSeconds: { type: Number, default: 0 },
+  // True when this session was closed by the server's heartbeat-timeout
+  // sweep rather than an explicit "End Duty" action — kept for reporting
+  // transparency, never hidden from the admin.
+  autoClosed:   { type: Boolean, default: false },
+}, { timestamps: true });
+
+// Mirrors TableSessionSchema's exact pattern: only one OPEN session per
+// employee at a time. "Start Duty" relies on this to detect/resume an
+// already-active session instead of creating a duplicate.
+attendanceSessionSchema.index(
+  { employee: 1, status: 1 },
+  { unique: true, partialFilterExpression: { status: "OPEN" }, name: "one_open_session_per_employee" }
+);
+attendanceSessionSchema.index({ employee: 1, loginAt: -1 });
+attendanceSessionSchema.index({ role: 1, status: 1 });
+attendanceSessionSchema.index({ loginAt: -1 });
+
 // A sent-offer log — one row per admin broadcast (services/notificationService.js).
 // recipientCount is a best-effort snapshot of how many customers were
 // opted in at send time, not a delivery receipt — FCM topic sends don't
@@ -582,6 +632,7 @@ export function getModels(conn) {
     SupportTicket:     conn.models.SupportTicket     || conn.model("SupportTicket",     supportTicketSchema),
     WaitlistEntry:     conn.models.WaitlistEntry     || conn.model("WaitlistEntry",     waitlistEntrySchema),
     NotificationLog:   conn.models.NotificationLog   || conn.model("NotificationLog",   notificationLogSchema),
+    AttendanceSession: conn.models.AttendanceSession || conn.model("AttendanceSession", attendanceSessionSchema),
 
     // ── Inventory (Phase 2) ────────────────────────────────────────────────
     Supplier:          conn.models.Supplier          || conn.model("Supplier",          supplierSchema),
