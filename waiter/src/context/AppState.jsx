@@ -1,11 +1,13 @@
 import { createContext, useContext } from "react";
 import { useAuth } from "../hooks/useAuth.js";
+import { useDuty } from "../hooks/useDuty.js";
 
 const AppCtx = createContext(null);
 
 export function AppStateProvider({ children }) {
   const auth = useAuth();
-  return <AppCtx.Provider value={{ auth }}>{children}</AppCtx.Provider>;
+  const duty = useDuty(auth.isLoggedIn);
+  return <AppCtx.Provider value={{ auth, duty }}>{children}</AppCtx.Provider>;
 }
 
 export const useAppState = () => {

@@ -1,4 +1,6 @@
 import { NavLink, useNavigate } from "react-router-dom";
+import toast from "react-hot-toast";
+import { useAppState } from "../context/AppState.jsx";
 import { ACCENT, ACCENT_GRADIENT, ACCENT_SOFT, GLASS_BG, GLASS_BORDER, TEXT_FAINT, NAV_HEIGHT, EASE_SNAP } from "../theme.js";
 
 // Minimal line icons (stroke="currentColor") instead of emoji — emoji render
@@ -36,6 +38,17 @@ const TABS = [
 
 export default function BottomNav() {
   const nav = useNavigate();
+  const { auth, duty } = useAppState();
+  // Duty gating is a waiter-only rule (mirrors the backend — see
+  // attendanceService.assertOnDuty) — an admin using this app isn't tracked
+  // by attendance at all, so never block them here.
+  const dutyGated = auth.user?.role === "waiter" && !duty.onDuty;
+
+  const handleNewOrder = () => {
+    if (dutyGated) return toast.error("You must be ON DUTY to perform this action.");
+    nav("/new-order");
+  };
+
   return (
     <>
       {/* Positioning wrapper centers to the same content column as the rest
@@ -47,16 +60,19 @@ export default function BottomNav() {
         position: "fixed", left: 14, right: 14, bottom: NAV_HEIGHT + 20, zIndex: 45, pointerEvents: "none",
       }}>
         <button
-          onClick={() => nav("/new-order")}
+          onClick={handleNewOrder}
           style={{
             position: "absolute", right: 0, bottom: 0, pointerEvents: "auto",
             width: 58, height: 58, borderRadius: "50%", border: "none",
-            background: ACCENT_GRADIENT, color: "#fff", fontSize: 27, fontWeight: 700, cursor: "pointer",
-            boxShadow: "0 10px 26px rgba(59,130,246,0.5)", display: "flex", alignItems: "center", justifyContent: "center",
-            animation: "pulseGlow 2.4s ease-in-out infinite",
+            background: dutyGated ? "rgba(255,255,255,0.14)" : ACCENT_GRADIENT,
+            color: "#fff", fontSize: 27, fontWeight: 700, cursor: "pointer",
+            boxShadow: dutyGated ? "none" : "0 10px 26px rgba(59,130,246,0.5)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            animation: dutyGated ? "none" : "pulseGlow 2.4s ease-in-out infinite",
+            opacity: dutyGated ? 0.7 : 1,
           }}
-          aria-label="New order"
-          title="New order"
+          aria-label={dutyGated ? "New order — start your duty first" : "New order"}
+          title={dutyGated ? "Start your duty first" : "New order"}
         >
           +
         </button>

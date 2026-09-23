@@ -9,12 +9,18 @@ import GlassCard from "../components/ui/GlassCard.jsx";
 import PrimaryButton from "../components/ui/PrimaryButton.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import QtyStepper, { AddButton } from "../components/ui/QtyStepper.jsx";
+import { useAppState } from "../context/AppState.jsx";
 import { ACCENT, ACCENT_SOFT, ACCENT_GRADIENT, TEXT_MUTED, TEXT_FAINT, GLASS_BG, GLASS_BORDER, NAV_HEIGHT } from "../theme.js";
 
 export default function NewOrderPage() {
   const nav = useNavigate();
   const [params] = useSearchParams();
   const preTable = params.get("table");
+  const { auth, duty } = useAppState();
+  // Only a waiter is duty-gated (mirrors the backend — see
+  // attendanceService.assertOnDuty); wait for duty.session to resolve
+  // (undefined = still loading) so this never flashes before we know.
+  const dutyGated = auth.user?.role === "waiter" && duty.session !== undefined && !duty.onDuty;
 
   const [orderType, setOrderType] = useState(preTable ? "DINE_IN" : "TAKEAWAY");
   const [tableNo, setTableNo]     = useState(preTable || "");
@@ -95,6 +101,25 @@ export default function NewOrderPage() {
       toast.error(err.response?.data?.message || "Couldn't place order");
     } finally { setPlacing(false); }
   };
+
+  if (dutyGated) {
+    return (
+      <div style={{ paddingBottom: NAV_HEIGHT + 16 }}>
+        <div style={{ padding: "18px 16px 4px", display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={() => nav(-1)} aria-label="Back" style={backBtn}>←</button>
+          <div style={{ fontSize: 21, fontWeight: 800, color: "#fff", letterSpacing: -0.4 }}>New Order</div>
+        </div>
+        <EmptyState
+          icon="🕔"
+          title="Start your duty to take orders"
+          sub="You're currently off duty — clock in from the Tables page first."
+          action={
+            <PrimaryButton onClick={() => nav("/tables")}>← Back to Tables</PrimaryButton>
+          }
+        />
+      </div>
+    );
+  }
 
   if (reviewing) {
     return (

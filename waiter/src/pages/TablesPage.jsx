@@ -5,6 +5,7 @@ import { getAllTables, getOpenTableSessions } from "../services/tableService.js"
 import { getAllOrders, confirmOrder, rejectOrder } from "../services/orderService.js";
 import { OccupiedTableCard, FreeTableCard } from "../components/TableCard.jsx";
 import DutyPanel from "../components/DutyPanel.jsx";
+import { useAppState } from "../context/AppState.jsx";
 import { Loader, ErrorState } from "../components/StateViews.jsx";
 import {
   classifyTable, summarize, STATUS_META,
@@ -33,6 +34,12 @@ const ACCENT = "#6AA8FF";
 
 export default function TablesPage() {
   const nav = useNavigate();
+  const { auth, duty } = useAppState();
+  const dutyGated = auth.user?.role === "waiter" && !duty.onDuty;
+  const goToNewOrder = (tableNo) => {
+    if (dutyGated) return toast.error("You must be ON DUTY to perform this action.");
+    nav(`/new-order?table=${tableNo}`);
+  };
   const [tables, setTables]     = useState(null);
   const [sessions, setSessions] = useState({});
   const [error, setError]       = useState(null);
@@ -176,7 +183,8 @@ export default function TablesPage() {
               <FreeTableCard
                 key={c.table.tableNo}
                 table={c.table}
-                onClick={() => nav(`/new-order?table=${c.table.tableNo}`)}
+                onClick={() => goToNewOrder(c.table.tableNo)}
+                style={dutyGated ? { opacity: 0.55 } : undefined}
               />
             )
           )}
@@ -213,10 +221,11 @@ export default function TablesPage() {
               <div style={{ fontFamily: FONT_HEAD, fontWeight: 800, fontSize: 16, color: TEXT_MAIN }}>Table {selected}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <button
-                  onClick={() => nav(`/new-order?table=${selected}`)}
+                  onClick={() => goToNewOrder(selected)}
                   style={{
                     minHeight: 40, padding: "0 16px", borderRadius: 999, border: "none", cursor: "pointer",
-                    background: ACCENT, color: "#0B0E13", fontWeight: 800, fontSize: 12, fontFamily: FONT_BODY,
+                    background: dutyGated ? "rgba(255,255,255,0.1)" : ACCENT,
+                    color: dutyGated ? TEXT_MUTED : "#0B0E13", fontWeight: 800, fontSize: 12, fontFamily: FONT_BODY,
                   }}
                 >
                   + Add order

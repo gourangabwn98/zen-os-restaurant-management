@@ -1,6 +1,7 @@
 import express from "express";
 import { protect } from "../middleware/authMiddleware.js";
 import { requireStaff, requireAdmin } from "../middleware/rbac.js";
+import { requireWaiterOnDuty } from "../middleware/dutyMiddleware.js";
 import {
   getDashboardStats, getAllOrders, updateOrderPayment, updateOrderStatus,
   getAllUsers, deleteUser, getAllInvoices, updateInvoiceStatus,
@@ -20,9 +21,9 @@ router.get("/orders",                requireStaff, getAllOrders);
 router.get("/orders/combined-bill",  requireStaff, getCombinedBill);
 router.get("/invoices/all",          requireStaff, getAllInvoices);
 router.patch("/invoices/:id/status", requireStaff, updateInvoiceStatus);
-router.put("/orders/:id/status",     requireStaff, updateOrderStatus);
-router.patch("/orders/:id/payment",  requireStaff, updateOrderPayment);
-router.post("/orders/:id/add-items", requireStaff, addItemsToOrder);
+router.put("/orders/:id/status",     requireStaff, requireWaiterOnDuty, updateOrderStatus);
+router.patch("/orders/:id/payment",  requireStaff, requireWaiterOnDuty, updateOrderPayment);
+router.post("/orders/:id/add-items", requireStaff, requireWaiterOnDuty, addItemsToOrder);
 router.post("/orders/:id/print-bill",requireStaff, printBill);
 
 // Admin only — account/user management

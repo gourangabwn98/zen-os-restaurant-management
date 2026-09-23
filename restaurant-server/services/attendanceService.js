@@ -225,6 +225,20 @@ export const sweepStaleAttendanceSessions = async ({ AttendanceSession, graceMs 
   return closed;
 };
 
+/** Gate for order-taking actions (place/confirm/reject/cancel/advance
+ * status/add items/mark payment/clear table): a waiter must have an OPEN,
+ * ONLINE attendance session — clocked in and not on break — before touching
+ * an order. Exact wording/status code is a hard requirement (see
+ * middleware/dutyMiddleware.js, the primary caller) — don't reword this. */
+export const assertOnDuty = async ({ AttendanceSession, employeeId }) => {
+  const session = await AttendanceSession.findOne({ employee: employeeId, status: "OPEN" });
+  if (!session || session.presenceStatus !== "ONLINE") {
+    const err = new Error("You must be ON DUTY to perform this action.");
+    err.statusCode = 403;
+    throw err;
+  }
+};
+
 // ── Self-service reads ──────────────────────────────────────────────────────
 
 export const getMySession = ({ AttendanceSession, employeeId }) =>

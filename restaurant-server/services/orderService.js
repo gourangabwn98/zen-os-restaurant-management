@@ -65,6 +65,11 @@ const buildActor = (user, fallbackName) => ({
  * it in at the table/counter IS the confirmation) and their KOT job is
  * created immediately. Customer-sourced orders start PENDING_CONFIRMATION
  * and require an explicit staff confirmation before any KOT job exists.
+ *
+ * A waiter must be ON_DUTY to reach this at all — enforced by the
+ * requireWaiterOnDuty route middleware (routes/orderRoutes.js), not here,
+ * so it applies uniformly across every route this function is reachable
+ * from without this function needing to know which route called it.
  */
 export const placeOrderTx = async ({ req, body }) => {
   // Chefs are kitchen-only — placing an order (as themselves or as an
@@ -370,6 +375,7 @@ export const cancelOrderTx = async ({ req, orderId, reason }) => {
  */
 export const transitionOrderStatusTx = async ({ req, orderId, toStatus, note }) => {
   const { Order, TableSession, Table, WaitlistEntry } = req.models;
+
   const current = await Order.findById(orderId);
   if (!current) {
     const err = new Error("Order not found");

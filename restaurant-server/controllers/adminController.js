@@ -250,7 +250,7 @@ export const updateOrderPayment = async (req, res) => {
     emitPaymentStatusChanged(req.tenantKey, order);
     res.json({ success: true, order });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(err.statusCode || 500).json({ message: err.message });
   }
 };
 

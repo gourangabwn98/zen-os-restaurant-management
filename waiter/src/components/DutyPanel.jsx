@@ -1,17 +1,12 @@
 // src/components/DutyPanel.jsx — compact "My Duty" toggle, lives on the
 // Tables page header (not Profile) so a waiter can clock in/out without
-// leaving the screen they actually work from. Resumes an already-open
-// session on mount (login/refresh/reconnect never creates a duplicate —
-// see restaurant-server/services/attendanceService.js). Starting/ending
-// duty is always an explicit tap, never automatic.
-import { useState, useEffect, useCallback, useRef } from "react";
-import toast from "react-hot-toast";
-import { getMyDuty, startDuty, startBreak, endBreak, endDuty } from "../services/dutyService.js";
-import { getSocket } from "../services/socketService.js";
+// leaving the screen they actually work from. Session/heartbeat/mutations
+// all live in the app-level useDuty() hook (context/AppState.jsx) — this
+// component is just the live timer + the toggle UI on top of it.
+import { useState, useEffect } from "react";
+import { useAppState } from "../context/AppState.jsx";
 import { GREEN, AMBER, RED, EASE_SNAP } from "../theme.js";
 import { formatDuration } from "../utils/dateRange.js";
-
-const HEARTBEAT_INTERVAL_MS = 30000;
 
 const STATUS_META = {
   ONLINE:  { color: GREEN, label: "On duty" },
@@ -38,69 +33,27 @@ const liveElapsed = (session, nowMs) => {
 };
 
 export default function DutyPanel() {
-  const [session, setSession] = useState(undefined); // undefined = loading, null = off duty
-  const [busy, setBusy] = useState(false);
+  const { duty } = useAppState();
+  const { session, busy, presenceStatus, start, startBreak, endBreak, end } = duty;
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const heartbeatRef = useRef(null);
-
-  const refresh = useCallback(() => {
-    getMyDuty().then(({ data }) => setSession(data.session || null)).catch(() => setSession(null));
-  }, []);
-
-  useEffect(() => { refresh(); }, [refresh]);
 
   useEffect(() => {
     const iv = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(iv);
   }, []);
 
-  useEffect(() => {
-    const socket = getSocket();
-    if (!socket) return;
-
-    const sendHeartbeat = () => { if (session?.status === "OPEN") socket.emit("employee:attendance:heartbeat"); };
-    heartbeatRef.current = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
-    sendHeartbeat();
-
-    const onUpdate = () => refresh();
-    socket.on("employee:attendance:updated", onUpdate);
-
-    return () => {
-      clearInterval(heartbeatRef.current);
-      socket.off("employee:attendance:updated", onUpdate);
-    };
-  }, [session?.status, refresh]);
-
-  const act = async (action, fn) => {
-    setBusy(true);
-    try {
-      const { data } = await fn();
-      setSession(data.session);
-      toast.success(
-        action === "start" ? "Duty started" :
-        action === "breakStart" ? "Break started" :
-        action === "breakEnd" ? "Back on duty" : "Duty ended"
-      );
-    } catch (err) {
-      toast.error(err.response?.data?.message || "Couldn't update duty status");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   if (session === undefined) return null; // loading — avoid a flash of "off duty"
 
-  const status = session ? session.presenceStatus : "OFFLINE";
-  const meta = STATUS_META[status];
+  const meta = STATUS_META[presenceStatus];
   const { workingSeconds, breakSeconds } = liveElapsed(session, nowMs);
-  const timeLabel = status === "BREAK" ? formatDuration(breakSeconds) : session ? formatDuration(workingSeconds) : null;
+  const timeLabel = presenceStatus === "BREAK" ? formatDuration(breakSeconds) : session ? formatDuration(workingSeconds) : null;
 
   const handleToggle = () => {
     if (session) {
       if (!window.confirm("End your duty for today?")) return;
-      act("end", endDuty);
+      end();
     } else {
-      act("start", startDuty);
+      start();
     }
   };
 
@@ -112,18 +65,18 @@ export default function DutyPanel() {
           <div style={{ fontWeight: 800, fontSize: 12.5, color: "#E8ECF2" }}>{meta.label}</div>
           {timeLabel && (
             <div style={{ fontSize: 10.5, color: "#9AA4B2", fontVariantNumeric: "tabular-nums" }}>
-              {status === "BREAK" ? "Break · " : "Working · "}{timeLabel}
+              {presenceStatus === "BREAK" ? "Break · " : "Working · "}{timeLabel}
             </div>
           )}
         </div>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-        {status === "ONLINE" && (
-          <button onClick={() => act("breakStart", startBreak)} disabled={busy} style={miniBtn}>Break</button>
+        {presenceStatus === "ONLINE" && (
+          <button onClick={startBreak} disabled={busy} style={miniBtn}>Break</button>
         )}
-        {status === "BREAK" && (
-          <button onClick={() => act("breakEnd", endBreak)} disabled={busy} style={miniBtn}>Resume</button>
+        {presenceStatus === "BREAK" && (
+          <button onClick={endBreak} disabled={busy} style={miniBtn}>Resume</button>
         )}
         <Switch on={!!session} disabled={busy} color={meta.color} onClick={handleToggle} />
       </div>
