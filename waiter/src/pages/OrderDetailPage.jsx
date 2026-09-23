@@ -1,15 +1,17 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   getOrder, confirmOrder, rejectOrder, updateOrderStatus, addItemsToOrder,
   updateOrderPayment, getCombinedBill, printBill,
 } from "../services/orderService.js";
-import { getMenu } from "../services/menuService.js";
+import { getMenu, getMenuCategories } from "../services/menuService.js";
 import StatusBadge, { statusColor } from "../components/StatusBadge.jsx";
 import GlassCard from "../components/ui/GlassCard.jsx";
 import PrimaryButton from "../components/ui/PrimaryButton.jsx";
-import { Loader, ErrorState } from "../components/StateViews.jsx";
+import Chip from "../components/ui/Chip.jsx";
+import QtyStepper, { AddButton } from "../components/ui/QtyStepper.jsx";
+import { Loader, ErrorState, EmptyState } from "../components/StateViews.jsx";
 import { ACCENT, GREEN, AMBER, RED, TEXT_MUTED, TEXT_FAINT, GLASS_BORDER, GLASS_BG } from "../theme.js";
 
 const NEXT_STATUS = {
@@ -38,7 +40,10 @@ export default function OrderDetailPage() {
   const [busy, setBusy]   = useState(false);
   const [bill, setBill]   = useState(null);
   const [showAdd, setShowAdd] = useState(false);
-  const [menuItems, setMenuItems] = useState([]);
+  const [menuItems, setMenuItems] = useState(null); // null = loading
+  const [menuCategories, setMenuCategories] = useState([]);
+  const [menuSearch, setMenuSearch] = useState("");
+  const [menuCategory, setMenuCategory] = useState("");
   const [addQtys, setAddQtys] = useState({});
 
   const load = useCallback(() => {
@@ -81,8 +86,41 @@ export default function OrderDetailPage() {
 
   const openAddItems = () => {
     setShowAdd(true);
-    if (menuItems.length === 0) getMenu({}).then((r) => setMenuItems(r.data || [])).catch(() => {});
+    setMenuSearch(""); setMenuCategory(""); setAddQtys({});
+    if (menuCategories.length === 0) getMenuCategories().then((r) => setMenuCategories(r.data || [])).catch(() => {});
   };
+
+  // Re-queried whenever the search/category filter changes, same debounced
+  // pattern as NewOrderPage.jsx's menu browser — this modal is the same
+  // "pick from the live menu" job, just against an existing order.
+  useEffect(() => {
+    if (!showAdd) return;
+    const t = setTimeout(() => {
+      getMenu({ category: menuCategory || undefined, search: menuSearch || undefined })
+        .then((r) => setMenuItems(Array.isArray(r.data) ? r.data : []))
+        .catch(() => setMenuItems([]));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [showAdd, menuCategory, menuSearch]);
+
+  const groupedAddItems = useMemo(() => {
+    if (!menuItems) return [];
+    const map = new Map();
+    for (const it of menuItems) {
+      if (!map.has(it.category)) map.set(it.category, []);
+      map.get(it.category).push(it);
+    }
+    return [...map.entries()];
+  }, [menuItems]);
+
+  const getAddQty = (itemId) => addQtys[itemId] || 0;
+  const adjustAddQty = (item, delta) => {
+    setAddQtys((prev) => {
+      const next = Math.max(0, (prev[item._id] || 0) + delta);
+      return { ...prev, [item._id]: next };
+    });
+  };
+  const addItemCount = Object.values(addQtys).reduce((s, q) => s + q, 0);
 
   const submitAddItems = async () => {
     const items = Object.entries(addQtys).filter(([, q]) => q > 0).map(([menuItemId, qty]) => ({ menuItemId, qty }));
@@ -114,7 +152,7 @@ export default function OrderDetailPage() {
 
   const isPending = order.status === "PENDING_CONFIRMATION";
   const canAdvance = !!NEXT_STATUS[order.status];
-  const canAddItems = ["CONFIRMED","PREPARING","READY"].includes(order.status);
+  const canAddItems = ["CONFIRMED","PREPARING","READY","DELIVERED"].includes(order.status);
   const stageIdx = STAGES.indexOf(order.status);
 
   return (
@@ -226,27 +264,78 @@ export default function OrderDetailPage() {
       {showAdd && (
         <div onClick={() => setShowAdd(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 100, display: "flex", alignItems: "flex-end", backdropFilter: "blur(2px)" }}>
           <div onClick={(e) => e.stopPropagation()} style={{
-            width: "100%", maxWidth: 560, margin: "0 auto", maxHeight: "75vh", overflowY: "auto",
+            width: "100%", maxWidth: 560, margin: "0 auto", maxHeight: "85vh", display: "flex", flexDirection: "column",
             background: "#0C0A14", border: `1px solid ${GLASS_BORDER}`, borderBottom: "none",
-            borderRadius: "20px 20px 0 0", padding: 18,
+            borderRadius: "20px 20px 0 0",
           }}>
-            <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 14, color: "#fff" }}>Add Items</div>
-            {menuItems.map((it) => (
-              <div key={it._id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${GLASS_BORDER}` }}>
-                <div style={{ fontSize: 13, color: "#fff" }}>{it.name} · ₹{it.price}</div>
-                <input
-                  type="number" min="0" value={addQtys[it._id] || ""}
-                  onChange={(e) => setAddQtys((p) => ({ ...p, [it._id]: Number(e.target.value) || 0 }))}
-                  style={{
-                    width: 56, padding: "7px 8px", borderRadius: 8, border: `1px solid ${GLASS_BORDER}`,
-                    background: GLASS_BG, color: "#fff", textAlign: "center",
-                  }}
-                />
-              </div>
-            ))}
-            <div style={{ marginTop: 16 }}>
-              <PrimaryButton disabled={busy} onClick={submitAddItems}>Add to Order</PrimaryButton>
+            <div style={{ display: "flex", justifyContent: "center", padding: "8px 0 0", flexShrink: 0 }}>
+              <span style={{ width: 36, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.18)" }} />
             </div>
+
+            <div style={{ padding: "10px 16px 0", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+              <div style={{ fontWeight: 800, fontSize: 15, color: "#fff" }}>Add Items</div>
+              <button onClick={() => setShowAdd(false)} aria-label="Close" style={{
+                width: 32, height: 32, borderRadius: "50%", border: `1px solid ${GLASS_BORDER}`,
+                background: GLASS_BG, color: "#fff", fontSize: 14, cursor: "pointer",
+              }}>✕</button>
+            </div>
+
+            <div style={{ padding: "12px 16px 0", flexShrink: 0 }}>
+              <input
+                value={menuSearch} onChange={(e) => setMenuSearch(e.target.value)}
+                placeholder="Search menu…"
+                style={{
+                  width: "100%", padding: "11px 15px", borderRadius: 14, border: `1px solid ${GLASS_BORDER}`,
+                  fontSize: 14, boxSizing: "border-box", background: GLASS_BG, color: "#fff", fontFamily: "inherit",
+                }}
+              />
+            </div>
+
+            {menuCategories.length > 0 && (
+              <div className="hide-scrollbar" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "10px 16px", flexShrink: 0 }}>
+                <Chip active={!menuCategory} onClick={() => setMenuCategory("")}>All</Chip>
+                {menuCategories.map((c) => (
+                  <Chip key={c.category} active={menuCategory === c.category} onClick={() => setMenuCategory(c.category)}>{c.category}</Chip>
+                ))}
+              </div>
+            )}
+
+            <div style={{ padding: "4px 16px 16px", overflowY: "auto" }}>
+              {menuItems === null && <Loader label="Loading menu…" />}
+              {menuItems !== null && groupedAddItems.length === 0 && <EmptyState icon="🔎" title="No items found" />}
+              {groupedAddItems.map(([cat, catItems]) => (
+                <div key={cat} style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "#fff", letterSpacing: 0.3, padding: "10px 2px 6px" }}>{cat}</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {catItems.map((it) => {
+                      const qty = getAddQty(it._id);
+                      const outOfStock = it.stockTracked && !it.stockAvailable;
+                      return (
+                        <GlassCard key={it._id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", opacity: outOfStock ? 0.5 : 1 }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff" }}>{it.name}</div>
+                            <div style={{ fontSize: 12, color: TEXT_FAINT, marginTop: 2 }}>₹{it.price}{outOfStock ? " · Out of stock" : ""}</div>
+                          </div>
+                          {!outOfStock && (
+                            qty > 0
+                              ? <QtyStepper qty={qty} size="sm" onDec={() => adjustAddQty(it, -1)} onInc={() => adjustAddQty(it, 1)} />
+                              : <AddButton size="sm" onClick={() => adjustAddQty(it, 1)} />
+                          )}
+                        </GlassCard>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {addItemCount > 0 && (
+              <div style={{ padding: "10px 16px", borderTop: `1px solid ${GLASS_BORDER}`, flexShrink: 0, paddingBottom: "calc(10px + env(safe-area-inset-bottom))" }}>
+                <PrimaryButton disabled={busy} onClick={submitAddItems} style={{ width: "100%" }}>
+                  {busy ? "Adding…" : `Add ${addItemCount} item${addItemCount > 1 ? "s" : ""} to Order`}
+                </PrimaryButton>
+              </div>
+            )}
           </div>
         </div>
       )}

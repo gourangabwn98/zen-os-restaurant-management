@@ -265,7 +265,7 @@ export const addItemsToOrder = async (req, res) => {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ message: "Order not found" });
 
-    if (!["CONFIRMED","PREPARING","READY"].includes(order.status))
+    if (!["CONFIRMED","PREPARING","READY","DELIVERED"].includes(order.status))
       return res.status(400).json({ message: `Cannot add items to a ${order.status} order` });
 
     const newDbItems = await priceItems(items, MenuItem);
