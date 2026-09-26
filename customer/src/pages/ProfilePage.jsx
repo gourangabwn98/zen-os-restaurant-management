@@ -1,54 +1,48 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAppState } from "../context/AppState.jsx";
 import { updateProfile } from "../services/authService.js";
 import { disconnectSocket } from "../services/socketService.js";
 import { enablePushNotifications, disablePushNotifications, isPushEnabled, needsIosHomeScreenInstall } from "../services/notificationService.js";
-import GlassCard from "../components/ui/GlassCard.jsx";
-import PrimaryButton from "../components/ui/PrimaryButton.jsx";
-import { ACCENT, ACCENT_SOFT, ACCENT_GRADIENT, TEXT_MUTED, TEXT_FAINT, GLASS_BORDER, NAV_HEIGHT } from "../theme.js";
+import Button from "../components/ui/Button.jsx";
+import { getTheme, setTheme } from "../theme.js";
 
 export default function ProfilePage() {
   const nav = useNavigate();
   const { auth } = useAppState();
 
-  if (!auth.isLoggedIn) return <GuestView nav={nav} />;
-  return <LoggedInView nav={nav} auth={auth} />;
+  return (
+    <>
+      <div className="page-h">
+        <h2>Profile</h2>
+        <p>{auth.isLoggedIn ? "Your account and preferences." : "You're browsing as a guest."}</p>
+      </div>
+      {auth.isLoggedIn ? <LoggedInView nav={nav} auth={auth} /> : <GuestView />}
+      <AppearanceCard />
+      <p className="muted small center" style={{ marginTop: 18 }}>Powered by Zen OS · eZentix Labs</p>
+    </>
+  );
 }
 
-function GuestView({ nav }) {
+function GuestView() {
   return (
-    <div style={{ paddingBottom: NAV_HEIGHT + 20, paddingTop: 8 }}>
-      <div style={{ padding: "20px 16px 10px", fontSize: 19, fontWeight: 800, color: "#fff" }}>Profile</div>
-
-      <div style={{ margin: "12px 16px" }}>
-        <GlassCard style={{ textAlign: "center", padding: "36px 20px" }}>
-          <div style={{
-            width: 60, height: 60, margin: "0 auto", borderRadius: "50%", background: ACCENT_SOFT,
-            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26,
-          }}>
-            👤
-          </div>
-          <div style={{ fontWeight: 800, fontSize: 15, marginTop: 14, color: "#fff" }}>You're browsing as a guest</div>
-          <div style={{ fontSize: 12.5, color: TEXT_FAINT, marginTop: 6, lineHeight: 1.5 }}>
-            Log in to save your order history and details for next time.
-          </div>
-
-          <div style={{ marginTop: 22 }}>
-            <PrimaryButton onClick={() => nav("/login")}>Log In / Register</PrimaryButton>
-          </div>
-          <div style={{ marginTop: 10 }}>
-            <button onClick={() => nav("/")} style={{
-              width: "100%", padding: 13, borderRadius: 14, border: `1.5px solid ${GLASS_BORDER}`,
-              background: "rgba(255,255,255,0.05)", color: TEXT_MUTED, fontWeight: 700, fontSize: 13.5, cursor: "pointer",
-            }}>
-              Continue as Guest
-            </button>
-          </div>
-        </GlassCard>
+    <>
+      <div className="card center" style={{ padding: "28px 18px" }}>
+        <div className="avatar" style={{ margin: "0 auto" }}>👤</div>
+        <div style={{ fontWeight: 800, fontSize: 17, marginTop: 14 }}>Log in to save your orders</div>
+        <p className="muted small" style={{ marginTop: 6, lineHeight: 1.5 }}>
+          Your order history and details stay with you for next time.
+        </p>
+        <Link to="/login" className="btn btn-primary" style={{ marginTop: 18 }}>Log In / Register</Link>
+        <Link to="/" className="btn btn-ghost">Continue as Guest</Link>
       </div>
-    </div>
+      <div className="card menu-list" style={{ padding: "2px 14px" }}>
+        <MenuRow icon="❤️" label="Favorites" to="/favorites" />
+        <MenuRow icon="🧾" label="My Orders" to="/orders" />
+        <MenuRow icon="💬" label="Help & Support" to="/help" />
+      </div>
+    </>
   );
 }
 
@@ -108,114 +102,90 @@ function LoggedInView({ nav, auth }) {
   };
 
   return (
-    <div style={{ paddingBottom: NAV_HEIGHT + 20 }}>
-      <div style={{ padding: "20px 16px 10px", fontSize: 19, fontWeight: 800, color: "#fff" }}>Profile</div>
-
-      <div style={{ margin: "12px 16px" }}>
-        <GlassCard style={{ padding: "22px 18px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <div style={{
-              width: 54, height: 54, borderRadius: "50%", background: ACCENT_GRADIENT,
-              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 800, color: "#fff",
-            }}>
-              {(auth.user.name || "?").charAt(0).toUpperCase()}
-            </div>
-            <div>
-              {editing ? (
-                <input
-                  value={name} onChange={(e) => setName(e.target.value)} autoFocus
-                  style={{
-                    padding: "7px 10px", borderRadius: 8, border: `1px solid ${GLASS_BORDER}`,
-                    background: "rgba(255,255,255,0.06)", color: "#fff", fontSize: 14, fontWeight: 700,
-                  }}
-                />
-              ) : (
-                <div style={{ fontWeight: 800, fontSize: 16, color: "#fff" }}>{auth.user.name || "Add your name"}</div>
-              )}
-              <div style={{ fontSize: 12.5, color: TEXT_FAINT, marginTop: 2 }}>+91 {auth.user.phone}</div>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+    <>
+      <div className="card" style={{ padding: "18px 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div className="avatar">{(auth.user.name || "?").charAt(0).toUpperCase()}</div>
+          <div style={{ minWidth: 0, flex: 1 }}>
             {editing ? (
-              <>
-                <PrimaryButton onClick={handleSave} disabled={saving} style={{ flex: 1 }}>
-                  {saving ? "Saving…" : "Save"}
-                </PrimaryButton>
-                <button onClick={() => { setEditing(false); setName(auth.user.name || ""); }} style={outlineBtn}>
-                  Cancel
-                </button>
-              </>
+              <label className="field" style={{ margin: 0 }}>
+                <span>Name</span>
+                <input value={name} onChange={(e) => setName(e.target.value)} autoFocus autoComplete="name" maxLength={40} />
+              </label>
             ) : (
-              <button onClick={() => setEditing(true)} style={{ ...outlineBtn, color: ACCENT, borderColor: "rgba(255,138,0,0.5)" }}>
-                ✏️ Edit Profile
-              </button>
+              <div style={{ fontWeight: 800, fontSize: 17, overflowWrap: "anywhere" }}>{auth.user.name || "Add your name"}</div>
             )}
+            <div className="muted small" style={{ marginTop: 2 }}>+91 {auth.user.phone}</div>
           </div>
-        </GlassCard>
-      </div>
+        </div>
 
-      <div style={{ margin: "8px 16px" }}>
-        <GlassCard style={{ padding: "14px 16px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ fontSize: 18 }}>🔔</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>Offer Notifications</div>
-              <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 1 }}>
-                Get notified about offers, even when the app is closed
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={handleTogglePush}
-              disabled={pushBusy}
-              aria-label="Toggle offer notifications"
-              style={{
-                width: 42, height: 24, borderRadius: 20, position: "relative", flex: "none", border: "none",
-                cursor: pushBusy ? "wait" : "pointer", padding: 0,
-                background: pushOn ? ACCENT_GRADIENT : "rgba(255,255,255,0.14)",
-                opacity: pushBusy ? 0.6 : 1, transition: "background .15s",
-              }}
-            >
-              <span style={{
-                position: "absolute", top: 3, left: pushOn ? 21 : 3, width: 18, height: 18, borderRadius: "50%",
-                background: "#fff", transition: "left .15s",
-              }} />
-            </button>
-          </div>
-          {!pushOn && needsIosHomeScreenInstall() && (
-            <div style={{ fontSize: 11, color: TEXT_FAINT, marginTop: 10, lineHeight: 1.4 }}>
-              📲 On iPhone, notifications only work once this is added to your Home Screen: tap{" "}
-              <b style={{ color: "#fff" }}>Share → "Add to Home Screen"</b>, then open the app from there.
-            </div>
+        <div className="btn-row" style={{ marginTop: 16 }}>
+          {editing ? (
+            <>
+              <Button onClick={handleSave} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
+              <Button variant="ghost" onClick={() => { setEditing(false); setName(auth.user.name || ""); }}>Cancel</Button>
+            </>
+          ) : (
+            <Button variant="ghost" onClick={() => setEditing(true)}>✏️ Edit profile</Button>
           )}
-        </GlassCard>
+        </div>
       </div>
 
-      <div style={{ margin: "8px 16px" }}>
-        <GlassCard style={{ padding: "4px 4px" }}>
-          <MenuRow icon="❤️" label="Favorites" onClick={() => nav("/favorites")} />
-          <MenuRow icon="🧾" label="My Orders" onClick={() => nav("/orders")} />
-          <MenuRow icon="💬" label="Help & Support" onClick={() => nav("/help")} />
-          <MenuRow icon="🚪" label="Log Out" onClick={handleLogout} danger last />
-        </GlassCard>
+      <div className="card">
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 20 }} aria-hidden="true">🔔</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <b>Offer notifications</b>
+            <div className="muted small">Get notified about offers, even when the app is closed</div>
+          </div>
+          <button
+            type="button" role="switch" className="switch" aria-checked={pushOn}
+            onClick={handleTogglePush} disabled={pushBusy} aria-label="Offer notifications"
+          />
+        </div>
+        {!pushOn && needsIosHomeScreenInstall() && (
+          <p className="muted tiny" style={{ marginTop: 10, lineHeight: 1.45 }}>
+            📲 On iPhone, notifications only work once this is added to your Home Screen: tap{" "}
+            <b style={{ color: "var(--text)" }}>Share → "Add to Home Screen"</b>, then open the app from there.
+          </p>
+        )}
+      </div>
+
+      <div className="card menu-list" style={{ padding: "2px 14px" }}>
+        <MenuRow icon="❤️" label="Favorites" to="/favorites" />
+        <MenuRow icon="🧾" label="My Orders" to="/orders" />
+        <MenuRow icon="💬" label="Help & Support" to="/help" />
+        <MenuRow icon="🚪" label="Log out" onClick={handleLogout} danger />
+      </div>
+    </>
+  );
+}
+
+/** Light / dark theme (client-only, remembered on this phone). */
+function AppearanceCard() {
+  const [theme, setLocal] = useState(getTheme);
+  const pick = (t) => { setTheme(t); setLocal(t); };
+  return (
+    <div className="card">
+      <b>Appearance</b>
+      <div className="seg" role="group" aria-label="Theme" style={{ marginTop: 10 }}>
+        <button type="button" aria-pressed={theme === "light"} onClick={() => pick("light")}>☀️ Light</button>
+        <button type="button" aria-pressed={theme === "dark"} onClick={() => pick("dark")}>🌙 Dark</button>
       </div>
     </div>
   );
 }
 
-const outlineBtn = {
-  flex: 1, padding: "10px 12px", borderRadius: 10, fontWeight: 700, fontSize: 13,
-  border: `1.5px solid ${GLASS_BORDER}`, background: "rgba(255,255,255,0.05)", color: TEXT_MUTED, cursor: "pointer",
-};
-
-const MenuRow = ({ icon, label, onClick, danger, last }) => (
-  <div onClick={onClick} style={{
-    display: "flex", alignItems: "center", gap: 12, padding: "15px 12px",
-    borderBottom: last ? "none" : `1px solid ${GLASS_BORDER}`, cursor: "pointer",
-  }}>
-    <span style={{ fontSize: 17 }}>{icon}</span>
-    <span style={{ fontSize: 14, fontWeight: 600, color: danger ? "#F87171" : "#fff" }}>{label}</span>
-    <span style={{ marginLeft: "auto", color: TEXT_FAINT }}>›</span>
-  </div>
-);
+function MenuRow({ icon, label, to, onClick, danger }) {
+  const inner = (
+    <>
+      <span className="ic" aria-hidden="true">{icon}</span>
+      <span>{label}</span>
+      <span className="chev" aria-hidden="true">›</span>
+    </>
+  );
+  const cls = `row${danger ? " danger" : ""}`;
+  return to
+    ? <Link to={to} className={cls} style={{ textDecoration: "none" }}>{inner}</Link>
+    : <button type="button" className={cls} onClick={onClick}>{inner}</button>;
+}

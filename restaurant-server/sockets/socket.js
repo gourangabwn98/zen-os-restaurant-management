@@ -416,3 +416,12 @@ export const emitInventoryAlert = (tenantKey, { item, level }) => {
 export const emitAttendanceUpdated = (tenantKey, { action, session, employee }) => {
   emit(rooms.staff(tenantKey), "employee:attendance:updated", { action, session, employee });
 };
+
+// ── Menu changes ───────────────────────────────────────────────────────────
+// Tells every connected client (customers/guests included) to re-fetch the
+// menu after an admin changes a schedule, availability or an item. Carries
+// no data at all — clients re-read GET /api/menu, which applies the
+// visibility rules server-side — so it is safe for the general tenant room.
+export const emitMenuUpdated = (tenantKey) => {
+  emit(rooms.tenant(tenantKey), "menu:updated", { at: Date.now() });
+};

@@ -1,20 +1,25 @@
-import { ACCENT, ACCENT_SOFT } from "../theme.js";
+import { useAppState } from "../context/AppState.jsx";
 
-export default function TableBadge({ label, onClear }) {
-  if (!label) return null;
+/** Table context chip. Dine-in only ever comes from a backend-verified QR
+ * scan (useTableSession) — there is deliberately no "type your table
+ * number" option. ✕ drops the table and the order becomes takeaway.
+ * `compact`: the header already shows the table name, so only say "Dine-in".
+ * `onClear` runs after the table is cleared (e.g. Cart resets order type). */
+export default function TableBadge({ onClear, compact }) {
+  const { table } = useAppState();
+
+  if (!table.isDineIn) {
+    return <span className="table-chip">🛍️ {compact ? "Takeaway · scan QR" : "Takeaway · scan table QR for dine-in"}</span>;
+  }
   return (
-    <div style={{
-      display: "inline-flex", alignItems: "center", gap: 7,
-      background: ACCENT_SOFT, color: ACCENT, fontWeight: 700, fontSize: 12,
-      padding: "6px 12px", borderRadius: 20, border: `1px solid rgba(255,138,0,0.3)`,
-    }}>
-      📍 {label} — Dine-in
-      {onClear && (
-        <button onClick={onClear} title="Not your table? Order takeaway instead" style={{
-          border: "none", background: "none", color: ACCENT, cursor: "pointer",
-          fontSize: 13, fontWeight: 800, lineHeight: 1, padding: 0, marginLeft: 2,
-        }}>✕</button>
-      )}
-    </div>
+    <span className="table-chip">
+      <span className="live" />{compact ? "Dine-in" : `${table.tableLabel} · Dine-in`}
+      <button
+        type="button" className="x"
+        onClick={() => { table.clearTable(); onClear?.(); }}
+        title="Not your table? Order takeaway instead"
+        aria-label="Not your table? Switch to takeaway"
+      >✕</button>
+    </span>
   );
 }

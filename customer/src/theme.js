@@ -1,35 +1,6 @@
-// src/theme.js — dark, premium, glassmorphism customer theme
-export const BG_PRIMARY   = "#08070C";
-export const BG_SECONDARY = "#0C0A14";
-
-export const GLASS_BG      = "rgba(255,255,255,0.07)";
-export const GLASS_BG_SOFT = "rgba(255,255,255,0.05)";
-export const GLASS_BORDER  = "rgba(255,255,255,0.12)";
-
-export const ACCENT        = "#FF8A00";
-export const ACCENT_LIGHT  = "#FFB347";
-export const ACCENT_SOFT   = "rgba(255,138,0,0.16)";
-export const ACCENT_GRADIENT = "linear-gradient(135deg, #FF9F1C 0%, #FF8A00 100%)";
-export const ACCENT_GLOW   = "0 0 0 1px rgba(255,138,0,0.35), 0 8px 24px rgba(255,138,0,0.35)";
-
-export const TEXT        = "#FFFFFF";
-export const TEXT_MUTED  = "rgba(255,255,255,0.68)";
-export const TEXT_FAINT  = "rgba(255,255,255,0.56)";
-
-export const GREEN = "#34D399";
-export const AMBER  = "#FBBF24";
-export const RED   = "#F87171";
-
-export const RADIUS_SM = 10;
-export const RADIUS_MD = 16;
-export const RADIUS_LG = 22;
-
-export const SHADOW_GLASS = "0 8px 30px rgba(0,0,0,0.35)";
-export const BLUR = "blur(20px)";
-
-// Bottom nav / top-of-viewport safe-area heights (mobile-first)
-export const NAV_HEIGHT = 68;
-export const TOPBAR_HEIGHT = 56;
+// src/theme.js — colours, radii and shadows live as CSS custom properties in
+// index.css (the "Warm Crisp" design system); this file only keeps the
+// localStorage keys the hooks/services share, plus the light/dark switch.
 
 export const STORAGE = {
   cartOrderType: "sohoj_orderType",
@@ -41,4 +12,17 @@ export const STORAGE = {
   // App.jsx silently refresh a rotated FCM token on future visits without
   // asking them to retoggle it (see services/notificationService.js).
   pushOptIn:     "sohoj_push_opt_in",
+  // "light" | "dark" — read before first paint by the inline script in index.html.
+  theme:         "sohoj_theme",
+};
+
+export const getTheme = () => {
+  try { return localStorage.getItem(STORAGE.theme) === "dark" ? "dark" : "light"; }
+  catch { return "light"; }
+};
+
+export const setTheme = (t) => {
+  try { localStorage.setItem(STORAGE.theme, t); } catch { /* private mode — theme just won't persist */ }
+  if (t === "dark") document.documentElement.dataset.theme = "dark";
+  else delete document.documentElement.dataset.theme;
 };

@@ -1,5 +1,5 @@
 import express from "express";
-import { getMenu, addMenuItem, updateMenuItem, deleteMenuItem, toggleAvailability, getCategoriesWithImage } from "../controllers/menuController.js";
+import { getMenu, addMenuItem, updateMenuItem, deleteMenuItem, toggleAvailability, getCategoriesWithImage, bulkUpdateSchedule } from "../controllers/menuController.js";
 import { protect, dbFromHeader } from "../middleware/authMiddleware.js";
 import { requireAdmin, requireStaff } from "../middleware/rbac.js";
 // import { uploadMiddleware } from "../middleware/uploadMiddleware.js";
@@ -26,6 +26,8 @@ router.get("/categories", autoAuth, getCategoriesWithImage);
 // Admin routes — use protect (token has mongoUri)
 // router.post("/",              protect, uploadMiddleware, addMenuItem);
 // router.put("/:id",            protect, uploadMiddleware, updateMenuItem);
+// Bulk scheduled-visibility update for categories and/or items — admin only.
+router.patch("/schedule",     protect, requireAdmin, bulkUpdateSchedule);
 router.post("/",              protect, requireAdmin, upload.single("image"), addMenuItem);
 router.put("/:id",            protect, requireAdmin, upload.single("image"), updateMenuItem);
 router.delete("/:id",         protect, requireAdmin, deleteMenuItem);

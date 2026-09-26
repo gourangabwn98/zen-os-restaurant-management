@@ -3,6 +3,7 @@ import { useCart } from "../hooks/useCart.js";
 import { useAuth } from "../hooks/useAuth.js";
 import { useTableSession } from "../hooks/useTableSession.js";
 import { useFavorites } from "../hooks/useFavorites.js";
+import { useMenuFilters } from "../hooks/useMenuFilters.js";
 
 const AppCtx = createContext(null);
 
@@ -11,9 +12,10 @@ export function AppStateProvider({ children }) {
   const auth      = useAuth();
   const table     = useTableSession();
   const favorites = useFavorites();
+  const filters   = useMenuFilters();
 
   return (
-    <AppCtx.Provider value={{ cart, auth, table, favorites }}>
+    <AppCtx.Provider value={{ cart, auth, table, favorites, filters }}>
       {children}
     </AppCtx.Provider>
   );

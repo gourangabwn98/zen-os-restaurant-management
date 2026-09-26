@@ -27,7 +27,7 @@ export default function RecipesTab() {
 
   const load = useCallback(async () => {
     try {
-      const [rRes, mRes, sRes] = await Promise.all([getRecipes(), getMenu(), getInventoryItems()]);
+      const [rRes, mRes, sRes] = await Promise.all([getRecipes(), getMenu({ ignoreSchedule: true }), getInventoryItems()]);
       setRecipes(rRes.data?.recipes || []);
       setMenuItems(Array.isArray(mRes.data) ? mRes.data : []);
       setStockItems(sRes.data?.items || []);

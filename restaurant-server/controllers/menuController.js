@@ -2,6 +2,9 @@
 // ADD at the top of menuController.js
 import { v2 as cloudinary } from "cloudinary";
 import { computeStockStatusForMenuItems } from "../services/inventoryService.js";
+import { getScheduleContext, isItemScheduledNow, applyBulkSchedule } from "../services/menuScheduleService.js";
+import { isScheduleActive } from "../utils/menuSchedule.js";
+import { emitMenuUpdated } from "../sockets/socket.js";
 
 cloudinary.config({
   cloud_name:  process.env.CLOUDINARY_CLOUD_NAME,
@@ -12,18 +15,36 @@ cloudinary.config({
 export const getMenu = async (req, res) => {
   try {
     const { MenuItem } = req.models;
-    const { category, search, vegOnly, includeUnavailable } = req.query;
+    const { category, search, vegOnly, includeUnavailable, ignoreSchedule } = req.query;
+    const isAdmin = !!(req.user?.isAdmin || req.user?.role === "admin");
     const filter = { isAvailable: true };
     // Admin menu management needs to see hidden items too (to un-hide them or
     // filter by "Hidden"). Opt-in only — customer/waiter never pass this, so
     // their menu stays "available items only" exactly as before.
-    if (includeUnavailable === "true" && (req.user?.isAdmin || req.user?.role === "admin")) {
-      delete filter.isAvailable;
-    }
+    const manageView = includeUnavailable === "true" && isAdmin;
+    if (manageView) delete filter.isAvailable;
     if (category) filter.category = category;
     if (search)   filter.name = { $regex: search, $options: "i" };
     if (vegOnly === "true") filter.tag = "Veg";
-    const items = await MenuItem.find(filter).sort({ category: 1, name: 1 }).lean();
+
+    // ── Scheduled visibility (services/menuScheduleService.js) ──────────────
+    // Enforced here for everyone (customer, guest, waiter, admin ordering)
+    // except the admin management views, which need the full catalog.
+    // Scheduled-out categories are excluded in the query itself; item
+    // windows (which may cross midnight) are checked on the lean results.
+    const skipSchedule = manageView || (ignoreSchedule === "true" && isAdmin);
+    const scheduleCtx = await getScheduleContext({ models: req.models });
+    if (!skipSchedule && scheduleCtx.hiddenCategories.size) {
+      if (category && scheduleCtx.hiddenCategories.has(category)) return res.json([]);
+      if (!category) filter.category = { $nin: [...scheduleCtx.hiddenCategories] };
+    }
+    let items = await MenuItem.find(filter).sort({ category: 1, name: 1 }).lean();
+    if (skipSchedule) {
+      // Annotate so the admin can see what customers currently can't.
+      items = items.map((i) => ({ ...i, scheduledNow: isItemScheduledNow(i, scheduleCtx) }));
+    } else {
+      items = items.filter((i) => isScheduleActive(i.schedule, scheduleCtx.nowMinutes));
+    }
 
     // ── Connect inventory availability with menu availability (Phase 2) ──────
     // Purely additive: `isAvailable` (the manual staff toggle) is untouched
@@ -92,6 +113,7 @@ export const addMenuItem = async (req, res) => {
       image: imageUrl,
     });
 
+    emitMenuUpdated(req.tenantKey);
     res.status(201).json(item);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -138,6 +160,7 @@ export const updateMenuItem = async (req, res) => {
     if (rating)        item.rating        = Number(rating);
 
     await item.save();
+    emitMenuUpdated(req.tenantKey);
     res.json(item);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -147,6 +170,7 @@ export const deleteMenuItem = async (req, res) => {
   try {
     const { MenuItem } = req.models;
     await MenuItem.findByIdAndDelete(req.params.id);
+    emitMenuUpdated(req.tenantKey);
     res.json({ message: "Deleted" });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
@@ -158,6 +182,7 @@ export const toggleAvailability = async (req, res) => {
     if (!item) return res.status(404).json({ message: "Not found" });
     item.isAvailable = !item.isAvailable;
     await item.save();
+    emitMenuUpdated(req.tenantKey);
     res.json(item);
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
@@ -165,11 +190,27 @@ export const toggleAvailability = async (req, res) => {
 export const getCategoriesWithImage = async (req, res) => {
   try {
     const { MenuItem, Category } = req.models;
-    const cats = await Category.find().sort({ name: 1 });
+    const { hiddenCategories } = await getScheduleContext({ models: req.models });
+    const cats = (await Category.find().sort({ name: 1 })).filter((c) => !hiddenCategories.has(c.name));
     const result = await Promise.all(cats.map(async (c) => {
       const item = await MenuItem.findOne({ category: c.name, isAvailable: true }).select("categoryImage");
       return { category: c.name, categoryImage: c.image || "", categoryImageUrl: item?.categoryImage || c.image || "" };
     }));
     res.json(result);
   } catch (err) { res.status(500).json({ message: err.message }); }
+};
+
+// ── PATCH /api/menu/schedule (admin) ─────────────────────────────────────────
+// Body: { itemIds?: [id], categoryIds?: [id], schedule: { startTime, endTime } | null }
+// One request applies (or, with null, clears) the same window on every
+// selected category/item.
+export const bulkUpdateSchedule = async (req, res) => {
+  try {
+    const { itemIds, categoryIds, schedule } = req.body || {};
+    const result = await applyBulkSchedule({ models: req.models, itemIds, categoryIds, schedule });
+    emitMenuUpdated(req.tenantKey);
+    res.json(result);
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message });
+  }
 };

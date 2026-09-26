@@ -6,6 +6,8 @@
 // a price/subtotal/total sent by a client.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { isItemScheduledNow } from "../services/menuScheduleService.js";
+
 const qtyOf = (raw) => {
   const n = Number(raw);
   if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) return null;
@@ -15,8 +17,11 @@ const qtyOf = (raw) => {
 /**
  * Resolves raw client line items [{ menuItemId, qty, notes }] into
  * authoritative order-item subdocuments, using ONLY prices from the DB.
+ * `scheduleCtx` (from menuScheduleService.getScheduleContext) additionally
+ * rejects items whose category/item schedule is outside its window right now
+ * — the same rule GET /api/menu applies, so a stale cart can't bypass it.
  */
-export const priceItems = async (items, MenuItem) => {
+export const priceItems = async (items, MenuItem, scheduleCtx = null) => {
   if (!Array.isArray(items) || items.length === 0) {
     const err = new Error("No items in order");
     err.statusCode = 400;
@@ -45,6 +50,11 @@ export const priceItems = async (items, MenuItem) => {
       }
       if (!m.isAvailable) {
         const err = new Error(`"${m.name}" is currently not available`);
+        err.statusCode = 400;
+        throw err;
+      }
+      if (scheduleCtx && !isItemScheduledNow(m, scheduleCtx)) {
+        const err = new Error(`"${m.name}" is not available at this time`);
         err.statusCode = 400;
         throw err;
       }
@@ -77,8 +87,8 @@ export const computeTotals = (dbItems, restaurantProfile) => {
  * Full convenience wrapper used by placeOrder: resolve + compute in one call.
  * @returns {{ dbItems, subtotal, tax, serviceCharge, discount, total, totalQty }}
  */
-export const priceOrder = async ({ items, MenuItem, restaurantProfile }) => {
-  const dbItems = await priceItems(items, MenuItem);
+export const priceOrder = async ({ items, MenuItem, restaurantProfile, scheduleCtx = null }) => {
+  const dbItems = await priceItems(items, MenuItem, scheduleCtx);
   const totals  = computeTotals(dbItems, restaurantProfile);
   return { dbItems, ...totals };
 };

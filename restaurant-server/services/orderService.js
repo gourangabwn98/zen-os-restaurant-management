@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { priceOrder } from "../utils/pricing.js";
+import { getScheduleContext } from "./menuScheduleService.js";
 import { normalizeOrderType, assertValidTransition } from "../utils/orderStateMachine.js";
 import { createKotJobForOrder } from "./kotService.js";
 import { findOrOpenTableSession, closeTableSession } from "./tableSessionService.js";
@@ -105,8 +106,9 @@ export const placeOrderTx = async ({ req, body }) => {
   }
 
   const restaurant = await RestaurantProfile.findOne();
+  const scheduleCtx = await getScheduleContext({ models: req.models, profile: restaurant });
   const { dbItems, subtotal, tax, serviceCharge, discount, total } =
-    await priceOrder({ items, MenuItem, restaurantProfile: restaurant });
+    await priceOrder({ items, MenuItem, restaurantProfile: restaurant, scheduleCtx });
 
   // ── Table / QR verification (soft — see schema comment) + session ─────────
   let tableSessionId = null;

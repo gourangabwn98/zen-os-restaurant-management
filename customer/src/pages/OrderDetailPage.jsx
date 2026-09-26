@@ -5,25 +5,18 @@ import { getOrder, cancelOrder, getGuestOrderToken } from "../services/orderServ
 import { initiatePhonePePayment, getPhonePePaymentStatus } from "../services/paymentService.js";
 import { getRestaurantProfile } from "../services/restaurantService.js";
 import { subscribeToOrder } from "../services/socketService.js";
-import { useAppState } from "../context/AppState.jsx";
 import StatusStepper from "../components/StatusStepper.jsx";
 import { Loader, ErrorState } from "../components/StateViews.jsx";
-import GlassCard from "../components/ui/GlassCard.jsx";
-import PrimaryButton from "../components/ui/PrimaryButton.jsx";
-import StatusBadge, { paymentStatusColor } from "../components/ui/StatusBadge.jsx";
-import { ACCENT, TEXT_MUTED, TEXT_FAINT, GLASS_BORDER } from "../theme.js";
-
-const PAYMENT_LABEL = {
-  PENDING_VERIFICATION: "Payment pending verification",
-  PAID: "Paid",
-  FAILED: "Payment failed",
-};
+import Button from "../components/ui/Button.jsx";
+import Icon from "../components/ui/Icon.jsx";
+import {
+  STATUS_LABEL, statusPillClass, PAYMENT_LABEL, paymentPillClass, formatOrderTime, isActiveOrder,
+} from "../utils/orderStatus.js";
 
 export default function OrderDetailPage() {
   const { id } = useParams();
   const nav = useNavigate();
   const { search } = useLocation();
-  const { auth } = useAppState();
 
   const [order, setOrder]   = useState(null);
   const [profile, setProfile] = useState(null);
@@ -121,108 +114,92 @@ export default function OrderDetailPage() {
   if (error) return <ErrorState message={error} onRetry={load} />;
   if (!order) return <Loader label="Loading order…" />;
 
+  const live = isActiveOrder(order);
+
   return (
-    <div style={{ paddingBottom: 40 }}>
-      <div style={{ padding: "20px 16px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: "#fff" }}>{order.orderId}</div>
-          <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 2 }}>
-            {order.orderType === "DINE_IN" ? `Dine-in${order.tableNo ? ` · Table ${order.tableNo}` : ""}` : "Takeaway"}
-          </div>
-        </div>
-        <button onClick={() => nav("/orders")} style={{
-          border: `1px solid ${GLASS_BORDER}`, background: "rgba(255,255,255,0.06)", borderRadius: 20,
-          padding: "8px 16px", fontSize: 12, fontWeight: 700, color: TEXT_MUTED, cursor: "pointer",
-        }}>
-          All Orders
-        </button>
+    <>
+      <div className="page-h">
+        <button type="button" className="back" onClick={() => nav("/orders")}><Icon name="back" />All orders</button>
+        <h2>#{order.orderId}</h2>
+        <p className="small">
+          {order.orderType === "DINE_IN" ? `Dine-in${order.tableNo ? ` · Table ${order.tableNo}` : ""}` : "Takeaway"}
+          {order.createdAt ? ` · ${formatOrderTime(order.createdAt)}` : ""}
+        </p>
       </div>
 
-      <StatusStepper status={order.status} />
+      {/* ── Live status ── */}
+      <div className={`live-card${order.status === "CANCELLED" ? " bad" : ""}`}>
+        <div className="live-head">
+          {live && <span className="pulse" />}
+          <b>{STATUS_LABEL[order.status] || order.status}</b>
+          <span className={`status-pill ${statusPillClass(order.status)}`}>{live ? "Live" : STATUS_LABEL[order.status]}</span>
+        </div>
+        <StatusStepper status={order.status} />
+      </div>
 
       {/* ── Payment ── */}
-      <div style={{ margin: "6px 16px" }}>
-        <GlassCard style={{ padding: "14px 16px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: TEXT_MUTED }}>Payment</div>
-              <div style={{ marginTop: 6 }}>
-                <StatusBadge label={`${PAYMENT_LABEL[order.paymentStatus] || order.paymentStatus} · ${order.paymentMethod}`} color={paymentStatusColor(order.paymentStatus)} />
-              </div>
-            </div>
-            <div style={{ fontSize: 19, fontWeight: 800, color: ACCENT }}>₹{order.total}</div>
+      <div className="card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+          <div style={{ minWidth: 0 }}>
+            <div className="card-title">Payment</div>
+            <span className={`status-pill ${paymentPillClass(order.paymentStatus)}`} style={{ whiteSpace: "normal" }}>
+              {PAYMENT_LABEL[order.paymentStatus] || order.paymentStatus} · {order.paymentMethod}
+            </span>
           </div>
+          <div className="price" style={{ fontSize: 22 }}>₹{order.total}</div>
+        </div>
 
-          {order.paymentMethod === "Online" && order.paymentStatus !== "PAID" && (
-            <>
-              {profile?.phonePeEnabled ? (
-                <div style={{ marginTop: 14 }}>
-                  <PrimaryButton onClick={startPhonePe} disabled={payBusy}>
-                    {payBusy ? "Starting…" : `Pay ₹${order.total} with PhonePe`}
-                  </PrimaryButton>
-                </div>
-              ) : upiLink ? (
-                <a href={upiLink} style={{
-                  display: "block", textAlign: "center", marginTop: 14, padding: "13px", borderRadius: 14,
-                  background: "linear-gradient(135deg, #FF9F1C 0%, #FF8A00 100%)", color: "#fff", fontWeight: 800,
-                  fontSize: 13.5, textDecoration: "none",
-                }}>
-                  📱 Pay ₹{order.total} via UPI
-                </a>
-              ) : (
-                <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 10 }}>
-                  Online payment isn't set up yet — please pay by cash at the restaurant.
-                </div>
-              )}
-              <div style={{ fontSize: 10.5, color: TEXT_FAINT, marginTop: 10, lineHeight: 1.5 }}>
-                {profile?.phonePeEnabled
-                  ? "You'll be taken to PhonePe to pay securely. This page updates on its own once payment is confirmed."
-                  : "Opening the UPI app doesn't confirm your payment automatically — our staff verifies receipt and updates this once confirmed."}
-              </div>
-            </>
-          )}
-        </GlassCard>
+        {order.paymentMethod === "Online" && order.paymentStatus !== "PAID" && (
+          <>
+            {profile?.phonePeEnabled ? (
+              <Button style={{ marginTop: 14 }} onClick={startPhonePe} disabled={payBusy}>
+                {payBusy ? "Starting…" : `Pay ₹${order.total} with PhonePe`}
+              </Button>
+            ) : upiLink ? (
+              <a href={upiLink} className="btn btn-primary" style={{ marginTop: 14 }}>📲 Pay ₹{order.total} via UPI</a>
+            ) : (
+              <p className="muted small" style={{ marginTop: 10 }}>
+                Online payment isn't set up yet — please pay by cash at the restaurant.
+              </p>
+            )}
+            <p className="muted tiny" style={{ marginTop: 10, lineHeight: 1.5 }}>
+              {profile?.phonePeEnabled
+                ? "You'll be taken to PhonePe to pay securely. This page updates on its own once payment is confirmed."
+                : "Opening the UPI app doesn't confirm your payment automatically — our staff verifies receipt and updates this once confirmed."}
+            </p>
+          </>
+        )}
       </div>
 
       {/* ── Bill ── */}
-      <div style={{ margin: "10px 16px" }}>
-        <GlassCard onClick={() => setShowBill((v) => !v)} style={{ padding: "13px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>🧾 View Bill</span>
-          <span style={{ color: TEXT_FAINT }}>{showBill ? "▲" : "▼"}</span>
-        </GlassCard>
-
+      <div className="card bill">
+        <button
+          type="button" className="bill-toggle" onClick={() => setShowBill((v) => !v)} aria-expanded={showBill}
+        >
+          <span>🧾 View bill</span><span className="muted">{showBill ? "▲" : "▼"}</span>
+        </button>
         {showBill && (
-          <div style={{ marginTop: 8 }}>
-            <GlassCard style={{ padding: "14px 16px" }}>
-              {(order.items || []).map((it, i) => (
-                <Row key={i} label={`${it.name} ×${it.qty}`} value={`₹${it.price * it.qty}`} />
-              ))}
-              <div style={{ borderTop: `1px dashed ${GLASS_BORDER}`, margin: "8px 0" }} />
-              <Row label="Subtotal" value={`₹${order.subtotal}`} />
-              {order.tax > 0 && <Row label="GST" value={`₹${order.tax}`} />}
-              {order.serviceCharge > 0 && <Row label="Service Charge" value={`₹${order.serviceCharge}`} />}
-              {order.discount > 0 && <Row label="Discount" value={`−₹${order.discount}`} />}
-              <div style={{ borderTop: `1px dashed ${GLASS_BORDER}`, margin: "8px 0" }} />
-              <Row label="Total" value={`₹${order.total}`} bold />
-            </GlassCard>
+          <div style={{ marginTop: 10 }}>
+            {(order.items || []).map((it, i) => (
+              <div key={i} className="row">
+                <span className="muted">{it.name} ×{it.qty}</span><span>₹{it.price * it.qty}</span>
+              </div>
+            ))}
+            <div className="sep" />
+            <div className="row"><span className="muted">Subtotal</span><span>₹{order.subtotal}</span></div>
+            {order.tax > 0 && <div className="row"><span className="muted">GST</span><span>₹{order.tax}</span></div>}
+            {order.serviceCharge > 0 && <div className="row"><span className="muted">Service Charge</span><span>₹{order.serviceCharge}</span></div>}
+            {order.discount > 0 && <div className="row"><span className="muted">Discount</span><span className="ok">−₹{order.discount}</span></div>}
+            <div className="row total"><span>Total</span><span>₹{order.total}</span></div>
           </div>
         )}
       </div>
 
       {canCancel && (
-        <div style={{ margin: "16px 16px 0" }}>
-          <PrimaryButton variant="danger" onClick={handleCancel} disabled={cancelling}>
-            {cancelling ? "Cancelling…" : "Cancel Order"}
-          </PrimaryButton>
-        </div>
+        <Button variant="danger" onClick={handleCancel} disabled={cancelling} style={{ marginTop: 4 }}>
+          {cancelling ? "Cancelling…" : "Cancel order"}
+        </Button>
       )}
-    </div>
+    </>
   );
 }
-
-const Row = ({ label, value, bold }) => (
-  <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: bold ? 14 : 12.5, fontWeight: bold ? 800 : 500, color: bold ? "#fff" : "rgba(255,255,255,0.65)" }}>
-    <span>{label}</span>
-    <span>{value}</span>
-  </div>
-);

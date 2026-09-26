@@ -9,13 +9,18 @@
 //   delete                   deleteMenuItem
 //   availability toggle      updateMenuItem(id, { isAvailable })
 //   categories               getCategories / createCategory / deleteCategory
+//   scheduled visibility     updateMenuSchedule (PATCH /menu/schedule, bulk)
 // Images go to Cloudinary through the backend, same as before.
+//
+// Scheduling is separate from availability: a customer sees an item only if
+// it is Available AND its category's window AND its own window allow the
+// current restaurant time (enforced server-side — this page just edits it).
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import toast from "react-hot-toast";
 import {
   getMenu, getCategories, createMenuItem, updateMenuItem, deleteMenuItem,
-  createCategory, deleteCategory,
+  createCategory, deleteCategory, updateMenuSchedule,
 } from "../../services/menuService.js";
 import PageHeader from "./shared/PageHeader.jsx";
 import StatCard from "./shared/StatCard.jsx";
@@ -30,6 +35,22 @@ const EMPTY_FORM = {
   category: "", tag: "Veg", isAvailable: true, rating: 4.0,
 };
 const normalizeCats = (data) => (data?.data || data || []).filter(Boolean);
+const BULK_CONFIRM_AT = 5; // confirm bulk schedule changes touching this many entries or more
+
+// "17:00" → "5:00 PM"
+const fmt12 = (hhmm) => {
+  const m = /^(\d{2}):(\d{2})$/.exec(hhmm || "");
+  if (!m) return hhmm || "";
+  const h = Number(m[1]);
+  return `${((h + 11) % 12) + 1}:${m[2]} ${h < 12 ? "AM" : "PM"}`;
+};
+const hasSchedule = (x) => x?.schedule?.enabled === true;
+const schedLabel = (sc) => `${fmt12(sc.startTime)} – ${fmt12(sc.endTime)}${sc.endTime < sc.startTime ? " (overnight)" : ""}`;
+const schedError = (start, end) => {
+  if (!start || !end) return "Choose both a start and an end time";
+  if (start === end) return "Start and end time cannot be the same";
+  return null;
+};
 
 // ── page-scoped styles (tokens only — light / dark safe) ─────────────────────
 if (typeof document !== "undefined" && !document.getElementById("menu-styles")) {
@@ -70,6 +91,21 @@ if (typeof document !== "undefined" && !document.getElementById("menu-styles")) 
     .menu-switch.on { background: var(--ready); box-shadow: 0 0 14px -2px var(--ready); }
     .menu-switch i { position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; transition: left .15s ease; }
     .menu-switch.on i { left: 17px; }
+    /* scheduled visibility */
+    .menu-sched-badge {
+      display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 500;
+      padding: 1px 7px; border-radius: 6px; white-space: nowrap;
+      color: var(--accent-ink); background: var(--violet-faint); border: 1px solid var(--violet-line);
+    }
+    .menu-sched-badge.off { color: var(--text-3); background: var(--card-2); border-color: var(--edge); }
+    .menu-catpick { display: flex; flex-wrap: wrap; gap: 7px; }
+    .menu-catchip {
+      display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border-radius: 10px; cursor: pointer;
+      border: 1px solid var(--edge); background: var(--card-2); font-size: 12.5px; color: var(--text-1); user-select: none;
+    }
+    .menu-catchip.on { border-color: var(--violet-line); background: var(--violet-faint); }
+    .menu-cb { width: 15px; height: 15px; accent-color: var(--accent-ink); cursor: pointer; flex: none; margin: 0; }
+    .menu-sched-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
   `;
   document.head.appendChild(s);
 }
@@ -88,6 +124,14 @@ const Switch = ({ on, onClick, label }) => (
     className={`menu-switch${on ? " on" : ""}`} style={{ border: 0, cursor: "pointer" }}>
     <i />
   </button>
+);
+
+// 🕒 5:00 PM – 11:00 PM  (dimmed with "off now" when outside its window)
+const ScheduleBadge = ({ schedule, off }) => (
+  <span className={`menu-sched-badge${off ? " off" : ""}`}
+    title={off ? "Outside its schedule — hidden from customers right now" : "Visible to customers only in this window"}>
+    🕒 {schedLabel(schedule)}{off ? " · off now" : ""}
+  </span>
 );
 
 // Item thumbnail — the Cloudinary image, or a glyph fallback (also on load error)
@@ -284,6 +328,13 @@ function ItemModal({ item, categories, onClose, onSaved, onCategoryCreated }) {
   const [loading, setLoading] = useState(false);
   const [showCat, setShowCat] = useState(false);
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+  const origSched = hasSchedule(item)
+    ? { enabled: true, startTime: item.schedule.startTime, endTime: item.schedule.endTime }
+    : { enabled: false, startTime: "", endTime: "" };
+  const [sched, setSched] = useState(origSched);
+  const schedChanged = sched.enabled !== origSched.enabled ||
+    (sched.enabled && (sched.startTime !== origSched.startTime || sched.endTime !== origSched.endTime));
+  const catSched = categories.find((c) => c.name === form.category && hasSchedule(c))?.schedule;
 
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && !showCat && onClose();
@@ -308,6 +359,10 @@ function ItemModal({ item, categories, onClose, onSaved, onCategoryCreated }) {
     if (!form.name.trim()) return toast.error("Item name is required");
     if (form.price === "" || isNaN(Number(form.price))) return toast.error("Price must be a number");
     if (!form.category) return toast.error("Category is required");
+    if (sched.enabled) {
+      const err = schedError(sched.startTime, sched.endTime);
+      if (err) return toast.error(err);
+    }
 
     setLoading(true);
     try {
@@ -325,13 +380,25 @@ function ItemModal({ item, categories, onClose, onSaved, onCategoryCreated }) {
       let data;
       if (isEdit) {
         ({ data } = await updateMenuItem(item._id, fd));
-        toast.success("Item updated");
-        onSaved(data, "edit");
       } else {
         ({ data } = await createMenuItem(fd));
-        toast.success("Item created");
-        onSaved(data, "create");
       }
+      // Schedule is saved through its own validated endpoint (the item form
+      // endpoint never touches it). The item is already saved at this point,
+      // so a schedule failure is reported on its own, not as "not saved".
+      let scheduleChanged = false;
+      if (schedChanged) {
+        try {
+          const schedule = sched.enabled ? { startTime: sched.startTime, endTime: sched.endTime } : null;
+          const { data: r } = await updateMenuSchedule({ itemIds: [data._id], schedule });
+          data = { ...data, schedule: r.schedule };
+          scheduleChanged = true;
+        } catch (e) {
+          toast.error(`Item saved, but the schedule was not: ${e?.response?.data?.message || "request failed"}`);
+        }
+      }
+      toast.success(isEdit ? "Item updated" : "Item created");
+      onSaved(data, isEdit ? "edit" : "create", { scheduleChanged });
       onClose();
     } catch (e) {
       toast.error(e?.response?.data?.message || "Failed to save item");
@@ -422,6 +489,32 @@ function ItemModal({ item, categories, onClose, onSaved, onCategoryCreated }) {
                   </span>
                 </div>
               </div>
+              <div className="menu-field full">
+                <label>Schedule</label>
+                <div className={`menu-toggle-row${sched.enabled ? " on" : ""}`} style={{ flexWrap: "wrap" }}>
+                  <Switch on={sched.enabled} label="Toggle schedule"
+                    onClick={() => setSched((p) => ({ ...p, enabled: !p.enabled }))} />
+                  <span style={{ fontSize: 12.5, fontWeight: 500, color: "var(--text-1)" }}>
+                    {sched.enabled ? "Only during" : "All day"}
+                  </span>
+                  {sched.enabled ? (
+                    <span style={{ display: "flex", gap: 6, alignItems: "center", marginLeft: "auto" }}>
+                      <input type="time" className="zc-input" aria-label="Schedule start time" style={{ width: 130 }}
+                        value={sched.startTime} onChange={(e) => setSched((p) => ({ ...p, startTime: e.target.value }))} />
+                      <span style={{ color: "var(--text-3)" }}>→</span>
+                      <input type="time" className="zc-input" aria-label="Schedule end time" style={{ width: 130 }}
+                        value={sched.endTime} onChange={(e) => setSched((p) => ({ ...p, endTime: e.target.value }))} />
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: 11, color: "var(--text-3)", marginLeft: "auto" }}>No time restriction</span>
+                  )}
+                </div>
+                <div className="hint">
+                  Customers see this item only inside the window (restaurant time; start included, end excluded — an end
+                  earlier than the start runs past midnight). Availability above still applies.
+                  {catSched && <> The <b>{form.category}</b> category is itself limited to {schedLabel(catSched)} — the item must satisfy both.</>}
+                </div>
+              </div>
             </div>
 
             <div style={{ marginTop: 14, padding: "10px 13px", background: "var(--card-2)", border: "1px solid var(--edge)", borderRadius: "var(--r-ctl)", fontSize: 11.5, color: "var(--text-3)" }}>
@@ -443,6 +536,143 @@ function ItemModal({ item, categories, onClose, onSaved, onCategoryCreated }) {
   );
 }
 
+// ── bulk scheduled-visibility panel ─────────────────────────────────────────
+// Categories are picked here; items are picked with the checkboxes in the
+// list below. One PATCH applies (or clears) the window on the whole selection.
+function SchedulePanel({ cats, shownItems, selCats, selItems, setSelCats, setSelItems, onApplied }) {
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState(null); // { schedule, text }
+
+  const nCats = selCats.size, nItems = selItems.size, total = nCats + nItems;
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const whatText = [nCats && plural(nCats, "category", "categories"), nItems && plural(nItems, "item", "items")]
+    .filter(Boolean).join(" and ");
+
+  const toggleCat = (id) => setSelCats((p) => {
+    const n = new Set(p);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    return n;
+  });
+  const shownIds = shownItems.map((i) => i._id);
+  const allShownSelected = shownIds.length > 0 && shownIds.every((id) => selItems.has(id));
+
+  const run = async (schedule) => {
+    setBusy(true);
+    try {
+      const { data } = await updateMenuSchedule({ itemIds: [...selItems], categoryIds: [...selCats], schedule });
+      toast.success(schedule
+        ? `Scheduled ${whatText}: ${schedLabel(data.schedule)}`
+        : `Schedule cleared on ${whatText}`);
+      setSelCats(new Set());
+      setSelItems(new Set());
+      onApplied();
+    } catch (e) {
+      toast.error(e?.response?.data?.message || "Failed to update schedule");
+    } finally {
+      setBusy(false);
+      setConfirm(null);
+    }
+  };
+
+  const apply = () => {
+    if (!total) return toast.error("Select at least one category or item");
+    const err = schedError(start, end);
+    if (err) return toast.error(err);
+    const schedule = { startTime: start, endTime: end };
+    if (total >= BULK_CONFIRM_AT) {
+      setConfirm({ schedule, text: `Apply ${schedLabel(schedule)} to ${whatText}?` });
+    } else run(schedule);
+  };
+  const clear = () => {
+    if (!total) return toast.error("Select at least one category or item");
+    setConfirm({ schedule: null, text: `Remove the schedule from ${whatText}? They go back to showing all day (availability still applies).` });
+  };
+
+  return (
+    <div className="zc-card" style={{ marginBottom: 16 }}>
+      <div className="zc-card-h">
+        <span className="t">🕒 Scheduled visibility</span>
+        <span className="s">Show categories / items to customers only during a daily time window (restaurant time)</span>
+      </div>
+      <div style={{ padding: "12px 16px 16px", display: "grid", gap: 14 }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 11.5, color: "var(--text-2)", fontWeight: 500 }}>Categories</span>
+            <button type="button" className="zc-btn ghost sm" disabled={!cats.length}
+              onClick={() => setSelCats(new Set(cats.map((c) => c._id)))}>Select all</button>
+            {nCats > 0 && <button type="button" className="zc-btn ghost sm" onClick={() => setSelCats(new Set())}>Clear</button>}
+          </div>
+          {cats.length === 0 ? (
+            <div style={{ fontSize: 12, color: "var(--text-3)" }}>No categories yet.</div>
+          ) : (
+            <div className="menu-catpick">
+              {cats.map((c) => (
+                <label key={c._id} className={`menu-catchip${selCats.has(c._id) ? " on" : ""}`}>
+                  <input type="checkbox" className="menu-cb" checked={selCats.has(c._id)} onChange={() => toggleCat(c._id)} />
+                  {c.name}
+                  {hasSchedule(c) && <ScheduleBadge schedule={c.schedule} />}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 11.5, color: "var(--text-2)", fontWeight: 500 }}>Items</span>
+          <span style={{ fontSize: 11.5, color: "var(--text-3)" }}>tick items in the list below, or</span>
+          <button type="button" className="zc-btn ghost sm" disabled={!shownIds.length || allShownSelected}
+            onClick={() => setSelItems((p) => new Set([...p, ...shownIds]))}>Select all {shownIds.length} shown</button>
+          {nItems > 0 && <button type="button" className="zc-btn ghost sm" onClick={() => setSelItems(new Set())}>Clear</button>}
+        </div>
+
+        <div className="menu-sched-bar">
+          <div className="menu-field">
+            <label htmlFor="sch-start">Start (visible from)</label>
+            <input id="sch-start" type="time" className="zc-input" value={start} onChange={(e) => setStart(e.target.value)} />
+          </div>
+          <div className="menu-field">
+            <label htmlFor="sch-end">End (hidden from)</label>
+            <input id="sch-end" type="time" className="zc-input" value={end} onChange={(e) => setEnd(e.target.value)} />
+          </div>
+          <button type="button" className="zc-btn pri" disabled={busy || !total} onClick={apply}>
+            {busy ? "Saving…" : "Apply schedule"}
+          </button>
+          <button type="button" className="zc-btn" disabled={busy || !total} onClick={clear}>Clear schedule</button>
+          <div style={{ flex: 1 }} />
+          <span style={{ fontSize: 12, color: total ? "var(--text-1)" : "var(--text-3)", alignSelf: "center" }}>
+            Selected: <b style={{ color: "var(--accent-ink)" }}>{total}</b>{total ? ` (${whatText})` : ""}
+          </span>
+          {total > 0 && (
+            <button type="button" className="zc-btn ghost sm" style={{ alignSelf: "center" }}
+              onClick={() => { setSelCats(new Set()); setSelItems(new Set()); }}>Clear selection</button>
+          )}
+        </div>
+        <div style={{ fontSize: 11, color: "var(--text-3)" }}>
+          Start time is included, end time is not (10:00 → 12:00 shows at 11:59, hides at 12:00). An end earlier than the
+          start runs past midnight (22:00 → 02:00). A category&rsquo;s window hides all of its items; an item with its own
+          window must satisfy both. Hidden (unavailable) items stay hidden regardless of schedule.
+        </div>
+      </div>
+
+      {confirm && (
+        <div className="zc-scrim" onClick={() => !busy && setConfirm(null)} style={{ zIndex: 1200 }}>
+          <div className="zc-modal" style={{ width: 420 }} onClick={(e) => e.stopPropagation()}>
+            <div className="mh"><div className="t">{confirm.schedule ? "Apply schedule?" : "Clear schedule?"}</div></div>
+            <div className="mb" style={{ fontSize: 13, color: "var(--text-2)" }}>{confirm.text}</div>
+            <div className="mf">
+              <button type="button" className="zc-btn" disabled={busy} onClick={() => setConfirm(null)}>Cancel</button>
+              <button type="button" className={`zc-btn ${confirm.schedule ? "pri" : "danger"}`} disabled={busy}
+                onClick={() => run(confirm.schedule)}>{busy ? "Saving…" : confirm.schedule ? "Apply" : "Clear schedule"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -459,6 +689,13 @@ export default function MenuAdminPage() {
 
   const [modal, setModal] = useState(null); // "create" | item | null
   const [showCat, setShowCat] = useState(false);
+  const [selItems, setSelItems] = useState(() => new Set()); // bulk-schedule selection (ids)
+  const [selCats, setSelCats] = useState(() => new Set());
+  const toggleItemSel = (id) => setSelItems((p) => {
+    const n = new Set(p);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    return n;
+  });
 
   const loadCats = useCallback(
     () => getCategories().then((r) => setCats(normalizeCats(r.data))).catch(() => {}),
@@ -477,24 +714,29 @@ export default function MenuAdminPage() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const handleSaved = (saved, mode) => {
+  const handleSaved = (saved, mode, { scheduleChanged } = {}) => {
     setItems((p) => (mode === "create" ? [saved, ...p] : p.map((i) => (i._id === saved._id ? saved : i))));
     loadCats();
+    if (scheduleChanged) load(); // refresh the server-computed "off now" flags
   };
 
   const handleCategoryCreated = (newCat) => {
     if (newCat?._deleted) {
+      const gone = cats.filter((c) => c.name === newCat.name).map((c) => c._id);
+      setSelCats((p) => { const n = new Set(p); gone.forEach((id) => n.delete(id)); return n; });
       setCats((p) => p.filter((c) => c.name !== newCat.name));
       return;
     }
     setCats((p) => (p.some((c) => c.name === newCat?.name) ? p : [...p, newCat]));
   };
 
+
   const handleDelete = async (item) => {
     if (!window.confirm(`Delete "${item.name}"? This cannot be undone.`)) return;
     try {
       await deleteMenuItem(item._id);
       setItems((p) => p.filter((i) => i._id !== item._id));
+      setSelItems((p) => { const n = new Set(p); n.delete(item._id); return n; });
       toast.success("Item deleted");
     } catch (e) {
       toast.error(e?.response?.data?.message || "Delete failed");
@@ -504,7 +746,7 @@ export default function MenuAdminPage() {
   const toggleAvail = async (item) => {
     try {
       const { data } = await updateMenuItem(item._id, { isAvailable: !item.isAvailable });
-      setItems((p) => p.map((i) => (i._id === data._id ? data : i)));
+      setItems((p) => p.map((i) => (i._id === data._id ? { ...data, scheduledNow: i.scheduledNow } : i)));
       toast.success(`${data.name} → ${data.isAvailable ? "Available" : "Hidden"}`);
     } catch (e) {
       toast.error(e?.response?.data?.message || "Update failed");
@@ -527,13 +769,24 @@ export default function MenuAdminPage() {
   const hiddenCount = items.length - availableCount;
   const vegCount = items.filter((i) => i.tag === "Veg").length;
   const nonVegCount = items.filter((i) => i.tag === "Non Veg").length;
+  const scheduledCount = items.filter(hasSchedule).length;
   const hasFilters = search || selCat !== "All" || avail !== "All" || vegOnly;
+  const catByName = useMemo(() => new Map(cats.map((c) => [c.name, c])), [cats]);
+  const allFilteredSelected = filtered.length > 0 && filtered.every((i) => selItems.has(i._id));
+  const someFilteredSelected = filtered.some((i) => selItems.has(i._id));
+  const toggleAllFiltered = () => setSelItems((p) => {
+    const n = new Set(p);
+    if (allFilteredSelected) filtered.forEach((i) => n.delete(i._id));
+    else filtered.forEach((i) => n.add(i._id));
+    return n;
+  });
   const clearFilters = () => { setSearch(""); setSelCat("All"); setAvail("All"); setVegOnly(false); };
 
   const STATS = [
     { label: "Total items", value: items.length, grad: true, sub: `${cats.length} categor${cats.length === 1 ? "y" : "ies"}` },
     { label: "Available", value: availableCount, color: "var(--ready-ink)", sub: "Live on the menu" },
     { label: "Hidden", value: hiddenCount, color: "var(--text-2)", sub: hiddenCount ? "Off the menu" : "None hidden" },
+    { label: "Scheduled", value: scheduledCount, color: "var(--accent-ink)", sub: scheduledCount ? "Time-limited items" : "None scheduled" },
     { label: "Vegetarian", value: vegCount, color: "var(--ready-ink)", sub: items.length ? `${Math.round((vegCount / items.length) * 100)}% of menu` : "—" },
     { label: "Non-vegetarian", value: nonVegCount, color: "var(--stop-ink)", sub: items.length ? `${Math.round((nonVegCount / items.length) * 100)}% of menu` : "—" },
   ];
@@ -554,6 +807,18 @@ export default function MenuAdminPage() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 20 }}>
         {STATS.map((b, i) => <StatCard key={i} {...b} />)}
       </div>
+
+      {!loading && !error && (
+        <SchedulePanel
+          cats={cats}
+          shownItems={filtered}
+          selCats={selCats}
+          selItems={selItems}
+          setSelCats={setSelCats}
+          setSelItems={setSelItems}
+          onApplied={load}
+        />
+      )}
 
       <div className="menu-filters">
         <input
@@ -625,9 +890,15 @@ export default function MenuAdminPage() {
           <>
             {/* desktop / tablet ledger */}
             <div className="menu-ledger-wrap" style={{ overflowX: "auto", padding: "6px 10px 8px" }}>
-              <table className="zc-ledger" style={{ minWidth: 720 }}>
+              <table className="zc-ledger" style={{ minWidth: 760 }}>
                 <thead>
                   <tr>
+                    <th style={{ width: 34 }}>
+                      <input type="checkbox" className="menu-cb" aria-label="Select all shown items"
+                        checked={allFilteredSelected}
+                        ref={(el) => { if (el) el.indeterminate = !allFilteredSelected && someFilteredSelected; }}
+                        onChange={toggleAllFiltered} />
+                    </th>
                     <th>Item</th>
                     <th style={{ width: 130 }}>Category</th>
                     <th className="num" style={{ width: 110 }}>Price</th>
@@ -639,6 +910,10 @@ export default function MenuAdminPage() {
                 <tbody>
                   {filtered.map((item) => (
                     <tr key={item._id} className="menu-click" onClick={() => setModal(item)}>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <input type="checkbox" className="menu-cb" aria-label={`Select ${item.name}`}
+                          checked={selItems.has(item._id)} onChange={() => toggleItemSel(item._id)} />
+                      </td>
                       <td>
                         <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
                           <Thumb src={item.image} />
@@ -650,10 +925,20 @@ export default function MenuAdminPage() {
                                 {item.description}
                               </div>
                             )}
+                            {hasSchedule(item) && (
+                              <div style={{ marginTop: 3 }}>
+                                <ScheduleBadge schedule={item.schedule} off={item.scheduledNow === false && item.isAvailable} />
+                              </div>
+                            )}
                           </div>
                         </div>
                       </td>
-                      <td><span className="zc-tag done sq">{item.category || "—"}</span></td>
+                      <td>
+                        <span className="zc-tag done sq">{item.category || "—"}</span>
+                        {hasSchedule(catByName.get(item.category)) && (
+                          <div style={{ marginTop: 3 }}><ScheduleBadge schedule={catByName.get(item.category).schedule} /></div>
+                        )}
+                      </td>
                       <td className="num">
                         <span style={{ fontWeight: 600, color: "var(--text-1)" }}>₹{item.price}</span>
                         {item.originalPrice ? (
@@ -690,6 +975,9 @@ export default function MenuAdminPage() {
             <div className="menu-cards" style={{ padding: "10px 12px 4px" }}>
               {filtered.map((item) => (
                 <div key={item._id} className="menu-mcard" onClick={() => setModal(item)}>
+                  <input type="checkbox" className="menu-cb" aria-label={`Select ${item.name}`} style={{ marginTop: 3 }}
+                    checked={selItems.has(item._id)} onClick={(e) => e.stopPropagation()}
+                    onChange={() => toggleItemSel(item._id)} />
                   <Thumb src={item.image} size={48} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
@@ -699,6 +987,11 @@ export default function MenuAdminPage() {
                     <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 3 }}>
                       {item.category} · ★ {Number(item.rating || 0).toFixed(1)}
                     </div>
+                    {hasSchedule(item) && (
+                      <div style={{ marginTop: 4 }}>
+                        <ScheduleBadge schedule={item.schedule} off={item.scheduledNow === false && item.isAvailable} />
+                      </div>
+                    )}
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
                       <span className="tnum" style={{ fontWeight: 700, color: "var(--text-1)" }}>₹{item.price}</span>
                       {item.originalPrice ? (

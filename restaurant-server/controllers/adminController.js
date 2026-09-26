@@ -1,5 +1,6 @@
 // controllers/adminController.js
 import { priceItems, computeTotals } from "../utils/pricing.js";
+import { getScheduleContext } from "../services/menuScheduleService.js";
 import { transitionOrderStatusTx, buildActor } from "../services/orderService.js";
 import {
   emitOrderStatusChanged, emitOrderCancelled, emitOrderConfirmed,
@@ -268,7 +269,8 @@ export const addItemsToOrder = async (req, res) => {
     if (!["CONFIRMED","PREPARING","READY","DELIVERED"].includes(order.status))
       return res.status(400).json({ message: `Cannot add items to a ${order.status} order` });
 
-    const newDbItems = await priceItems(items, MenuItem);
+    const scheduleCtx = await getScheduleContext({ models: req.models });
+    const newDbItems = await priceItems(items, MenuItem, scheduleCtx);
 
     newDbItems.forEach(newItem => {
       const existing = order.items.find(ex => String(ex.menuItem) === String(newItem.menuItem));

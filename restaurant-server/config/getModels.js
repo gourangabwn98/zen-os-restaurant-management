@@ -104,11 +104,25 @@ const restaurantProfileSchema = new mongoose.Schema({
   // when this is blank and offers Cash-at-restaurant instead.
   upiId:             { type: String, default: "" },       // e.g. "restaurant@okhdfcbank"
   upiPayeeName:      { type: String, default: "" },        // shown in the UPI app; falls back to restaurantName
+  // IANA timezone used to evaluate menu schedules (utils/menuSchedule.js).
+  // An invalid value falls back to Asia/Kolkata at read time.
+  timezone:          { type: String, default: "Asia/Kolkata" },
 }, { timestamps: true });
 
+// ── Scheduled menu visibility (utils/menuSchedule.js) ─────────────────────────
+// One daily window per category/item, in the restaurant's timezone. Separate
+// from `isAvailable`: customer visibility = isAvailable AND schedule allows now.
+// Only ever written through PATCH /api/menu/schedule (validated there).
+const menuScheduleSchema = new mongoose.Schema({
+  enabled:   { type: Boolean, default: false },
+  startTime: { type: String, default: "" },   // "HH:MM" 24h, inclusive
+  endTime:   { type: String, default: "" },   // "HH:MM" 24h, exclusive; < start ⇒ crosses midnight
+}, { _id: false });
+
 const categorySchema = new mongoose.Schema({
-  name:  { type: String, required: true, unique: true, trim: true },
-  image: { type: String, default: "" },
+  name:     { type: String, required: true, unique: true, trim: true },
+  image:    { type: String, default: "" },
+  schedule: { type: menuScheduleSchema, default: () => ({}) },
 }, { timestamps: true });
 
 const chefSchema = new mongoose.Schema({
@@ -129,6 +143,7 @@ const menuItemSchema = new mongoose.Schema({
   image:         { type: String, default: "" },
   isAvailable:   { type: Boolean, default: true },
   rating:        { type: Number, default: 4.0 },
+  schedule:      { type: menuScheduleSchema, default: () => ({}) },
 }, { timestamps: true });
 
 const orderItemSchema = new mongoose.Schema({

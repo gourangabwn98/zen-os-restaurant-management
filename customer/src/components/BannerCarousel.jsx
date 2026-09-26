@@ -1,62 +1,79 @@
-import { useEffect, useState } from "react";
-import { GLASS_BORDER, ACCENT } from "../theme.js";
+import { useEffect, useRef, useState } from "react";
+import Icon from "./ui/Icon.jsx";
 
-export default function BannerCarousel({ banners }) {
-  const [slide, setSlide] = useState(0);
+/** Home hero carousel (reference ".hero"). Slides:
+ *  1. intro slide (CTA → full menu), 2. every active admin banner as a
+ *  full-bleed photo slide (its link preserved), 3. when there are no
+ *  banners, the top-rated dishes as "Chef's pick" slides with an Add CTA. */
+export default function BannerCarousel({ banners, picks = [], tableLabel, onBrowse, onAdd }) {
   const active = (banners || []).filter((b) => b.active && b.imageUrl);
+  const slides = [
+    { kind: "intro", img: picks[0]?.image },
+    ...active.map((b) => ({ kind: "banner", ...b })),
+    ...(active.length ? [] : picks.slice(0, 2).map((it) => ({ kind: "item", item: it }))),
+  ];
+
+  const [slide, setSlide] = useState(0);
+  const touchX = useRef(null);
+  const count = slides.length;
+  const go = (i) => setSlide(((i % count) + count) % count);
 
   useEffect(() => {
-    if (active.length < 2) return;
-    const id = setInterval(() => setSlide((p) => (p + 1) % active.length), 4000);
+    if (count < 2) return;
+    const id = setInterval(() => { if (!document.hidden) setSlide((p) => (p + 1) % count); }, 5000);
     return () => clearInterval(id);
-  }, [active.length]);
+  }, [count]);
 
-  if (!active.length) return null;
+  useEffect(() => { if (slide >= count) setSlide(0); }, [slide, count]);
 
   return (
-    <div style={{ padding: "12px 16px 4px" }}>
-      <div style={{
-        position: "relative", width: "100%", height: 160, borderRadius: 22,
-        overflow: "hidden", border: `1px solid ${GLASS_BORDER}`,
-        boxShadow: "0 12px 32px rgba(0,0,0,0.4)", background: "rgba(255,255,255,0.05)",
-      }}>
-        <div style={{
-          display: "flex", height: "100%", transition: "transform .5s cubic-bezier(.4,0,.2,1)",
-          transform: `translateX(-${slide * 100}%)`, width: `${active.length * 100}%`,
-        }}>
-          {active.map((b, i) => {
-            const img = (
-              <img
-                src={b.imageUrl} alt="" loading={i === 0 ? "eager" : "lazy"}
-                style={{ width: "100%", height: "100%", objectFit: "cover" }}
-              />
-            );
+    <section
+      className="hero" aria-roledescription="carousel" aria-label="Highlights"
+      onTouchStart={(e) => { touchX.current = e.touches[0].clientX; }}
+      onTouchEnd={(e) => {
+        if (touchX.current == null) return;
+        const dx = e.changedTouches[0].clientX - touchX.current;
+        if (Math.abs(dx) > 40) go(slide + (dx < 0 ? 1 : -1));
+        touchX.current = null;
+      }}
+    >
+      <div className="slides" style={{ transform: `translateX(-${slide * 100}%)` }}>
+        {slides.map((s, i) => {
+          const hidden = i !== slide;
+          if (s.kind === "banner") {
             return (
-              <div key={i} style={{ width: `${100 / active.length}%`, flexShrink: 0, height: "100%", position: "relative" }}>
-                {img}
-                <div style={{
-                  position: "absolute", inset: 0,
-                  background: "linear-gradient(180deg, rgba(0,0,0,0) 40%, rgba(0,0,0,0.55) 100%)",
-                }} />
-                {b.link && (
-                  <a href={b.link} target="_blank" rel="noreferrer" style={{ position: "absolute", inset: 0 }} aria-label="Open offer" />
-                )}
+              <div key={`b${i}`} className="slide photo" aria-hidden={hidden}>
+                <img src={s.imageUrl} alt="" loading={i < 2 ? "eager" : "lazy"} />
+                {s.link && <a href={s.link} target="_blank" rel="noreferrer" aria-label="Open offer" tabIndex={hidden ? -1 : 0} />}
               </div>
             );
-          })}
-        </div>
-
-        {active.length > 1 && (
-          <div style={{ position: "absolute", bottom: 10, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 5 }}>
-            {active.map((_, i) => (
-              <div key={i} style={{
-                width: i === slide ? 18 : 6, height: 6, borderRadius: 3,
-                background: i === slide ? ACCENT : "rgba(255,255,255,0.4)", transition: "width .3s",
-              }} />
-            ))}
-          </div>
-        )}
+          }
+          const item = s.item;
+          return (
+            <div key={`s${i}`} className="slide" aria-hidden={hidden}>
+              <div style={{ minWidth: 0 }}>
+                <span className="pill">{item ? "Chef's pick" : tableLabel ? `${tableLabel} · Dine-in` : "Hot & fresh"}</span>
+                <h2>{item ? item.name : <>Crave it?<br />We’ll cook it.</>}</h2>
+                <p>{item ? (item.description || item.category) : "Order from your phone. Straight to the kitchen — no waiting for the menu."}</p>
+                <button type="button" className="btn-cta" tabIndex={hidden ? -1 : 0} onClick={() => (item ? onAdd(item) : onBrowse())}>
+                  {item ? `Add · ₹${item.price}` : "Order Now"}<i><Icon name="arrow" /></i>
+                </button>
+              </div>
+              <div className="img">
+                {(item?.image || s.img) ? <img src={item?.image || s.img} alt="" /> : <span className="emo">🍔</span>}
+              </div>
+            </div>
+          );
+        })}
       </div>
-    </div>
+
+      {count > 1 && (
+        <div className="dots">
+          {slides.map((_, i) => (
+            <button key={i} type="button" aria-label={`Slide ${i + 1}`} aria-current={i === slide} onClick={() => go(i)} />
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

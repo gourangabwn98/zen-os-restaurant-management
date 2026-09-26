@@ -29,6 +29,8 @@ const makeModels = ({ orderCreate, orders = [] }) => {
   return {
     MenuItem: { findById: async (id) => MENU.find((m) => m._id === id) || null },
     RestaurantProfile: { findOne: async () => ({ gstRate: 0, serviceCharge: 0 }) },
+    // no scheduled categories (menu schedule check in placeOrderTx)
+    Category: { find: () => ({ select: () => ({ lean: async () => [] }) }) },
     Table: { findOne: async () => null },
     TableSession: { findByIdAndUpdate: async () => ({}) },
     KOTJob: {},

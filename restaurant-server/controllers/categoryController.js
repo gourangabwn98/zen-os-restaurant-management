@@ -1,8 +1,16 @@
 // controllers/categoryController.js
+import { getScheduleContext } from "../services/menuScheduleService.js";
+
 export const getCategories = async (req, res) => {
   try {
     const { Category } = req.models;
-    const cats = await Category.find().sort({ name: 1 });
+    let cats = await Category.find().sort({ name: 1 });
+    // Admin manages every category; anyone else only sees ones whose
+    // schedule allows them right now (same rule as GET /api/menu).
+    if (!(req.user?.isAdmin || req.user?.role === "admin")) {
+      const { hiddenCategories } = await getScheduleContext({ models: req.models });
+      cats = cats.filter((c) => !hiddenCategories.has(c.name));
+    }
     res.json(cats);
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
@@ -62,7 +70,9 @@ export const createCategory = async (req, res) => {
 export const updateCategory = async (req, res) => {
   try {
     const { Category } = req.models;
-    const cat = await Category.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    // schedule is only writable through the validated PATCH /api/menu/schedule
+    const { schedule, ...updates } = req.body || {};
+    const cat = await Category.findByIdAndUpdate(req.params.id, updates, { new: true });
     if (!cat) return res.status(404).json({ message: "Category not found" });
     res.json(cat);
   } catch (err) { res.status(400).json({ message: err.message }); }
