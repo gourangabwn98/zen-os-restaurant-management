@@ -1,3 +1,5 @@
+import { isImageUrl } from "../hooks/useMenu.js";
+
 /** Horizontally scrolling round category discs ("All Items" first). */
 export default function CategoryTiles({ names, active, onPick, imageFor, sticky }) {
   const tile = (name, label, img) => (
@@ -5,7 +7,7 @@ export default function CategoryTiles({ names, active, onPick, imageFor, sticky 
       key={name} type="button" className="cat"
       aria-pressed={active === name} onClick={() => onPick(name)}
     >
-      <span className="disc">{img ? <img src={img} alt="" loading="lazy" /> : "🍽️"}</span>
+      <span className="disc">{isImageUrl(img) ? <img src={img} alt="" loading="lazy" /> : (img || "🍽️")}</span>
       <span>{label}</span>
     </button>
   );

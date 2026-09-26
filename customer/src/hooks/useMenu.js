@@ -96,16 +96,21 @@ export function useMenu({ search = "", diet = "all" } = {}) {
     return [...map.entries()];
   }, [visible]);
 
+  // Returns an image URL, else the category's emoji placeholder (legacy
+  // `image` values like "🍔"), else "". Emoji must never reach an <img src>.
   const categoryImage = useCallback((name) => {
     const c = categories.find((x) => x.category === name);
-    if (c?.categoryImageUrl || c?.categoryImage) return c.categoryImageUrl || c.categoryImage;
-    const withCatImg = (items || []).find((m) => m.category === name && m.categoryImage);
-    if (withCatImg) return withCatImg.categoryImage;
-    return (items || []).find((m) => m.category === name && m.image)?.image || "";
+    const inCat = (items || []).filter((m) => m.category === name);
+    const url = [c?.categoryImageUrl, c?.categoryImage, ...inCat.map((m) => m.categoryImage), ...inCat.map((m) => m.image)]
+      .find(isImageUrl);
+    if (url) return url;
+    return [c?.categoryImage, ...inCat.map((m) => m.categoryImage)].find((v) => typeof v === "string" && v.trim()) || "";
   }, [categories, items]);
 
   return { items: visible, grouped, loading, error, reload: load, categoryImage };
 }
+
+export const isImageUrl = (s) => typeof s === "string" && /^(https?:\/\/|data:image\/|blob:|\/)/i.test(s);
 
 // ── Display helpers (pure — no pricing logic, just what the card shows) ──
 export const isOutOfStock = (it) => Boolean(it.stockTracked && !it.stockAvailable);

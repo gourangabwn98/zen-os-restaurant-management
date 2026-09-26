@@ -187,6 +187,8 @@ export const toggleAvailability = async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
+const isImageUrl = (s) => typeof s === "string" && /^(https?:\/\/|data:image\/)/i.test(s);
+
 export const getCategoriesWithImage = async (req, res) => {
   try {
     const { MenuItem, Category } = req.models;
@@ -194,7 +196,10 @@ export const getCategoriesWithImage = async (req, res) => {
     const cats = (await Category.find().sort({ name: 1 })).filter((c) => !hiddenCategories.has(c.name));
     const result = await Promise.all(cats.map(async (c) => {
       const item = await MenuItem.findOne({ category: c.name, isAvailable: true }).select("categoryImage");
-      return { category: c.name, categoryImage: c.image || "", categoryImageUrl: item?.categoryImage || c.image || "" };
+      // `image` fields may hold a real URL or a legacy emoji placeholder —
+      // categoryImageUrl is only ever an actual URL, the category's own first.
+      const url = [c.image, item?.categoryImage].find(isImageUrl) || "";
+      return { category: c.name, categoryImage: c.image || "", categoryImageUrl: url };
     }));
     res.json(result);
   } catch (err) { res.status(500).json({ message: err.message }); }
