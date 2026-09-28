@@ -1,7 +1,8 @@
 // controllers/adminController.js
 import { priceItems, computeTotals } from "../utils/pricing.js";
 import { getScheduleContext } from "../services/menuScheduleService.js";
-import { transitionOrderStatusTx, buildActor } from "../services/orderService.js";
+import { transitionOrderStatusTx, buildActor, getRoleFromUser } from "../services/orderService.js";
+import { PAYMENT_STATUSES, canSetPaymentStatus } from "../utils/orderStateMachine.js";
 import {
   emitOrderStatusChanged, emitOrderCancelled, emitOrderConfirmed,
   emitKotCreated, emitBillPrint, emitPaymentStatusChanged, emitTableCleared,
@@ -221,13 +222,17 @@ export const updateOrderPayment = async (req, res) => {
     const { Order } = req.models;
     const { paymentStatus, paymentMethod } = req.body;
 
-    const VALID_PAYMENT_STATUS = ["PENDING_VERIFICATION","PAID","FAILED"];
     const VALID_PAYMENT_METHOD = ["Cash","Online"];
 
     const update = {};
     if (paymentStatus !== undefined) {
-      if (!VALID_PAYMENT_STATUS.includes(paymentStatus)) {
-        return res.status(400).json({ message: `paymentStatus must be one of: ${VALID_PAYMENT_STATUS.join(", ")}` });
+      if (!PAYMENT_STATUSES.includes(paymentStatus)) {
+        return res.status(400).json({ message: `paymentStatus must be one of: ${PAYMENT_STATUSES.join(", ")}` });
+      }
+      // Role rules live in utils/orderStateMachine.js — e.g. a waiter may
+      // mark an order PAID but never FAILED.
+      if (!canSetPaymentStatus(paymentStatus, getRoleFromUser(req.user))) {
+        return res.status(403).json({ message: `You are not allowed to mark a payment ${paymentStatus}` });
       }
       update.paymentStatus = paymentStatus;
     }

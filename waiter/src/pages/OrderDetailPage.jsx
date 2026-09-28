@@ -152,6 +152,9 @@ export default function OrderDetailPage() {
 
   const isPending = order.status === "PENDING_CONFIRMATION";
   const canAdvance = !!NEXT_STATUS[order.status];
+  // A delivered order can only be completed once it's marked Paid (the
+  // server enforces the same rule — this just explains it up front).
+  const needsPayment = order.status === "DELIVERED" && order.paymentStatus !== "PAID";
   const canAddItems = ["CONFIRMED","PREPARING","READY","DELIVERED"].includes(order.status);
   const stageIdx = STAGES.indexOf(order.status);
 
@@ -211,9 +214,13 @@ export default function OrderDetailPage() {
             </span>
           </div>
           {order.paymentStatus !== "PAID" && (
-            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-              <PrimaryButton disabled={busy} onClick={() => handlePayment("PAID")} variant="success" style={{ flex: 1, padding: "10px", fontSize: 12.5 }}>Mark Paid</PrimaryButton>
-              <PrimaryButton disabled={busy} onClick={() => handlePayment("FAILED")} variant="danger" style={{ flex: 1, padding: "10px", fontSize: 12.5 }}>Mark Failed</PrimaryButton>
+            <div style={{ marginTop: 12 }}>
+              <PrimaryButton disabled={busy} onClick={() => handlePayment("PAID")} variant="success" style={{ width: "100%", padding: "10px", fontSize: 12.5 }}>Mark Paid</PrimaryButton>
+              {needsPayment && (
+                <div style={{ fontSize: 11.5, color: AMBER, marginTop: 8, textAlign: "center" }}>
+                  Payment required — mark this order Paid to complete it
+                </div>
+              )}
             </div>
           )}
         </GlassCard>
@@ -229,7 +236,9 @@ export default function OrderDetailPage() {
         )}
 
         {canAdvance && (
-          <PrimaryButton disabled={busy} onClick={handleAdvance}>{NEXT_LABEL[order.status]}</PrimaryButton>
+          <PrimaryButton disabled={busy || needsPayment} onClick={handleAdvance}>
+            {needsPayment ? "Mark Paid to complete" : NEXT_LABEL[order.status]}
+          </PrimaryButton>
         )}
 
         {canAddItems && (

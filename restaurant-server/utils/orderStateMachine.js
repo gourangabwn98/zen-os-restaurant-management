@@ -39,6 +39,8 @@ export const ORDER_STATUSES = [
   "CANCELLED",
 ];
 
+export const PAYMENT_STATUSES = ["PENDING_VERIFICATION", "PAID", "FAILED"];
+
 export const ORDER_SOURCES = ["CUSTOMER", "WAITER", "ADMIN"];
 export const ORDER_TYPES   = ["DINE_IN", "TAKEAWAY", "ONLINE"];
 
@@ -68,6 +70,32 @@ const TRANSITION_ROLES = {
   "READY->DELIVERED":                ["admin", "waiter"],
   "DELIVERED->COMPLETED":            ["admin", "waiter"],
 };
+
+// Transitions that additionally require the order to be PAID, per role. A
+// waiter may only close out (complete) a delivered order once payment has
+// been marked PAID — they can't complete an unpaid bill. Admin is exempt
+// (full override authority, e.g. a comped order). transitionOrderStatusTx
+// also puts `paymentStatus: "PAID"` into its atomic update filter, so a
+// payment change racing the completion can't slip through.
+const PAYMENT_REQUIRED = {
+  "DELIVERED->COMPLETED": ["waiter"],
+};
+
+/** True when this role must see paymentStatus === "PAID" before this transition. */
+export const requiresPaidForTransition = (fromStatus, toStatus, role) =>
+  (PAYMENT_REQUIRED[`${fromStatus}->${toStatus}`] || []).includes(role);
+
+// Payment statuses each non-admin staff role may set by hand (PATCH
+// /admin/orders/:id/payment). A waiter only ever confirms money received —
+// marking a payment FAILED is left to admin.
+const PAYMENT_STATUS_ROLES = {
+  PENDING_VERIFICATION: ["admin"],
+  PAID:                 ["admin", "waiter"],
+  FAILED:               ["admin"],
+};
+
+export const canSetPaymentStatus = (paymentStatus, role) =>
+  (PAYMENT_STATUS_ROLES[paymentStatus] || []).includes(role);
 
 // ── Backward-compatible normalization ────────────────────────────────────────
 // The existing (unmodified this phase) customer app still sends legacy

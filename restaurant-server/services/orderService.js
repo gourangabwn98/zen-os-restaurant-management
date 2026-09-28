@@ -9,7 +9,7 @@
 
 import { priceOrder } from "../utils/pricing.js";
 import { getScheduleContext } from "./menuScheduleService.js";
-import { normalizeOrderType, assertValidTransition } from "../utils/orderStateMachine.js";
+import { normalizeOrderType, assertValidTransition, requiresPaidForTransition } from "../utils/orderStateMachine.js";
 import { createKotJobForOrder } from "./kotService.js";
 import { findOrOpenTableSession, closeTableSession } from "./tableSessionService.js";
 import { findNextMatch } from "./waitlistService.js";
@@ -402,6 +402,13 @@ export const transitionOrderStatusTx = async ({ req, orderId, toStatus, note }) 
   const role = getRoleFromUser(req.user);
   assertValidTransition(current.status, toStatus, role);
 
+  const needsPaid = requiresPaidForTransition(current.status, toStatus, role);
+  if (needsPaid && current.paymentStatus !== "PAID") {
+    const err = new Error("Mark the payment as Paid before completing this order");
+    err.statusCode = 400;
+    throw err;
+  }
+
   const actor = buildActor(req.user);
   const extraFields = {};
   if (toStatus === "PREPARING") { extraFields.preparedBy = actor; extraFields.preparingAt = new Date(); }
@@ -410,7 +417,7 @@ export const transitionOrderStatusTx = async ({ req, orderId, toStatus, note }) 
   if (toStatus === "COMPLETED") { extraFields.completedBy = actor; extraFields.completedAt = new Date(); }
 
   const updated = await Order.findOneAndUpdate(
-    { _id: orderId, status: current.status },
+    { _id: orderId, status: current.status, ...(needsPaid && { paymentStatus: "PAID" }) },
     {
       $set:  { status: toStatus, ...extraFields },
       $push: { statusHistory: { status: toStatus, changedBy: actor, changedAt: new Date(), note: note || "" } },
