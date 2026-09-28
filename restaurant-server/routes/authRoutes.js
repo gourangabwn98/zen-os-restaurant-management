@@ -5,6 +5,7 @@ import {
   firebaseVerify,
   getProfile, updateProfile, updateVegMode, updateLanguage, updateTheme,
   firebaseLogin,
+  employeeCheckPhone, employeeFirebaseVerify,
 } from "../controllers/authController.js";
 import { protect } from "../middleware/authMiddleware.js";
 
@@ -24,6 +25,9 @@ router.post("/waiter/verify-otp", waiterVerifyOTP);
 // that account actually has.
 router.post("/employee/send-otp",   waiterSendOTP);
 router.post("/employee/verify-otp", waiterVerifyOTP);
+// Staff login via Firebase Phone Auth (same SMS service as the customer app).
+router.post("/employee/check-phone",     employeeCheckPhone);
+router.post("/employee/firebase-verify", employeeFirebaseVerify);
 
 // ── Customer Firebase login ───────────────────────────────────────────────────
 router.post("/firebase-verify",   firebaseVerify);

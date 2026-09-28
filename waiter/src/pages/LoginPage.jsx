@@ -1,7 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { sendWaiterOTP, verifyWaiterOTP } from "../services/authService.js";
+import { RecaptchaVerifier, signInWithPhoneNumber, signOut } from "firebase/auth";
+import { auth as firebaseAuth } from "../firebase.js";
+import { checkStaffPhone, firebaseStaffLogin } from "../services/authService.js";
 import { useAppState } from "../context/AppState.jsx";
 import PrimaryButton from "../components/ui/PrimaryButton.jsx";
 import { ACCENT, TEXT_MUTED, TEXT_FAINT, GLASS_BG, GLASS_BORDER, ACCENT_GRADIENT, ACCENT_GLOW } from "../theme.js";
@@ -16,6 +18,7 @@ export default function LoginPage() {
   const [staffName, setStaffName] = useState("");
   const [loading, setLoading] = useState(false);
   const [timer, setTimer]     = useState(0);
+  const confirmRef = useRef(null); // Firebase ConfirmationResult for the pending OTP
 
   useEffect(() => {
     if (timer <= 0) return;
@@ -23,34 +26,53 @@ export default function LoginPage() {
     return () => clearInterval(id);
   }, [timer]);
 
+  // Staff login uses Firebase Phone Auth — the same SMS service as the
+  // customer app. The backend checks the number is active staff first (so no
+  // SMS goes to an unknown number), then exchanges the verified Firebase
+  // token for a staff session.
+  const resetRecaptcha = () => {
+    if (window.recaptchaVerifier) { window.recaptchaVerifier.clear(); window.recaptchaVerifier = null; }
+  };
+
   const handleSend = async () => {
     if (phone.length !== 10) return toast.error("Enter a valid 10-digit phone number");
     setLoading(true);
     try {
-      const { data } = await sendWaiterOTP(phone);
+      const { data } = await checkStaffPhone(phone);
       setStaffName(data.staffName || "");
+      if (!window.recaptchaVerifier) {
+        window.recaptchaVerifier = new RecaptchaVerifier(firebaseAuth, "recaptcha-container", { size: "invisible" });
+      }
+      confirmRef.current = await signInWithPhoneNumber(firebaseAuth, `+91${phone}`, window.recaptchaVerifier);
       setStep("otp");
       setTimer(120);
       toast.success(`OTP sent to +91 ${phone}`);
     } catch (err) {
-      toast.error(err.response?.data?.message || "Couldn't send OTP");
+      resetRecaptcha();
+      toast.error(err.response?.data?.message || err.message || "Couldn't send OTP");
     } finally { setLoading(false); }
   };
 
   const handleVerify = async () => {
     if (otp.length !== 6) return toast.error("Enter the 6-digit OTP");
+    if (!confirmRef.current) return toast.error("Please resend the OTP");
     setLoading(true);
     try {
-      const { data } = await verifyWaiterOTP(phone, otp);
+      const cred = await confirmRef.current.confirm(otp);
+      const { data } = await firebaseStaffLogin(await cred.user.getIdToken());
+      // Our own JWT is the session from here on — drop the Firebase one.
+      signOut(firebaseAuth).catch(() => {});
       auth.login(data);
       toast.success(`Welcome, ${data.name || "there"}!`);
       nav("/tables", { replace: true });
     } catch (err) {
-      toast.error(err.response?.data?.message || "Wrong OTP — try again");
+      if (err.code === "auth/invalid-verification-code") toast.error("Wrong OTP — try again");
+      else if (err.code === "auth/code-expired") { toast.error("OTP expired — resend it"); handleBack(); }
+      else toast.error(err.response?.data?.message || "Login failed");
     } finally { setLoading(false); }
   };
 
-  const handleBack = () => { setStep("phone"); setOtp(""); };
+  const handleBack = () => { setStep("phone"); setOtp(""); confirmRef.current = null; resetRecaptcha(); };
   const handleResend = () => { if (timer > 0) return; handleBack(); setTimeout(handleSend, 100); };
 
   return (
@@ -115,6 +137,7 @@ export default function LoginPage() {
           </div>
         </>
       )}
+      <div id="recaptcha-container" />
     </div>
   );
 }

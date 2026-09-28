@@ -364,6 +364,30 @@ export const adminVerifyOTP = async (req, res) => {
   }
 };
 
+// ── Staff (waiter/chef/admin) login helpers — shared by the OTP and Firebase
+// paths so both apply exactly the same "who counts as active staff" rule and
+// return exactly the same session shape.
+const STAFF_ROLES = ["waiter", "chef", "admin", "manager"];
+
+const findActiveStaffByPhone = (User, phone) =>
+  User.findOne({
+    phone,
+    status: { $ne: "Inactive" },
+    $or: [{ role: { $in: STAFF_ROLES } }, { isAdmin: true }],
+  });
+
+const staffSession = (staffUser, restaurantName) => ({
+  token: jwt.sign(
+    { id: staffUser._id, role: staffUser.role, restaurantName },
+    process.env.JWT_SECRET,
+    { expiresIn: "7d" },
+  ),
+  restaurantName,
+  name:  staffUser.name,
+  phone: staffUser.phone,
+  role:  staffUser.role,
+});
+
 // ────────────────────────────────────────────────────────────────────────────
 // POST /api/auth/waiter/send-otp
 // Step 1 of waiter login
@@ -384,14 +408,7 @@ export const waiterSendOTP = async (req, res) => {
     const { User } = models;
 
     // Find this phone in users — must be staff and not deactivated
-    const staffUser = await User.findOne({
-      phone,
-      status: { $ne: "Inactive" },
-      $or: [
-        { role: { $in: ["waiter","chef","admin","manager"] } },
-        { isAdmin: true },
-      ],
-    });
+    const staffUser = await findActiveStaffByPhone(User, phone);
 
     if (!staffUser)
       return res.status(403).json({ message: "Phone not registered in this restaurant, or account is deactivated." });
@@ -448,22 +465,64 @@ export const waiterVerifyOTP = async (req, res) => {
     if (staffUser.status === "Inactive")
       return res.status(403).json({ message: "This staff account has been deactivated." });
 
-    const token = jwt.sign(
-      { id: staffUser._id, role: staffUser.role, restaurantName },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
-
-    res.json({
-      token,
-      restaurantName,
-      name:  staffUser.name,
-      phone: staffUser.phone,
-      role:  staffUser.role,
-    });
+    res.json(staffSession(staffUser, restaurantName));
   } catch (err) {
     console.error("waiterVerifyOTP:", err.message);
     res.status(500).json({ message: err.message });
+  }
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// POST /api/auth/employee/check-phone   Body: { phone }
+// Firebase staff login, step 1 — confirms the number is an active staff
+// account BEFORE the client asks Firebase to text it (no SMS is spent on an
+// unknown number). Sends nothing itself.
+// ────────────────────────────────────────────────────────────────────────────
+export const employeeCheckPhone = async (req, res) => {
+  const { phone } = req.body || {};
+  if (!/^\d{10}$/.test(String(phone || ""))) return res.status(400).json({ message: "Enter a valid 10-digit phone number" });
+  try {
+    const { User } = getModels(await getDB(process.env.MONGO_URI));
+    const staffUser = await findActiveStaffByPhone(User, phone);
+    if (!staffUser)
+      return res.status(403).json({ message: "Phone not registered in this restaurant, or account is deactivated." });
+    res.json({ staffName: staffUser.name });
+  } catch (err) {
+    console.error("employeeCheckPhone:", err.message);
+    res.status(500).json({ message: "Couldn't check this number" });
+  }
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// POST /api/auth/employee/firebase-verify   Body: { firebaseToken }
+// Firebase staff login, step 2 — same SMS service as the customer login.
+// The phone number comes ONLY from the verified Firebase ID token, never
+// from the request body, and the account must be active staff — a customer
+// who signs in with Firebase can never get a staff session here.
+// ────────────────────────────────────────────────────────────────────────────
+export const employeeFirebaseVerify = async (req, res) => {
+  const { firebaseToken } = req.body || {};
+  if (!firebaseToken) return res.status(400).json({ message: "Token required" });
+
+  let phone;
+  try {
+    const decoded = await admin.auth().verifyIdToken(firebaseToken);
+    phone = decoded.phone_number?.replace(/^\+91/, "");
+  } catch (err) {
+    console.error("employeeFirebaseVerify token:", err.message);
+    return res.status(401).json({ message: "Invalid or expired verification — please resend the OTP" });
+  }
+  if (!phone) return res.status(400).json({ message: "Phone not found in token" });
+
+  try {
+    const { User } = getModels(await getDB(process.env.MONGO_URI));
+    const staffUser = await findActiveStaffByPhone(User, phone);
+    if (!staffUser)
+      return res.status(403).json({ message: "Phone not registered in this restaurant, or account is deactivated." });
+    res.json(staffSession(staffUser));
+  } catch (err) {
+    console.error("employeeFirebaseVerify:", err.message);
+    res.status(500).json({ message: "Login failed" });
   }
 };
 
