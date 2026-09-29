@@ -8,6 +8,7 @@ import { placeOrder, newIdempotencyKey } from "../../services/orderService.js";
 import { getSocket } from "../../services/socketService.js";
 import { consumePendingOrderFocus } from "../../services/orderFocus.js";
 import CombinedBillModal from "./shared/CombinedBillModal.jsx";
+import VoiceOrder from "./shared/VoiceOrder.jsx";
 import { statusKind } from "./shared/statusKind.js";
 import { MANUAL_PAYMENT_STATUSES, needsPaidFirst, PAID_FIRST_HINT } from "./shared/paymentRules.js";
 import ErrorState from "./shared/ErrorState.jsx";
@@ -592,6 +593,15 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null }) => {
 
   const getQty    = (id) => cart.find(c=>c.item._id===id)?.qty||0;
   const addItem   = (item) => setCart(p=>{ const ex=p.find(c=>c.item._id===item._id); return ex?p.map(c=>c.item._id===item._id?{...c,qty:c.qty+1}:c):[...p,{item,qty:1}]; });
+  // Lines confirmed in the 🎤 voice-order panel (shared/VoiceOrder.jsx).
+  const addVoiceItems = (list) => {
+    setCart(p=>list.reduce((acc,{item,qty})=>{
+      const ex=acc.find(c=>c.item._id===item._id);
+      return ex?acc.map(c=>c.item._id===item._id?{...c,qty:Math.min(99,c.qty+qty)}:c):[...acc,{item,qty}];
+    },p));
+    const n=list.reduce((s,x)=>s+x.qty,0);
+    toast.success(`🎤 Added ${n} item${n===1?"":"s"}`);
+  };
   const removeItem= (id)  => setCart(p=>{ const ex=p.find(c=>c.item._id===id); if(!ex)return p; return ex.qty===1?p.filter(c=>c.item._id!==id):p.map(c=>c.item._id===id?{...c,qty:c.qty-1}:c); });
   const clearCart = () => setCart([]);
 
@@ -655,6 +665,7 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null }) => {
               placeholder="Search items…" className="zc-input" />
             {search && <button onClick={()=>setSearch("")}
               className="zc-btn ghost sm" style={{ flexShrink:0 }}>✕</button>}
+            <VoiceOrder menu={mi} onAdd={addVoiceItems} onSearch={(t)=>{ setSearch(t); setSelCat("All"); }} />
           </div>
 
           <button type="button" className="zc-x" onClick={onClose} aria-label="Close">✕</button>
@@ -1053,6 +1064,15 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
 
   const getQty    = (id) => cart.find(c=>c.item._id===id)?.qty||0;
   const addItem   = (item) => setCart(p=>{ const ex=p.find(c=>c.item._id===item._id); return ex?p.map(c=>c.item._id===item._id?{...c,qty:c.qty+1}:c):[...p,{item,qty:1}]; });
+  // Lines confirmed in the 🎤 voice-order panel (shared/VoiceOrder.jsx).
+  const addVoiceItems = (list) => {
+    setCart(p=>list.reduce((acc,{item,qty})=>{
+      const ex=acc.find(c=>c.item._id===item._id);
+      return ex?acc.map(c=>c.item._id===item._id?{...c,qty:Math.min(99,c.qty+qty)}:c):[...acc,{item,qty}];
+    },p));
+    const n=list.reduce((s,x)=>s+x.qty,0);
+    toast.success(`🎤 Added ${n} item${n===1?"":"s"}`);
+  };
   const removeItem= (id)  => setCart(p=>{ const ex=p.find(c=>c.item._id===id); if(!ex)return p; return ex.qty===1?p.filter(c=>c.item._id!==id):p.map(c=>c.item._id===id?{...c,qty:c.qty-1}:c); });
   const clearCart = () => setCart([]);
 
@@ -1151,6 +1171,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
               style={{ background:"none", border:"none", color:T3,
                 cursor:"pointer", fontSize:14 }}>✕</button>}
           </div>
+          <VoiceOrder menu={mi} onAdd={addVoiceItems} onSearch={(t)=>{ setSearch(t); setSelCat("All"); }} />
 
           <div style={{ display:"flex", gap:4, background:CARD2, padding:3,
             borderRadius:8, border:`1px solid ${BDR}` }}>
