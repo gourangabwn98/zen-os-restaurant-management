@@ -15,6 +15,8 @@ import { findOrOpenTableSession, closeTableSession } from "./tableSessionService
 import { findNextMatch } from "./waitlistService.js";
 import { signGuestOrderToken, verifyGuestOrderToken } from "../utils/guestOrderToken.js";
 import { deductStockForOrder, reverseStockForOrder } from "./inventoryService.js";
+import { isPhonePeConfigured } from "./paymentService.js";
+import { resolveCustomerPaymentMethod, isPayFirst, PAYMENT_METHODS, PAY_FIRST_WINDOW_MS } from "../utils/paymentMode.js";
 
 // ── Identity helpers ──────────────────────────────────────────────────────
 
@@ -106,6 +108,26 @@ export const placeOrderTx = async ({ req, body }) => {
   }
 
   const restaurant = await RestaurantProfile.findOne();
+
+  // ── Payment method (utils/paymentMode.js) ─────────────────────────────────
+  // Customers are held to the restaurant's payment mode; a pay-first order
+  // (Online + PhonePe) starts AWAITING_PAYMENT and stays invisible to staff
+  // until a verified payment promotes it (promotePaidOrder). Staff-keyed
+  // orders are taken in person and only need a valid method.
+  const phonePeEnabled = isPhonePeConfigured();
+  let method;
+  if (isStaffOrder) {
+    method = paymentMethod ?? "Cash";
+    if (!PAYMENT_METHODS.includes(method)) {
+      const err = new Error(`paymentMethod must be one of: ${PAYMENT_METHODS.join(", ")}`);
+      err.statusCode = 400;
+      throw err;
+    }
+  } else {
+    method = resolveCustomerPaymentMethod({ requested: paymentMethod, mode: restaurant?.paymentMode, phonePeEnabled });
+  }
+  const payFirst = !isStaffOrder && isPayFirst(method, phonePeEnabled);
+
   const scheduleCtx = await getScheduleContext({ models: req.models, profile: restaurant });
   const { dbItems, subtotal, tax, serviceCharge, discount, total } =
     await priceOrder({ items, MenuItem, restaurantProfile: restaurant, scheduleCtx });
@@ -135,12 +157,16 @@ export const placeOrderTx = async ({ req, body }) => {
     // else: guest didn't send a token (today's customer app doesn't yet) —
     // order still proceeds, just tableVerified stays false for audit/reporting.
 
-    const sessionActor = buildActor(req.user, customerName);
-    const session = await findOrOpenTableSession({ TableSession, Table, table: tableDoc, actor: sessionActor });
-    tableSessionId = session._id;
+    // A pay-first order must not occupy the table until it's paid — it joins
+    // the table session in promotePaidOrder instead.
+    if (!payFirst) {
+      const sessionActor = buildActor(req.user, customerName);
+      const session = await findOrOpenTableSession({ TableSession, Table, table: tableDoc, actor: sessionActor });
+      tableSessionId = session._id;
+    }
   }
 
-  const initialStatus = isStaffOrder ? "CONFIRMED" : "PENDING_CONFIRMATION";
+  const initialStatus = isStaffOrder ? "CONFIRMED" : payFirst ? "AWAITING_PAYMENT" : "PENDING_CONFIRMATION";
   const actor = buildActor(req.user, customerName);
   const now = new Date();
 
@@ -167,10 +193,11 @@ export const placeOrderTx = async ({ req, body }) => {
     priority:      isStaffOrder && priority === "URGENT" ? "URGENT" : "NORMAL",
     guestName:     customerName  || "",
     guestPhone:    customerPhone || "",
-    paymentMethod: paymentMethod || "Cash",
+    paymentMethod: method,
     paymentStatus: "PENDING_VERIFICATION",
+    paymentDeadline: payFirst ? new Date(now.getTime() + PAY_FIRST_WINDOW_MS) : null,
     idempotencyKey: idempotencyKey || undefined,
-    statusHistory: [{ status: initialStatus, changedBy: actor, changedAt: now, note: "Order placed" }],
+    statusHistory: [{ status: initialStatus, changedBy: actor, changedAt: now, note: payFirst ? "Order placed — waiting for online payment" : "Order placed" }],
   };
 
   let order;
@@ -336,7 +363,9 @@ export const cancelOrderTx = async ({ req, orderId, reason }) => {
 
   assertValidTransition(order.status, "CANCELLED", role);
 
-  if (role === "customer" && order.cancelDeadline && new Date() > order.cancelDeadline) {
+  // An unpaid pay-first order has reached nobody yet — the customer may drop
+  // it at any time; the 3-minute window applies once staff can see it.
+  if (role === "customer" && order.status !== "AWAITING_PAYMENT" && order.cancelDeadline && new Date() > order.cancelDeadline) {
     const err = new Error("Cancellation window has passed");
     err.statusCode = 400;
     throw err;
@@ -496,3 +525,88 @@ export const assertCanViewOrder = (req, order) => {
 };
 
 export { buildActor };
+
+// ── Pay-first orders (utils/paymentMode.js) ────────────────────────────────
+const SYSTEM_ACTOR = { id: null, role: null, name: "System" };
+
+/**
+ * A pay-first order's payment was verified (paymentStatus PAID, set only by
+ * paymentService.applyPhonePeResult on a checksum-verified success): move it
+ * AWAITING_PAYMENT → PENDING_CONFIRMATION so staff see it, and only now let
+ * it join the table's session. Atomic on status, so the PhonePe callback, the
+ * customer's status poll and the expiry tick racing each other promote it
+ * exactly once. Returns { order, promoted } — callers emit order:new only
+ * when promoted is true.
+ */
+export const promotePaidOrder = async ({ models, orderId, now = new Date() }) => {
+  const { Order, Table, TableSession } = models;
+  const current = await Order.findOne({ _id: orderId, status: "AWAITING_PAYMENT", paymentStatus: "PAID" });
+  if (!current) return { order: await Order.findById(orderId), promoted: false };
+  assertValidTransition("AWAITING_PAYMENT", "PENDING_CONFIRMATION", "system");
+
+  let tableSessionId = null;
+  if (current.orderType === "DINE_IN" && current.tableNo) {
+    const tableDoc = await Table.findOne({ tableNo: Number(current.tableNo) });
+    if (tableDoc && tableDoc.status === "Active") {
+      const session = await findOrOpenTableSession({
+        TableSession, Table, table: tableDoc, actor: buildActor(null, current.guestName),
+      });
+      tableSessionId = session._id;
+    }
+  }
+
+  const updated = await Order.findOneAndUpdate(
+    { _id: orderId, status: "AWAITING_PAYMENT" },
+    {
+      $set: {
+        status: "PENDING_CONFIRMATION",
+        tableSession: tableSessionId,
+        paymentDeadline: null,
+        // The customer's own cancel window starts when staff can see it.
+        cancelDeadline: new Date(now.getTime() + 3 * 60 * 1000),
+      },
+      $push: { statusHistory: { status: "PENDING_CONFIRMATION", changedBy: SYSTEM_ACTOR, changedAt: now, note: "Paid online" } },
+    },
+    { new: true },
+  );
+  if (!updated) return { order: await Order.findById(orderId), promoted: false };
+  if (tableSessionId) {
+    await TableSession.findByIdAndUpdate(tableSessionId, { $addToSet: { orders: updated._id } });
+  }
+  return { order: updated, promoted: true };
+};
+
+/**
+ * Cancels pay-first orders still unpaid after their paymentDeadline. No stock
+ * was deducted and no table session joined, so this is a plain atomic status
+ * flip. `beforeCancel(order)` (optional) lets the caller do a last live
+ * gateway check first; if the order turns out PAID it is left alone (the
+ * caller promotes it) instead of being cancelled. `skip(order)` (optional)
+ * defers an order to a later tick (e.g. a payment attempt still in flight).
+ * Returns the cancelled orders (for realtime emits).
+ */
+export const expireUnpaidOrders = async ({ models, now = new Date(), beforeCancel = null, skip = null, limit = 50 }) => {
+  const { Order } = models;
+  const due = await Order.find({ status: "AWAITING_PAYMENT", paymentDeadline: { $lte: now } }).limit(limit);
+  const cancelled = [];
+  for (const order of due) {
+    if (skip?.(order)) continue;
+    if (beforeCancel) {
+      try { await beforeCancel(order); } catch (err) { console.error(`pay-first recheck ${order._id} failed:`, err.message); }
+    }
+    assertValidTransition("AWAITING_PAYMENT", "CANCELLED", "system");
+    const updated = await Order.findOneAndUpdate(
+      { _id: order._id, status: "AWAITING_PAYMENT", paymentStatus: { $ne: "PAID" } },
+      {
+        $set: {
+          status: "CANCELLED", cancelledBy: SYSTEM_ACTOR, cancelledAt: now,
+          cancelReason: "Not paid in time", paymentDeadline: null,
+        },
+        $push: { statusHistory: { status: "CANCELLED", changedBy: SYSTEM_ACTOR, changedAt: now, note: "Not paid in time" } },
+      },
+      { new: true },
+    );
+    if (updated) cancelled.push(updated);
+  }
+  return cancelled;
+};

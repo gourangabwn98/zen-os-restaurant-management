@@ -137,6 +137,16 @@ const ServiceRow = ({ label, on, editable, onClick }) => (
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN
+// RestaurantProfile.paymentMode (restaurant-server/utils/paymentMode.js)
+const PAYMENT_MODE_META = {
+  CASH:   { icon: "💵", label: "Cash only",
+            help: "Customers order directly and pay at the table or counter. They're shown how to use “Call waiter” to pay." },
+  ONLINE: { icon: "📲", label: "Online only (pay before ordering)",
+            help: "Customers pay with PhonePe first. The order reaches waiters and the kitchen only after the payment is verified; unpaid orders cancel after 15 min." },
+  BOTH:   { icon: "🔀", label: "Cash or online — customer chooses",
+            help: "Customers pick at checkout. Choosing online works like “Online only” (pay first, then the order is sent)." },
+};
+
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function ProfilePage() {
   const DEFAULTS = {
@@ -150,7 +160,7 @@ export default function ProfilePage() {
     socialInstagram: "", socialFacebook: "", website: "",
     services: { dineIn: true, takeAway: true, delivery: true },
     notificationSound: true, banners: [], printerIps: [],
-    upiId: "", upiPayeeName: "",
+    upiId: "", upiPayeeName: "", paymentMode: "BOTH",
   };
 
   const [profile, setProfile] = useState(DEFAULTS);
@@ -199,7 +209,7 @@ export default function ProfilePage() {
       case "biz": return pick("fssaiNumber", "gstNumber", "aboutRestaurant");
       case "hours": return pick("openingTime", "closingTime", "avgDeliveryTime");
       case "pricing": return pick("minOrderAmount", "freeDeliveryAbove", "deliveryBaseFee", "deliveryFeePerKm", "serviceCharge", "packingCharge", "gstRate");
-      case "payment": return pick("upiId", "upiPayeeName");
+      case "payment": return pick("upiId", "upiPayeeName", "paymentMode");
       case "social": return pick("socialInstagram", "socialFacebook", "website");
       case "services": return pick("services", "notificationSound");
       default: return {};
@@ -217,9 +227,17 @@ export default function ProfilePage() {
         }
         updated.upiId = updated.upiId.trim();
       }
+      const before = profile;
       setProfile(updated); setEditing((p) => ({ ...p, [sec]: false }));
-      await updateRestaurantProfile(updated);
-      toast.success("Section saved");
+      try {
+        await updateRestaurantProfile(updated);
+        toast.success("Section saved");
+      } catch (err) {
+        // Roll back and reopen the section, with the server's reason
+        // (e.g. "Online only" needs PhonePe configured).
+        setProfile(before); setDraft(updated); setEditing((p) => ({ ...p, [sec]: true }));
+        toast.error(err?.response?.data?.message || "Failed to save");
+      }
     } catch { toast.error("Failed to save"); }
   };
 
@@ -419,6 +437,8 @@ export default function ProfilePage() {
                 ["PhonePe gateway", profile.phonePeEnabled
                   ? "Active — customers pay online, orders auto-confirm as Paid on a verified PhonePe result"
                   : "Off — set PHONEPE_MERCHANT_ID / PHONEPE_SALT_KEY in the backend .env to enable"],
+                ["Customers can pay", PAYMENT_MODE_META[profile.paymentMode || "BOTH"].label
+                  + (profile.paymentMode === "ONLINE" && !profile.phonePeEnabled ? " — ⚠ PhonePe is off, so customers are offered cash instead" : "")],
                 ["UPI ID (fallback)", profile.upiId || "Not set — used only when the PhonePe gateway is off"],
                 ["Payee name", profile.upiPayeeName || profile.restaurantName || "—"],
               ]} />
@@ -427,6 +447,33 @@ export default function ProfilePage() {
               </div>
             </div>}
             editContent={<div className="prof-edit-grid">
+              <Field label="How customers can pay" full>
+                <div role="radiogroup" aria-label="How customers can pay" style={{ display: "grid", gap: 8 }}>
+                  {["CASH", "ONLINE", "BOTH"].map((m) => {
+                    const meta = PAYMENT_MODE_META[m];
+                    const blocked = m === "ONLINE" && !profile.phonePeEnabled;
+                    const on = (draft.paymentMode || "BOTH") === m;
+                    return (
+                      <button key={m} type="button" role="radio" aria-checked={on} disabled={blocked}
+                        onClick={() => set("paymentMode", m)}
+                        style={{
+                          display: "flex", gap: 10, alignItems: "flex-start", textAlign: "left", padding: "10px 12px",
+                          borderRadius: "var(--r-ctl)", cursor: blocked ? "not-allowed" : "pointer", opacity: blocked ? 0.55 : 1,
+                          border: `1px solid ${on ? "var(--violet-line)" : "var(--edge)"}`,
+                          background: on ? "var(--violet-faint)" : "var(--card-2)", color: "var(--text-1)", font: "inherit",
+                        }}>
+                        <span aria-hidden="true" style={{ fontSize: 18, lineHeight: 1.2 }}>{meta.icon}</span>
+                        <span style={{ display: "grid", gap: 2 }}>
+                          <b style={{ fontSize: 13 }}>{meta.label}</b>
+                          <span style={{ fontSize: 11.5, color: "var(--text-2)" }}>
+                            {blocked ? "Needs the PhonePe gateway — set PHONEPE_MERCHANT_ID / PHONEPE_SALT_KEY in the backend .env first." : meta.help}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </Field>
               <Field label="Restaurant UPI ID"><input className="zc-input" placeholder="restaurantname@okhdfcbank" value={draft.upiId} onChange={(e) => set("upiId", e.target.value)} /></Field>
               <Field label="Payee name (optional — defaults to restaurant name)"><input className="zc-input" placeholder={draft.restaurantName || "Restaurant"} value={draft.upiPayeeName} onChange={(e) => set("upiPayeeName", e.target.value)} /></Field>
             </div>}

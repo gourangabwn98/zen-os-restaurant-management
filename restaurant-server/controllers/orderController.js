@@ -39,10 +39,13 @@ export const placeOrder = async (req, res) => {
     if (!alreadyExisted) {
       if (order.status === "PENDING_CONFIRMATION") {
         emitNewOrderPendingConfirmation(req.tenantKey, order);
-      } else {
+      } else if (order.status === "CONFIRMED") {
         // staff-placed → already confirmed
         emitOrderConfirmed(req.tenantKey, order);
       }
+      // AWAITING_PAYMENT (pay-first): nothing to staff yet — the order is
+      // announced as new only once a verified payment promotes it
+      // (controllers/paymentController.js → emitPayFirstPromoted).
       emitAlerts(req.tenantKey, inventoryAlerts);
     }
 

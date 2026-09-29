@@ -5,9 +5,16 @@
 // must go through `assertValidTransition` so the rules can never drift
 // between controllers.
 //
-//   PENDING_CONFIRMATION → CONFIRMED → PREPARING → READY → DELIVERED → COMPLETED
-//                        ↘ CANCELLED (only from the first three states, for
-//                          non-admin roles)
+//   AWAITING_PAYMENT → PENDING_CONFIRMATION → CONFIRMED → PREPARING → READY → DELIVERED → COMPLETED
+//          ↘ CANCELLED              ↘ CANCELLED (only from the first three states, for
+//                                     non-admin roles)
+//
+// AWAITING_PAYMENT is the pay-first entry state: a customer order paid
+// online (RestaurantProfile.paymentMode ONLINE, or BOTH with Online chosen,
+// with the PhonePe gateway configured) starts here and is invisible to
+// waiters and the kitchen. ONLY a checksum-verified PhonePe success moves it
+// on (role "system" — orderService.promotePaidOrder); an unpaid one is
+// cancelled when its paymentDeadline passes (orderService.expireUnpaidOrders).
 //
 // Admin has full override authority: an admin may move an order to ANY
 // other status at all (forward, backward, or sideways into/out of
@@ -30,6 +37,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const ORDER_STATUSES = [
+  "AWAITING_PAYMENT",
   "PENDING_CONFIRMATION",
   "CONFIRMED",
   "PREPARING",
@@ -48,6 +56,7 @@ export const ORDER_TYPES   = ["DINE_IN", "TAKEAWAY", "ONLINE"];
 // roles (waiter/chef/customer). Admin bypasses this map entirely — see the
 // `role === "admin"` check in validateTransition below.
 const TRANSITIONS = {
+  AWAITING_PAYMENT:     ["PENDING_CONFIRMATION", "CANCELLED"],
   PENDING_CONFIRMATION: ["CONFIRMED", "CANCELLED"],
   CONFIRMED:            ["PREPARING", "CANCELLED"],
   PREPARING:            ["READY", "CANCELLED"],
@@ -61,6 +70,10 @@ const TRANSITIONS = {
 // roles (admin already short-circuited above). Customers are handled
 // separately (see canCustomerCancel).
 const TRANSITION_ROLES = {
+  // Only the server itself, on a checksum-verified payment — never a person.
+  "AWAITING_PAYMENT->PENDING_CONFIRMATION": ["system"],
+  // Customer gives up before paying, or the server expires it unpaid.
+  "AWAITING_PAYMENT->CANCELLED":     ["admin", "customer", "system"],
   "PENDING_CONFIRMATION->CONFIRMED": ["admin", "waiter"],
   "PENDING_CONFIRMATION->CANCELLED": ["admin", "waiter", "customer"],
   "CONFIRMED->PREPARING":            ["admin", "waiter", "chef"],

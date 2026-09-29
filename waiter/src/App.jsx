@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-route
 import { Toaster } from "react-hot-toast";
 import { AppStateProvider, useAppState } from "./context/AppState.jsx";
 import { useOrderNotifications } from "./hooks/useOrderNotifications.js";
+import { useWaiterCalls } from "./hooks/useWaiterCalls.js";
+import WaiterCallBanner from "./components/WaiterCallBanner.jsx";
 import BottomNav from "./components/BottomNav.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
 import TablesPage from "./pages/TablesPage.jsx";
@@ -23,11 +25,13 @@ function Shell() {
   const { pathname } = useLocation();
   const { auth } = useAppState();
   useOrderNotifications(auth.isLoggedIn);
+  const waiterCalls = useWaiterCalls(auth.isLoggedIn);
   const showNav = auth.isLoggedIn && pathname !== "/login";
 
   return (
     <div style={{ minHeight: "100vh", background: BG_PRIMARY }}>
       <div className="app-shell" style={{ margin: "0 auto", position: "relative" }}>
+        {auth.isLoggedIn && pathname !== "/login" && <WaiterCallBanner {...waiterCalls} />}
         <Routes>
           <Route path="/login" element={auth.isLoggedIn ? <Navigate to="/tables" replace /> : <LoginPage />} />
           <Route path="/tables" element={<RequireAuth><TablesPage /></RequireAuth>} />

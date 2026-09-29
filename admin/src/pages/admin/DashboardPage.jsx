@@ -11,10 +11,11 @@ import { RankedBars, SegmentedBar, Meter, TrendChart, CAT_COLORS } from "./share
 
 // ── Canonical vocabulary (see restaurant-server/utils/orderStateMachine.js) ───
 const ALL_STATUSES = [
-  "PENDING_CONFIRMATION", "CONFIRMED", "PREPARING", "READY",
+  "AWAITING_PAYMENT", "PENDING_CONFIRMATION", "CONFIRMED", "PREPARING", "READY",
   "DELIVERED", "COMPLETED", "CANCELLED",
 ];
 const STATUS_LABEL = {
+  AWAITING_PAYMENT: "Awaiting payment",
   PENDING_CONFIRMATION: "Pending",
   CONFIRMED: "Placed",
   PREPARING: "Preparing",
@@ -24,11 +25,13 @@ const STATUS_LABEL = {
   CANCELLED: "Cancelled",
 };
 const TYPE_LABEL = { DINE_IN: "Dine-in", TAKEAWAY: "Takeaway", ONLINE: "Online" };
-const ACTIVE_EXCLUDE = ["COMPLETED", "CANCELLED"]; // "no longer on the floor"
+// "not on the floor": finished, or a pay-first order nobody has paid for yet
+const ACTIVE_EXCLUDE = ["COMPLETED", "CANCELLED", "AWAITING_PAYMENT"];
 
 // Only the transitions the backend state machine will actually accept.
 // Mirrors TRANSITIONS in restaurant-server/utils/orderStateMachine.js.
 const NEXT_STATUS = {
+  AWAITING_PAYMENT: ["CANCELLED"], // only a verified payment moves it forward
   PENDING_CONFIRMATION: ["CONFIRMED", "CANCELLED"],
   CONFIRMED: ["PREPARING", "CANCELLED"],
   PREPARING: ["READY", "CANCELLED"],

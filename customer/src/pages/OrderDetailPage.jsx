@@ -6,12 +6,29 @@ import { initiatePhonePePayment, getPhonePePaymentStatus } from "../services/pay
 import { getRestaurantProfile } from "../services/restaurantService.js";
 import { subscribeToOrder } from "../services/socketService.js";
 import StatusStepper from "../components/StatusStepper.jsx";
+import WaiterCallCard from "../components/WaiterCallCard.jsx";
 import { Loader, ErrorState } from "../components/StateViews.jsx";
 import Button from "../components/ui/Button.jsx";
 import Icon from "../components/ui/Icon.jsx";
 import {
   STATUS_LABEL, statusPillClass, PAYMENT_LABEL, paymentPillClass, formatOrderTime, isActiveOrder,
 } from "../utils/orderStatus.js";
+
+// Order statuses during which a dine-in customer can call a waiter.
+const CALLABLE = ["PENDING_CONFIRMATION", "CONFIRMED", "PREPARING", "READY", "DELIVERED"];
+
+/** "Pay within 12:34" — counts down to a pay-first order's deadline. */
+function PayDeadline({ deadline }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, []);
+  const left = Math.max(0, Math.ceil((new Date(deadline).getTime() - now) / 1000));
+  if (!left) return <p className="muted small" style={{ marginTop: 8 }}>The time to pay has run out — this order will be cancelled shortly.</p>;
+  return (
+    <p className="small" style={{ marginTop: 8 }}>
+      Pay within <b style={{ fontVariantNumeric: "tabular-nums" }}>{Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}</b>, or the order is cancelled.
+    </p>
+  );
+}
 
 export default function OrderDetailPage() {
   const { id } = useParams();
@@ -57,7 +74,13 @@ export default function OrderDetailPage() {
       try {
         const { data } = await getPhonePePaymentStatus(id);
         if (data?.paymentStatus === "PAID") {
-          if (!stopped) { toast.success("Payment received — thank you!"); load(); }
+          if (!stopped) {
+            // A pay-first order is promoted server-side on the verified payment.
+            toast.success(data?.status && data.status !== "AWAITING_PAYMENT"
+              ? "Payment received — your order has been sent to the restaurant!"
+              : "Payment received — thank you!");
+            load();
+          }
           return;
         }
         if (data?.paymentState === "FAILED") {
@@ -88,7 +111,9 @@ export default function OrderDetailPage() {
     }
   };
 
-  const canCancel = order && order.status === "PENDING_CONFIRMATION";
+  // An unpaid pay-first order hasn't reached the restaurant yet, so the
+  // customer may drop it any time (the server allows the same).
+  const canCancel = order && (order.status === "PENDING_CONFIRMATION" || order.status === "AWAITING_PAYMENT");
 
   const handleCancel = async () => {
     if (!window.confirm("Cancel this order?")) return;
@@ -149,11 +174,26 @@ export default function OrderDetailPage() {
           <div className="price" style={{ fontSize: 22 }}>₹{order.total}</div>
         </div>
 
-        {order.paymentMethod === "Online" && order.paymentStatus !== "PAID" && (
+        {order.status === "AWAITING_PAYMENT" && (
+          <div className="notice" role="status" style={{ marginTop: 12 }}>
+            <b>Your order hasn&rsquo;t been sent yet.</b> Pay online to send it to the restaurant.
+            {order.paymentDeadline && <PayDeadline deadline={order.paymentDeadline} />}
+          </div>
+        )}
+
+        {order.paymentMethod === "Cash" && order.paymentStatus !== "PAID" && order.status !== "CANCELLED" && (
+          <p className="muted small" style={{ marginTop: 10, lineHeight: 1.5 }}>
+            {order.orderType === "DINE_IN"
+              ? "💡 To pay, tap “Call waiter” below — your waiter will come to your table to collect cash, UPI or card."
+              : "💡 Pay at the counter when you collect your order."}
+          </p>
+        )}
+
+        {order.paymentMethod === "Online" && order.paymentStatus !== "PAID" && order.status !== "CANCELLED" && (
           <>
             {profile?.phonePeEnabled ? (
               <Button style={{ marginTop: 14 }} onClick={startPhonePe} disabled={payBusy}>
-                {payBusy ? "Starting…" : `Pay ₹${order.total} with PhonePe`}
+                {payBusy ? "Starting…" : order.status === "AWAITING_PAYMENT" ? `Pay ₹${order.total} & send order` : `Pay ₹${order.total} with PhonePe`}
               </Button>
             ) : upiLink ? (
               <a href={upiLink} className="btn btn-primary" style={{ marginTop: 14 }}>📲 Pay ₹{order.total} via UPI</a>
@@ -170,6 +210,16 @@ export default function OrderDetailPage() {
           </>
         )}
       </div>
+
+      {/* ── Call waiter (dine-in) ── */}
+      {order.orderType === "DINE_IN" && CALLABLE.includes(order.status) && (
+        <WaiterCallCard
+          orderId={order._id}
+          reason={order.paymentStatus !== "PAID" && order.paymentMethod === "Cash"
+            ? "Ready to pay, or need anything? A waiter will come to your table."
+            : undefined}
+        />
+      )}
 
       {/* ── Bill ── */}
       <div className="card bill">

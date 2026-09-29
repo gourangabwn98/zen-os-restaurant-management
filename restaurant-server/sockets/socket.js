@@ -38,6 +38,8 @@
 //   kot:created  { jobId, jobType:"KOT", order:{...}, items }   → staff + printers room
 //   bill:print   { jobId, jobType:"BILL", order:{...}, ... }    → staff + printers room
 //   employee:attendance:updated { action, session, employee }  → staff room
+//   waiter_call:new / waiter_call:updated { call }  → the rung waiters' own user rooms
+//   waiter_call:updated { state }                    → the calling customer's order room
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Server } from "socket.io";
@@ -119,6 +121,7 @@ export const initSocket = (httpServer) => {
     // Everyone connected to a tenant gets the general tenant room.
     socket.join(rooms.tenant(tenantKey));
     if (socket.isStaff) socket.join(rooms.staff(tenantKey));
+    if (socket.isStaff && socket.userId) socket.join(rooms.user(tenantKey, socket.userId));
     if (socket.isChef)  socket.join(rooms.kitchen(tenantKey));
 
     if (socket.isPrinterDevice) {
@@ -381,8 +384,25 @@ export const emitBillPrint = (tenantKey, payload) => {
 };
 
 export const emitPaymentStatusChanged = (tenantKey, order) => {
-  emit(rooms.staff(tenantKey), "order:payment_changed", { order });
+  // A pay-first order still AWAITING_PAYMENT hasn't reached staff yet — its
+  // updates go to the customer's own order room only.
+  if (order?.status !== "AWAITING_PAYMENT") emit(rooms.staff(tenantKey), "order:payment_changed", { order });
   emit(rooms.order(tenantKey, order._id), "order:payment_changed", { order });
+};
+
+// ── Pay-first orders (utils/paymentMode.js) ───────────────────────────────
+// Verified payment promoted AWAITING_PAYMENT → PENDING_CONFIRMATION: to staff
+// this is a brand-new order (same event + sound as any customer order); the
+// customer's tracker sees an ordinary status change.
+export const emitPayFirstPromoted = (tenantKey, order) => {
+  emitNewOrderPendingConfirmation(tenantKey, order);
+  emit(rooms.order(tenantKey, order._id), "order:status_changed", { order, previousStatus: "AWAITING_PAYMENT" });
+};
+
+// Unpaid pay-first order cancelled at its deadline — only the customer ever
+// saw it, so only their order room is told.
+export const emitPayFirstExpired = (tenantKey, order) => {
+  emit(rooms.order(tenantKey, order._id), "order:cancelled", { order, reason: order.cancelReason });
 };
 
 export const emitTableCleared = (tenantKey, session) => {
@@ -424,4 +444,15 @@ export const emitAttendanceUpdated = (tenantKey, { action, session, employee }) 
 // visibility rules server-side — so it is safe for the general tenant room.
 export const emitMenuUpdated = (tenantKey) => {
   emit(rooms.tenant(tenantKey), "menu:updated", { at: Date.now() });
+};
+
+// ── Call waiter (services/waiterCallService.js) ─────────────────────────────
+// Rings ONLY the targeted waiters (their own user rooms) — never the whole
+// staff room, so admin screens aren't rung. The customer's order room gets
+// the customer-safe state so its countdown / "on the way" updates live.
+export const emitWaiterCall = (tenantKey, { event, staffCall, userIds = [], orderId, customerState }) => {
+  for (const id of new Set(userIds.map(String))) {
+    emit(rooms.user(tenantKey, id), event, { call: staffCall });
+  }
+  if (orderId && customerState) emit(rooms.order(tenantKey, orderId), "waiter_call:updated", { state: customerState });
 };

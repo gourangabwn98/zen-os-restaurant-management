@@ -9,7 +9,18 @@ import {
   applyPhonePeResult, decodeCallback, verifyCallbackSignature,
 } from "../services/paymentService.js";
 import { assertCanViewOrder } from "../services/orderService.js";
-import { emitPaymentStatusChanged } from "../sockets/socket.js";
+import { afterPaymentApplied } from "../services/payFirstService.js";
+import { emitPaymentStatusChanged, emitPayFirstPromoted } from "../sockets/socket.js";
+
+// After a verified result was applied: a paid pay-first order now reaches
+// staff (order:new); otherwise just the usual payment-changed event.
+const settle = async (req, updated, changed) => {
+  if (!changed || !updated) return updated;
+  emitPaymentStatusChanged(req.tenantKey, updated);
+  const { order, promoted } = await afterPaymentApplied({ models: req.models, order: updated });
+  if (promoted) emitPayFirstPromoted(req.tenantKey, order);
+  return order || updated;
+};
 
 const clientBase = () => (process.env.CLIENT_URL || "").replace(/\/+$/, "");
 
@@ -42,6 +53,9 @@ export const initiatePhonePe = async (req, res) => {
 
     if (order.status === "CANCELLED") return res.status(409).json({ message: "This order was cancelled" });
     if (order.paymentStatus === "PAID") return res.status(409).json({ message: "This order is already paid" });
+    if (order.status === "AWAITING_PAYMENT" && order.paymentDeadline && new Date() > order.paymentDeadline) {
+      return res.status(409).json({ message: "The time to pay for this order has run out — please place it again" });
+    }
 
     const redirectUrl = `${clientBase()}/order/${order._id}?payment=phonepe`;
     const callbackUrl = `${apiBase(req)}/api/payments/phonepe/callback`;
@@ -77,8 +91,7 @@ export const phonePeOrderStatus = async (req, res) => {
           merchantTransactionId: order.payment.merchantTransactionId,
           result,
         });
-        current = updated || order;
-        if (changed) emitPaymentStatusChanged(req.tenantKey, current);
+        current = (await settle(req, updated, changed)) || updated || order;
       } catch (e) {
         // Network / gateway hiccup — fall through with the un-refreshed order.
         console.error("phonePeOrderStatus refresh failed:", e.message);
@@ -86,6 +99,7 @@ export const phonePeOrderStatus = async (req, res) => {
     }
 
     res.json({
+      status: current.status,
       paymentStatus: current.paymentStatus,
       paymentMethod: current.paymentMethod,
       paymentState: current.payment?.state || "NONE",
@@ -123,7 +137,7 @@ export const phonePeCallback = async (req, res) => {
       merchantTransactionId: decoded.merchantTransactionId,
       result: decoded,
     });
-    if (changed) emitPaymentStatusChanged(req.tenantKey, updated);
+    await settle(req, updated, changed);
 
     res.status(200).json({ ok: true });
   } catch (err) {

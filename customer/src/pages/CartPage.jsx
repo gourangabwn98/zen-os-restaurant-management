@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import { useAppState } from "../context/AppState.jsx";
 import { placeOrder, saveGuestOrderToken, newIdempotencyKey } from "../services/orderService.js";
 import { getRestaurantProfile } from "../services/restaurantService.js";
+import { initiatePhonePePayment } from "../services/paymentService.js";
 import { EmptyState } from "../components/StateViews.jsx";
 import TableBadge from "../components/TableBadge.jsx";
 import QtyStepper from "../components/ui/QtyStepper.jsx";
@@ -22,12 +23,26 @@ export default function CartPage() {
   const [placing, setPlacing] = useState(false);
   const [idemKey] = useState(newIdempotencyKey);
   const [phonePeEnabled, setPhonePeEnabled] = useState(false);
+  // Admin → Profile → Payment (server: utils/paymentMode.js). The server
+  // enforces it too; this only decides which options to offer.
+  const [payMode, setPayMode] = useState("BOTH");
 
   useEffect(() => {
     getRestaurantProfile()
-      .then((r) => setPhonePeEnabled(Boolean(r.data?.data?.phonePeEnabled)))
+      .then((r) => {
+        const d = r.data?.data || {};
+        setPhonePeEnabled(Boolean(d.phonePeEnabled));
+        const mode = d.effectivePaymentMode || "BOTH";
+        setPayMode(mode);
+        if (mode === "ONLINE") setPaymentMethod("Online");
+        if (mode === "CASH") setPaymentMethod("Cash");
+      })
       .catch(() => {});
   }, []);
+
+  const methods = payMode === "CASH" ? ["Cash"] : payMode === "ONLINE" ? ["Online"] : ["Cash", "Online"];
+  // Online + PhonePe = pay first: the order reaches the restaurant only once paid.
+  const payFirst = paymentMethod === "Online" && phonePeEnabled;
 
   // Table verification (see useTableSession) can resolve asynchronously
   // after this page has already mounted with its initial guess — keep
@@ -68,6 +83,20 @@ export default function CartPage() {
       }
 
       cart.clearCart();
+
+      if (order.status === "AWAITING_PAYMENT") {
+        // Pay-first: straight on to PhonePe. If that can't start, the order
+        // page shows a "Pay" button (and the time left to pay).
+        try {
+          const { data } = await initiatePhonePePayment(order._id);
+          if (data?.redirectUrl) { window.location.href = data.redirectUrl; return; }
+        } catch (err) {
+          toast.error(err.response?.data?.message || "Couldn't open PhonePe — tap Pay on the next screen to try again.");
+        }
+        nav(`/order/${order._id}`, { replace: true });
+        return;
+      }
+
       toast.success(`Order ${order.orderId} placed!`);
       nav(`/order/${order._id}`, { replace: true });
     } catch (err) {
@@ -173,19 +202,26 @@ export default function CartPage() {
 
       {/* ── Payment method ── */}
       <div role="radiogroup" aria-label="Payment method">
-        {["Cash", "Online"].map((m) => (
+        {methods.length === 1 && (
+          <div className="card-title" style={{ margin: "14px 0 0" }}>
+            {methods[0] === "Online" ? "This restaurant takes online payment before the order is sent" : "Payment"}
+          </div>
+        )}
+        {methods.map((m) => (
           <button
             key={m} type="button" role="radio" className="opt" aria-checked={paymentMethod === m}
             onClick={() => setPaymentMethod(m)}
           >
             <span className="ic">{m === "Cash" ? "💵" : "📲"}</span>
             <span>
-              <b>{m === "Cash" ? "Cash at restaurant" : phonePeEnabled ? "Pay online (PhonePe)" : "UPI (pay after ordering)"}</b>
+              <b>{m === "Cash" ? (orderType === "DINE_IN" ? "Pay at your table" : "Pay at the counter") : phonePeEnabled ? "Pay now online (PhonePe)" : "UPI (pay after ordering)"}</b>
               <span className="muted small">
                 {m === "Cash"
-                  ? "Pay at the counter — cash, UPI or card"
+                  ? orderType === "DINE_IN"
+                    ? "Cash, UPI or card. After ordering, tap “Call waiter” on your order page and your waiter will come to collect it."
+                    : "Cash, UPI or card when you collect your order."
                   : phonePeEnabled
-                    ? "After placing the order you'll pay securely via PhonePe. Your order is marked paid automatically once PhonePe confirms."
+                    ? "Pay securely with PhonePe first — your order is sent to the restaurant as soon as the payment goes through."
                     : "You'll get a UPI payment link after placing the order. The restaurant confirms receipt manually — your order isn't marked paid just by opening the link."}
               </span>
             </span>
@@ -196,10 +232,12 @@ export default function CartPage() {
       {/* ── Place order ── */}
       {blocker && <div className="notice" role="status">{blocker}</div>}
       <Button style={{ marginTop: 8 }} onClick={handlePlace} disabled={!canPlace || placing}>
-        {placing ? "Placing order…" : `Place order · ₹${cart.subtotal}`}
+        {placing ? (payFirst ? "Opening payment…" : "Placing order…") : payFirst ? `Continue to pay · ₹${cart.subtotal} + tax` : `Place order · ₹${cart.subtotal}`}
       </Button>
       <p className="muted small center" style={{ marginTop: 10 }}>
-        The restaurant confirms every order before it goes to the kitchen.
+        {payFirst
+          ? "Your order is sent to the restaurant once your payment succeeds. Unpaid orders are cancelled after 15 minutes."
+          : "The restaurant confirms every order before it goes to the kitchen."}
       </p>
     </>
   );

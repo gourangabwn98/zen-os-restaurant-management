@@ -2,6 +2,7 @@
 import cloudinary  from "../config/cloudinary.js";
 import streamifier from "streamifier";
 import { isPhonePeConfigured } from "../services/paymentService.js";
+import { PAYMENT_MODES, effectivePaymentMode } from "../utils/paymentMode.js";
 
 const uploadToCloudinary = (buffer, folder = "restaurant") =>
   new Promise((resolve, reject) => {
@@ -18,13 +19,30 @@ export const getRestaurantProfile = async (req, res) => {
     const { RestaurantProfile } = req.models;
     const profile = await RestaurantProfile.findOne();
     if (!profile) return res.status(404).json({ message: "Profile not found" });
-    res.json({ data: { ...profile.toObject(), phonePeEnabled: isPhonePeConfigured() } });
+    const phonePeEnabled = isPhonePeConfigured();
+    res.json({
+      data: {
+        ...profile.toObject(),
+        phonePeEnabled,
+        // What customers actually get (ONLINE without PhonePe falls back to CASH).
+        effectivePaymentMode: effectivePaymentMode(profile.paymentMode, phonePeEnabled),
+      },
+    });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
 export const updateRestaurantProfile = async (req, res) => {
   try {
     const { RestaurantProfile } = req.models;
+    if (req.body.paymentMode !== undefined) {
+      if (!PAYMENT_MODES.includes(req.body.paymentMode)) {
+        return res.status(400).json({ message: `paymentMode must be one of: ${PAYMENT_MODES.join(", ")}` });
+      }
+      // Pay-first needs a gateway that confirms payments automatically.
+      if (req.body.paymentMode === "ONLINE" && !isPhonePeConfigured()) {
+        return res.status(400).json({ message: "\"Online only\" needs the PhonePe gateway configured on the server — set it up first, or choose Cash or Both" });
+      }
+    }
     let profile = await RestaurantProfile.findOne();
     if (!profile) {
       profile = await RestaurantProfile.create({ restaurantName: req.body.restaurantName || "Restaurant", ...req.body });

@@ -27,6 +27,7 @@ export const STATUS_STYLE = {
   PendingApproval: { bg: "rgba(245,158,11,0.15)", color: "#fbbf24" },
 
   // Canonical order status (Phase 1+)
+  AWAITING_PAYMENT:     { bg: "rgba(139,92,246,0.15)", color: "#a78bfa" },
   PENDING_CONFIRMATION: { bg: "rgba(245,158,11,0.18)", color: "#fbbf24" },
   CONFIRMED:            { bg: "rgba(56,122,221,0.15)", color: "#60a5fa" },
   PREPARING:            { bg: "rgba(186,117,23,0.15)", color: "#fbbf24" },

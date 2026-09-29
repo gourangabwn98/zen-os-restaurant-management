@@ -107,6 +107,9 @@ const restaurantProfileSchema = new mongoose.Schema({
   // when this is blank and offers Cash-at-restaurant instead.
   upiId:             { type: String, default: "" },       // e.g. "restaurant@okhdfcbank"
   upiPayeeName:      { type: String, default: "" },        // shown in the UPI app; falls back to restaurantName
+  // How customers may pay: CASH | ONLINE (pay before the order reaches staff)
+  // | BOTH (customer picks). See utils/paymentMode.js.
+  paymentMode:       { type: String, enum: ["CASH", "ONLINE", "BOTH"], default: "BOTH" },
   // IANA timezone used to evaluate menu schedules (utils/menuSchedule.js).
   // An invalid value falls back to Asia/Kolkata at read time.
   timezone:          { type: String, default: "Asia/Kolkata" },
@@ -235,6 +238,9 @@ const orderSchema = new mongoose.Schema({
 
   rating:         { type: Number, min: 1, max: 5 },
   cancelDeadline: { type: Date },
+  // Pay-first orders (status AWAITING_PAYMENT) are cancelled if still unpaid
+  // after this — see orderService.expireUnpaidOrders.
+  paymentDeadline: { type: Date, default: null },
   notes:          { type: String, default: "" },
   waiterName:     { type: String, default: "" }, // legacy display field, kept for existing UI
   // Optional — staff-only (see services/orderService.js: never trusted from
@@ -645,6 +651,31 @@ const notificationLogSchema = new mongoose.Schema({
 }, { timestamps: true });
 notificationLogSchema.index({ status: 1, startsAt: 1 });
 
+// ── Call waiter (customer → the order's waiter) ─────────────────────────────
+// services/waiterCallService.js. Attempt 1 rings the waiter who took/accepted
+// the order (if on duty) for 3 min; attempt 2 rings every on-duty waiter for
+// 2 min; after that the customer is shown the restaurant's phone number.
+// `active` is true only while OPEN/ACKNOWLEDGED — the partial unique index on
+// { order, active } guarantees at most one live call per order, so a double
+// tap or two tabs can never ring twice.
+const waiterCallSchema = new mongoose.Schema({
+  order:          { type: mongoose.Schema.Types.ObjectId, ref: "Order", required: true },
+  orderNumber:    { type: String, default: "" },   // order.orderId, for display
+  tableNo:        { type: Number, default: null },
+  customerName:   { type: String, default: "" },
+  attempt:        { type: Number, enum: [1, 2], required: true },
+  targets:        [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], // waiters rung
+  status:         { type: String, enum: ["OPEN", "ACKNOWLEDGED", "RESOLVED", "EXPIRED", "CANCELLED"], default: "OPEN" },
+  active:         { type: Boolean, default: true },
+  expiresAt:      { type: Date, required: true },
+  acknowledgedBy: actorSchema,
+  acknowledgedAt: { type: Date, default: null },
+  resolvedBy:     actorSchema,
+  resolvedAt:     { type: Date, default: null },
+}, { timestamps: true });
+waiterCallSchema.index({ order: 1, active: 1 }, { unique: true, partialFilterExpression: { active: true } });
+waiterCallSchema.index({ targets: 1, active: 1 });
+
 // ── Main function: returns all models bound to a specific DB connection ────────
 export function getModels(conn) {
   if (!conn) throw new Error("No DB connection provided to getModels()");
@@ -675,5 +706,6 @@ export function getModels(conn) {
     StockPurchase:      conn.models.StockPurchase     || conn.model("StockPurchase",     stockPurchaseSchema),
     StockLedger:        conn.models.StockLedger       || conn.model("StockLedger",       stockLedgerSchema),
     WastageLog:          conn.models.WastageLog         || conn.model("WastageLog",         wastageLogSchema),
+    WaiterCall:          conn.models.WaiterCall         || conn.model("WaiterCall",         waiterCallSchema),
   };
 }

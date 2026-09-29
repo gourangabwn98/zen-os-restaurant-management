@@ -41,4 +41,8 @@ export const rooms = {
   printers: (tenantKey) => `tenant:${tenantKey}:printers`,
   // A single order's own updates (used so a guest/customer only gets their order)
   order: (tenantKey, orderId) => `tenant:${tenantKey}:order:${orderId}`,
+  // One staff member's own sockets (every device they're logged in on) —
+  // used to ring a specific waiter for "Call waiter". Joined only by
+  // admin/waiter sockets, each for their own user id.
+  user: (tenantKey, userId) => `tenant:${tenantKey}:user:${userId}`,
 };

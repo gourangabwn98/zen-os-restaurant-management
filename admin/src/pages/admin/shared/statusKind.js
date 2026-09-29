@@ -5,6 +5,7 @@
 // that still exist in historic data.
 export const STATUS_KIND = {
   // order status
+  AWAITING_PAYMENT: "vio", // pay-first order, not yet paid — not on the floor
   PENDING_CONFIRMATION: "wait",
   CONFIRMED: "live",
   PREPARING: "wait",

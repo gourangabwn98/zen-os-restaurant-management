@@ -48,9 +48,15 @@ system for any role.** Every app above authenticates against the same
    build new features on it.
 4. **Order status is a strict state machine** (`utils/orderStateMachine.js`):
    ```
-   PENDING_CONFIRMATION → CONFIRMED → PREPARING → READY → DELIVERED → COMPLETED
-                        ↘ CANCELLED (only from the first three states)
+   AWAITING_PAYMENT → PENDING_CONFIRMATION → CONFIRMED → PREPARING → READY → DELIVERED → COMPLETED
+          ↘ CANCELLED            ↘ CANCELLED (only from the first three states)
    ```
+   `AWAITING_PAYMENT` is the pay-first entry state (customer paying online
+   under `RestaurantProfile.paymentMode` ONLINE/BOTH, PhonePe configured —
+   `utils/paymentMode.js`). Only a checksum-verified payment moves it on
+   (role `system`, `orderService.promotePaidOrder`); unpaid ones are
+   cancelled at `paymentDeadline`. It is hidden from waiters and the kitchen
+   and must not join a table session until paid.
    Every allowed transition has an explicit role list in
    `TRANSITION_ROLES`. A chef may **only** do
    `CONFIRMED→PREPARING` and `PREPARING→READY` — nothing else, and is
@@ -75,7 +81,7 @@ once. None of it threw an error; it just matched nothing, forever.
 If you're about to write `status === "something"` or `paymentStatus ===
 "something"`, first check `restaurant-server/utils/orderStateMachine.js`
 for the real values:
-- Order status: `PENDING_CONFIRMATION | CONFIRMED | PREPARING | READY | DELIVERED | COMPLETED | CANCELLED`
+- Order status: `AWAITING_PAYMENT | PENDING_CONFIRMATION | CONFIRMED | PREPARING | READY | DELIVERED | COMPLETED | CANCELLED`
 - Order type: `DINE_IN | TAKEAWAY | ONLINE`
 - Payment status: `PENDING_VERIFICATION | PAID | FAILED`
 - Payment method: `Cash | Online` (this one genuinely is mixed-case — don't "fix" it)
@@ -92,6 +98,7 @@ scoped by role, **not just for organization but for data protection**:
 | `tenant:{key}:kitchen` | admin, chef | KOT/status events, **PII-stripped** |
 | `tenant:{key}:printers` | print-service (auth'd by a `PrinterDevice` key, not a JWT) | print job payloads |
 | `tenant:{key}:order:{id}` | the specific customer/guest tracking that order | that order's updates only |
+| `tenant:{key}:user:{id}` | one admin/waiter's own sockets | "Call waiter" rings for that waiter only (never the whole staff room) |
 
 **A chef socket must never join the `staff` room.** This was a real bug —
 chef sockets originally joined nothing, so the entire Kitchen app's

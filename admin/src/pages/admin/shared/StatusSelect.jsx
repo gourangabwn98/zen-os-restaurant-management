@@ -3,6 +3,7 @@
 // restaurant-server/utils/orderStateMachine.js — never the pre-rename strings.
 const OPTIONS = [
   ["All", "All"],
+  ["AWAITING_PAYMENT", "Awaiting payment"],
   ["PENDING_CONFIRMATION", "Pending confirmation"],
   ["CONFIRMED", "Placed"],
   ["PREPARING", "Preparing"],

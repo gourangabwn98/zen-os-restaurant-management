@@ -81,6 +81,11 @@ export const getAllOrders = async (req, res) => {
     const filter = {};
     if (status && status !== "All") filter.status = status;
     if (search) filter.orderId = { $regex: search, $options: "i" };
+    // Unpaid pay-first orders haven't reached the floor yet — waiters never
+    // see them (admin does, to follow up). See utils/paymentMode.js.
+    if (getRoleFromUser(req.user) !== "admin") {
+      filter.status = filter.status === "AWAITING_PAYMENT" ? { $in: [] } : (filter.status || { $ne: "AWAITING_PAYMENT" });
+    }
 
     const [orders, total] = await Promise.all([
       Order.find(filter).sort({ createdAt: -1 })

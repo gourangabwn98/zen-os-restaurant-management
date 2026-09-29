@@ -42,18 +42,20 @@ const styleFor = (v) => {
 const DEFAULT_STATUS_STYLE = styleFor("");
 
 const mkStyleMap = (values) => Object.fromEntries(values.map((v) => [v, styleFor(v)]));
-const STATUS_STYLE = mkStyleMap(["PENDING_CONFIRMATION", "CONFIRMED", "PREPARING", "READY", "DELIVERED", "COMPLETED", "CANCELLED"]);
+const STATUS_STYLE = mkStyleMap(["AWAITING_PAYMENT", "PENDING_CONFIRMATION", "CONFIRMED", "PREPARING", "READY", "DELIVERED", "COMPLETED", "CANCELLED"]);
 const PAY_STYLE    = mkStyleMap(["PAID", "PENDING_VERIFICATION", "FAILED"]);
 const TYPE_STYLE   = mkStyleMap(["DINE_IN", "TAKEAWAY", "ONLINE"]);
 
-const STATUSES = ["All","PENDING_CONFIRMATION","CONFIRMED","PREPARING","READY","DELIVERED","COMPLETED","CANCELLED"];
+const STATUSES = ["All","AWAITING_PAYMENT","PENDING_CONFIRMATION","CONFIRMED","PREPARING","READY","DELIVERED","COMPLETED","CANCELLED"];
 const ACTIVE_ORDER_STATUSES = ["PENDING_CONFIRMATION","CONFIRMED","PREPARING","READY","DELIVERED"];
 // Admin has full override authority server-side (see the `role === "admin"`
 // bypass in restaurant-server/utils/orderStateMachine.js validateTransition)
 // — every status is offered here and the backend accepts any jump, except
 // PENDING_CONFIRMATION is never offered as an update target (that status is
-// only ever the order's starting point, not something to switch back to).
-const ALL_STATUSES = STATUSES.filter(s => s !== "All" && s !== "PENDING_CONFIRMATION");
+// only ever the order's starting point, not something to switch back to) —
+// nor AWAITING_PAYMENT (only a verified online payment moves an order out of
+// it; see utils/paymentMode.js on the server).
+const ALL_STATUSES = STATUSES.filter(s => s !== "All" && s !== "PENDING_CONFIRMATION" && s !== "AWAITING_PAYMENT");
 const PAYMENT_STATUSES = ["All","PAID","PENDING_VERIFICATION","FAILED"];
 const ORDER_TYPES = ["All","DINE_IN","TAKEAWAY"];
 

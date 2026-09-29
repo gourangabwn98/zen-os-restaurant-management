@@ -12,9 +12,12 @@ import "./config/env.js";
 import { connectDB, getDB } from "./config/db.js";
 import { getModels } from "./config/getModels.js";
 import { tenantKeyFromUri } from "./utils/tenantKey.js";
-import { initSocket, emitAttendanceUpdated } from "./sockets/socket.js";
+import {
+  initSocket, emitAttendanceUpdated, emitPayFirstPromoted, emitPayFirstExpired, emitPaymentStatusChanged,
+} from "./sockets/socket.js";
 import { sweepStaleAttendanceSessions } from "./services/attendanceService.js";
 import { runDueOffers } from "./services/notificationService.js";
+import { runPayFirstTick } from "./services/payFirstService.js";
 
 import authRoutes    from "./routes/authRoutes.js";
 import menuRoutes    from "./routes/menuRoutes.js";
@@ -36,6 +39,7 @@ import profileRoutes from "./routes/profileRoutes.js";
 import catagoryRoutes from "./routes/catagoryRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import attendanceRoutes from "./routes/attendanceRoutes.js";
+import waiterCallRoutes from "./routes/waiterCallRoutes.js";
 import { errorHandler, notFound } from "./middleware/errorMiddleware.js";
 
 const app    = express();
@@ -94,6 +98,7 @@ app.use("/api/categories",        catagoryRoutes);
 app.use("/api/support",           supportRoutes);
 app.use("/api/admin/printer",     printerRoutes);
 app.use("/api/notifications",     notificationRoutes);
+app.use("/api/waiter-calls",      waiterCallRoutes);
 app.use("/api/attendance",        attendanceRoutes);
 
 app.get("/api/test-whatsapp/:phone", async (req, res) => {
@@ -123,6 +128,7 @@ connectDB().then(() => {
     warmUpOcr(); // background — see utils/purchaseImportExtract.js
     startAttendanceHeartbeatSweep();
     startScheduledOfferTick();
+    startPayFirstTick();
   });
 });
 
@@ -145,6 +151,32 @@ const startScheduledOfferTick = () => {
   };
   tick();
   setInterval(tick, OFFER_TICK_INTERVAL_MS);
+};
+
+// ── Pay-first orders (utils/paymentMode.js) ─────────────────────────────────
+// Promotes paid AWAITING_PAYMENT orders a crash may have left behind, and
+// cancels unpaid ones past their deadline (after a last live PhonePe check).
+// Every change is an atomic conditional update — safe on several instances.
+const PAY_FIRST_TICK_MS = 60 * 1000;
+const startPayFirstTick = () => {
+  const tick = async () => {
+    try {
+      const mongoUri = process.env.MONGO_URI;
+      const conn = await getDB(mongoUri);
+      const tenantKey = tenantKeyFromUri(mongoUri);
+      const r = await runPayFirstTick({
+        models: getModels(conn),
+        onPromoted: (o) => emitPayFirstPromoted(tenantKey, o),
+        onPaymentChanged: (o) => emitPaymentStatusChanged(tenantKey, o),
+        onExpired: (o) => emitPayFirstExpired(tenantKey, o),
+      });
+      if (r.promoted || r.expired) console.log("💳 pay-first orders:", r);
+    } catch (err) {
+      console.error("pay-first tick failed:", err.message);
+    }
+  };
+  tick();
+  setInterval(tick, PAY_FIRST_TICK_MS);
 };
 
 // ── Employee attendance heartbeat sweep ─────────────────────────────────────

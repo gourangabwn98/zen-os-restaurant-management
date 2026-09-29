@@ -3,8 +3,10 @@ import { STAGES, STATUS_MESSAGE } from "../utils/orderStatus.js";
 /** 5-step live tracker (reference ".track"). COMPLETED shows every step
  * done; CANCELLED shows a message instead of the rail. */
 export default function StatusStepper({ status, footer }) {
-  if (status === "CANCELLED") {
-    return <p className="muted small" style={{ marginTop: 10 }}>{STATUS_MESSAGE.CANCELLED}</p>;
+  // Cancelled, or a pay-first order the restaurant hasn't received yet —
+  // no progress rail, just the message.
+  if (status === "CANCELLED" || status === "AWAITING_PAYMENT") {
+    return <p className="muted small" style={{ marginTop: 10 }}>{STATUS_MESSAGE[status]}</p>;
   }
 
   const last = STAGES.length - 1;

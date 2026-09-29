@@ -3,6 +3,7 @@
 // renamed/legacy string here — the keys below ARE the backend values.
 
 export const ORDER_STATUS = {
+  AWAITING_PAYMENT: "AWAITING_PAYMENT", // pay-first order, not paid yet
   PENDING_CONFIRMATION: "PENDING_CONFIRMATION",
   CONFIRMED: "CONFIRMED",
   PREPARING: "PREPARING",
@@ -13,7 +14,7 @@ export const ORDER_STATUS = {
 };
 
 export const ACTIVE_STATUSES = [
-  ORDER_STATUS.PENDING_CONFIRMATION, ORDER_STATUS.CONFIRMED, ORDER_STATUS.PREPARING,
+  ORDER_STATUS.AWAITING_PAYMENT, ORDER_STATUS.PENDING_CONFIRMATION, ORDER_STATUS.CONFIRMED, ORDER_STATUS.PREPARING,
   ORDER_STATUS.READY, ORDER_STATUS.DELIVERED,
 ];
 
@@ -21,6 +22,7 @@ export const isActiveOrder = (o) => ACTIVE_STATUSES.includes(o?.status);
 
 // Short label (pills, lists) + one-line message (tracker headline).
 export const STATUS_LABEL = {
+  AWAITING_PAYMENT: "Payment needed",
   PENDING_CONFIRMATION: "Awaiting confirmation",
   CONFIRMED: "Placed",
   PREPARING: "Preparing",
@@ -31,6 +33,7 @@ export const STATUS_LABEL = {
 };
 
 export const STATUS_MESSAGE = {
+  AWAITING_PAYMENT: "Complete your payment to send this order to the restaurant.",
   PENDING_CONFIRMATION: "Waiting for restaurant confirmation…",
   CONFIRMED: "Your order has been placed.",
   PREPARING: "Your food is being prepared.",
@@ -50,7 +53,7 @@ export const STAGES = [
 ];
 
 export const statusPillClass = (status) => {
-  if (status === "PENDING_CONFIRMATION") return "st-wait";
+  if (status === "PENDING_CONFIRMATION" || status === "AWAITING_PAYMENT") return "st-wait";
   if (status === "CANCELLED") return "st-bad";
   if (status === "READY" || status === "DELIVERED") return "st-ok";
   if (status === "COMPLETED") return "st-mute";
