@@ -536,25 +536,41 @@ function ItemModal({ item, categories, onClose, onSaved, onCategoryCreated }) {
   );
 }
 
-// ── bulk scheduled-visibility panel ─────────────────────────────────────────
-// Categories are picked here; items are picked with the checkboxes in the
-// list below. One PATCH applies (or clears) the window on the whole selection.
-function SchedulePanel({ cats, shownItems, selCats, selItems, setSelCats, setSelItems, onApplied }) {
+// ── bulk scheduled-visibility modal ─────────────────────────────────────────
+// Opened from the page header. Categories and items are both picked here;
+// the item selection is shared with the checkboxes in the list, so ticking
+// items there first and then opening this modal works too. One PATCH applies
+// (or clears) the window on the whole selection.
+function ScheduleModal({ cats, items, selCats, selItems, setSelCats, setSelItems, onApplied, onClose }) {
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(null); // { schedule, text }
+  const [q, setQ] = useState("");
+
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && !busy && !confirm && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, busy, confirm]);
 
   const nCats = selCats.size, nItems = selItems.size, total = nCats + nItems;
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   const whatText = [nCats && plural(nCats, "category", "categories"), nItems && plural(nItems, "item", "items")]
     .filter(Boolean).join(" and ");
 
-  const toggleCat = (id) => setSelCats((p) => {
+  const toggle = (setter) => (id) => setter((p) => {
     const n = new Set(p);
     if (n.has(id)) n.delete(id); else n.add(id);
     return n;
   });
+  const toggleCat = toggle(setSelCats);
+  const toggleItem = toggle(setSelItems);
+
+  const shownItems = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    return s ? items.filter((i) => i.name?.toLowerCase().includes(s) || i.category?.toLowerCase().includes(s)) : items;
+  }, [items, q]);
   const shownIds = shownItems.map((i) => i._id);
   const allShownSelected = shownIds.length > 0 && shownIds.every((id) => selItems.has(id));
 
@@ -568,6 +584,7 @@ function SchedulePanel({ cats, shownItems, selCats, selItems, setSelCats, setSel
       setSelCats(new Set());
       setSelItems(new Set());
       onApplied();
+      onClose();
     } catch (e) {
       toast.error(e?.response?.data?.message || "Failed to update schedule");
     } finally {
@@ -590,69 +607,106 @@ function SchedulePanel({ cats, shownItems, selCats, selItems, setSelCats, setSel
     setConfirm({ schedule: null, text: `Remove the schedule from ${whatText}? They go back to showing all day (availability still applies).` });
   };
 
+  const sectionLabel = { fontSize: 11.5, color: "var(--text-2)", fontWeight: 600 };
+
   return (
-    <div className="zc-card" style={{ marginBottom: 16 }}>
-      <div className="zc-card-h">
-        <span className="t">🕒 Scheduled visibility</span>
-        <span className="s">Show categories / items to customers only during a daily time window (restaurant time)</span>
-      </div>
-      <div style={{ padding: "12px 16px 16px", display: "grid", gap: 14 }}>
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 11.5, color: "var(--text-2)", fontWeight: 500 }}>Categories</span>
-            <button type="button" className="zc-btn ghost sm" disabled={!cats.length}
-              onClick={() => setSelCats(new Set(cats.map((c) => c._id)))}>Select all</button>
-            {nCats > 0 && <button type="button" className="zc-btn ghost sm" onClick={() => setSelCats(new Set())}>Clear</button>}
-          </div>
-          {cats.length === 0 ? (
-            <div style={{ fontSize: 12, color: "var(--text-3)" }}>No categories yet.</div>
-          ) : (
-            <div className="menu-catpick">
-              {cats.map((c) => (
-                <label key={c._id} className={`menu-catchip${selCats.has(c._id) ? " on" : ""}`}>
-                  <input type="checkbox" className="menu-cb" checked={selCats.has(c._id)} onChange={() => toggleCat(c._id)} />
-                  {c.name}
-                  {hasSchedule(c) && <ScheduleBadge schedule={c.schedule} />}
-                </label>
-              ))}
+    <>
+      <div className="zc-scrim" onClick={() => !busy && onClose()}>
+        <div className="zc-modal" style={{ width: 720 }} role="dialog" aria-modal="true" aria-labelledby="sched-modal-title"
+          onClick={(e) => e.stopPropagation()}>
+          <div className="mh">
+            <div style={{ flex: 1 }}>
+              <div className="t" id="sched-modal-title">🕒 Scheduled visibility</div>
+              <div className="s">Show categories / items to customers only during a daily time window (restaurant time)</div>
             </div>
-          )}
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 11.5, color: "var(--text-2)", fontWeight: 500 }}>Items</span>
-          <span style={{ fontSize: 11.5, color: "var(--text-3)" }}>tick items in the list below, or</span>
-          <button type="button" className="zc-btn ghost sm" disabled={!shownIds.length || allShownSelected}
-            onClick={() => setSelItems((p) => new Set([...p, ...shownIds]))}>Select all {shownIds.length} shown</button>
-          {nItems > 0 && <button type="button" className="zc-btn ghost sm" onClick={() => setSelItems(new Set())}>Clear</button>}
-        </div>
-
-        <div className="menu-sched-bar">
-          <div className="menu-field">
-            <label htmlFor="sch-start">Start (visible from)</label>
-            <input id="sch-start" type="time" className="zc-input" value={start} onChange={(e) => setStart(e.target.value)} />
+            <button type="button" className="zc-x" onClick={onClose} disabled={busy} aria-label="Close">✕</button>
           </div>
-          <div className="menu-field">
-            <label htmlFor="sch-end">End (hidden from)</label>
-            <input id="sch-end" type="time" className="zc-input" value={end} onChange={(e) => setEnd(e.target.value)} />
+
+          <div className="mb" style={{ display: "grid", gap: 18 }}>
+            {/* 1 — categories */}
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+                <span style={sectionLabel}>Categories</span>
+                <button type="button" className="zc-btn ghost sm" disabled={!cats.length}
+                  onClick={() => setSelCats(new Set(cats.map((c) => c._id)))}>Select all</button>
+                {nCats > 0 && <button type="button" className="zc-btn ghost sm" onClick={() => setSelCats(new Set())}>Clear</button>}
+              </div>
+              {cats.length === 0 ? (
+                <div style={{ fontSize: 12, color: "var(--text-3)" }}>No categories yet.</div>
+              ) : (
+                <div className="menu-catpick">
+                  {cats.map((c) => (
+                    <label key={c._id} className={`menu-catchip${selCats.has(c._id) ? " on" : ""}`}>
+                      <input type="checkbox" className="menu-cb" checked={selCats.has(c._id)} onChange={() => toggleCat(c._id)} />
+                      {c.name}
+                      {hasSchedule(c) && <ScheduleBadge schedule={c.schedule} />}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 2 — items */}
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+                <span style={sectionLabel}>Items</span>
+                <input className="zc-input" value={q} onChange={(e) => setQ(e.target.value)}
+                  placeholder="Search items or category" aria-label="Search items to schedule"
+                  style={{ flex: "1 1 200px", maxWidth: 280, padding: "6px 10px", fontSize: 12.5 }} />
+                <button type="button" className="zc-btn ghost sm" disabled={!shownIds.length || allShownSelected}
+                  onClick={() => setSelItems((p) => new Set([...p, ...shownIds]))}>Select all {shownIds.length}</button>
+                {nItems > 0 && <button type="button" className="zc-btn ghost sm" onClick={() => setSelItems(new Set())}>Clear</button>}
+              </div>
+              <div style={{ maxHeight: 240, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 12 }}>
+                {shownItems.length === 0 ? (
+                  <div style={{ padding: 14, fontSize: 12, color: "var(--text-3)", textAlign: "center" }}>
+                    {items.length === 0 ? "No items yet." : "No items match."}
+                  </div>
+                ) : shownItems.map((i) => (
+                  <label key={i._id} style={{
+                    display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", cursor: "pointer",
+                    borderBottom: "1px solid var(--border)", fontSize: 13,
+                    background: selItems.has(i._id) ? "var(--card-2)" : undefined,
+                  }}>
+                    <input type="checkbox" className="menu-cb" checked={selItems.has(i._id)} onChange={() => toggleItem(i._id)} />
+                    <VegDot tag={i.tag} />
+                    <span style={{ fontWeight: 500, color: "var(--text-1)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{i.name}</span>
+                    <span style={{ fontSize: 11.5, color: "var(--text-3)", whiteSpace: "nowrap" }}>{i.category}</span>
+                    <span style={{ marginLeft: "auto", flexShrink: 0 }}>
+                      {hasSchedule(i) && <ScheduleBadge schedule={i.schedule} off={i.scheduledNow === false && i.isAvailable} />}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* 3 — window */}
+            <div className="menu-sched-bar">
+              <div className="menu-field">
+                <label htmlFor="sch-start">Start (visible from)</label>
+                <input id="sch-start" type="time" className="zc-input" value={start} onChange={(e) => setStart(e.target.value)} />
+              </div>
+              <div className="menu-field">
+                <label htmlFor="sch-end">End (hidden from)</label>
+                <input id="sch-end" type="time" className="zc-input" value={end} onChange={(e) => setEnd(e.target.value)} />
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: -8 }}>
+              Start time is included, end time is not (10:00 → 12:00 shows at 11:59, hides at 12:00). An end earlier than the
+              start runs past midnight (22:00 → 02:00). A category&rsquo;s window hides all of its items; an item with its own
+              window must satisfy both. Hidden (unavailable) items stay hidden regardless of schedule.
+            </div>
           </div>
-          <button type="button" className="zc-btn pri" disabled={busy || !total} onClick={apply}>
-            {busy ? "Saving…" : "Apply schedule"}
-          </button>
-          <button type="button" className="zc-btn" disabled={busy || !total} onClick={clear}>Clear schedule</button>
-          <div style={{ flex: 1 }} />
-          <span style={{ fontSize: 12, color: total ? "var(--text-1)" : "var(--text-3)", alignSelf: "center" }}>
-            Selected: <b style={{ color: "var(--accent-ink)" }}>{total}</b>{total ? ` (${whatText})` : ""}
-          </span>
-          {total > 0 && (
-            <button type="button" className="zc-btn ghost sm" style={{ alignSelf: "center" }}
-              onClick={() => { setSelCats(new Set()); setSelItems(new Set()); }}>Clear selection</button>
-          )}
-        </div>
-        <div style={{ fontSize: 11, color: "var(--text-3)" }}>
-          Start time is included, end time is not (10:00 → 12:00 shows at 11:59, hides at 12:00). An end earlier than the
-          start runs past midnight (22:00 → 02:00). A category&rsquo;s window hides all of its items; an item with its own
-          window must satisfy both. Hidden (unavailable) items stay hidden regardless of schedule.
+
+          <div className="mf" style={{ alignItems: "center" }}>
+            <span style={{ fontSize: 12, color: total ? "var(--text-1)" : "var(--text-3)", marginRight: "auto" }}>
+              Selected: <b style={{ color: "var(--accent-ink)" }}>{total}</b>{total ? ` (${whatText})` : ""}
+            </span>
+            <button type="button" className="zc-btn" disabled={busy || !total} onClick={clear}>Clear schedule</button>
+            <button type="button" className="zc-btn pri" disabled={busy || !total} onClick={apply}>
+              {busy ? "Saving…" : "Apply schedule"}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -669,7 +723,7 @@ function SchedulePanel({ cats, shownItems, selCats, selItems, setSelCats, setSel
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -689,6 +743,7 @@ export default function MenuAdminPage() {
 
   const [modal, setModal] = useState(null); // "create" | item | null
   const [showCat, setShowCat] = useState(false);
+  const [showSched, setShowSched] = useState(false);
   const [selItems, setSelItems] = useState(() => new Set()); // bulk-schedule selection (ids)
   const [selCats, setSelCats] = useState(() => new Set());
   const toggleItemSel = (id) => setSelItems((p) => {
@@ -798,6 +853,9 @@ export default function MenuAdminPage() {
         sub={`${items.length} item${items.length === 1 ? "" : "s"} across ${cats.length} categor${cats.length === 1 ? "y" : "ies"}`}
         right={
           <>
+            <button type="button" className="zc-btn" disabled={loading || error} onClick={() => setShowSched(true)}>
+              🕒 Scheduled visibility{selItems.size + selCats.size > 0 ? ` (${selItems.size + selCats.size})` : ""}
+            </button>
             <button type="button" className="zc-btn" onClick={() => setShowCat(true)}>＋ New category</button>
             <button type="button" className="zc-btn pri" onClick={() => setModal("create")}>＋ New item</button>
           </>
@@ -807,18 +865,6 @@ export default function MenuAdminPage() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 20 }}>
         {STATS.map((b, i) => <StatCard key={i} {...b} />)}
       </div>
-
-      {!loading && !error && (
-        <SchedulePanel
-          cats={cats}
-          shownItems={filtered}
-          selCats={selCats}
-          selItems={selItems}
-          setSelCats={setSelCats}
-          setSelItems={setSelItems}
-          onApplied={load}
-        />
-      )}
 
       <div className="menu-filters">
         <input
@@ -1025,6 +1071,19 @@ export default function MenuAdminPage() {
         <CategoryModal
           onClose={() => setShowCat(false)}
           onSaved={(newCat) => { handleCategoryCreated(newCat); setShowCat(false); }}
+        />
+      )}
+
+      {showSched && (
+        <ScheduleModal
+          cats={cats}
+          items={items}
+          selCats={selCats}
+          selItems={selItems}
+          setSelCats={setSelCats}
+          setSelItems={setSelItems}
+          onApplied={load}
+          onClose={() => setShowSched(false)}
         />
       )}
     </div>
