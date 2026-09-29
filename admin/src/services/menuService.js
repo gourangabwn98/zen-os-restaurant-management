@@ -39,4 +39,8 @@ export const deleteMenuItem = (id) => api.delete(`/menu/${id}`);
 
 export const getCategories = () => api.get("/categories"); // ✅ correct
 export const createCategory = (data) => api.post("/categories", data);
+// FormData: name?, image (file)?, removeImage ("true")? → { category, renamedFrom, itemsMoved }.
+// Renaming moves every item in the category along with it (server-side, one transaction).
+export const updateCategory = (id, data) => api.put(`/categories/${id}`, data);
+// 409 while items still use the category.
 export const deleteCategory = (id) => api.delete(`/categories/${id}`);

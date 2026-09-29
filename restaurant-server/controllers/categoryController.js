@@ -1,87 +1,77 @@
 // controllers/categoryController.js
+// Thin HTTP layer over services/categoryService.js (rename cascade, in-use
+// delete guard, case-insensitive unique names live there).
 import { getScheduleContext } from "../services/menuScheduleService.js";
+import {
+  listCategoriesWithCounts,
+  createCategory as createCategorySvc,
+  updateCategory as updateCategorySvc,
+  deleteCategory as deleteCategorySvc,
+} from "../services/categoryService.js";
+import { emitMenuUpdated } from "../sockets/socket.js";
 
+const isAdminUser = (user) => !!(user?.isAdmin || user?.role === "admin");
+const fail = (res, err) => res.status(err.statusCode || 500).json({ message: err.message });
+
+/** Uploads a multer memory file to Cloudinary; resolves to its https URL. */
+const uploadCategoryImage = async (file) => {
+  const cloudinary  = (await import("../config/cloudinary.js")).default;
+  const streamifier = (await import("streamifier")).default;
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: "adda-categories" },
+      (err, result) => (err ? reject(err) : resolve(result.secure_url)),
+    );
+    streamifier.createReadStream(file.buffer).pipe(stream);
+  });
+};
+
+// ── GET /api/categories ───────────────────────────────────────────────────────
+// Admin gets every category plus `itemCount`; anyone else only sees ones
+// whose schedule allows them right now (same rule as GET /api/menu).
 export const getCategories = async (req, res) => {
   try {
+    if (isAdminUser(req.user)) return res.json(await listCategoriesWithCounts({ models: req.models }));
     const { Category } = req.models;
-    let cats = await Category.find().sort({ name: 1 });
-    // Admin manages every category; anyone else only sees ones whose
-    // schedule allows them right now (same rule as GET /api/menu).
-    if (!(req.user?.isAdmin || req.user?.role === "admin")) {
-      const { hiddenCategories } = await getScheduleContext({ models: req.models });
-      cats = cats.filter((c) => !hiddenCategories.has(c.name));
-    }
+    const { hiddenCategories } = await getScheduleContext({ models: req.models });
+    const cats = (await Category.find().sort({ name: 1 })).filter((c) => !hiddenCategories.has(c.name));
     res.json(cats);
-  } catch (err) { res.status(500).json({ message: err.message }); }
+  } catch (err) { fail(res, err); }
 };
 
-// export const createCategory = async (req, res) => {
-//   try {
-//     const { Category } = req.models;
-//     const cat = await Category.create(req.body);
-//     res.status(201).json(cat);
-//   } catch (err) { res.status(400).json({ message: err.message }); }
-// };
-// export const createCategory = async (req, res) => {
-//   try {
-//     const { Category } = req.models;
-
-//     // Accept "name" OR "categoryName" from frontend
-//     const name = req.body.name || req.body.categoryName || req.body.category;
-//     if (!name) return res.status(400).json({ message: "Category name is required" });
-
-//     const cat = await Category.create({
-//       name,
-//       image: req.body.image || req.body.categoryImage || "",
-//     });
-//     res.status(201).json(cat);
-//   } catch (err) { res.status(400).json({ message: err.message }); }
-// };
-
+// ── POST /api/categories  (multipart: name, image?) ──────────────────────────
 export const createCategory = async (req, res) => {
   try {
-    const { Category } = req.models;
-
-    // Works for both FormData (multer) and plain JSON
-    const name = req.body.name || req.body.categoryName || req.body.category;
-    if (!name?.trim())
-      return res.status(400).json({ message: "Category name is required" });
-
-    // Image from Cloudinary upload (if file sent) or plain URL
-    let image = req.body.image || req.body.categoryImage || "";
-    if (req.file) {
-      const cloudinary  = (await import("../config/cloudinary.js")).default;
-      const streamifier = (await import("streamifier")).default;
-      image = await new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-          { folder: "adda-categories" },
-          (err, result) => err ? reject(err) : resolve(result.secure_url)
-        );
-        streamifier.createReadStream(req.file.buffer).pipe(stream);
-      });
-    }
-
-    const cat = await Category.create({ name: name.trim(), image });
+    // "categoryName"/"category" accepted for older admin builds.
+    const name = req.body.name ?? req.body.categoryName ?? req.body.category;
+    const image = req.file ? await uploadCategoryImage(req.file) : (req.body.image || "");
+    const cat = await createCategorySvc({ models: req.models, name, image });
+    emitMenuUpdated(req.tenantKey);
     res.status(201).json(cat);
-  } catch (err) {
-    res.status(400).json({ message: err.message });
-  }
+  } catch (err) { fail(res, err); }
 };
+
+// ── PUT /api/categories/:id  (multipart: name?, image file?, removeImage?) ───
+// Only name and image are writable. Renaming moves the category's items too.
 export const updateCategory = async (req, res) => {
   try {
-    const { Category } = req.models;
-    // schedule is only writable through the validated PATCH /api/menu/schedule
-    const { schedule, ...updates } = req.body || {};
-    const cat = await Category.findByIdAndUpdate(req.params.id, updates, { new: true });
-    if (!cat) return res.status(404).json({ message: "Category not found" });
-    res.json(cat);
-  } catch (err) { res.status(400).json({ message: err.message }); }
+    let image;
+    if (req.file) image = await uploadCategoryImage(req.file);
+    else if (req.body.removeImage === "true" || req.body.removeImage === true) image = "";
+    const result = await updateCategorySvc({
+      models: req.models, db: req.db, id: req.params.id, name: req.body.name, image,
+    });
+    emitMenuUpdated(req.tenantKey);
+    res.json(result);
+  } catch (err) { fail(res, err); }
 };
 
+// ── DELETE /api/categories/:id ────────────────────────────────────────────────
+// 409 while any item still uses it (see services/categoryService.js).
 export const deleteCategory = async (req, res) => {
   try {
-    const { Category } = req.models;
-    await Category.findByIdAndDelete(req.params.id);
-    res.json({ message: "Deleted" });
-  } catch (err) { res.status(500).json({ message: err.message }); }
+    const cat = await deleteCategorySvc({ models: req.models, id: req.params.id });
+    emitMenuUpdated(req.tenantKey);
+    res.json({ message: `"${cat.name}" deleted` });
+  } catch (err) { fail(res, err); }
 };

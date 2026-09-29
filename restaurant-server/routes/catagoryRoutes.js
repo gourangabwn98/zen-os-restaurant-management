@@ -22,6 +22,6 @@ const autoAuth = (req, res, next) =>
 
 router.get("/", autoAuth, getCategories);
 router.post("/",      protect, requireAdmin, upload.single("image"), createCategory);
-router.put("/:id",    protect, requireAdmin, updateCategory);
+router.put("/:id",    protect, requireAdmin, upload.single("image"), updateCategory);
 router.delete("/:id", protect, requireAdmin, deleteCategory);
 export default router;

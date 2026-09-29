@@ -8,7 +8,8 @@
 //   add / edit               createMenuItem / updateMenuItem  (multipart)
 //   delete                   deleteMenuItem
 //   availability toggle      updateMenuItem(id, { isAvailable })
-//   categories               getCategories / createCategory / deleteCategory
+//   categories               getCategories / createCategory / updateCategory / deleteCategory
+//                            (Categories manager: view, add, edit/rename, delete empty)
 //   scheduled visibility     updateMenuSchedule (PATCH /menu/schedule, bulk)
 // Images go to Cloudinary through the backend, same as before.
 //
@@ -20,7 +21,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import toast from "react-hot-toast";
 import {
   getMenu, getCategories, createMenuItem, updateMenuItem, deleteMenuItem,
-  createCategory, deleteCategory, updateMenuSchedule,
+  createCategory, updateCategory, deleteCategory, updateMenuSchedule,
 } from "../../services/menuService.js";
 import PageHeader from "./shared/PageHeader.jsx";
 import StatCard from "./shared/StatCard.jsx";
@@ -202,8 +203,8 @@ function CategoryPicker({ value, categories, onChange, onOpenCreate, onDeleteCat
     try {
       await onDeleteCategory(confirm);
       toast.success(`"${confirm.name}" deleted`);
-    } catch {
-      toast.error("Failed to delete category");
+    } catch (e) {
+      toast.error(e?.response?.data?.message || "Failed to delete category");
     } finally {
       setConfirm(null);
     }
@@ -238,8 +239,8 @@ function CategoryPicker({ value, categories, onChange, onOpenCreate, onDeleteCat
           <div className="zc-modal" style={{ width: 380 }} onClick={(e) => e.stopPropagation()}>
             <div className="mh"><div className="t">Delete category?</div></div>
             <div className="mb" style={{ fontSize: 13, color: "var(--text-2)" }}>
-              Delete <strong style={{ color: "var(--text-1)" }}>&ldquo;{confirm.name}&rdquo;</strong>? Menu items in this
-              category are not deleted.
+              Delete <strong style={{ color: "var(--text-1)" }}>&ldquo;{confirm.name}&rdquo;</strong>? Only possible once no
+              menu item uses it.
             </div>
             <div className="mf">
               <button type="button" className="zc-btn" onClick={() => setConfirm(null)}>Cancel</button>
@@ -252,17 +253,41 @@ function CategoryPicker({ value, categories, onChange, onOpenCreate, onDeleteCat
   );
 }
 
-// ── create-category modal ──────────────────────────────────────────────────
-function CategoryModal({ onClose, onSaved }) {
-  const [name, setName] = useState("");
+const isUrl = (s) => typeof s === "string" && /^https?:\/\//i.test(s);
+
+// Category thumbnail — its uploaded image, else its emoji (older categories
+// store one, e.g. "🍕"), else a generic glyph.
+const CatThumb = ({ image, size = 38 }) => {
+  const [broken, setBroken] = useState(false);
+  const showImg = isUrl(image) && !broken;
+  return (
+    <span className="menu-thumb" style={{ width: size, height: size, fontSize: size * 0.48 }}>
+      {showImg
+        ? <img src={image} alt="" onError={() => setBroken(true)}
+            style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 9 }} />
+        : (image && !isUrl(image) ? image : "🗂️")}
+    </span>
+  );
+};
+
+// ── add / edit category modal ──────────────────────────────────────────────
+// `category` null → create; otherwise edit (rename and/or change the image).
+// A rename moves every item in the category along with it (server-side).
+function CategoryModal({ category = null, onClose, onSaved }) {
+  const isEdit = !!category?._id;
+  const [name, setName] = useState(category?.name || "");
   const [file, setFile] = useState(null);
+  const [removeImage, setRemoveImage] = useState(false);
   const [loading, setLoading] = useState(false);
+  const currentImage = removeImage ? "" : (category?.image || "");
+  const renaming = isEdit && name.trim() && name.trim() !== category.name;
+  const itemCount = category?.itemCount ?? 0;
 
   useEffect(() => {
-    const onKey = (e) => e.key === "Escape" && onClose();
+    const onKey = (e) => e.key === "Escape" && !loading && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, loading]);
 
   const submit = async () => {
     if (!name.trim()) return toast.error("Category name is required");
@@ -271,48 +296,214 @@ function CategoryModal({ onClose, onSaved }) {
       const fd = new FormData();
       fd.append("name", name.trim());
       if (file) fd.append("image", file);
-      const { data } = await createCategory(fd);
-      toast.success(`"${name.trim()}" created`);
-      onSaved(data?.data || data);
+      else if (isEdit && removeImage) fd.append("removeImage", "true");
+      if (isEdit) {
+        const { data } = await updateCategory(category._id, fd);
+        toast.success(data.renamedFrom
+          ? `Renamed to "${data.category.name}"${data.itemsMoved ? ` · ${data.itemsMoved} item${data.itemsMoved === 1 ? "" : "s"} moved` : ""}`
+          : "Category updated");
+        onSaved(data.category, { renamedFrom: data.renamedFrom });
+      } else {
+        const { data } = await createCategory(fd);
+        toast.success(`"${name.trim()}" created`);
+        onSaved(data?.data || data, { created: true });
+      }
       onClose();
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Failed to create category");
+      toast.error(e?.response?.data?.message || (isEdit ? "Failed to update category" : "Failed to create category"));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="zc-scrim" onClick={onClose} style={{ zIndex: 1100 }}>
-      <div className="zc-modal" style={{ width: 400 }} onClick={(e) => e.stopPropagation()}>
+    <div className="zc-scrim" onClick={() => !loading && onClose()} style={{ zIndex: 1100 }}>
+      <div className="zc-modal" style={{ width: 420 }} role="dialog" aria-modal="true" aria-labelledby="cat-form-title"
+        onClick={(e) => e.stopPropagation()}>
         <div className="mh">
           <div style={{ flex: 1 }}>
-            <div className="t">New category</div>
+            <div className="t" id="cat-form-title">{isEdit ? "Edit category" : "New category"}</div>
             <div className="s">Groups items on the customer menu</div>
           </div>
-          <button type="button" className="zc-x" onClick={onClose} aria-label="Close">✕</button>
+          <button type="button" className="zc-x" onClick={onClose} disabled={loading} aria-label="Close">✕</button>
         </div>
         <div className="mb" style={{ display: "grid", gap: 14 }}>
           <div className="menu-field">
             <label htmlFor="cat-name">Category name *</label>
-            <input id="cat-name" className="zc-input" value={name} autoFocus
+            <input id="cat-name" className="zc-input" value={name} autoFocus maxLength={40}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && submit()}
               placeholder="e.g. Biryani, Desserts…" />
+            {renaming && itemCount > 0 && (
+              <div className="hint">
+                The {itemCount} item{itemCount === 1 ? "" : "s"} in &ldquo;{category.name}&rdquo; will move to the new name.
+              </div>
+            )}
           </div>
           <div className="menu-field">
             <label>Category image <span style={{ color: "var(--text-3)", fontWeight: 400 }}>(optional)</span></label>
-            <ImageUploadBox currentUrl={null} file={file} onFileChange={setFile} />
+            <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
+              <ImageUploadBox currentUrl={isUrl(currentImage) ? currentImage : null} file={file} onFileChange={setFile} />
+              {isEdit && !file && category.image && (
+                <div style={{ display: "grid", gap: 6, fontSize: 11.5, color: "var(--text-3)" }}>
+                  {!isUrl(category.image) && !removeImage && (
+                    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      Current: <CatThumb image={category.image} size={30} />
+                    </span>
+                  )}
+                  <button type="button" className="zc-btn ghost sm" onClick={() => setRemoveImage((v) => !v)}>
+                    {removeImage ? "Keep current image" : "Remove image"}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
         <div className="mf">
-          <button type="button" className="zc-btn" onClick={onClose}>Cancel</button>
+          <button type="button" className="zc-btn" onClick={onClose} disabled={loading}>Cancel</button>
           <button type="button" className="zc-btn pri" disabled={loading} onClick={submit}>
-            {loading ? "Creating…" : "Create category"}
+            {loading ? "Saving…" : isEdit ? "Save changes" : "Create category"}
           </button>
         </div>
       </div>
     </div>
+  );
+}
+
+// ── categories manager (header → "Categories") ─────────────────────────────
+// View / add / edit / delete. "View items" filters the menu list to that
+// category. Delete is only offered for empty categories (the server refuses
+// otherwise, so no item is ever left without a category).
+function CategoriesModal({ cats, items, onClose, onChanged, onView }) {
+  const [q, setQ] = useState("");
+  const [form, setForm] = useState(null);         // null | "create" | category
+  const [confirmDel, setConfirmDel] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && !form && !confirmDel && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, form, confirmDel]);
+
+  // Live counts from the loaded items (they include hidden ones); falls back
+  // to the server's itemCount before the items list has loaded.
+  const counts = useMemo(() => {
+    const m = new Map();
+    for (const i of items) m.set(i.category, (m.get(i.category) || 0) + 1);
+    return m;
+  }, [items]);
+  const countOf = (c) => (items.length ? counts.get(c.name) || 0 : c.itemCount || 0);
+
+  const shown = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    return s ? cats.filter((c) => c.name.toLowerCase().includes(s)) : cats;
+  }, [cats, q]);
+
+  const doDelete = async () => {
+    setDeleting(true);
+    try {
+      await deleteCategory(confirmDel._id);
+      toast.success(`"${confirmDel.name}" deleted`);
+      onChanged({ deleted: confirmDel.name, deletedId: confirmDel._id });
+      setConfirmDel(null);
+    } catch (e) {
+      toast.error(e?.response?.data?.message || "Failed to delete category");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="zc-scrim" onClick={() => !form && !confirmDel && onClose()}>
+        <div className="zc-modal" style={{ width: 680 }} role="dialog" aria-modal="true" aria-labelledby="cats-title"
+          onClick={(e) => e.stopPropagation()}>
+          <div className="mh">
+            <div style={{ flex: 1 }}>
+              <div className="t" id="cats-title">🗂️ Categories</div>
+              <div className="s">{cats.length} categor{cats.length === 1 ? "y" : "ies"} · add, rename, change images, or remove empty ones</div>
+            </div>
+            <button type="button" className="zc-x" onClick={onClose} aria-label="Close">✕</button>
+          </div>
+
+          <div className="mb" style={{ display: "grid", gap: 12 }}>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <input className="zc-input" value={q} onChange={(e) => setQ(e.target.value)}
+                placeholder="Search categories" aria-label="Search categories" style={{ flex: "1 1 200px" }} />
+              <button type="button" className="zc-btn pri" onClick={() => setForm("create")}>＋ Add category</button>
+            </div>
+
+            {cats.length === 0 ? (
+              <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: "var(--text-3)" }}>
+                No categories yet — add one to start building the menu.
+              </div>
+            ) : shown.length === 0 ? (
+              <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: "var(--text-3)" }}>No categories match.</div>
+            ) : (
+              <div style={{ border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+                {shown.map((c) => {
+                  const n = countOf(c);
+                  return (
+                    <div key={c._id} style={{
+                      display: "flex", alignItems: "center", gap: 12, padding: "10px 12px",
+                      borderBottom: "1px solid var(--border)", flexWrap: "wrap",
+                    }}>
+                      <CatThumb image={c.image} />
+                      <div style={{ flex: "1 1 160px", minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13.5, color: "var(--text-1)", overflowWrap: "anywhere" }}>{c.name}</div>
+                        <div style={{ fontSize: 11.5, color: "var(--text-3)", marginTop: 2, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                          <span>{n} item{n === 1 ? "" : "s"}</span>
+                          {hasSchedule(c) && <ScheduleBadge schedule={c.schedule} />}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                        <button type="button" className="zc-btn ghost sm" disabled={n === 0}
+                          title={n === 0 ? "No items in this category" : `Show only ${c.name} items`}
+                          onClick={() => onView(c.name)}>View items</button>
+                        <button type="button" className="zc-btn sm" onClick={() => setForm({ ...c, itemCount: n })}>Edit</button>
+                        <button type="button" className="zc-btn danger sm" disabled={n > 0}
+                          title={n > 0 ? `Move or delete its ${n} item${n === 1 ? "" : "s"} first` : `Delete ${c.name}`}
+                          onClick={() => setConfirmDel(c)}>Delete</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div style={{ fontSize: 11, color: "var(--text-3)" }}>
+              Renaming moves the category&rsquo;s items with it. A category can only be deleted once it has no items.
+              Time windows are set under 🕒 Scheduled visibility.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {form && (
+        <CategoryModal
+          category={form === "create" ? null : form}
+          onClose={() => setForm(null)}
+          onSaved={(saved, info) => onChanged({ saved, ...info })}
+        />
+      )}
+
+      {confirmDel && (
+        <div className="zc-scrim" onClick={() => !deleting && setConfirmDel(null)} style={{ zIndex: 1200 }}>
+          <div className="zc-modal" style={{ width: 380 }} onClick={(e) => e.stopPropagation()}>
+            <div className="mh"><div className="t">Delete category?</div></div>
+            <div className="mb" style={{ fontSize: 13, color: "var(--text-2)" }}>
+              Delete <strong style={{ color: "var(--text-1)" }}>&ldquo;{confirmDel.name}&rdquo;</strong>? This can&rsquo;t be undone.
+            </div>
+            <div className="mf">
+              <button type="button" className="zc-btn" disabled={deleting} onClick={() => setConfirmDel(null)}>Cancel</button>
+              <button type="button" className="zc-btn danger" disabled={deleting} onClick={doDelete}>
+                {deleting ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -742,7 +933,7 @@ export default function MenuAdminPage() {
   const [vegOnly, setVegOnly] = useState(false);
 
   const [modal, setModal] = useState(null); // "create" | item | null
-  const [showCat, setShowCat] = useState(false);
+  const [showCats, setShowCats] = useState(false);
   const [showSched, setShowSched] = useState(false);
   const [selItems, setSelItems] = useState(() => new Set()); // bulk-schedule selection (ids)
   const [selCats, setSelCats] = useState(() => new Set());
@@ -785,6 +976,18 @@ export default function MenuAdminPage() {
     setCats((p) => (p.some((c) => c.name === newCat?.name) ? p : [...p, newCat]));
   };
 
+
+  // Categories manager saved/deleted something. A rename moved items on the
+  // server, so reload both lists; keep the category filter pointing at the
+  // same category (or reset it if that category is gone).
+  const handleCategoriesChanged = ({ deleted, deletedId, renamedFrom, saved } = {}) => {
+    if (deleted) {
+      setSelCat((c) => (c === deleted ? "All" : c));
+      if (deletedId) setSelCats((p) => { const n = new Set(p); n.delete(deletedId); return n; });
+    }
+    if (renamedFrom && saved?.name) setSelCat((c) => (c === renamedFrom ? saved.name : c));
+    load();
+  };
 
   const handleDelete = async (item) => {
     if (!window.confirm(`Delete "${item.name}"? This cannot be undone.`)) return;
@@ -856,7 +1059,7 @@ export default function MenuAdminPage() {
             <button type="button" className="zc-btn" disabled={loading || error} onClick={() => setShowSched(true)}>
               🕒 Scheduled visibility{selItems.size + selCats.size > 0 ? ` (${selItems.size + selCats.size})` : ""}
             </button>
-            <button type="button" className="zc-btn" onClick={() => setShowCat(true)}>＋ New category</button>
+            <button type="button" className="zc-btn" disabled={loading || error} onClick={() => setShowCats(true)}>🗂️ Categories</button>
             <button type="button" className="zc-btn pri" onClick={() => setModal("create")}>＋ New item</button>
           </>
         }
@@ -1067,10 +1270,13 @@ export default function MenuAdminPage() {
         />
       )}
 
-      {showCat && (
-        <CategoryModal
-          onClose={() => setShowCat(false)}
-          onSaved={(newCat) => { handleCategoryCreated(newCat); setShowCat(false); }}
+      {showCats && (
+        <CategoriesModal
+          cats={cats}
+          items={items}
+          onClose={() => setShowCats(false)}
+          onChanged={handleCategoriesChanged}
+          onView={(name) => { setSelCat(name); setAvail("All"); setShowCats(false); }}
         />
       )}
 
