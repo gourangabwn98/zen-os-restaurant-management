@@ -36,8 +36,15 @@ messaging.onBackgroundMessage((payload) => {
   if (payload.notification) return;
   const d = payload.data || {};
   const title = d.title || "New offer";
-  const body = d.couponCode ? `${d.body || ""}
-Use code: ${d.couponCode}` : (d.body || "");
+  const lines = [d.body || ""];
+  if (d.couponCode) lines.push(`Use code: ${d.couponCode}`);
+  if (d.expiresAt) {
+    const exp = new Date(d.expiresAt);
+    // A push delayed past the offer's end (phone was off) isn't worth showing.
+    if (exp.getTime() <= Date.now()) return;
+    lines.push(`Valid till ${exp.toLocaleString([], { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}`);
+  }
+  const body = lines.join("\n");
   return self.registration.showNotification(title, {
     body,
     icon: d.icon || "/icons/icon-192.png",

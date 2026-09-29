@@ -2,7 +2,7 @@
 import {
   subscribeToken, unsubscribeToken, sendOfferBroadcast,
   listNotificationHistory, countSubscribedCustomers,
-  listCustomerNotifications, markCustomerNotificationsSeen,
+  listCustomerNotifications, markCustomerNotificationsSeen, cancelScheduledOffer,
 } from "../services/notificationService.js";
 import { buildActor } from "../services/orderService.js";
 
@@ -51,9 +51,19 @@ export const sendBroadcast = async (req, res) => {
     const actor = buildActor(req.user);
     const log = await sendOfferBroadcast({
       models: req.models, title: req.body.title, body: req.body.body,
-      couponCode: req.body.couponCode, actor,
+      couponCode: req.body.couponCode, startsAt: req.body.startsAt, expiresAt: req.body.expiresAt, actor,
     });
-    res.json({ message: "Notification sent", log });
+    res.json({ message: log.status === "SCHEDULED" ? "Offer scheduled" : "Notification sent", log });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message });
+  }
+};
+
+// ── POST /api/notifications/admin/:id/cancel — cancel a scheduled offer ─────
+export const cancelScheduled = async (req, res) => {
+  try {
+    const log = await cancelScheduledOffer({ models: req.models, id: req.params.id });
+    res.json({ message: "Scheduled offer cancelled", log });
   } catch (err) {
     res.status(err.statusCode || 500).json({ message: err.message });
   }

@@ -631,7 +631,19 @@ const notificationLogSchema = new mongoose.Schema({
   couponCode:     { type: String, default: "", trim: true },
   sentBy:         actorSchema,
   recipientCount: { type: Number, default: 0 },
+  // ── Offer timing / scheduled send ────────────────────────────────────────
+  // SCHEDULED → SENDING → SENT, or → FAILED / CANCELLED. Every change is an
+  // atomic conditional findOneAndUpdate (runDueOffers claims SCHEDULED →
+  // SENDING), so a scheduled offer is pushed at most once even with several
+  // server instances. Customers only ever see SENT rows.
+  status:    { type: String, enum: ["SCHEDULED", "SENDING", "SENT", "FAILED", "CANCELLED"], default: "SENDING" },
+  startsAt:  { type: Date, default: null },  // null = send immediately
+  expiresAt: { type: Date, default: null },  // null = never expires
+  sendingAt: { type: Date, default: null },  // when the current send attempt was claimed
+  sentAt:    { type: Date, default: null },
+  error:     { type: String, default: "" },  // why a FAILED offer failed (admin-only)
 }, { timestamps: true });
+notificationLogSchema.index({ status: 1, startsAt: 1 });
 
 // ── Main function: returns all models bound to a specific DB connection ────────
 export function getModels(conn) {

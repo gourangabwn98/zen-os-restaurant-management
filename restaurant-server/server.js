@@ -14,6 +14,7 @@ import { getModels } from "./config/getModels.js";
 import { tenantKeyFromUri } from "./utils/tenantKey.js";
 import { initSocket, emitAttendanceUpdated } from "./sockets/socket.js";
 import { sweepStaleAttendanceSessions } from "./services/attendanceService.js";
+import { runDueOffers } from "./services/notificationService.js";
 
 import authRoutes    from "./routes/authRoutes.js";
 import menuRoutes    from "./routes/menuRoutes.js";
@@ -121,8 +122,30 @@ connectDB().then(() => {
     `);
     warmUpOcr(); // background — see utils/purchaseImportExtract.js
     startAttendanceHeartbeatSweep();
+    startScheduledOfferTick();
   });
 });
+
+// ── Scheduled offer notifications ─────────────────────────────────────────────
+// Pushes offers whose start time has arrived (Admin → Offers with a future
+// start). runDueOffers claims each one atomically, so this is safe even with
+// several server instances running the same tick — see
+// services/notificationService.js. Runs once right away so offers that came
+// due while the server was down go out on startup.
+const OFFER_TICK_INTERVAL_MS = 30 * 1000;
+const startScheduledOfferTick = () => {
+  const tick = async () => {
+    try {
+      const conn = await getDB(process.env.MONGO_URI);
+      const r = await runDueOffers({ models: getModels(conn) });
+      if (r.sent || r.failed || r.interrupted) console.log("📣 scheduled offers:", r);
+    } catch (err) {
+      console.error("scheduled offer tick failed:", err.message);
+    }
+  };
+  tick();
+  setInterval(tick, OFFER_TICK_INTERVAL_MS);
+};
 
 // ── Employee attendance heartbeat sweep ─────────────────────────────────────
 // Closes any duty session whose heartbeat has gone quiet for longer than the
