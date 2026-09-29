@@ -17,9 +17,9 @@ const T1    = "#f1f0f5";
 const T2    = "#9ca3af";
 const T3    = "#4b5563";
 const PAY_STYLE = {
-  Paid:    { bg:"rgba(16,185,129,0.15)",  color:"#34d399" },
-  Pending: { bg:"rgba(245,158,11,0.15)",  color:"#fbbf24" },
-  Failed:  { bg:"rgba(239,68,68,0.15)",   color:"#f87171" },
+  PAID:                 { bg:"rgba(16,185,129,0.15)",  color:"#34d399" },
+  PENDING_VERIFICATION: { bg:"rgba(245,158,11,0.15)",  color:"#fbbf24" },
+  FAILED:               { bg:"rgba(239,68,68,0.15)",   color:"#f87171" },
 };
 const STATUS_STYLE = {
   Placed:    { bg:"rgba(56,122,221,0.15)",  color:"#60a5fa" },
@@ -31,9 +31,11 @@ const STATUS_STYLE = {
 };
 const fmt = (n) => Math.round(n||0).toLocaleString("en-IN");
 
-const Badge = ({ label, map }) => {
+const PAY_LABEL = { PAID:"Paid", PENDING_VERIFICATION:"Pending", FAILED:"Failed" };
+
+const Badge = ({ label, map, text }) => {
   const s = map[label] || { bg:"rgba(107,114,128,0.15)", color:"#9ca3af" };
-  return <span style={{ background:s.bg, color:s.color, padding:"3px 8px", borderRadius:20, fontSize:11, fontWeight:500, whiteSpace:"nowrap" }}>{label}</span>;
+  return <span style={{ background:s.bg, color:s.color, padding:"3px 8px", borderRadius:20, fontSize:11, fontWeight:500, whiteSpace:"nowrap" }}>{text || label}</span>;
 };
 
 export default function CombinedBillModal({ mode, value, onClose, onPaymentChange }) {
@@ -42,6 +44,7 @@ export default function CombinedBillModal({ mode, value, onClose, onPaymentChang
   const [bill, setBill]       = useState(null);
   const [loading, setLoading] = useState(true);
   const [printing, setPrinting] = useState(false);
+  const [showQr, setShowQr]     = useState(true);
 
   useEffect(() => {
     const params = {};
@@ -59,11 +62,11 @@ export default function CombinedBillModal({ mode, value, onClose, onPaymentChang
     if (!bill?.orders?.length) return;
     try {
       await Promise.all(bill.orders.map(o =>
-        api.patch(`/admin/orders/${o._id}/payment`, { paymentStatus: "Paid" })
+        api.patch(`/admin/orders/${o._id}/payment`, { paymentStatus: "PAID" })
       ));
       setBill(prev => ({
         ...prev,
-        orders: prev.orders.map(o => ({ ...o, paymentStatus: "Paid" })),
+        orders: prev.orders.map(o => ({ ...o, paymentStatus: "PAID" })),
       }));
       if (onPaymentChange) onPaymentChange();
       toast.success("All orders marked Paid ✓");
@@ -83,8 +86,8 @@ export default function CombinedBillModal({ mode, value, onClose, onPaymentChang
 
   if (!bill) return null;
 
-  const allPaid = bill.orders.every(o => o.paymentStatus === "Paid");
-  const paidTotal = bill.orders.filter(o=>o.paymentStatus==="Paid").reduce((s,o)=>s+Number(o.total||0),0);
+  const allPaid = bill.orders.every(o => o.paymentStatus === "PAID");
+  const paidTotal = bill.orders.filter(o=>o.paymentStatus==="PAID").reduce((s,o)=>s+Number(o.total||0),0);
   const dueTotal  = bill.grandTotal - paidTotal;
 
   return (
@@ -106,6 +109,13 @@ export default function CombinedBillModal({ mode, value, onClose, onPaymentChang
             </div>
           </div>
           <div style={{ display:"flex", gap:8 }}>
+            {bill.paymentQr && (
+              <button onClick={() => setShowQr(v => !v)} style={{ padding:"7px 14px", borderRadius:20,
+                border:`1px solid ${showQr ? PINK : BDR}`, background:showQr ? `${PINK}22` : CARD2,
+                color:showQr ? T1 : T2, cursor:"pointer", fontSize:12 }}>
+                📱 Payment QR
+              </button>
+            )}
             <button onClick={handlePrint} disabled={printing} style={{ padding:"7px 14px", borderRadius:20,
               border:`1px solid ${BDR}`, background:CARD2, color:T2, cursor:"pointer", fontSize:12 }}>
               🖨️ Print
@@ -137,7 +147,7 @@ export default function CombinedBillModal({ mode, value, onClose, onPaymentChang
                   </div>
                   <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                     <Badge label={o.status} map={STATUS_STYLE}/>
-                    <Badge label={o.paymentStatus} map={PAY_STYLE}/>
+                    <Badge label={o.paymentStatus} map={PAY_STYLE} text={PAY_LABEL[o.paymentStatus]}/>
                     <span style={{ fontWeight:700, color:PINK, minWidth:60, textAlign:"right" }}>
                       ₹{fmt(o.total)}
                     </span>
@@ -193,6 +203,19 @@ export default function CombinedBillModal({ mode, value, onClose, onPaymentChang
               )}
             </div>
           </div>
+
+          {/* Payment QR (admin uploads it in Profile → Payment) */}
+          {bill.paymentQr && showQr && (
+            <div style={{ textAlign:"center", background:CARD2, borderRadius:12, padding:16, marginBottom:16,
+              border:`1px solid ${BDR}` }}>
+              <div style={{ fontSize:10, fontWeight:600, color:T3, letterSpacing:1,
+                textTransform:"uppercase", marginBottom:10 }}>Scan to Pay</div>
+              <img src={bill.paymentQr} alt="Payment QR"
+                style={{ width:200, height:200, objectFit:"contain", background:"#fff", borderRadius:10, padding:8 }} />
+              {dueTotal>0 && <div style={{ marginTop:10, fontSize:16, fontWeight:700, color:T1 }}>Pay ₹{fmt(dueTotal)}</div>}
+              {bill.upiId && <div style={{ marginTop:4, fontSize:12, color:T2 }}>UPI: {bill.upiId}</div>}
+            </div>
+          )}
 
           {/* Actions */}
           {!allPaid && (

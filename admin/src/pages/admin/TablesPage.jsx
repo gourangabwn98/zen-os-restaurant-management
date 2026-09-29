@@ -1,9 +1,10 @@
 import { PRIMARY, PRIMARY_LIGHT, PRIMARY_DARK } from "../../theme.js";
+import { needsPaidFirst, PAID_FIRST_HINT } from "./shared/paymentRules.js";
 import { useState, useEffect, useCallback } from "react";
 import toast from "react-hot-toast";
 import {
   getAllOrders, updateOrderStatus, getAllInvoices, updateInvoiceStatus,
-  getAllTables, createTable, updateTable, deleteTable, regenerateQR,
+  getAllTables, createTable, updateTable, deleteTable, regenerateQR, getTakeawayQR,
   getOpenTableSessions, clearTableSession,
   getWaitlist, addWaitlistEntry, seatWaitlistEntry, cancelWaitlistEntry,
 } from "../../services/adminService.js";
@@ -126,7 +127,11 @@ if (!document.getElementById("tables-page-styles")) {
 }
 
 // ── QRModal ───────────────────────────────────────────────────────────────────
+// `table.takeaway` = the shared counter QR (no table, no regenerate — its URL
+// carries no token, so there's nothing to rotate).
 function QRModal({ table, onClose, onRegenerate }) {
+  const isTakeaway = !!table.takeaway;
+  const name = isTakeaway ? "Takeaway" : `Table ${table.tableNo}`;
   const [regen, setRegen] = useState(false);
   const [qrData, setQrData] = useState({ code: table.qrCode, url: table.qrUrl });
 
@@ -143,7 +148,7 @@ function QRModal({ table, onClose, onRegenerate }) {
   const handleDownload = () => {
     if (!qrData.code) return;
     const a = document.createElement("a");
-    a.href = qrData.code; a.download = `table-${table.tableNo}-qr.png`; a.click();
+    a.href = qrData.code; a.download = isTakeaway ? "takeaway-qr.png" : `table-${table.tableNo}-qr.png`; a.click();
   };
 
   const handlePrint = () => {
@@ -151,7 +156,7 @@ function QRModal({ table, onClose, onRegenerate }) {
     if (!el) { el = document.createElement("div"); el.id = "qr-print-area"; document.body.appendChild(el); }
     el.style.display = "none";
     el.innerHTML = `<div style="text-align:center;padding:40px;font-family:sans-serif">
-      <div style="font-size:22px;font-weight:800;color:${PINK};margin-bottom:20px">Table ${table.tableNo}</div>
+      <div style="font-size:22px;font-weight:800;color:${PINK};margin-bottom:20px">${name}</div>
       <img src="${qrData.code}" style="width:220px;height:220px;border:2px solid ${PINK};border-radius:12px;padding:8px"/>
       <div style="margin-top:16px;font-size:11px;color:#aaa">${qrData.url}</div>
     </div>`;
@@ -165,8 +170,10 @@ function QRModal({ table, onClose, onRegenerate }) {
       <div className="modal-box" style={{ width:420 }} onClick={e=>e.stopPropagation()}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 }}>
           <div>
-            <div style={{ fontWeight:700, fontSize:17, color:T1 }}>QR Code — Table {table.tableNo}</div>
-            <div style={{ fontSize:12, color:T2, marginTop:3 }}>{table.seats} seats · {table.status||"Active"}</div>
+            <div style={{ fontWeight:700, fontSize:17, color:T1 }}>QR Code — {name}</div>
+            <div style={{ fontSize:12, color:T2, marginTop:3 }}>
+              {isTakeaway ? "Place at the counter / entrance" : `${table.seats} seats · ${table.status||"Active"}`}
+            </div>
           </div>
           <button onClick={onClose} style={{ width:30, height:30, borderRadius:"50%",
             border:`1px solid ${BORDER}`, background:CARD, cursor:"pointer",
@@ -177,7 +184,7 @@ function QRModal({ table, onClose, onRegenerate }) {
           {qrData.code ? (
             <div style={{ display:"inline-block", padding:14, borderRadius:16,
               border:`1px solid ${PINK}33`, background:CARD2 }}>
-              <img src={qrData.code} alt={`QR Table ${table.tableNo}`}
+              <img src={qrData.code} alt={`QR ${name}`}
                 style={{ width:200, height:200, display:"block", borderRadius:8 }} />
             </div>
           ) : (
@@ -188,8 +195,10 @@ function QRModal({ table, onClose, onRegenerate }) {
               <div style={{ fontSize:12 }}>No QR yet</div>
             </div>
           )}
-          <div style={{ marginTop:12, fontSize:16, fontWeight:700, color:T1 }}>Table {table.tableNo}</div>
-          <div style={{ fontSize:12, color:T2, marginTop:2 }}>Scan to order instantly</div>
+          <div style={{ marginTop:12, fontSize:16, fontWeight:700, color:T1 }}>{name}</div>
+          <div style={{ fontSize:12, color:T2, marginTop:2 }}>
+            {isTakeaway ? "Scan to order takeaway" : "Scan to order instantly"}
+          </div>
         </div>
 
         {qrData.url && (
@@ -211,13 +220,15 @@ function QRModal({ table, onClose, onRegenerate }) {
             🖨 Print QR
           </button>
         </div>
-        <button onClick={handleRegenerate} disabled={regen} className="qr-btn"
-          style={{ width:"100%", background:CARD2, color:T2, borderColor:BORDER, opacity:regen?.6:1 }}>
-          {regen ? <><span className="spinner" style={{ borderTopColor:T2 }} /> Regenerating…</> : "↻ Regenerate QR"}
-        </button>
-        <div style={{ marginTop:10, fontSize:11, color:T3, textAlign:"center" }}>
-          Regenerating changes the QR image but keeps the same URL
-        </div>
+        {!isTakeaway && <>
+          <button onClick={handleRegenerate} disabled={regen} className="qr-btn"
+            style={{ width:"100%", background:CARD2, color:T2, borderColor:BORDER, opacity:regen?.6:1 }}>
+            {regen ? <><span className="spinner" style={{ borderTopColor:T2 }} /> Regenerating…</> : "↻ Regenerate QR"}
+          </button>
+          <div style={{ marginTop:10, fontSize:11, color:T3, textAlign:"center" }}>
+            Regenerating changes the QR image but keeps the same URL
+          </div>
+        </>}
       </div>
     </div>
   );
@@ -474,7 +485,8 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
                 const stl = STATUS_STYLE[st]||{ bg:"rgba(107,114,128,0.15)", border:"#4b5563", tc:"#9ca3af", label:st };
                 return (
                   <button key={st} className="status-btn" onClick={()=>handleStatus(st)}
-                    disabled={updating}
+                    disabled={updating || needsPaidFirst(order, st)}
+                    title={needsPaidFirst(order, st) ? PAID_FIRST_HINT : undefined}
                     style={{ background:stl.bg, borderColor:stl.border, color:stl.tc }}>
                     {updating ? <span className="spinner" /> : stl.label}
                   </button>
@@ -804,6 +816,12 @@ export default function TablesPage() {
   const handleInvChange     = async (id, ns) => { try { await updateInvoiceStatus(id,ns); toast.success(`Invoice → ${ns}`); await fetchData(); } catch { toast.error("Invoice update failed"); } };
   const handleToggleStatus  = async (tableNo) => { const t=tables.find(t=>t.tableNo===tableNo); if(!t)return; const ns=t.status==="Active"?"Inactive":"Active"; try { await updateTable(tableNo,{status:ns}); toast.success(`Table ${tableNo} → ${ns}`); fetchData(); } catch { toast.error("Failed to update"); } };
   const handleDelete        = async (tableNo) => { if(!window.confirm(`Delete Table ${tableNo}?`))return; try { await deleteTable(tableNo); toast.success(`Table ${tableNo} deleted`); fetchData(); if(selected===tableNo)setSelected(null); } catch(e){ toast.error(e.response?.data?.message||"Failed"); } };
+  const handleTakeawayQR = async () => {
+    try {
+      const { data } = await getTakeawayQR();
+      setQrTable({ takeaway: true, qrCode: data.qrCode, qrUrl: data.qrUrl });
+    } catch { toast.error("Couldn't load takeaway QR"); }
+  };
   const handleRegenerate    = async (tableNo) => { const { data }=await regenerateQR(tableNo); setTables(p=>p.map(t=>t.tableNo===tableNo?{...t,qrCode:data.qrCode,qrUrl:data.qrUrl}:t)); return { data }; };
   const handleClearTable    = async (session) => {
     if (!session?._id) return;
@@ -998,6 +1016,10 @@ export default function TablesPage() {
             Counter &amp; Entrance
           </div>
           <div style={{ width:40, height:6, background:"rgba(139,92,246,0.4)", borderRadius:3, margin:"0 auto" }} />
+          <button onClick={handleTakeawayQR} className="qr-btn"
+            style={{ margin:"14px auto 0", background:PINK_LIGHT, color:"#c4b5fd", borderColor:`${PINK}44` }}>
+            🛍️ Takeaway QR
+          </button>
         </div>
       </div>
 

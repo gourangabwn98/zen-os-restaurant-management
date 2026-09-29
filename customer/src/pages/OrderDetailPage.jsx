@@ -7,12 +7,22 @@ import { getRestaurantProfile } from "../services/restaurantService.js";
 import { subscribeToOrder } from "../services/socketService.js";
 import StatusStepper from "../components/StatusStepper.jsx";
 import WaiterCallCard from "../components/WaiterCallCard.jsx";
+import EditOrderSheet from "../components/EditOrderSheet.jsx";
 import { Loader, ErrorState } from "../components/StateViews.jsx";
 import Button from "../components/ui/Button.jsx";
 import Icon from "../components/ui/Icon.jsx";
 import {
   STATUS_LABEL, statusPillClass, PAYMENT_LABEL, paymentPillClass, formatOrderTime, isActiveOrder,
 } from "../utils/orderStatus.js";
+
+/** "Starts preparing in 2:42" while a Placed order can still be changed. */
+function KitchenCountdown({ at }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  const left = Math.max(0, Math.ceil((new Date(at).getTime() - now) / 1000));
+  if (!left) return <>Starting preparation…</>;
+  return <>Starts preparing in <b style={{ fontVariantNumeric: "tabular-nums" }}>{Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}</b></>;
+}
 
 // Order statuses during which a dine-in customer can call a waiter.
 const CALLABLE = ["PENDING_CONFIRMATION", "CONFIRMED", "PREPARING", "READY", "DELIVERED"];
@@ -41,6 +51,7 @@ export default function OrderDetailPage() {
   const [cancelling, setCancelling] = useState(false);
   const [payBusy, setPayBusy] = useState(false);
   const [showBill, setShowBill] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   const load = useCallback(() => {
     setError(null);
@@ -162,6 +173,22 @@ export default function OrderDetailPage() {
         <StatusStepper status={order.status} />
       </div>
 
+      {/* ── Placed: can still be changed until it starts preparing ── */}
+      {order.status === "CONFIRMED" && !order.stockDeducted && (
+        <div className="card">
+          <div className="card-title">Want to change something?</div>
+          <p className="small" style={{ margin: "4px 0 12px", lineHeight: 1.5 }}>
+            {order.autoPrepareAt ? <KitchenCountdown at={order.autoPrepareAt} /> : "It will start preparing shortly"}
+            {" "}— until then you can add, remove or change items.
+          </p>
+          {order.paymentStatus === "PAID" ? (
+            <p className="muted small">This order is already paid — ask a waiter if you need to change it.</p>
+          ) : (
+            <Button variant="ghost" onClick={() => setEditing(true)}>✎ Change order</Button>
+          )}
+        </div>
+      )}
+
       {/* ── Payment ── */}
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
@@ -244,6 +271,10 @@ export default function OrderDetailPage() {
           </div>
         )}
       </div>
+
+      {editing && order.status === "CONFIRMED" && (
+        <EditOrderSheet order={order} onClose={() => setEditing(false)} onSaved={(o) => setOrder(o)} />
+      )}
 
       {canCancel && (
         <Button variant="danger" onClick={handleCancel} disabled={cancelling} style={{ marginTop: 4 }}>

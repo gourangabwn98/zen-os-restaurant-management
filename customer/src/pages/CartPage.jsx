@@ -237,7 +237,7 @@ export default function CartPage() {
       <p className="muted small center" style={{ marginTop: 10 }}>
         {payFirst
           ? "Your order is sent to the restaurant once your payment succeeds. Unpaid orders are cancelled after 15 minutes."
-          : "The restaurant confirms every order before it goes to the kitchen."}
+          : "The restaurant accepts your order first. Once it's placed you can still change it for a few minutes."}
       </p>
     </>
   );

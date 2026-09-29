@@ -6,16 +6,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
-  placeOrderTx, confirmOrderTx, cancelOrderTx, assertCanViewOrder,
+  placeOrderTx, confirmOrderTx, cancelOrderTx, assertCanViewOrder, modifyOrderItemsTx,
 } from "../services/orderService.js";
 import {
-  emitNewOrderPendingConfirmation, emitOrderConfirmed,
-  emitOrderCancelled, emitKotCreated, emitInventoryAlert,
+  emitNewOrderPendingConfirmation, emitOrderCancelled, emitOrderConfirmed,
+  emitSentToKitchen, emitOrderModified,
 } from "../sockets/socket.js";
 
-const emitAlerts = (tenantKey, alerts) => {
-  for (const a of alerts || []) emitInventoryAlert(tenantKey, a);
-};
 
 // ── POST /api/orders ──────────────────────────────────────────────────────
 // Shared by: guest customer (QR ordering), logged-in customer, waiter (POS),
@@ -23,7 +20,7 @@ const emitAlerts = (tenantKey, alerts) => {
 // from the authenticated identity — never trust the client for either.
 export const placeOrder = async (req, res) => {
   try {
-    const { order, alreadyExisted, kotJob, guestAccessToken, inventoryAlerts } = await placeOrderTx({
+    const { order, alreadyExisted, kotJob, kotCreated, guestAccessToken, inventoryAlerts } = await placeOrderTx({
       req, body: req.body,
     });
 
@@ -38,15 +35,18 @@ export const placeOrder = async (req, res) => {
 
     if (!alreadyExisted) {
       if (order.status === "PENDING_CONFIRMATION") {
+        // Customer order — waits for a waiter/admin to accept it.
         emitNewOrderPendingConfirmation(req.tenantKey, order);
       } else if (order.status === "CONFIRMED") {
-        // staff-placed → already confirmed
+        // Staff order — Placed, editable until its timer.
         emitOrderConfirmed(req.tenantKey, order);
+      } else if (order.status === "PREPARING") {
+        // 0-minute edit window → straight to preparing (KOT printed).
+        emitSentToKitchen(req.tenantKey, { order, kotJob, kotCreated, inventoryAlerts });
       }
       // AWAITING_PAYMENT (pay-first): nothing to staff yet — the order is
       // announced as new only once a verified payment promotes it
       // (controllers/paymentController.js → emitPayFirstPromoted).
-      emitAlerts(req.tenantKey, inventoryAlerts);
     }
 
     res.status(alreadyExisted ? 200 : 201).json({
@@ -68,19 +68,18 @@ export const placeOrder = async (req, res) => {
 };
 
 // ── PATCH /api/orders/:id/confirm  (also mounted as /approve for back-compat)
-// Admin/waiter only (enforced by route middleware). Moves
-// PENDING_CONFIRMATION → CONFIRMED and creates the order's (single,
-// idempotent) KOT job in one transaction.
+// Admin/waiter accepts a customer order: PENDING_CONFIRMATION → CONFIRMED
+// ("Placed"), starting its edit window. No KOT yet — that prints when it
+// moves to PREPARING (or right away with a 0-minute window).
 export const confirmOrder = async (req, res) => {
   try {
     const { order, kotJob, kotCreated, inventoryAlerts } = await confirmOrderTx({ req, orderId: req.params.id });
 
     emitOrderConfirmed(req.tenantKey, order);
-    if (kotCreated) emitKotCreated(req.tenantKey, kotJob);
-    emitAlerts(req.tenantKey, inventoryAlerts);
+    if (order.status === "PREPARING") emitSentToKitchen(req.tenantKey, { order, kotJob, kotCreated, inventoryAlerts });
 
     res.json({
-      message: "Order confirmed",
+      message: "Order accepted",
       order,
       kotJob,
       kotAlreadyExisted: !kotCreated,
@@ -140,6 +139,21 @@ export const getOrderById = async (req, res) => {
     if (!order) return res.status(404).json({ message: "Order not found" });
 
     assertCanViewOrder(req, order);
+    res.json(order);
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message });
+  }
+};
+
+// ── PATCH /api/orders/:id/items  { items: [{ menuItemId, qty, notes }], revision }
+// Edit a Placed order before it starts preparing — admin, waiter, or the
+// customer (JWT owner / guest token). Rules live in modifyOrderItemsTx.
+export const modifyOrderItems = async (req, res) => {
+  try {
+    const { order } = await modifyOrderItemsTx({
+      req, orderId: req.params.id, items: req.body?.items, revision: req.body?.revision,
+    });
+    emitOrderModified(req.tenantKey, order);
     res.json(order);
   } catch (err) {
     res.status(err.statusCode || 500).json({ message: err.message });

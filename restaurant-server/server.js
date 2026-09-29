@@ -14,10 +14,12 @@ import { getModels } from "./config/getModels.js";
 import { tenantKeyFromUri } from "./utils/tenantKey.js";
 import {
   initSocket, emitAttendanceUpdated, emitPayFirstPromoted, emitPayFirstExpired, emitPaymentStatusChanged,
+  emitSentToKitchen, emitOrderNeedsAttention,
 } from "./sockets/socket.js";
 import { sweepStaleAttendanceSessions } from "./services/attendanceService.js";
 import { runDueOffers } from "./services/notificationService.js";
 import { runPayFirstTick } from "./services/payFirstService.js";
+import { autoSendDueOrders } from "./services/orderService.js";
 
 import authRoutes    from "./routes/authRoutes.js";
 import menuRoutes    from "./routes/menuRoutes.js";
@@ -129,6 +131,7 @@ connectDB().then(() => {
     startAttendanceHeartbeatSweep();
     startScheduledOfferTick();
     startPayFirstTick();
+    startAutoSendTick();
   });
 });
 
@@ -151,6 +154,32 @@ const startScheduledOfferTick = () => {
   };
   tick();
   setInterval(tick, OFFER_TICK_INTERVAL_MS);
+};
+
+// ── Edit window → kitchen ───────────────────────────────────────────────────
+// Sends every order whose edit window has ended to the kitchen (PREPARING +
+// stock + KOT in one transaction — orderService.sendToKitchenTx). The write
+// is conditional on PENDING_CONFIRMATION, so several instances can't double-
+// send. 15s keeps the delay after the window short.
+const AUTO_SEND_TICK_MS = 15 * 1000;
+const startAutoSendTick = () => {
+  const tick = async () => {
+    try {
+      const mongoUri = process.env.MONGO_URI;
+      const conn = await getDB(mongoUri);
+      const tenantKey = tenantKeyFromUri(mongoUri);
+      const r = await autoSendDueOrders({
+        models: getModels(conn), db: conn,
+        onSent: (sent) => emitSentToKitchen(tenantKey, sent),
+        onFailed: (order) => emitOrderNeedsAttention(tenantKey, order),
+      });
+      if (r.sent || r.failed) console.log("🍳 auto-sent to kitchen:", r);
+    } catch (err) {
+      console.error("auto-send tick failed:", err.message);
+    }
+  };
+  tick();
+  setInterval(tick, AUTO_SEND_TICK_MS);
 };
 
 // ── Pay-first orders (utils/paymentMode.js) ─────────────────────────────────

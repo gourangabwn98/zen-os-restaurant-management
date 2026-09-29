@@ -1,8 +1,10 @@
 // controllers/kitchenController.js
 import { transitionOrderStatusTx } from "../services/orderService.js";
-import { emitOrderStatusChanged } from "../sockets/socket.js";
+import { emitOrderStatusChanged, emitSentToKitchen } from "../sockets/socket.js";
 
-const ACTIVE_STATUSES = ["CONFIRMED", "PREPARING", "READY"];
+// The kitchen sees an order from PREPARING on — that's when its KOT prints.
+// A Placed (CONFIRMED) order can still be changed, so it isn't shown yet.
+const ACTIVE_STATUSES = ["PREPARING", "READY"];
 
 // Deliberately reduced field set — a chef never needs (and per RBAC must
 // never receive) customer PII, price, or payment information. This is why
@@ -51,9 +53,10 @@ export const updateKitchenOrderStatus = async (req, res) => {
     }
 
     const previousStatus = (await req.models.Order.findById(req.params.id).select("status"))?.status;
-    const { order } = await transitionOrderStatusTx({ req, orderId: req.params.id, toStatus: status });
+    const { order, kotJob, kotCreated, inventoryAlerts } = await transitionOrderStatusTx({ req, orderId: req.params.id, toStatus: status });
 
-    emitOrderStatusChanged(req.tenantKey, order, previousStatus);
+    if (status === "PREPARING" && kotJob !== undefined) emitSentToKitchen(req.tenantKey, { order, kotJob, kotCreated, inventoryAlerts });
+    else emitOrderStatusChanged(req.tenantKey, order, previousStatus);
     res.json({ order: toKitchenTicket(order) });
   } catch (err) {
     res.status(err.statusCode || 500).json({ message: err.message });

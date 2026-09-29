@@ -23,7 +23,9 @@ import ErrorState from "./shared/ErrorState.jsx";
 import { statusKind } from "./shared/statusKind.js";
 
 // ── canonical vocabulary (restaurant-server/utils/orderStateMachine.js) ──────
-const PAYMENT_STATUSES = ["PENDING_VERIFICATION", "PAID", "FAILED"];
+// FAILED is never set by hand (restaurant-server utils/orderStateMachine.js);
+// historic Failed invoices still show under "All".
+const PAYMENT_STATUSES = ["PENDING_VERIFICATION", "PAID"];
 const PAY_SEG = ["All", ...PAYMENT_STATUSES];
 const TYPE_OPTIONS = ["All", "DINE_IN", "TAKEAWAY", "ONLINE"];
 const PER_PAGE = 15;

@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { STORAGE } from "../theme.js";
+import { AUTH_EXPIRED_EVENT } from "../services/api.js";
 
 const readUser = () => {
   try { return JSON.parse(localStorage.getItem(STORAGE.customerUser)) || null; }
@@ -14,8 +15,14 @@ export function useAuth() {
     const onStorage = (e) => {
       if (e.key === STORAGE.customerUser) setUser(readUser());
     };
+    // The server rejected the saved login (services/api.js already cleared it).
+    const onExpired = () => setUser(null);
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    window.addEventListener(AUTH_EXPIRED_EVENT, onExpired);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
+    };
   }, []);
 
   const login = useCallback((data) => {

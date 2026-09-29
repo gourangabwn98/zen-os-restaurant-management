@@ -95,7 +95,9 @@ export default function NewOrderPage() {
         idempotencyKey: idemKey,
       };
       const { data: order } = await placeOrder(body);
-      toast.success(`Order ${order.orderId} created · KOT sent`);
+      toast.success(order.status === "CONFIRMED"
+        ? `Order ${order.orderId} placed — it starts preparing in a few minutes`
+        : `Order ${order.orderId} placed — preparing now`);
       nav(`/order/${order._id}`, { replace: true });
     } catch (err) {
       toast.error(err.response?.data?.message || "Couldn't place order");
@@ -164,7 +166,7 @@ export default function NewOrderPage() {
             }}
           />
           <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 10 }}>
-            {orderType === "DINE_IN" ? `Dine-in · Table ${tableNo}` : "Takeaway"} · this order is confirmed immediately and a KOT is sent to the kitchen.
+            {orderType === "DINE_IN" ? `Dine-in · Table ${tableNo}` : "Takeaway"} · the order is Placed right away; you can change it for a few minutes, then it starts preparing and the KOT prints.
           </div>
         </div>
 

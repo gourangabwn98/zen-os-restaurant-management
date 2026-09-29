@@ -6,7 +6,7 @@ import { PAYMENT_STATUSES, canSetPaymentStatus } from "../utils/orderStateMachin
 import {
   emitOrderStatusChanged, emitOrderCancelled, emitOrderConfirmed,
   emitKotCreated, emitBillPrint, emitPaymentStatusChanged, emitTableCleared,
-  emitTableFreed, emitInventoryAlert,
+  emitTableFreed, emitInventoryAlert, emitSentToKitchen,
 } from "../sockets/socket.js";
 
 // ── GET /api/admin/dashboard ──────────────────────────────────────────────────
@@ -119,8 +119,9 @@ export const updateOrderStatus = async (req, res) => {
 
     if (toStatus === "CONFIRMED") {
       emitOrderConfirmed(req.tenantKey, order);
-      if (kotCreated) emitKotCreated(req.tenantKey, kotJob);
-      for (const a of inventoryAlerts || []) emitInventoryAlert(req.tenantKey, a);
+    } else if (toStatus === "PREPARING" && kotJob !== undefined) {
+      // Went through sendToKitchenTx — KOT printed, stock deducted.
+      emitSentToKitchen(req.tenantKey, { order, kotJob, kotCreated, inventoryAlerts });
     } else if (toStatus === "CANCELLED") {
       emitOrderCancelled(req.tenantKey, order, order.cancelReason);
     } else {
@@ -276,8 +277,10 @@ export const addItemsToOrder = async (req, res) => {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ message: "Order not found" });
 
-    if (!["CONFIRMED","PREPARING","READY","DELIVERED"].includes(order.status))
-      return res.status(400).json({ message: `Cannot add items to a ${order.status} order` });
+    // Orders can only be changed while Placed (before the KOT prints) — see
+    // orderService.modifyOrderItemsTx. Extra items later = a new order.
+    if (order.status !== "CONFIRMED" || order.stockDeducted)
+      return res.status(409).json({ message: "Items can only be changed while the order is Placed — for more food now, place a new order for the table" });
 
     const scheduleCtx = await getScheduleContext({ models: req.models });
     const newDbItems = await priceItems(items, MenuItem, scheduleCtx);
@@ -362,6 +365,8 @@ export const getCombinedBill = async (req, res) => {
       serviceCharge: totalSC,
       grandTotal,
       restaurantName: restaurant?.restaurantName || "Restaurant",
+      paymentQr: restaurant?.paymentQr || "",
+      upiId: restaurant?.upiId || "",
       orderCount: matchOrders.length,
     });
   } catch (err) {

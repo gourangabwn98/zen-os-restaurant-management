@@ -22,7 +22,7 @@
 import { useState, useEffect, useRef } from "react";
 import toast from "react-hot-toast";
 import {
-  getRestaurantProfile, updateRestaurantProfile, uploadRestaurantLogo,
+  getRestaurantProfile, updateRestaurantProfile, uploadRestaurantLogo, uploadPaymentQr, removePaymentQr,
   uploadRestaurantBanner, updateRestaurantBanner, deleteRestaurantBanner,
   addRestaurantPrinter, updateRestaurantPrinter, deleteRestaurantPrinter,
 } from "../../services/adminService.js";
@@ -159,7 +159,7 @@ export default function ProfilePage() {
     deliveryFeePerKm: 8, serviceCharge: 0, packingCharge: 0,
     socialInstagram: "", socialFacebook: "", website: "",
     services: { dineIn: true, takeAway: true, delivery: true },
-    notificationSound: true, banners: [], printerIps: [],
+    notificationSound: true, banners: [], printerIps: [], editWindowMinutes: 3,
     upiId: "", upiPayeeName: "", paymentMode: "BOTH",
   };
 
@@ -176,7 +176,9 @@ export default function ProfilePage() {
   const [newPrinterIp, setNewPrinterIp] = useState("");
   const [newPrinterName, setNewPrinterName] = useState("");
   const [printerSaving, setPrinterSaving] = useState(false);
+  const [qrUploading, setQrUploading] = useState(false);
   const logoFileRef = useRef();
+  const qrFileRef = useRef();
   const bannerFileRef = useRef();
 
   useEffect(() => {
@@ -211,7 +213,7 @@ export default function ProfilePage() {
       case "pricing": return pick("minOrderAmount", "freeDeliveryAbove", "deliveryBaseFee", "deliveryFeePerKm", "serviceCharge", "packingCharge", "gstRate");
       case "payment": return pick("upiId", "upiPayeeName", "paymentMode");
       case "social": return pick("socialInstagram", "socialFacebook", "website");
-      case "services": return pick("services", "notificationSound");
+      case "services": return pick("services", "notificationSound", "editWindowMinutes");
       default: return {};
     }
   };
@@ -219,6 +221,10 @@ export default function ProfilePage() {
   const saveSection = async (sec) => {
     try {
       const updated = { ...profile, ...sectionFields(sec) };
+      if (sec === "services" && (updated.editWindowMinutes === "" || updated.editWindowMinutes == null)) {
+        toast.error("Enter the minutes a Placed order can be changed (0 = start preparing immediately)");
+        return;
+      }
       if (sec === "payment" && updated.upiId) {
         const upiPattern = /^[\w.-]{2,256}@[a-zA-Z]{2,64}$/;
         if (!upiPattern.test(updated.upiId.trim())) {
@@ -257,6 +263,49 @@ export default function ProfilePage() {
     } catch { toast.error("Failed to upload logo"); setLogoPreview(""); }
     finally { setUploading(false); }
   };
+
+  const handlePaymentQrUpload = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    setQrUploading(true);
+    const fd = new FormData(); fd.append("paymentQr", file);
+    try {
+      const res = await uploadPaymentQr(fd);
+      const url = res?.data?.paymentQr || "";
+      setProfile((p) => ({ ...p, paymentQr: url })); setDraft((p) => ({ ...p, paymentQr: url }));
+      toast.success("Payment QR uploaded");
+    } catch (err) { toast.error(err?.response?.data?.message || "Failed to upload payment QR"); }
+    finally { setQrUploading(false); if (qrFileRef.current) qrFileRef.current.value = ""; }
+  };
+
+  const handlePaymentQrRemove = async () => {
+    if (!window.confirm("Remove the payment QR from bills?")) return;
+    try {
+      await removePaymentQr();
+      setProfile((p) => ({ ...p, paymentQr: "" })); setDraft((p) => ({ ...p, paymentQr: "" }));
+      toast.success("Payment QR removed");
+    } catch { toast.error("Failed to remove payment QR"); }
+  };
+
+  // Uploads immediately (like the logo) — shown in both view and edit mode.
+  const paymentQrBlock = (
+    <div style={{ marginTop: 16, display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap",
+      padding: "12px 14px", borderRadius: "var(--r-ctl)", border: "1px solid var(--edge)", background: "var(--card-2)" }}>
+      {profile.paymentQr
+        ? <img src={profile.paymentQr} alt="Payment QR" style={{ width: 110, height: 110, objectFit: "contain", background: "#fff", borderRadius: 8, padding: 4 }} />
+        : <div style={{ width: 110, height: 110, display: "grid", placeItems: "center", borderRadius: 8, border: "2px dashed var(--edge)", color: "var(--text-3)", fontSize: 11, textAlign: "center" }}>No QR yet</div>}
+      <div style={{ display: "grid", gap: 8, flex: 1, minWidth: 180 }}>
+        <b style={{ fontSize: 13, color: "var(--text-1)" }}>Payment QR on bills</b>
+        <span style={{ fontSize: 11.5, color: "var(--text-2)" }}>Upload your UPI / bank QR image. It's shown on the waiter and admin bill so customers can scan and pay. Staff still mark the order paid.</span>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input ref={qrFileRef} type="file" accept="image/*" hidden onChange={handlePaymentQrUpload} />
+          <button type="button" className="zc-btn sm" disabled={qrUploading} onClick={() => qrFileRef.current?.click()}>
+            {qrUploading ? "Uploading…" : profile.paymentQr ? "Replace QR" : "Upload QR"}
+          </button>
+          {profile.paymentQr && <button type="button" className="zc-btn sm danger" onClick={handlePaymentQrRemove}>Remove</button>}
+        </div>
+      </div>
+    </div>
+  );
 
   const getCurrentLocation = () => {
     if (!navigator.geolocation) return toast.error("Geolocation not supported");
@@ -442,6 +491,7 @@ export default function ProfilePage() {
                 ["UPI ID (fallback)", profile.upiId || "Not set — used only when the PhonePe gateway is off"],
                 ["Payee name", profile.upiPayeeName || profile.restaurantName || "—"],
               ]} />
+              {paymentQrBlock}
               <div style={{ marginTop: 16, padding: "12px 14px", borderRadius: "var(--r-ctl)", fontSize: 11.5, color: "var(--text-2)", background: "var(--wait-fill)", border: "1px solid var(--wait-line)" }}>
                 A UPI deep-link payment is never proof of payment — those orders stay at <b style={{ color: "var(--wait-ink)" }}>Pending verification</b> until an admin or waiter confirms against the bank receipt. Only a checksum-verified PhonePe result marks an order <b style={{ color: "var(--ready-ink)" }}>Paid</b> automatically.
               </div>
@@ -476,6 +526,7 @@ export default function ProfilePage() {
               </Field>
               <Field label="Restaurant UPI ID"><input className="zc-input" placeholder="restaurantname@okhdfcbank" value={draft.upiId} onChange={(e) => set("upiId", e.target.value)} /></Field>
               <Field label="Payee name (optional — defaults to restaurant name)"><input className="zc-input" placeholder={draft.restaurantName || "Restaurant"} value={draft.upiPayeeName} onChange={(e) => set("upiPayeeName", e.target.value)} /></Field>
+              <div style={{ gridColumn: "1 / -1" }}>{paymentQrBlock}</div>
             </div>}
           />
 
@@ -488,12 +539,29 @@ export default function ProfilePage() {
                 <span>{profile.notificationSound ? "🔔" : "🔕"}</span>
                 <span>{profile.notificationSound ? "Notification sound on" : "Notification sound off"}</span>
               </div>
+              <div style={{ borderTop: "1px solid var(--edge)", marginTop: 12, paddingTop: 12, display: "flex", alignItems: "center", gap: 9, fontSize: 12.5, color: "var(--text-2)" }}>
+                <span>⏱️</span>
+                <span>{Number(profile.editWindowMinutes) > 0
+                  ? `Placed orders can be changed for ${profile.editWindowMinutes} min, then start preparing automatically (KOT prints)`
+                  : "Placed orders start preparing immediately (no time to change them)"}</span>
+              </div>
             </div>}
             editContent={<div>
               {services.map((s) => <ServiceRow key={s.key} label={s.label} on={draft.services[s.key]} editable onClick={() => setService(s.key)} />)}
               <div style={{ borderTop: "1px solid var(--edge)", marginTop: 6, paddingTop: 12, display: "flex", alignItems: "center", gap: 10 }}>
                 <Toggle on={draft.notificationSound} onClick={() => set("notificationSound", !draft.notificationSound)} />
                 <span style={{ fontSize: 12.5, color: "var(--text-1)" }}>Notification sound</span>
+              </div>
+              <div style={{ borderTop: "1px solid var(--edge)", marginTop: 12, paddingTop: 12 }}>
+                <Field label="Minutes a Placed order can be changed before it starts preparing (0–15)">
+                  <input className="zc-input" type="number" min={0} max={15} step={1} style={{ maxWidth: 120 }}
+                    value={draft.editWindowMinutes}
+                    onChange={(e) => set("editWindowMinutes", e.target.value === "" ? "" : Math.max(0, Math.min(15, Math.round(Number(e.target.value)))))} />
+                </Field>
+                <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 6 }}>
+                  Waiter/admin orders are Placed straight away; customer orders once a waiter or admin accepts them. While
+                  Placed, anyone can change the order; then it moves to Preparing and the KOT prints. 0 = immediately.
+                </div>
               </div>
             </div>}
           />

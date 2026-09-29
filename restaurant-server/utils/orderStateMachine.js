@@ -9,6 +9,14 @@
 //          ↘ CANCELLED              ↘ CANCELLED (only from the first three states, for
 //                                     non-admin roles)
 //
+// Customer orders start PENDING_CONFIRMATION ("Awaiting confirmation") and a
+// waiter/admin accepts them → CONFIRMED ("Placed"); staff orders start
+// CONFIRMED. A Placed order is editable (orderService.modifyOrderItemsTx)
+// until its autoPrepareAt (RestaurantProfile.editWindowMinutes, default 3),
+// then orderService.sendToKitchenTx moves it CONFIRMED → PREPARING in ONE
+// transaction with the stock deduction and the KOT — the KOT prints exactly
+// when preparation starts, so the kitchen never cooks from a stale ticket.
+//
 // AWAITING_PAYMENT is the pay-first entry state: a customer order paid
 // online (RestaurantProfile.paymentMode ONLINE, or BOTH with Online chosen,
 // with the PhonePe gateway configured) starts here and is invisible to
@@ -76,7 +84,8 @@ const TRANSITION_ROLES = {
   "AWAITING_PAYMENT->CANCELLED":     ["admin", "customer", "system"],
   "PENDING_CONFIRMATION->CONFIRMED": ["admin", "waiter"],
   "PENDING_CONFIRMATION->CANCELLED": ["admin", "waiter", "customer"],
-  "CONFIRMED->PREPARING":            ["admin", "waiter", "chef"],
+  // "system" = the edit-window timer (orderService.autoSendDueOrders).
+  "CONFIRMED->PREPARING":            ["admin", "waiter", "chef", "system"],
   "CONFIRMED->CANCELLED":            ["admin", "waiter"],
   "PREPARING->READY":                ["admin", "waiter", "chef"],
   "PREPARING->CANCELLED":            ["admin"], // once kitchen has started, only admin can void
@@ -84,27 +93,30 @@ const TRANSITION_ROLES = {
   "DELIVERED->COMPLETED":            ["admin", "waiter"],
 };
 
-// Transitions that additionally require the order to be PAID, per role. A
-// waiter may only close out (complete) a delivered order once payment has
-// been marked PAID — they can't complete an unpaid bill. Admin is exempt
-// (full override authority, e.g. a comped order). transitionOrderStatusTx
-// also puts `paymentStatus: "PAID"` into its atomic update filter, so a
-// payment change racing the completion can't slip through.
-const PAYMENT_REQUIRED = {
-  "DELIVERED->COMPLETED": ["waiter"],
+// Target statuses that require the order to be PAID first, per role. Nobody
+// — waiter or admin — can complete an unpaid bill: mark it Paid first. Keyed
+// on the TARGET (not only DELIVERED→COMPLETED) so an admin's override jump
+// (e.g. READY→COMPLETED) can't skip it either. transitionOrderStatusTx also
+// puts `paymentStatus: "PAID"` into its atomic update filter, so a payment
+// change racing the completion can't slip through.
+const PAYMENT_REQUIRED_INTO = {
+  COMPLETED: ["waiter", "admin"],
 };
 
 /** True when this role must see paymentStatus === "PAID" before this transition. */
 export const requiresPaidForTransition = (fromStatus, toStatus, role) =>
-  (PAYMENT_REQUIRED[`${fromStatus}->${toStatus}`] || []).includes(role);
+  (PAYMENT_REQUIRED_INTO[toStatus] || []).includes(role);
 
-// Payment statuses each non-admin staff role may set by hand (PATCH
-// /admin/orders/:id/payment). A waiter only ever confirms money received —
-// marking a payment FAILED is left to admin.
+// Payment statuses staff may set by hand (PATCH /admin/orders/:id/payment).
+// Staff only ever confirm money received (PAID); admin may also undo a
+// mistaken Paid (back to PENDING_VERIFICATION). FAILED is never set by hand —
+// a failed PhonePe attempt deliberately leaves the order unpaid so the
+// customer can retry or pay cash (services/paymentService.js); FAILED stays
+// in the enum only for historic data.
 const PAYMENT_STATUS_ROLES = {
   PENDING_VERIFICATION: ["admin"],
   PAID:                 ["admin", "waiter"],
-  FAILED:               ["admin"],
+  FAILED:               [],
 };
 
 export const canSetPaymentStatus = (paymentStatus, role) =>

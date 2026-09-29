@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { needsPaidFirst, PAID_FIRST_HINT } from "./shared/paymentRules.js";
 import toast from "react-hot-toast";
 import {
   updateOrderStatus, getAllOrders, getAllInvoices,
@@ -280,13 +281,17 @@ function TableMap({ orders, invoiceMap, onStatusChange, onInvoiceStatusChange })
                 <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 12 }}>
                   {(NEXT_STATUS[selOrder.status] || []).map((s) => {
                     const k = statusKind(s);
+                    const blocked = needsPaidFirst(selOrder, s);
                     return (
                       <button
                         type="button"
                         key={s}
-                        onClick={() => { onStatusChange(selOrder._id, s); setActiveTable(null); }}
+                        disabled={blocked}
+                        title={blocked ? PAID_FIRST_HINT : undefined}
+                        onClick={() => { if (blocked) return; onStatusChange(selOrder._id, s); setActiveTable(null); }}
                         style={{
-                          padding: "5px 10px", borderRadius: 20, fontSize: 11, cursor: "pointer",
+                          padding: "5px 10px", borderRadius: 20, fontSize: 11, cursor: blocked ? "not-allowed" : "pointer",
+                          opacity: blocked ? 0.45 : 1,
                           border: "1px solid var(--edge-hi)", font: "inherit",
                           background: KIND_FILL[k], color: KIND_INK[k], fontWeight: 600,
                         }}
@@ -421,7 +426,9 @@ function OrderList({ orders, onStatusChange }) {
                 >
                   <option value="" disabled>Update status…</option>
                   {NEXT_STATUS[o.status].map((s) => (
-                    <option key={s} value={s}>{statusLabel(s)}</option>
+                    <option key={s} value={s} disabled={needsPaidFirst(o, s)}>
+                      {statusLabel(s)}{needsPaidFirst(o, s) ? " (mark Paid first)" : ""}
+                    </option>
                   ))}
                 </select>
               </div>

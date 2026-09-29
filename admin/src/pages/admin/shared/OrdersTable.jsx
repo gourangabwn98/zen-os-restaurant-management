@@ -1,5 +1,6 @@
 // src/pages/admin/shared/OrdersTable.jsx
 import { useEffect, useState } from "react";
+import { MANUAL_PAYMENT_STATUSES, needsPaidFirst, PAID_FIRST_HINT } from "./paymentRules.js";
 import { PINK, STATUS_STYLE } from "./constants";
 import Badge from "./Badge";
 import toast from "react-hot-toast";
@@ -13,7 +14,7 @@ import {
 // stock and creates the KOT job) rather than a routine dropdown pick.
 const NEXT_STATUS_OPTIONS = ["PREPARING", "READY", "DELIVERED", "COMPLETED", "CANCELLED"];
 
-const PAYMENT_OPTIONS = ["PENDING_VERIFICATION", "PAID", "FAILED"];
+const PAYMENT_OPTIONS = MANUAL_PAYMENT_STATUSES; // FAILED is never set by hand
 const PAYMENT_LABEL = { PENDING_VERIFICATION: "Pending", PAID: "Paid", FAILED: "Failed" };
 
 export default function OrdersTable({ rows: initialRows, hideAction = false }) {
@@ -142,6 +143,8 @@ export default function OrdersTable({ rows: initialRows, hideAction = false }) {
                       {PAYMENT_OPTIONS.map((p) => (
                         <option key={p} value={p}>{PAYMENT_LABEL[p]}</option>
                       ))}
+                      {/* historic orders only — shown, never offered */}
+                      {o.paymentStatus === "FAILED" && <option value="FAILED" disabled>{PAYMENT_LABEL.FAILED}</option>}
                     </select>
                   )}
                 </td>
@@ -167,7 +170,9 @@ export default function OrdersTable({ rows: initialRows, hideAction = false }) {
                       >
                         <option value="" disabled>Update</option>
                         {NEXT_STATUS_OPTIONS.map((s) => (
-                          <option key={s} value={s}>{s}</option>
+                          <option key={s} value={s} disabled={needsPaidFirst(o, s)} title={needsPaidFirst(o, s) ? PAID_FIRST_HINT : undefined}>
+                            {s}{needsPaidFirst(o, s) ? " (mark Paid first)" : ""}
+                          </option>
                         ))}
                       </select>
                     )}

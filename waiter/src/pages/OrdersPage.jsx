@@ -11,7 +11,7 @@ import { NAV_HEIGHT } from "../theme.js";
 
 const FILTERS = [
   { key: "ALL",                   label: "All" },
-  { key: "PENDING_CONFIRMATION",  label: "Pending confirmation" },
+  { key: "PENDING_CONFIRMATION",  label: "Awaiting confirmation" },
   { key: "PREPARING",             label: "Preparing" },
   { key: "READY",                 label: "Ready" },
   { key: "DELIVERED",             label: "Delivered" },
@@ -55,10 +55,10 @@ export default function OrdersPage() {
     setBusyId(order._id);
     try {
       await confirmOrder(order._id);
-      toast.success(`Order ${order.orderId} confirmed · KOT sent`);
+      toast.success(`Order ${order.orderId} accepted`);
       load();
     } catch (err) {
-      toast.error(err.response?.data?.message || "Couldn't confirm order");
+      toast.error(err.response?.data?.message || "Couldn't accept the order");
     } finally { setBusyId(null); }
   };
 
@@ -100,7 +100,7 @@ export default function OrdersPage() {
                     onClick={(e) => handleQuickConfirm(e, o)}
                     style={{ padding: "8px 18px", fontSize: 12 }}
                   >
-                    {busyId === o._id ? "Placing…" : "✓ Place Order"}
+                    {busyId === o._id ? "Accepting…" : "✓ Accept order"}
                   </PrimaryButton>
                 </div>
               )}

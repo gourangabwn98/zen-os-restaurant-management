@@ -57,6 +57,17 @@ system for any role.** Every app above authenticates against the same
    (role `system`, `orderService.promotePaidOrder`); unpaid ones are
    cancelled at `paymentDeadline`. It is hidden from waiters and the kitchen
    and must not join a table session until paid.
+   **Order flow:** waiter/admin orders start `CONFIRMED` ("Placed");
+   customer orders start `PENDING_CONFIRMATION` ("Awaiting confirmation")
+   until a waiter/admin accepts them (`confirmOrderTx` → `CONFIRMED`). A
+   Placed order is the only editable state (`orderService.modifyOrderItemsTx`
+   — server re-prices, optimistic `revision`, refused once `stockDeducted`).
+   At `autoPrepareAt` (`RestaurantProfile.editWindowMinutes`, default 3) the
+   timer (role `system`) — or "Start preparing" by staff/chef — runs
+   `orderService.sendToKitchenTx`: `CONFIRMED → PREPARING` with the stock
+   deduction and the KOT in one transaction. **Every** `→ PREPARING` path goes
+   through it (see `transitionOrderStatusTx`), and the Kitchen app only
+   lists `PREPARING`/`READY`.
    Every allowed transition has an explicit role list in
    `TRANSITION_ROLES`. A chef may **only** do
    `CONFIRMED→PREPARING` and `PREPARING→READY` — nothing else, and is
@@ -179,10 +190,10 @@ whatever role that account has.
 ## Inventory
 
 `services/inventoryService.js`. Stock is deducted **exactly once per
-order**, at confirmation time, inside the same MongoDB transaction as the
-KOT job creation — guarded by an atomic `stockDeducted: false → true` flag
+order**, when it is sent to the kitchen (`orderService.sendToKitchenTx`),
+inside the same MongoDB transaction as the KOT job creation — guarded by an atomic `stockDeducted: false → true` flag
 plus per-ingredient atomic decrements (`currentStock: {$gte: qty}`) so
-concurrent confirms can't oversell. If you touch order confirmation, keep
+concurrent confirms can't oversell. If you touch sending to the kitchen, keep
 deduction and KOT creation in the same transaction; splitting them apart
 reopens the "order confirmed but stock never moved" failure mode.
 

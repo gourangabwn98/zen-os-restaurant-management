@@ -27,6 +27,7 @@ export const createTable = (data) => api.post("/admin/tables", data);
 export const updateTable = (tableNo, d) =>
   api.put(`/admin/tables/${tableNo}`, d);
 export const deleteTable = (tableNo) => api.delete(`/admin/tables/${tableNo}`);
+export const getTakeawayQR = () => api.get("/admin/tables/takeaway-qr");
 export const regenerateQR = (tableNo) =>
   api.post(`/admin/tables/${tableNo}/regenerate-qr`);
 
@@ -55,6 +56,12 @@ export const uploadRestaurantLogo    = (formData) =>
     headers: { "Content-Type": "multipart/form-data" },
   });
 
+export const uploadPaymentQr = (formData) =>
+  api.post("admin/restaurant/payment-qr", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+export const removePaymentQr = () => api.delete("admin/restaurant/payment-qr");
+
 // ── Banners ────────────────────────────────────────────────────────────────
 export const uploadRestaurantBanner = (formData) =>
   api.post("admin/restaurant/banner", formData, {
@@ -75,6 +82,9 @@ export const getCategories = () => api.get("/menu/categories");
 // ── Order confirmation (Phase 4) ──────────────────────────────────────────
 export const confirmOrder = (id) => api.patch(`/orders/${id}/confirm`);
 export const rejectOrder  = (id, reason) => api.patch(`/orders/${id}/reject`, { reason });
+// Edit a not-yet-sent order: full item list [{ menuItemId, qty, notes }] + the
+// order's current revision (409 if someone else edited it first).
+export const modifyOrderItems = (id, items, revision) => api.patch(`/orders/${id}/items`, { items, revision });
 
 // ── Payment verification (Phase 4) ────────────────────────────────────────
 export const updateOrderPayment = (id, body) => api.patch(`/admin/orders/${id}/payment`, body);

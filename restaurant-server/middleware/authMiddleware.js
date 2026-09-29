@@ -31,6 +31,14 @@ const attachDb = async (req) => {
   return conn;
 };
 
+// A token was sent but can't be used (expired, bad signature, user gone).
+// `code` lets the apps react: staff apps send the user to login; the
+// customer app logs out and retries as a guest.
+const sessionExpired = (res) =>
+  res.status(401).json({ message: "Your session has expired — please log in again", code: "SESSION_EXPIRED" });
+const accountInactive = (res) =>
+  res.status(403).json({ message: "This account has been deactivated", code: "ACCOUNT_INACTIVE" });
+
 // ── protect — JWT required, but the DB is always MONGO_URI ───────────────────
 export const protect = async (req, res, next) => {
   const auth = req.headers.authorization;
@@ -42,16 +50,19 @@ export const protect = async (req, res, next) => {
     await attachDb(req);
     req.user = await req.models.User
       .findById(decoded.id).select("-otp -otpExpiry -password");
-    if (!req.user) return res.status(401).json({ message: "User not found" });
-    if (req.user.status === "Inactive")
-      return res.status(403).json({ message: "This account has been deactivated" });
+    if (!req.user) return sessionExpired(res);
+    if (req.user.status === "Inactive") return accountInactive(res);
     next();
   } catch (e) {
-    res.status(401).json({ message: "Not authorized, invalid token" });
+    sessionExpired(res);
   }
 };
 
 // ── optionalProtect — JWT optional; DB is always MONGO_URI either way ────────
+// No token → guest. A token that IS sent must be valid: an expired/invalid
+// staff token used to silently fall back to "guest", so a waiter/admin whose
+// login had expired placed a CUSTOMER order (Awaiting confirmation) with no
+// error — and a deactivated account could keep ordering as a guest.
 export const optionalProtect = async (req, res, next) => {
   try {
     await attachDb(req);
@@ -68,14 +79,15 @@ export const optionalProtect = async (req, res, next) => {
     return next();
   }
 
+  let decoded;
   try {
-    const decoded = jwt.verify(auth.split(" ")[1], process.env.JWT_SECRET);
-    req.user = await req.models.User
-      .findById(decoded.id).select("-otp -otpExpiry -password");
-    if (req.user?.status === "Inactive") req.user = null;
+    decoded = jwt.verify(auth.split(" ")[1], process.env.JWT_SECRET);
   } catch {
-    req.user = null;
+    return sessionExpired(res);
   }
+  req.user = await req.models.User.findById(decoded.id).select("-otp -otpExpiry -password");
+  if (!req.user) return sessionExpired(res);
+  if (req.user.status === "Inactive") return accountInactive(res);
   next();
 };
 

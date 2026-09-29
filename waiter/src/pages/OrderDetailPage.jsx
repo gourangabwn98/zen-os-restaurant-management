@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   getOrder, confirmOrder, rejectOrder, updateOrderStatus, addItemsToOrder,
-  updateOrderPayment, getCombinedBill, printBill,
+  updateOrderPayment, getCombinedBill, printBill, modifyOrderItems,
 } from "../services/orderService.js";
 import { getMenu, getMenuCategories } from "../services/menuService.js";
 import StatusBadge, { statusColor } from "../components/StatusBadge.jsx";
@@ -31,6 +31,19 @@ const STAGES = ["CONFIRMED", "PREPARING", "READY", "DELIVERED", "COMPLETED"];
 const PAYMENT_LABEL = { PENDING_VERIFICATION: "Pending verification", PAID: "Paid", FAILED: "Failed" };
 const paymentColor = (s) => (s === "PAID" ? GREEN : s === "FAILED" ? RED : AMBER);
 
+const lineId = (it) => String(it.menuItem?._id ?? it.menuItem);
+
+/** "Starts preparing in 2:42" for a Placed order (it can still be changed). */
+function SendCountdown({ order }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  if (order.sendError) return <span style={{ color: RED }}>Couldn&rsquo;t start preparing automatically — {order.sendError}</span>;
+  if (!order.autoPrepareAt) return <span>Start preparing when ready</span>;
+  const left = Math.max(0, Math.ceil((new Date(order.autoPrepareAt).getTime() - now) / 1000));
+  if (!left) return <span>Starting preparation…</span>;
+  return <span>Starts preparing in <b style={{ fontVariantNumeric: "tabular-nums" }}>{Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}</b> — can still be changed</span>;
+}
+
 export default function OrderDetailPage() {
   const { id } = useParams();
   const nav = useNavigate();
@@ -38,7 +51,10 @@ export default function OrderDetailPage() {
   const [order, setOrder] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy]   = useState(false);
+  // Inline quantity edit while the order is still editable (null = not editing).
+  const [editLines, setEditLines] = useState(null);
   const [bill, setBill]   = useState(null);
+  const [showQr, setShowQr] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [menuItems, setMenuItems] = useState(null); // null = loading
   const [menuCategories, setMenuCategories] = useState([]);
@@ -55,16 +71,16 @@ export default function OrderDetailPage() {
 
   const handleConfirm = async () => {
     setBusy(true);
-    try { await confirmOrder(id); toast.success("Order confirmed · KOT sent"); load(); }
-    catch (err) { toast.error(err.response?.data?.message || "Couldn't confirm"); }
+    try { await confirmOrder(id); toast.success("Order accepted — it starts preparing shortly"); load(); }
+    catch (err) { toast.error(err.response?.data?.message || "Couldn't accept the order"); }
     finally { setBusy(false); }
   };
 
   const handleReject = async () => {
-    if (!window.confirm("Reject this order?")) return;
+    if (!window.confirm("Cancel this order?")) return;
     setBusy(true);
-    try { await rejectOrder(id, "Rejected by waiter"); toast.success("Order rejected"); load(); }
-    catch (err) { toast.error(err.response?.data?.message || "Couldn't reject"); }
+    try { await rejectOrder(id, "Cancelled by waiter"); toast.success("Order cancelled"); load(); }
+    catch (err) { toast.error(err.response?.data?.message || "Couldn't cancel"); }
     finally { setBusy(false); }
   };
 
@@ -127,7 +143,16 @@ export default function OrderDetailPage() {
     if (items.length === 0) return toast.error("Pick at least one item");
     setBusy(true);
     try {
-      await addItemsToOrder(id, items);
+      if (order.status === "CONFIRMED") {
+        const merged = new Map((order.items || []).map((it) => [lineId(it), { menuItemId: lineId(it), qty: it.qty, notes: it.notes || "" }]));
+        for (const it of items) {
+          const ex = merged.get(it.menuItemId);
+          merged.set(it.menuItemId, ex ? { ...ex, qty: ex.qty + it.qty } : { ...it, notes: "" });
+        }
+        await modifyOrderItems(id, [...merged.values()], order.revision ?? 0);
+      } else {
+        await addItemsToOrder(id, items);
+      }
       toast.success("Items added");
       setShowAdd(false); setAddQtys({});
       load();
@@ -135,11 +160,41 @@ export default function OrderDetailPage() {
     finally { setBusy(false); }
   };
 
+  const startEdit = () => setEditLines((order.items || []).map((it) => ({
+    menuItemId: lineId(it), name: it.name, price: it.price, qty: it.qty, notes: it.notes || "",
+  })));
+  const changeQty = (mid, d) => setEditLines((p) => p.map((l) => (l.menuItemId === mid ? { ...l, qty: Math.max(1, Math.min(99, l.qty + d)) } : l)));
+  const removeLine = (mid) => setEditLines((p) => p.filter((l) => l.menuItemId !== mid));
+  const saveEdit = async () => {
+    if (!editLines.length) return toast.error("An order needs at least one item — cancel it instead");
+    setBusy(true);
+    try {
+      await modifyOrderItems(id, editLines.map(({ menuItemId, qty, notes }) => ({ menuItemId, qty, notes })), order.revision ?? 0);
+      toast.success("Order updated");
+      setEditLines(null);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Couldn't update the order");
+      load();
+    } finally { setBusy(false); }
+  };
+
   const handleBill = async () => {
     try {
       const { data } = await getCombinedBill({ orderIds: id });
       setBill(data);
     } catch (err) { toast.error(err.response?.data?.message || "Couldn't generate bill"); }
+  };
+
+  // Payment QR is uploaded by the admin (Profile → Payment) and comes back
+  // on the bill. Scanning it is not proof of payment — still Mark Paid.
+  const handleShowQr = async () => {
+    try {
+      const { data } = await getCombinedBill({ orderIds: id }); // fresh — items/total may have changed
+      setBill(data);
+      if (!data.paymentQr) return toast.error("No payment QR yet — admin can add one in Profile → Payment");
+      setShowQr(true);
+    } catch (err) { toast.error(err.response?.data?.message || "Couldn't load the payment QR"); }
   };
 
   const handlePrint = async () => {
@@ -155,7 +210,9 @@ export default function OrderDetailPage() {
   // A delivered order can only be completed once it's marked Paid (the
   // server enforces the same rule — this just explains it up front).
   const needsPayment = order.status === "DELIVERED" && order.paymentStatus !== "PAID";
-  const canAddItems = ["CONFIRMED","PREPARING","READY","DELIVERED"].includes(order.status);
+  // Items can only change while the order is Placed (before its KOT prints).
+  const isPlaced = order.status === "CONFIRMED" && !order.stockDeducted;
+  const canAddItems = isPlaced;
   const stageIdx = STAGES.indexOf(order.status);
 
   return (
@@ -191,12 +248,26 @@ export default function OrderDetailPage() {
 
       <div style={{ margin: "14px 16px" }}>
         <GlassCard style={{ padding: "14px 16px" }}>
-          {(order.items || []).map((it, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 13.5, color: "#fff" }}>
-              <span>{it.name} × {it.qty}{it.notes ? <span style={{ color: TEXT_FAINT }}> · "{it.notes}"</span> : ""}</span>
-              <span style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>₹{it.price * it.qty}</span>
+          {(editLines || order.items || []).map((it, i) => (
+            <div key={editLines ? it.menuItemId : i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "5px 0", fontSize: 13.5, color: "#fff" }}>
+              <span style={{ flex: 1, minWidth: 0 }}>{it.name}{editLines ? "" : ` × ${it.qty}`}{it.notes ? <span style={{ color: TEXT_FAINT }}> · "{it.notes}"</span> : ""}</span>
+              {editLines ? (
+                <>
+                  <QtyStepper qty={it.qty} onDec={() => changeQty(it.menuItemId, -1)} onInc={() => changeQty(it.menuItemId, 1)} />
+                  <button type="button" onClick={() => removeLine(it.menuItemId)} aria-label={`Remove ${it.name}`}
+                    style={{ background: "none", border: 0, color: RED, fontSize: 16, cursor: "pointer", padding: "0 4px" }}>✕</button>
+                </>
+              ) : (
+                <span style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>₹{it.price * it.qty}</span>
+              )}
             </div>
           ))}
+          {editLines && (
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <PrimaryButton disabled={busy} variant="outline" onClick={() => setEditLines(null)} style={{ flex: 1, padding: "10px", fontSize: 13 }}>Discard</PrimaryButton>
+              <PrimaryButton disabled={busy || !editLines.length} onClick={saveEdit} style={{ flex: 1, padding: "10px", fontSize: 13 }}>Save changes</PrimaryButton>
+            </div>
+          )}
           <div style={{ borderTop: `1px dashed ${GLASS_BORDER}`, marginTop: 8, paddingTop: 8, display: "flex", justifyContent: "space-between", alignItems: "baseline", fontWeight: 800, color: "#fff" }}>
             <span style={{ fontSize: 14 }}>Total</span>
             <span style={{ color: ACCENT, fontSize: 23, fontVariantNumeric: "tabular-nums", letterSpacing: -0.4 }}>₹{order.total}</span>
@@ -230,9 +301,20 @@ export default function OrderDetailPage() {
       <div style={{ margin: "0 16px", display: "flex", flexDirection: "column", gap: 10 }}>
         {isPending && (
           <div style={{ display: "flex", gap: 10 }}>
-            <PrimaryButton disabled={busy} onClick={handleConfirm} variant="success" style={{ flex: 1 }}>✓ Place Order</PrimaryButton>
-            <PrimaryButton disabled={busy} onClick={handleReject} variant="danger" style={{ flex: 1 }}>✕ Reject</PrimaryButton>
+            <PrimaryButton disabled={busy} onClick={handleConfirm} variant="success" style={{ flex: 1 }}>✓ Accept order</PrimaryButton>
+            <PrimaryButton disabled={busy} onClick={handleReject} variant="danger" style={{ flex: 1 }}>✕ Cancel</PrimaryButton>
           </div>
+        )}
+
+        {isPlaced && (
+          <>
+            <div style={{ fontSize: 12.5, color: order.sendError ? RED : AMBER, textAlign: "center" }}>
+              <SendCountdown order={order} />
+            </div>
+            {!editLines && (
+              <PrimaryButton disabled={busy} variant="outline" onClick={startEdit}>✎ Change quantities</PrimaryButton>
+            )}
+          </>
         )}
 
         {canAdvance && (
@@ -249,6 +331,7 @@ export default function OrderDetailPage() {
           <button onClick={handleBill} style={outlineBtn}>🧾 Generate Bill</button>
           <button onClick={handlePrint} style={outlineBtn}>🖨️ Print Bill</button>
         </div>
+        <button onClick={handleShowQr} style={{ ...outlineBtn, width: "100%" }}>📱 Payment QR</button>
       </div>
 
       {bill && (
@@ -266,7 +349,27 @@ export default function OrderDetailPage() {
               {bill.serviceCharge > 0 && <Row label="Service Charge" value={`₹${bill.serviceCharge}`} />}
               <Row label="Grand Total" value={`₹${bill.grandTotal}`} bold />
             </div>
+            {bill.paymentQr && (
+              <div style={{ textAlign: "center", marginTop: 14, paddingTop: 12, borderTop: `1px dashed ${GLASS_BORDER}` }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#fff", marginBottom: 8, letterSpacing: 1 }}>SCAN TO PAY</div>
+                <img src={bill.paymentQr} alt="Payment QR" onClick={() => setShowQr(true)}
+                  style={{ width: 160, height: 160, objectFit: "contain", background: "#fff", borderRadius: 10, padding: 6, cursor: "zoom-in" }} />
+                {bill.upiId && <div style={{ fontSize: 11.5, color: "rgba(255,255,255,0.7)", marginTop: 6 }}>UPI: {bill.upiId}</div>}
+              </div>
+            )}
           </GlassCard>
+        </div>
+      )}
+
+      {showQr && bill?.paymentQr && (
+        <div onClick={() => setShowQr(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 110,
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20, gap: 12 }}>
+          <div style={{ color: "#fff", fontWeight: 800, fontSize: 16 }}>Scan to pay</div>
+          <img src={bill.paymentQr} alt="Payment QR"
+            style={{ width: "min(80vw, 320px)", height: "min(80vw, 320px)", objectFit: "contain", background: "#fff", borderRadius: 14, padding: 10 }} />
+          <div style={{ color: "#fff", fontWeight: 800, fontSize: 22 }}>₹{bill.grandTotal}</div>
+          {bill.upiId && <div style={{ color: "rgba(255,255,255,0.75)", fontSize: 13 }}>UPI: {bill.upiId}</div>}
+          <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 12 }}>Tap anywhere to close · Mark Paid once received</div>
         </div>
       )}
 

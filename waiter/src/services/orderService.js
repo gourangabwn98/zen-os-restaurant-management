@@ -14,6 +14,9 @@ export const cancelOrder  = (id, reason) => api.delete(`/orders/${id}`, { data: 
 export const getAllOrders     = (params) => api.get("/admin/orders", { params });
 export const updateOrderStatus = (id, status, note) => api.put(`/admin/orders/${id}/status`, { status, note });
 export const addItemsToOrder   = (id, items) => api.post(`/admin/orders/${id}/add-items`, { items });
+// Edit a not-yet-sent (PENDING_CONFIRMATION) order: full item list + the
+// order's current revision — 409 if someone else changed it first.
+export const modifyOrderItems  = (id, items, revision) => api.patch(`/orders/${id}/items`, { items, revision });
 export const updateOrderPayment = (id, body) => api.patch(`/admin/orders/${id}/payment`, body);
 
 // ── Billing ────────────────────────────────────────────────────────────────

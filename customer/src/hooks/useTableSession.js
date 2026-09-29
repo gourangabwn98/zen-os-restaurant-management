@@ -21,6 +21,11 @@ export function useTableSession() {
     const params  = new URLSearchParams(window.location.search);
     const tableNo = params.get("table");
     const token   = params.get("t");
+    if (params.get("mode") === "takeaway") { // counter takeaway QR — never dine-in
+      localStorage.removeItem(STORAGE.tableCtx);
+      setCtx(null);
+      return;
+    }
     if (!tableNo || !token) return; // no QR context in this URL — keep whatever was stored, if anything
 
     setChecking(true);

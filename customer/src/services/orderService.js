@@ -43,6 +43,12 @@ export const getOrder = (id) => api.get(`/orders/${id}`, { headers: guestHeaders
 export const cancelOrder = (id, reason) =>
   api.delete(`/orders/${id}`, { data: { reason }, headers: guestHeaders(id) });
 
+// PATCH /api/orders/:id/items — change the order while it's still editable
+// (before it goes to the kitchen). Full item list + the order's revision;
+// 409 if it has just gone to the kitchen or someone else changed it first.
+export const modifyOrder = (id, items, revision) =>
+  api.patch(`/orders/${id}/items`, { items, revision }, { headers: guestHeaders(id) });
+
 // Logged-in only.
 export const getMyOrders = () => api.get("/orders/my");
 

@@ -34,8 +34,8 @@ export const STATUS_LABEL = {
 
 export const STATUS_MESSAGE = {
   AWAITING_PAYMENT: "Complete your payment to send this order to the restaurant.",
-  PENDING_CONFIRMATION: "Waiting for restaurant confirmation…",
-  CONFIRMED: "Your order has been placed.",
+  PENDING_CONFIRMATION: "Waiting for the restaurant to accept your order…",
+  CONFIRMED: "Your order has been placed — you can still change it for a few minutes.",
   PREPARING: "Your food is being prepared.",
   READY: "Your order is ready!",
   DELIVERED: "Enjoy your meal!",

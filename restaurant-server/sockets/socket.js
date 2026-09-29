@@ -336,6 +336,7 @@ const toKitchenSafeOrder = (order) => ({
   waiterName: order.waiterName || "",
   items: (order.items || []).map((i) => ({ name: i.name, qty: i.qty, notes: i.notes || "" })),
   notes: order.notes || "",
+  createdAt: order.createdAt, preparingAt: order.preparingAt, // timing only — no PII
 });
 
 export const emitOrderStatusChanged = (tenantKey, order, previousStatus) => {
@@ -388,6 +389,29 @@ export const emitPaymentStatusChanged = (tenantKey, order) => {
   // updates go to the customer's own order room only.
   if (order?.status !== "AWAITING_PAYMENT") emit(rooms.staff(tenantKey), "order:payment_changed", { order });
   emit(rooms.order(tenantKey, order._id), "order:payment_changed", { order });
+};
+
+// ── Placed → Preparing (orderService.sendToKitchenTx) ─────────────────────
+// The order just started preparing: the KOT exists now. Staff, the customer
+// and the kitchen get the status change; the kitchen/printers get the ticket.
+export const emitSentToKitchen = (tenantKey, { order, kotJob, kotCreated, inventoryAlerts }) => {
+  if (kotCreated && kotJob) emitKotCreated(tenantKey, kotJob);
+  emitOrderStatusChanged(tenantKey, order, "CONFIRMED");
+  for (const a of inventoryAlerts || []) emitInventoryAlert(tenantKey, a);
+};
+
+// Items changed while Placed. Not sent to the kitchen room — the kitchen
+// only gets an order (and its KOT) once it starts preparing.
+export const emitOrderModified = (tenantKey, order) => {
+  const payload = { order, previousStatus: order.status, modified: true };
+  emit(rooms.staff(tenantKey), "order:status_changed", payload);
+  emit(rooms.order(tenantKey, order._id), "order:status_changed", payload);
+};
+
+// The timer couldn't start preparing it (e.g. an ingredient ran out) —
+// staff must act.
+export const emitOrderNeedsAttention = (tenantKey, order) => {
+  emit(rooms.staff(tenantKey), "order:needs_attention", { order, reason: order.sendError });
 };
 
 // ── Pay-first orders (utils/paymentMode.js) ───────────────────────────────

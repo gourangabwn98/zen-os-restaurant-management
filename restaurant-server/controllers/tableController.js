@@ -14,6 +14,22 @@ const generateQR = async (tableNo, token) => {
   return { url, dataUri };
 };
 
+// ── GET /api/admin/tables/takeaway-qr ──────────────────────────────────────
+// One shared counter/entrance QR for takeaway. It carries no table/token, so
+// the customer app can never treat it as a dine-in scan; `mode=takeaway`
+// tells it to drop any table remembered from an earlier visit.
+export const getTakeawayQR = async (req, res) => {
+  try {
+    const url     = `${process.env.CUSTOMER_FRONTEND_URL}/?mode=takeaway`;
+    const dataUri = await QRCode.toDataURL(url, {
+      width: 300, margin: 2,
+      color: { dark: "#1a1a2e", light: "#ffffff" },
+      errorCorrectionLevel: "H",
+    });
+    res.json({ qrUrl: url, qrCode: dataUri });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+};
+
 export const getTables = async (req, res) => {
   try {
     const { Table } = req.models;

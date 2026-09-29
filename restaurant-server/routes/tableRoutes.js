@@ -1,6 +1,6 @@
 import express from "express";
 import {
-  getTables, createTable, updateTable, deleteTable, regenerateQR, validateTableToken,
+  getTables, getTakeawayQR, createTable, updateTable, deleteTable, regenerateQR, validateTableToken,
 } from "../controllers/tableController.js";
 import { protect, dbFromHeader } from "../middleware/authMiddleware.js";
 import { requireAdmin } from "../middleware/rbac.js";
@@ -13,6 +13,7 @@ const autoAuth = (req, res, next) =>
     : dbFromHeader(req, res, next);
 
 router.get("/", autoAuth, getTables);
+router.get("/takeaway-qr", protect, requireAdmin, getTakeawayQR);
 
 // Public — lets a scanned QR be verified before the customer even logs in.
 router.get("/:tableNo/validate", dbFromHeader, validateTableToken);

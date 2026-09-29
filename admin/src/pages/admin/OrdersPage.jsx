@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback, useMemo, Fragment } from "react";
 import toast from "react-hot-toast";
 import {
   getAllOrders, getRestaurantProfile, updateOrderStatus,
-  getAllTables, printOrderBill, confirmOrder, rejectOrder,
+  getAllTables, printOrderBill, confirmOrder, rejectOrder, modifyOrderItems,
 } from "../../services/adminService.js";
 import { placeOrder, newIdempotencyKey } from "../../services/orderService.js";
 import { getSocket } from "../../services/socketService.js";
 import { consumePendingOrderFocus } from "../../services/orderFocus.js";
 import CombinedBillModal from "./shared/CombinedBillModal.jsx";
 import { statusKind } from "./shared/statusKind.js";
+import { MANUAL_PAYMENT_STATUSES, needsPaidFirst, PAID_FIRST_HINT } from "./shared/paymentRules.js";
 import ErrorState from "./shared/ErrorState.jsx";
 import EmptyState from "./shared/EmptyState.jsx";
 import { getMenu, getCategories } from "../../services/menuService.js";
@@ -56,7 +57,7 @@ const ACTIVE_ORDER_STATUSES = ["PENDING_CONFIRMATION","CONFIRMED","PREPARING","R
 // nor AWAITING_PAYMENT (only a verified online payment moves an order out of
 // it; see utils/paymentMode.js on the server).
 const ALL_STATUSES = STATUSES.filter(s => s !== "All" && s !== "PENDING_CONFIRMATION" && s !== "AWAITING_PAYMENT");
-const PAYMENT_STATUSES = ["All","PAID","PENDING_VERIFICATION","FAILED"];
+const PAYMENT_STATUSES = ["All","PAID","PENDING_VERIFICATION"];
 const ORDER_TYPES = ["All","DINE_IN","TAKEAWAY"];
 
 // Decorative avatar palette — brand/status hues, theme-invariant, white text
@@ -186,14 +187,114 @@ const DLabel = ({ children }) => (
   </div>
 );
 
+// ── Placed → Preparing (restaurant-server orderService.sendToKitchenTx) ─────
+// A Placed (CONFIRMED) order can still be changed; it moves to Preparing —
+// and its KOT prints — by itself at order.autoPrepareAt, or now via
+// "Start preparing".
+const useNow = () => {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, []);
+  return now;
+};
+
+const SendCountdown = ({ order }) => {
+  const now = useNow();
+  if (order.sendError) {
+    return <span style={{ color: "var(--stop-ink)" }}>Couldn&rsquo;t start preparing automatically — {order.sendError}</span>;
+  }
+  if (!order.autoPrepareAt) return <span>Start preparing when ready</span>;
+  const left = Math.max(0, Math.ceil((new Date(order.autoPrepareAt).getTime() - now) / 1000));
+  if (!left) return <span>Starting preparation…</span>;
+  return (
+    <span>Starts preparing in <b className="tnum">{Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}</b> — can still be changed</span>
+  );
+};
+
+const lineKey = (i) => String(i.menuItem?._id ?? i.menuItem ?? i.menuItemId);
+
+// Change quantities / notes or remove lines while the order is editable.
+const EditOrderItemsModal = ({ order, onClose, onSaved, onAddMore }) => {
+  const [lines, setLines] = useState(() => (order.items || []).map((i) => ({
+    menuItemId: lineKey(i), name: i.name, price: i.price, qty: i.qty, notes: i.notes || "",
+  })));
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && !saving && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, saving]);
+
+  const setQty = (id, d) => setLines((p) => p.map((l) => (l.menuItemId === id ? { ...l, qty: Math.max(1, Math.min(99, l.qty + d)) } : l)));
+  const remove = (id) => setLines((p) => p.filter((l) => l.menuItemId !== id));
+  const setNotes = (id, v) => setLines((p) => p.map((l) => (l.menuItemId === id ? { ...l, notes: v } : l)));
+  const subtotal = lines.reduce((s, l) => s + l.price * l.qty, 0);
+
+  const save = async () => {
+    if (!lines.length) return toast.error("An order needs at least one item — cancel it instead");
+    setSaving(true);
+    try {
+      const { data } = await modifyOrderItems(order._id, lines.map((l) => ({ menuItemId: l.menuItemId, qty: l.qty, notes: l.notes })), order.revision ?? 0);
+      toast.success(`Order ${order.orderId} updated`);
+      onSaved(data);
+      onClose();
+    } catch (e) {
+      toast.error(e?.response?.data?.message || "Couldn't update the order");
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="zc-scrim" onClick={() => !saving && onClose()} style={{ zIndex: 1100 }}>
+      <div className="zc-modal" style={{ width: 560 }} role="dialog" aria-modal="true" aria-labelledby="edit-items-title" onClick={(e) => e.stopPropagation()}>
+        <div className="mh">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="t" id="edit-items-title">Edit order {order.orderId}</div>
+            <div className="s"><SendCountdown order={order} /></div>
+          </div>
+          <button type="button" className="zc-x" onClick={onClose} disabled={saving} aria-label="Close">✕</button>
+        </div>
+        <div className="mb" style={{ display: "grid", gap: 8 }}>
+          {lines.map((l) => (
+            <div key={l.menuItemId} className="zc-panel" style={{ padding: "10px 12px", display: "grid", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-1)" }}>{l.name}</div>
+                  <div className="tnum" style={{ fontSize: 11.5, color: "var(--text-3)" }}>₹{l.price} each</div>
+                </div>
+                <button type="button" className="zc-btn sm" aria-label={`Less ${l.name}`} disabled={l.qty <= 1} onClick={() => setQty(l.menuItemId, -1)}>−</button>
+                <span className="tnum" style={{ minWidth: 22, textAlign: "center", fontWeight: 700 }}>{l.qty}</span>
+                <button type="button" className="zc-btn sm" aria-label={`More ${l.name}`} onClick={() => setQty(l.menuItemId, 1)}>＋</button>
+                <button type="button" className="zc-btn danger sm" aria-label={`Remove ${l.name}`} onClick={() => remove(l.menuItemId)}>✕</button>
+              </div>
+              <input className="zc-input" placeholder="Note for the kitchen (optional)" value={l.notes} maxLength={120}
+                onChange={(e) => setNotes(l.menuItemId, e.target.value)} style={{ fontSize: 12 }} />
+            </div>
+          ))}
+          {!lines.length && <div style={{ fontSize: 12.5, color: "var(--text-3)", textAlign: "center", padding: 12 }}>No items left — add some, or cancel the order instead.</div>}
+          <button type="button" className="zc-btn ghost" onClick={() => onAddMore(order)}>＋ Add more items</button>
+        </div>
+        <div className="mf" style={{ alignItems: "center" }}>
+          <span className="tnum" style={{ marginRight: "auto", fontSize: 12.5, color: "var(--text-2)" }}>
+            Items ₹{subtotal} <span style={{ color: "var(--text-3)" }}>· taxes recalculated on save</span>
+          </span>
+          <button type="button" className="zc-btn" disabled={saving} onClick={onClose}>Cancel</button>
+          <button type="button" className="zc-btn pri" disabled={saving || !lines.length} onClick={save}>{saving ? "Saving…" : "Save changes"}</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── OrderDetailModal — full history of one order (reference "Order detail") ───
-const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onCombinedBill, onPrint, onAddItems, onConfirm, onReject, actionBusy }) => {
+const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onCombinedBill, onPrint, onAddItems, onEditItems, onConfirm, onReject, actionBusy }) => {
   if (!order) return null;
   const isPending = order.status === "PENDING_CONFIRMATION";
   const displayName  = order.user?.name || order.guestName || "Guest";
   const displayPhone = order.guestPhone || order.user?.phone || null;
   const subtotal     = order.subtotal ?? order.items?.reduce((s,i)=>s+i.price*i.qty,0) ?? 0;
-  const canAddItems  = ["CONFIRMED","PREPARING","READY"].includes(order.status);
+  // Items can only change while Placed and before its KOT exists.
+  const isPlaced     = order.status === "CONFIRMED" && !order.stockDeducted;
+  const canAddItems  = isPlaced;
   const canCancel    = ["PENDING_CONFIRMATION","CONFIRMED","PREPARING"].includes(order.status);
   const placedAt     = new Date(order.createdAt).toLocaleString("en-IN",{ day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" });
   const timeline     = Array.isArray(order.statusHistory) ? order.statusHistory : [];
@@ -226,7 +327,7 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
         </div>
 
         <div className="mb">
-          {/* ── Pending confirmation → prominent Confirm / Reject ── */}
+          {/* ── Awaiting confirmation → Accept / Cancel ── */}
           {isPending && (
             <div style={{
               display:"flex", gap:10, alignItems:"center", flexWrap:"wrap",
@@ -238,21 +339,42 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
                   Awaiting your confirmation
                 </div>
                 <div style={{ fontSize:11.5, color:T2, marginTop:2 }}>
-                  Placing it sends the KOT to the kitchen and deducts stock.
+                  Accepting makes it Placed; it starts preparing (and the KOT prints) a few minutes later.
                 </div>
               </div>
               <button type="button" className="op-btn" disabled={actionBusy}
                 onClick={()=>onConfirm?.(order)}
                 style={{ padding:"9px 18px", borderRadius:10, border:"none", cursor:actionBusy?"wait":"pointer",
                   background:"var(--grad-btn)", color:"#fff", fontWeight:800, fontSize:13 }}>
-                {actionBusy ? "Working…" : "✓ Place Order"}
+                {actionBusy ? "Working…" : "✓ Accept order"}
               </button>
               <button type="button" className="op-btn" disabled={actionBusy}
                 onClick={()=>onReject?.(order)}
                 style={{ padding:"9px 16px", borderRadius:10, cursor:actionBusy?"wait":"pointer",
                   border:"1px solid var(--stop-line)", background:"var(--stop-fill)",
                   color:"var(--stop-ink)", fontWeight:700, fontSize:13 }}>
-                ✕ Reject Order
+                ✕ Cancel order
+              </button>
+            </div>
+          )}
+
+          {/* ── Placed → countdown, Edit / Start preparing now ── */}
+          {isPlaced && (
+            <div style={{
+              display:"flex", gap:10, alignItems:"center", flexWrap:"wrap",
+              padding:"12px 14px", marginBottom:18, borderRadius:12,
+              border:`1px solid ${order.sendError ? "var(--stop-line)" : "var(--live-line)"}`,
+              background: order.sendError ? "var(--stop-fill)" : "var(--live-fill)",
+            }}>
+              <div style={{ flex:1, minWidth:160 }}>
+                <div style={{ fontSize:12.5, fontWeight:700, color:"var(--live-ink)" }}>Placed</div>
+                <div style={{ fontSize:11.5, color:T2, marginTop:2 }}><SendCountdown order={order} /></div>
+              </div>
+              {onEditItems && (
+                <button type="button" className="zc-btn" disabled={actionBusy} onClick={()=>onEditItems(order)}>✎ Edit items</button>
+              )}
+              <button type="button" className="zc-btn pri" disabled={actionBusy} onClick={()=>onStatusChange?.(order._id, "PREPARING")}>
+                🍳 Start preparing now
               </button>
             </div>
           )}
@@ -293,13 +415,21 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
 
           {/* controls — status / payment / method (all preserved) */}
           <DLabel>Update order status</DLabel>
+          {order.status === "DELIVERED" && order.paymentStatus !== "PAID" && (
+            <div style={{ fontSize:11.5, color:"var(--wait-ink)", marginBottom:8 }}>
+              💳 Payment required — mark it Paid below to complete this order.
+            </div>
+          )}
           <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:16 }}>
             {ALL_STATUSES.filter(s => s !== order.status).map(s => {
               const st = STATUS_STYLE[s] || DEFAULT_STATUS_STYLE;
+              const blocked = needsPaidFirst(order, s);
               return (
-                <button key={s} type="button" className="op-chip" onClick={()=>onStatusChange(order._id, s)}
-                  style={{ padding:"6px 12px", borderRadius:20, border:`1px solid ${st.line}`, background:st.bg, color:st.color, cursor:"pointer", fontSize:12, fontWeight:600, font:"inherit" }}>
-                  {formatStatus(s)}
+                <button key={s} type="button" className="op-chip" disabled={blocked} title={blocked ? PAID_FIRST_HINT : undefined}
+                  onClick={()=>!blocked && onStatusChange(order._id, s)}
+                  style={{ padding:"6px 12px", borderRadius:20, border:`1px solid ${st.line}`, background:st.bg, color:st.color,
+                    cursor:blocked?"not-allowed":"pointer", opacity:blocked?0.45:1, fontSize:12, fontWeight:600, font:"inherit" }}>
+                  {formatStatus(s)}{blocked ? " 🔒" : ""}
                 </button>
               );
             })}
@@ -307,7 +437,7 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
 
           <DLabel>Payment status</DLabel>
           <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:16 }}>
-            {["PENDING_VERIFICATION","PAID","FAILED"].map(s => {
+            {MANUAL_PAYMENT_STATUSES.map(s => {
               const st = PAY_STYLE[s] || DEFAULT_STATUS_STYLE;
               const active = order.paymentStatus === s;
               return (
@@ -376,6 +506,9 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
           )}
           {canAddItems && onAddItems && (
             <button type="button" className="zc-btn" onClick={()=>onAddItems(order)}>＋ Add items</button>
+          )}
+          {onCombinedBill && (
+            <button type="button" className="zc-btn" onClick={()=>onCombinedBill("orders", order._id)}>📱 Bill + Payment QR</button>
           )}
           <button type="button" className="zc-btn" onClick={()=>onPrint(order)}>🖨️ Print bill</button>
           {canCancel && (
@@ -941,6 +1074,20 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
     if(!cart.length) return toast.error("Add at least one item");
     try{
       setLoading(true);
+      if (order.status === "CONFIRMED") {
+        // Placed → merge into its lines and save through the edit endpoint
+        // (re-priced server-side; the KOT prints when it starts preparing).
+        const merged = new Map((order.items || []).map((i) => [lineKey(i), { menuItemId: lineKey(i), qty: i.qty, notes: i.notes || "" }]));
+        for (const c of cart) {
+          const ex = merged.get(c.item._id);
+          merged.set(c.item._id, ex ? { ...ex, qty: ex.qty + c.qty } : { menuItemId: c.item._id, qty: c.qty, notes: "" });
+        }
+        const { data } = await modifyOrderItems(order._id, [...merged.values()], order.revision ?? 0);
+        toast.success(`✓ Added ${totalQty} items to order`);
+        onItemsAdded(data);
+        onClose();
+        return;
+      }
       const token = localStorage.getItem("adminToken");
       const response = await fetch(
         `${import.meta.env.VITE_API_URL}/admin/orders/${order._id}/add-items`,
@@ -958,7 +1105,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
       toast.success(`✓ Added ${totalQty} items to order`);
       onItemsAdded(data);
       onClose();
-    }catch(e){ toast.error(e.message||"Failed"); }
+    }catch(e){ toast.error(e?.response?.data?.message || e.message || "Failed"); }
     finally{ setLoading(false); }
   };
 
@@ -1501,7 +1648,7 @@ const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPayment
   const displayName  = order.user?.name || order.guestName || `Order ${idx+1}`;
   const displayPhone = order.guestPhone||order.user?.phone ||  null;
   const av           = avc(displayName);
-  const canAddItems  = ["CONFIRMED","PREPARING","READY"].includes(order.status);
+  const canAddItems  = order.status === "CONFIRMED" && !order.stockDeducted; // only while Placed
   const placedMs     = nowTick != null ? nowTick - new Date(order.createdAt).getTime() : null;
   const placedKindThis = placedMs != null ? durationKind(Math.floor(placedMs / 60000)) : null;
 
@@ -1586,11 +1733,13 @@ const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPayment
             <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
               {ALL_STATUSES.filter(s => s !== order.status).map(s => {
                   const st = STATUS_STYLE[s] || DEFAULT_STATUS_STYLE;
+                  const blocked = needsPaidFirst(order, s);
                   return (
-                    <button key={s} className="op-chip" onClick={()=>{ onStatusChange(order._id,s); }}
+                    <button key={s} className="op-chip" disabled={blocked} title={blocked ? PAID_FIRST_HINT : undefined}
+                      onClick={()=>{ if (!blocked) onStatusChange(order._id,s); }}
                       style={{ padding:"4px 10px", borderRadius:20, border:`1px solid ${st.line}`,
-                        background:st.bg, color:st.color, cursor:"pointer", fontSize:11, fontWeight:500 }}>
-                      {formatStatus(s)}
+                        background:st.bg, color:st.color, cursor:blocked?"not-allowed":"pointer", opacity:blocked?0.45:1, fontSize:11, fontWeight:500 }}>
+                      {formatStatus(s)}{blocked ? " 🔒" : ""}
                     </button>
                   );
                 })}
@@ -1602,7 +1751,7 @@ const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPayment
             <div style={{ fontSize:10, color:T3, fontWeight:600, letterSpacing:1,
               textTransform:"uppercase", marginBottom:6 }}>Payment Status</div>
             <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
-              {["PENDING_VERIFICATION","PAID","FAILED"].map(s => {
+              {MANUAL_PAYMENT_STATUSES.map(s => {
                 const st = PAY_STYLE[s] || DEFAULT_STATUS_STYLE;
                 const active = order.paymentStatus===s;
                 return (
@@ -1693,7 +1842,7 @@ const PendingOrdersModal = ({ orders, busy, onConfirm, onReject, onClose }) => {
         <div className="mh">
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="t">Awaiting confirmation</div>
-            <div className="s">{orders.length} order{orders.length === 1 ? "" : "s"} yet to be confirmed</div>
+            <div className="s">{orders.length} customer order{orders.length === 1 ? "" : "s"} waiting to be accepted</div>
           </div>
           <button type="button" className="zc-x" onClick={onClose} aria-label="Close">✕</button>
         </div>
@@ -1744,11 +1893,11 @@ const PendingOrdersModal = ({ orders, busy, onConfirm, onReject, onClose }) => {
                     <div style={{ display: "flex", gap: 8, marginTop: 11 }}>
                       <button type="button" className="zc-btn pri sm" style={{ flex: 1, justifyContent: "center" }}
                         disabled={busy} onClick={() => onConfirm(o)}>
-                        ✓ Place
+                        ✓ Accept
                       </button>
                       <button type="button" className="zc-btn danger sm" style={{ flex: 1, justifyContent: "center" }}
                         disabled={busy} onClick={() => onReject(o)}>
-                        ✕ Reject
+                        ✕ Cancel
                       </button>
                     </div>
                   </div>
@@ -1781,6 +1930,7 @@ export default function OrdersPage() {
   // to re-type a number they already picked.
   const openNewOrder = (tableNo = null) => { setPresetTableNo(tableNo); setShowCreate(true); };
   const [showAddItems, setShowAddItems] = useState(null);
+  const [showEditItems, setShowEditItems] = useState(null); // order _id being edited
   const [page,setPage]=useState(1);
   const [startDate,setStartDate]=useState("");
   const [endDate,setEndDate]=useState("");
@@ -1843,8 +1993,15 @@ export default function OrdersPage() {
     socket.on("order:status_changed",  onStatus);
     socket.on("order:cancelled",       onCancelled);
     socket.on("order:payment_changed", onPayment);
+    const onAttention  = (p)=>{
+      if (!p?.order) return;
+      upsertOrder(p.order);
+      toast.error(`Order ${p.order.orderId} couldn't start preparing — ${p.reason || "please check it"}`, { duration: 8000 });
+    };
+    socket.on("order:needs_attention", onAttention);
 
     return ()=>{
+      socket.off("order:needs_attention", onAttention);
       socket.off("order:new",             onNew);
       socket.off("order:confirmed",       onConfirmed);
       socket.off("order:status_changed",  onStatus);
@@ -1941,24 +2098,24 @@ export default function OrdersPage() {
       const { data } = await confirmOrder(order._id);
       const updated = data?.order || data;
       if (updated?._id) upsertOrder(updated);
-      toast.success(`Order ${order.orderId} confirmed · KOT sent`);
+      toast.success(`Order ${order.orderId} accepted — it starts preparing shortly`);
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Couldn't confirm this order");
+      toast.error(e?.response?.data?.message || "Couldn't accept this order");
     } finally { setActionBusy(false); }
   };
 
   const handleReject = async (order) => {
     if (actionBusy) return;
-    if (!window.confirm(`Reject order ${order.orderId}? This cannot be undone. The order stays in history as cancelled.`)) return;
-    const reason = (window.prompt("Reason for rejecting (optional):", "") || "").trim();
+    if (!window.confirm(`Cancel order ${order.orderId}? This cannot be undone. The order stays in history as cancelled.`)) return;
+    const reason = (window.prompt("Reason for cancelling (optional):", "") || "").trim();
     setActionBusy(true);
     try {
       const { data } = await rejectOrder(order._id, reason || undefined);
       const updated = data?.order || data;
       if (updated?._id) upsertOrder(updated);
-      toast.success(`Order ${order.orderId} rejected`);
+      toast.success(`Order ${order.orderId} cancelled`);
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Couldn't reject this order");
+      toast.error(e?.response?.data?.message || "Couldn't cancel this order");
     } finally { setActionBusy(false); }
   };
 
@@ -2126,18 +2283,19 @@ export default function OrdersPage() {
     }, []);
 
   const rowActions = (o) => {
-    const canAddItems = ["CONFIRMED", "PREPARING", "READY"].includes(o.status);
+    const isPlaced = o.status === "CONFIRMED" && !o.stockDeducted;
+    const canAddItems = isPlaced;
     return (
       <div style={{ display: "flex", gap: 5, justifyContent: "flex-end" }} onClick={(e) => e.stopPropagation()}>
         {o.status === "PENDING_CONFIRMATION" && (
           <>
-            <button type="button" className="op-btn" title="Place order" disabled={actionBusy}
+            <button type="button" className="op-btn" title="Accept order" disabled={actionBusy}
               onClick={() => handleConfirm(o)}
               style={{ padding: "5px 10px", borderRadius: 8, border: "none", background: "var(--grad-btn)",
                 color: "#fff", fontWeight: 800, fontSize: 12, cursor: actionBusy ? "wait" : "pointer" }}>
-              ✓ Place
+              ✓ Accept
             </button>
-            <button type="button" className="op-btn" title="Reject order" disabled={actionBusy}
+            <button type="button" className="op-btn" title="Cancel order" disabled={actionBusy}
               onClick={() => handleReject(o)}
               style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid var(--stop-line)",
                 background: "var(--stop-fill)", color: "var(--stop-ink)", fontWeight: 700, fontSize: 12,
@@ -2145,6 +2303,10 @@ export default function OrdersPage() {
               ✕
             </button>
           </>
+        )}
+        {isPlaced && (
+          <button type="button" className="zc-btn sm" title="Edit items" disabled={actionBusy}
+            onClick={() => setShowEditItems(o._id)} style={{ padding: "5px 8px" }}>✎</button>
         )}
         {canAddItems && (
           <button type="button" className="zc-btn sm" title="Add items"
@@ -2522,6 +2684,7 @@ export default function OrdersPage() {
           onCombinedBill={(mode, value) => setShowCombinedBill({ mode, value })}
           onPrint={handlePrint}
           onAddItems={(o) => { setShowAddItems(o._id); setExpanded(null); }}
+          onEditItems={(o) => { setShowEditItems(o._id); setExpanded(null); }}
           onConfirm={handleConfirm}
           onReject={handleReject}
           actionBusy={actionBusy}
@@ -2543,6 +2706,15 @@ export default function OrdersPage() {
           onItemsAdded={(updatedOrder) =>
             setOrders((prev) => prev.map((o) => (o._id === updatedOrder._id ? updatedOrder : o)))
           }
+        />
+      )}
+
+      {showEditItems && orders.find((o) => o._id === showEditItems) && (
+        <EditOrderItemsModal
+          order={orders.find((o) => o._id === showEditItems)}
+          onClose={() => setShowEditItems(null)}
+          onSaved={(updated) => upsertOrder(updated)}
+          onAddMore={(o) => { setShowEditItems(null); setShowAddItems(o._id); }}
         />
       )}
 

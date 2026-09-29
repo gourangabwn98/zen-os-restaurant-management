@@ -41,8 +41,10 @@ const loadSoundPref = () => {
 // a still-pending ticket turns red so it can't be missed on a busy board.
 const OVER_TARGET_MIN = 15;
 
+// Orders reach the kitchen when they start preparing — that is when the KOT
+// prints (the server only lists PREPARING/READY here; a Placed order can
+// still change, so it isn't shown yet).
 const COLUMNS = [
-  { status: "CONFIRMED", label: "New", dot: LIVE, action: null },
   { status: "PREPARING", label: "Preparing", dot: WAIT, action: { to: "READY", label: "✓ Mark ready" } },
   { status: "READY",     label: "Ready", dot: READY_C, action: null },
 ];
@@ -108,7 +110,9 @@ function Tag({ tone, children }) {
 }
 
 function KitchenTicket({ order, now, busy, onStartPreparing, onAdvance, action, column }) {
-  const elapsedMin = Math.max(0, Math.floor((now - new Date(order.createdAt)) / 60000));
+  // Time since cooking started — orders now spend a short edit window before
+  // reaching the kitchen, which shouldn't count against the kitchen's target.
+  const elapsedMin = Math.max(0, Math.floor((now - new Date(order.preparingAt || order.createdAt)) / 60000));
   const overTarget = elapsedMin >= OVER_TARGET_MIN;
   const urgent = order.priority === "URGENT";
 
@@ -367,7 +371,7 @@ export default function KitchenBoardPage() {
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, padding: "20px 24px", alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${COLUMNS.length}, 1fr)`, gap: 16, padding: "20px 24px", alignItems: "start" }}>
         {COLUMNS.map((col) => {
           const colOrders = orders.filter((o) => o.status === col.status)
             .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));

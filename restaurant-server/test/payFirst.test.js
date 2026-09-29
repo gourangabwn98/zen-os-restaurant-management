@@ -51,6 +51,9 @@ const makeWorld = ({ profile = {}, table = null, orders = [] } = {}) => {
     MenuItem: { findById: async (id) => MENU.find((m) => m._id === id) || null },
     RestaurantProfile: { findOne: async () => ({ gstRate: 0, serviceCharge: 0, ...profile }) },
     Category: { find: () => ({ select: () => ({ lean: async () => [] }) }) },
+    // No recipes → nothing stock-tracked (placement's stock pre-check passes).
+    Recipe: { find: async () => [] },
+    InventoryItem: {},
     Table: { findOne: async () => table, updateOne: async () => ({}) },
     TableSession: {
       findOne: async () => null,
@@ -192,7 +195,7 @@ await test("promote: paid order → PENDING_CONFIRMATION exactly once, joins the
   assert.equal(o.status, "PENDING_CONFIRMATION");
   assert.equal(o.tableSession, "sess1");
   assert.equal(o.paymentDeadline, null);
-  assert.ok(o.cancelDeadline > new Date(), "customer cancel window starts at promotion");
+  assert.equal(o.cancelDeadline, null, "waits for a waiter to accept it; customer may cancel until then");
   assert.deepEqual(state.sessionOrders, ["o1"]);
   assert.equal(o.statusHistory.at(-1).note, "Paid online");
 });

@@ -1,7 +1,7 @@
 import express from "express";
 import {
   placeOrder, confirmOrder, approveOrder, rejectOrder,
-  getMyOrders, getOrderById, cancelOrder,
+  getMyOrders, getOrderById, cancelOrder, modifyOrderItems,
 } from "../controllers/orderController.js";
 import { protect, optionalProtect, dbFromHeader } from "../middleware/authMiddleware.js";
 import { requireStaff } from "../middleware/rbac.js";
@@ -26,6 +26,8 @@ router.get("/:id",           autoAuth,        getOrderById);
 // Guests may cancel their own order via x-guest-order-token; logged-in
 // customers/staff are identified via JWT. optionalProtect resolves both.
 router.delete("/:id",        optionalProtect, requireWaiterOnDuty, cancelOrder);
+// Edit during the edit window — customer (JWT / guest token), waiter, admin.
+router.patch("/:id/items",   optionalProtect, requireWaiterOnDuty, modifyOrderItems);
 
 // Staff-only: confirm a pending order (creates its KOT job) / decline it.
 // "/confirm" is the new canonical name; "/approve" is kept as an alias so

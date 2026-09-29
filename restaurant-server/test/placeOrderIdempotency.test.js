@@ -31,6 +31,9 @@ const makeModels = ({ orderCreate, orders = [] }) => {
     RestaurantProfile: { findOne: async () => ({ gstRate: 0, serviceCharge: 0 }) },
     // no scheduled categories (menu schedule check in placeOrderTx)
     Category: { find: () => ({ select: () => ({ lean: async () => [] }) }) },
+    // No recipes → nothing stock-tracked (placement's stock pre-check passes).
+    Recipe: { find: async () => [] },
+    InventoryItem: {},
     Table: { findOne: async () => null },
     TableSession: { findByIdAndUpdate: async () => ({}) },
     KOTJob: {},

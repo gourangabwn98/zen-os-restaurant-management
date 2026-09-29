@@ -14,7 +14,9 @@ import { createKotJobForOrder } from "./kotService.js";
 import { findOrOpenTableSession, closeTableSession } from "./tableSessionService.js";
 import { findNextMatch } from "./waitlistService.js";
 import { signGuestOrderToken, verifyGuestOrderToken } from "../utils/guestOrderToken.js";
-import { deductStockForOrder, reverseStockForOrder } from "./inventoryService.js";
+import {
+  deductStockForOrder, reverseStockForOrder, calculateRecipeConsumption, validateInventoryForConsumption,
+} from "./inventoryService.js";
 import { isPhonePeConfigured } from "./paymentService.js";
 import { resolveCustomerPaymentMethod, isPayFirst, PAYMENT_METHODS, PAY_FIRST_WINDOW_MS } from "../utils/paymentMode.js";
 
@@ -64,10 +66,12 @@ const buildActor = (user, fallbackName) => ({
  * waiter, and admin. Source and initial status are always derived from the
  * authenticated identity server-side — a client can never claim to be staff.
  *
- * Staff-sourced orders (WAITER/ADMIN) are auto-CONFIRMED (the person keying
- * it in at the table/counter IS the confirmation) and their KOT job is
- * created immediately. Customer-sourced orders start PENDING_CONFIRMATION
- * and require an explicit staff confirmation before any KOT job exists.
+ * Staff (waiter/admin) orders start CONFIRMED ("Placed"); customer orders
+ * start PENDING_CONFIRMATION ("Awaiting confirmation") until staff accept
+ * them (confirmOrderTx). A Placed order is editable until autoPrepareAt
+ * (default 3 min), then sendToKitchenTx moves it to PREPARING with the stock
+ * deduction + KOT in one transaction. Pay-first orders start
+ * AWAITING_PAYMENT (utils/paymentMode.js).
  *
  * A waiter must be ON_DUTY to reach this at all — enforced by the
  * requireWaiterOnDuty route middleware (routes/orderRoutes.js), not here,
@@ -85,7 +89,7 @@ export const placeOrderTx = async ({ req, body }) => {
     throw err;
   }
 
-  const { Order, MenuItem, RestaurantProfile, Table, TableSession, KOTJob } = req.models;
+  const { Order, MenuItem, RestaurantProfile, Table, TableSession } = req.models;
   const {
     items, orderType, tableNo, tableToken, notes,
     customerName, customerPhone, paymentMethod, idempotencyKey, priority,
@@ -166,9 +170,21 @@ export const placeOrderTx = async ({ req, body }) => {
     }
   }
 
-  const initialStatus = isStaffOrder ? "CONFIRMED" : payFirst ? "AWAITING_PAYMENT" : "PENDING_CONFIRMATION";
+  // Staff (waiter/admin) orders start CONFIRMED ("Placed") — the person
+  // keying it in IS the acceptance. Customer orders start
+  // PENDING_CONFIRMATION ("Awaiting confirmation") until a waiter/admin
+  // accepts them (confirmOrderTx). A Placed order stays editable until
+  // autoPrepareAt (RestaurantProfile.editWindowMinutes, default 3), then
+  // sendToKitchenTx moves it to PREPARING and prints the KOT.
+  const initialStatus = payFirst ? "AWAITING_PAYMENT" : isStaffOrder ? "CONFIRMED" : "PENDING_CONFIRMATION";
   const actor = buildActor(req.user, customerName);
   const now = new Date();
+  const autoPrepareAt = initialStatus === "CONFIRMED" ? new Date(now.getTime() + editWindowMs(restaurant)) : null;
+
+  // Fail now — not minutes later at the kitchen — if stock clearly can't
+  // cover it. (Deduction itself still happens exactly once, at
+  // sendToKitchenTx, guarded atomically.)
+  await assertStockForItems({ models: req.models, items: dbItems });
 
   const orderPayload = {
     user:          req.user ? req.user._id : null,
@@ -182,14 +198,16 @@ export const placeOrderTx = async ({ req, body }) => {
     source,
     createdBy:     actor,
     status:        initialStatus,
-    confirmedBy:   isStaffOrder ? actor : null,
-    confirmedAt:   isStaffOrder ? now   : null,
-    cancelDeadline: new Date(now.getTime() + 3 * 60 * 1000),
+    confirmedBy:   initialStatus === "CONFIRMED" ? actor : null,
+    confirmedAt:   initialStatus === "CONFIRMED" ? now : null,
+    // A customer may cancel while it's awaiting confirmation (the state
+    // machine stops them once staff accept it) — no time limit.
+    cancelDeadline: null,
+    autoPrepareAt,
     notes:         notes || "",
     waiterName:    source === "WAITER" ? (req.user?.waiterName || req.user?.name || "") : "",
     waiterId:      source === "WAITER" ? req.user?._id : null,
-    // Staff-only, and only meaningful for a staff-placed (already-confirmed)
-    // order — a customer/guest can never mark their own order urgent.
+    // Staff-only — a customer/guest can never mark their own order urgent.
     priority:      isStaffOrder && priority === "URGENT" ? "URGENT" : "NORMAL",
     guestName:     customerName  || "",
     guestPhone:    customerPhone || "",
@@ -200,86 +218,119 @@ export const placeOrderTx = async ({ req, body }) => {
     statusHistory: [{ status: initialStatus, changedBy: actor, changedAt: now, note: payFirst ? "Order placed — waiting for online payment" : "Order placed" }],
   };
 
+  // Single insert — no stock or KOT is written until the order goes to
+  // PREPARING, so no transaction is needed here.
   let order;
-  let kotJob = null;
-  let inventoryAlerts = [];
-
-  if (isStaffOrder) {
-    // Staff-placed orders are already "confirmed" the moment they're
-    // created (Phase 1), so the full CONFIRMED workflow — inventory
-    // validation, deduction, ledger, KOT job — runs in the SAME transaction
-    // as the order's creation. If stock can't cover it, the whole order
-    // creation is rolled back and the waiter/admin gets a clear error
-    // instead of an order nobody can fulfil.
-    const session = await req.db.startSession();
-    try {
-      await session.withTransaction(async () => {
-        const created = await Order.create([orderPayload], { session });
-        order = created[0];
-
-        if (tableSessionId) {
-          await TableSession.findByIdAndUpdate(
-            tableSessionId, { $addToSet: { orders: order._id } }, { session }
-          );
-        }
-
-        const stockResult = await deductStockForOrder({ models: req.models, order, actor, session });
-        inventoryAlerts = stockResult.alerts || [];
-
-        const kotResult = await createKotJobForOrder({ KOTJob, order, actor, session });
-        kotJob = kotResult.job;
-      });
-    } catch (err) {
-      // Only treat a duplicate-key error as an idempotent replay when we
-      // actually HAVE a key to look the original up by. Without the
-      // `&& idempotencyKey` guard, a keyless order that hit any 11000 would
-      // `findOne({ idempotencyKey: undefined })` → `findOne({})` → return an
-      // arbitrary existing order as a false success.
-      if (err?.code === 11000 && err.keyPattern?.idempotencyKey && idempotencyKey) {
-        const raced = await Order.findOne({ idempotencyKey });
-        if (raced) return { order: raced, alreadyExisted: true };
-      }
-      throw err;
-    } finally {
-      session.endSession();
+  try {
+    order = await Order.create(orderPayload);
+  } catch (err) {
+    // Only treat a duplicate-key error as an idempotent replay when we
+    // actually HAVE a key to look the original up by. Without the
+    // `&& idempotencyKey` guard, a keyless order that hit any 11000 would
+    // `findOne({ idempotencyKey: undefined })` → `findOne({})` → return an
+    // arbitrary existing order as a false success.
+    if (err?.code === 11000 && err.keyPattern?.idempotencyKey && idempotencyKey) {
+      const raced = await Order.findOne({ idempotencyKey });
+      if (raced) return { order: raced, alreadyExisted: true };
     }
-  } else {
-    // Customer/guest order — stays PENDING_CONFIRMATION, so NO stock
-    // deduction happens here (only on staff confirmation — see
-    // confirmOrderTx). No transaction needed for a single insert.
-    try {
-      order = await Order.create(orderPayload);
-    } catch (err) {
-      // See the staff-path catch above — the `&& idempotencyKey` guard is what
-      // stops a keyless order's duplicate-key error becoming a false success.
-      if (err?.code === 11000 && err.keyPattern?.idempotencyKey && idempotencyKey) {
-        const raced = await Order.findOne({ idempotencyKey });
-        if (raced) return { order: raced, alreadyExisted: true };
-      }
-      throw err;
-    }
+    throw err;
+  }
 
-    if (tableSessionId) {
-      await TableSession.findByIdAndUpdate(tableSessionId, { $addToSet: { orders: order._id } });
-    }
+  if (tableSessionId) {
+    await TableSession.findByIdAndUpdate(tableSessionId, { $addToSet: { orders: order._id } });
   }
 
   const guestAccessToken = !req.user ? signGuestOrderToken(order._id) : null;
 
-  return { order, alreadyExisted: false, kotJob, guestAccessToken, inventoryAlerts };
+  // Edit window of 0 minutes → a staff order goes straight to PREPARING.
+  let kotJob = null, kotCreated = false, inventoryAlerts = [];
+  if (autoPrepareAt && autoPrepareAt.getTime() <= now.getTime()) {
+    const sent = await sendToKitchenTx({
+      models: req.models, db: req.db, orderId: order._id, actor, role: getRoleFromUser(req.user),
+    });
+    ({ order, kotJob, kotCreated, inventoryAlerts } = sent);
+  }
+
+  return { order, alreadyExisted: false, kotJob, kotCreated, guestAccessToken, inventoryAlerts };
 };
 
-// ── Confirm order (customer-sourced PENDING_CONFIRMATION → CONFIRMED) ─────
+// ── Edit window helpers ────────────────────────────────────────────────────
+const SYSTEM_ACTOR = { id: null, role: null, name: "System" };
+const MAX_EDIT_WINDOW_MIN = 15;
+
+/** RestaurantProfile.editWindowMinutes → ms (default 3 min, clamped 0–15). */
+export const editWindowMs = (profile) => {
+  const raw = profile?.editWindowMinutes == null ? NaN : Number(profile.editWindowMinutes);
+  const min = Number.isFinite(raw) ? Math.min(MAX_EDIT_WINDOW_MIN, Math.max(0, raw)) : 3;
+  return min * 60 * 1000;
+};
+
+/** Throws 409 (listing what's short) if stock can't cover these order lines. */
+const assertStockForItems = async ({ models, items }) => {
+  const { Recipe, InventoryItem } = models;
+  const consumption = await calculateRecipeConsumption({ Recipe, order: { items } });
+  await validateInventoryForConsumption({ InventoryItem, consumption });
+};
+
+// ── Send to kitchen (CONFIRMED "Placed" → PREPARING) ───────────────────────
 /**
- * Only admin/waiter may call this. Atomic + transactional so two staff
- * members tapping "confirm" on the same order within milliseconds of each
- * other can never both succeed, and the order's single KOT job can never be
- * created twice.
+ * The single place an order reaches the kitchen: the edit-window timer
+ * (role "system"), "Start preparing" (admin/waiter/chef), or a 0-minute
+ * window. ONE transaction: the status write (conditional on CONFIRMED, so it
+ * can only ever happen once), the stock deduction and the KOT job — the KOT
+ * prints exactly when the order becomes PREPARING, and stock never moves
+ * without a ticket.
+ */
+export const sendToKitchenTx = async ({ models, db, orderId, actor, role }) => {
+  const { Order, KOTJob } = models;
+  const current = await Order.findById(orderId);
+  if (!current) {
+    const err = new Error("Order not found");
+    err.statusCode = 404;
+    throw err;
+  }
+  assertValidTransition(current.status, "PREPARING", role);
+
+  const session = await db.startSession();
+  let sentOrder, kotResult, inventoryAlerts = [];
+  try {
+    await session.withTransaction(async () => {
+      const now = new Date();
+      const updated = await Order.findOneAndUpdate(
+        { _id: orderId, status: "CONFIRMED" },
+        {
+          $set: { status: "PREPARING", preparedBy: actor, preparingAt: now, autoPrepareAt: null, sendError: "" },
+          $push: { statusHistory: { status: "PREPARING", changedBy: actor, changedAt: now } },
+        },
+        { new: true, session },
+      );
+      if (!updated) {
+        const err = new Error("This order is no longer Placed (already preparing or cancelled)");
+        err.statusCode = 409;
+        throw err;
+      }
+      sentOrder = updated;
+      const stockResult = await deductStockForOrder({ models, order: updated, actor, session });
+      inventoryAlerts = stockResult.alerts || [];
+      kotResult = await createKotJobForOrder({ KOTJob, order: updated, actor, session });
+    });
+  } finally {
+    session.endSession();
+  }
+
+  return { order: sentOrder, kotJob: kotResult.job, kotCreated: kotResult.created, inventoryAlerts };
+};
+
+// ── Accept a customer order (PENDING_CONFIRMATION → CONFIRMED "Placed") ────
+/**
+ * Admin/waiter accepts it. Atomic, so two staff tapping at once can't both
+ * win. Starts the edit window; no stock or KOT yet (that's at PREPARING).
+ * With a 0-minute window it goes on to PREPARING straight away.
+ * Returns { order, kotJob?, kotCreated?, inventoryAlerts? }.
  */
 export const confirmOrderTx = async ({ req, orderId }) => {
-  const { Order, KOTJob } = req.models;
+  const { Order, RestaurantProfile } = req.models;
   const role = getRoleFromUser(req.user);
-
   const current = await Order.findById(orderId);
   if (!current) {
     const err = new Error("Order not found");
@@ -289,38 +340,168 @@ export const confirmOrderTx = async ({ req, orderId }) => {
   assertValidTransition(current.status, "CONFIRMED", role);
 
   const actor = buildActor(req.user);
-  const session = await req.db.startSession();
-  let confirmedOrder, kotResult, inventoryAlerts = [];
+  const now = new Date();
+  const autoPrepareAt = new Date(now.getTime() + editWindowMs(await RestaurantProfile.findOne()));
+  const updated = await Order.findOneAndUpdate(
+    { _id: orderId, status: "PENDING_CONFIRMATION" },
+    {
+      $set: { status: "CONFIRMED", confirmedBy: actor, confirmedAt: now, autoPrepareAt, sendError: "" },
+      $push: { statusHistory: { status: "CONFIRMED", changedBy: actor, changedAt: now, note: "Order accepted" } },
+    },
+    { new: true },
+  );
+  if (!updated) {
+    const err = new Error("Order is no longer awaiting confirmation (already accepted or cancelled)");
+    err.statusCode = 409;
+    throw err;
+  }
+  if (autoPrepareAt.getTime() <= now.getTime()) {
+    return sendToKitchenTx({ models: req.models, db: req.db, orderId, actor, role });
+  }
+  return { order: updated, kotJob: null, kotCreated: false, inventoryAlerts: [] };
+};
 
-  try {
-    await session.withTransaction(async () => {
-      const updated = await Order.findOneAndUpdate(
-        { _id: orderId, status: "PENDING_CONFIRMATION" },
-        {
-          $set:  { status: "CONFIRMED", confirmedBy: actor, confirmedAt: new Date() },
-          $push: { statusHistory: { status: "CONFIRMED", changedBy: actor, changedAt: new Date() } },
-        },
-        { new: true, session }
+/**
+ * Background tick (server.js): moves every Placed order whose edit window
+ * has run out to PREPARING (KOT prints). If that fails (e.g. an ingredient ran out meanwhile)
+ * the order is parked with `sendError` for staff to sort out — it is not
+ * retried every tick. Safe on several instances: sendToKitchenTx's write is
+ * conditional on PENDING_CONFIRMATION, so only one caller ever wins.
+ */
+export const autoSendDueOrders = async ({ models, db, now = new Date(), onSent, onFailed, limit = 50 }) => {
+  const { Order } = models;
+  const due = await Order.find({
+    status: "CONFIRMED", autoPrepareAt: { $ne: null, $lte: now }, sendError: { $in: ["", null] },
+  }).select("_id").limit(limit).lean();
+
+  const results = { sent: 0, failed: 0 };
+  for (const { _id } of due) {
+    try {
+      const r = await sendToKitchenTx({ models, db, orderId: _id, actor: SYSTEM_ACTOR, role: "system" });
+      results.sent++;
+      onSent?.(r);
+    } catch (err) {
+      if (err.statusCode === 409 && /no longer Placed/.test(err.message)) continue; // lost a race — fine
+      const parked = await Order.findOneAndUpdate(
+        { _id, status: "CONFIRMED" },
+        { $set: { sendError: String(err.message || "Could not start preparing").slice(0, 300), autoPrepareAt: null } },
+        { new: true },
       );
+      results.failed++;
+      if (parked) onFailed?.(parked);
+    }
+  }
+  return results;
+};
 
-      if (!updated) {
-        const err = new Error(
-          "Order is no longer pending confirmation (already confirmed or cancelled)"
-        );
-        err.statusCode = 409;
-        throw err;
-      }
-
-      confirmedOrder = updated;
-      const stockResult = await deductStockForOrder({ models: req.models, order: updated, actor, session });
-      inventoryAlerts = stockResult.alerts || [];
-      kotResult = await createKotJobForOrder({ KOTJob, order: updated, actor, session });
-    });
-  } finally {
-    session.endSession();
+// ── Edit an order while it is still editable ───────────────────────────────
+/**
+ * Replaces the order's items (add / remove / change qty / notes) while it is
+ * still PENDING_CONFIRMATION. Admin and waiter may always edit; the customer
+ * (owner, or guest with their order token) may too — except once it has been
+ * paid online, since the paid amount would no longer match.
+ *
+ * Prices are re-derived server-side from the menu (utils/pricing.js), never
+ * taken from the client. `revision` must be the order's current revision —
+ * a stale one (someone else edited first) is refused with 409, as is an edit
+ * racing the send to the kitchen (the write is conditional on the status).
+ */
+export const modifyOrderItemsTx = async ({ req, orderId, items, revision }) => {
+  const { Order, MenuItem, RestaurantProfile } = req.models;
+  const order = await Order.findById(orderId);
+  if (!order) {
+    const err = new Error("Order not found");
+    err.statusCode = 404;
+    throw err;
   }
 
-  return { order: confirmedOrder, kotJob: kotResult.job, kotCreated: kotResult.created, inventoryAlerts };
+  const role = getRoleFromUser(req.user);
+  const isStaff = role === "admin" || role === "waiter";
+  if (role === "chef") {
+    const err = new Error("Chef accounts cannot edit orders");
+    err.statusCode = 403;
+    throw err;
+  }
+  if (!isStaff) {
+    // Strict ownership (stricter than viewing): owner, or a valid guest token.
+    const owner = order.user?._id ?? order.user;
+    const ok = req.user
+      ? owner && String(owner) === String(req.user._id)
+      : verifyGuestOrderToken(req.headers["x-guest-order-token"], order._id);
+    if (!ok) {
+      const err = new Error("Not authorized to edit this order");
+      err.statusCode = 403;
+      throw err;
+    }
+    if (order.paymentStatus === "PAID") {
+      const err = new Error("This order is already paid — please ask a waiter to change it");
+      err.statusCode = 409;
+      throw err;
+    }
+  }
+
+  // Only a Placed order that hasn't reached the kitchen (no KOT / stock yet —
+  // an admin could move a later order back to CONFIRMED) can be changed.
+  if (order.status !== "CONFIRMED" || order.stockDeducted) {
+    const err = new Error(
+      order.status === "PENDING_CONFIRMATION" ? "This order can be changed once the restaurant accepts it"
+      : order.status === "AWAITING_PAYMENT" ? "Pay for the order first, or cancel it and order again"
+      : "This order is already being prepared and can't be changed");
+    err.statusCode = 409;
+    throw err;
+  }
+  if (!Number.isInteger(revision)) {
+    const err = new Error("revision is required");
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!Array.isArray(items) || items.length === 0) {
+    const err = new Error("An order needs at least one item — cancel it instead of removing everything");
+    err.statusCode = 400;
+    throw err;
+  }
+  if (items.length > 50) {
+    const err = new Error("Too many lines in one order");
+    err.statusCode = 400;
+    throw err;
+  }
+  for (const it of items) {
+    if (!it?.menuItemId || !Number.isInteger(Number(it.qty)) || Number(it.qty) < 1 || Number(it.qty) > 99) {
+      const err = new Error("Each item needs a menu item and a quantity from 1 to 99");
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+
+  const restaurant = await RestaurantProfile.findOne();
+  const scheduleCtx = await getScheduleContext({ models: req.models, profile: restaurant });
+  const { dbItems, subtotal, tax, serviceCharge, discount, total } =
+    await priceOrder({ items, MenuItem, restaurantProfile: restaurant, scheduleCtx });
+  await assertStockForItems({ models: req.models, items: dbItems });
+
+  const actor = buildActor(req.user, order.guestName);
+  const note = order.paymentStatus === "PAID" && total !== order.total
+    ? `Order changed by ${actor.name} after payment — paid ₹${order.total}, new total ₹${total}`
+    : `Order changed by ${actor.name}`;
+
+  const updated = await Order.findOneAndUpdate(
+    { _id: orderId, status: "CONFIRMED", stockDeducted: { $ne: true }, revision },
+    {
+      $set: { items: dbItems, subtotal, tax, serviceCharge, discount, total },
+      $inc: { revision: 1 },
+      $push: { statusHistory: { status: "CONFIRMED", changedBy: actor, changedAt: new Date(), note } },
+    },
+    { new: true },
+  );
+  if (!updated) {
+    const fresh = await Order.findById(orderId).select("status revision");
+    const err = new Error(fresh?.status !== "CONFIRMED"
+      ? "This order has just started preparing and can't be changed"
+      : "Someone else changed this order a moment ago — please review it and try again");
+    err.statusCode = 409;
+    throw err;
+  }
+  return { order: updated };
 };
 
 // ── Cancel order ────────────────────────────────────────────────────────────
@@ -422,6 +603,20 @@ export const transitionOrderStatusTx = async ({ req, orderId, toStatus, note }) 
   // generic flip below instead of re-entering confirmOrderTx.
   if (toStatus === "CONFIRMED" && current.status === "PENDING_CONFIRMATION") {
     return confirmOrderTx({ req, orderId });
+  }
+  // Starting preparation is where the KOT prints and stock is deducted —
+  // always through sendToKitchenTx, whoever triggers it (chef "Start
+  // preparing", waiter, admin — even an admin jumping straight from
+  // "Awaiting confirmation", which accepts it first).
+  if (toStatus === "PREPARING" && ["CONFIRMED", "PENDING_CONFIRMATION"].includes(current.status)) {
+    const role = getRoleFromUser(req.user);
+    if (current.status === "PENDING_CONFIRMATION") {
+      assertValidTransition("PENDING_CONFIRMATION", "PREPARING", role); // admin override only
+      await confirmOrderTx({ req, orderId });
+      const again = await Order.findById(orderId).select("status");
+      if (again?.status === "PREPARING") return { order: await Order.findById(orderId) }; // 0-min window already sent it
+    }
+    return sendToKitchenTx({ models: req.models, db: req.db, orderId, actor: buildActor(req.user), role });
   }
   if (toStatus === "CANCELLED") {
     const order = await cancelOrderTx({ req, orderId, reason: note });
@@ -527,7 +722,6 @@ export const assertCanViewOrder = (req, order) => {
 export { buildActor };
 
 // ── Pay-first orders (utils/paymentMode.js) ────────────────────────────────
-const SYSTEM_ACTOR = { id: null, role: null, name: "System" };
 
 /**
  * A pay-first order's payment was verified (paymentStatus PAID, set only by
@@ -562,8 +756,8 @@ export const promotePaidOrder = async ({ models, orderId, now = new Date() }) =>
         status: "PENDING_CONFIRMATION",
         tableSession: tableSessionId,
         paymentDeadline: null,
-        // The customer's own cancel window starts when staff can see it.
-        cancelDeadline: new Date(now.getTime() + 3 * 60 * 1000),
+        // Now it waits for a waiter/admin to accept it, like any customer order.
+        cancelDeadline: null,
       },
       $push: { statusHistory: { status: "PENDING_CONFIRMATION", changedBy: SYSTEM_ACTOR, changedAt: now, note: "Paid online" } },
     },

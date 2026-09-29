@@ -107,9 +107,17 @@ const restaurantProfileSchema = new mongoose.Schema({
   // when this is blank and offers Cash-at-restaurant instead.
   upiId:             { type: String, default: "" },       // e.g. "restaurant@okhdfcbank"
   upiPayeeName:      { type: String, default: "" },        // shown in the UPI app; falls back to restaurantName
+  // Static payment QR image (Cloudinary URL) uploaded by the admin, shown on
+  // the staff bill so a customer can scan-and-pay. Like the UPI deep link, a
+  // scan is never proof of payment — staff still mark the order paid.
+  paymentQr:         { type: String, default: "" },
   // How customers may pay: CASH | ONLINE (pay before the order reaches staff)
   // | BOTH (customer picks). See utils/paymentMode.js.
   paymentMode:       { type: String, enum: ["CASH", "ONLINE", "BOTH"], default: "BOTH" },
+  // Minutes a Placed (CONFIRMED) order stays editable before it moves to
+  // PREPARING by itself and its KOT prints. 0 = straight to preparing.
+  // See orderService.sendToKitchenTx / autoSendDueOrders.
+  editWindowMinutes: { type: Number, default: 3, min: 0, max: 15 },
   // IANA timezone used to evaluate menu schedules (utils/menuSchedule.js).
   // An invalid value falls back to Asia/Kolkata at read time.
   timezone:          { type: String, default: "Asia/Kolkata" },
@@ -241,6 +249,15 @@ const orderSchema = new mongoose.Schema({
   // Pay-first orders (status AWAITING_PAYMENT) are cancelled if still unpaid
   // after this — see orderService.expireUnpaidOrders.
   paymentDeadline: { type: Date, default: null },
+  // Edit window of a Placed (CONFIRMED) order: it moves to PREPARING (KOT
+  // prints) automatically at this time.
+  autoPrepareAt:  { type: Date, default: null },
+  // Why an automatic send to the kitchen failed (e.g. out of stock) — the
+  // order then waits for staff instead of retrying forever.
+  sendError:      { type: String, default: "" },
+  // Bumped on every edit; edits must name the revision they started from
+  // (optimistic concurrency — two people editing can't overwrite each other).
+  revision:       { type: Number, default: 0 },
   notes:          { type: String, default: "" },
   waiterName:     { type: String, default: "" }, // legacy display field, kept for existing UI
   // Optional — staff-only (see services/orderService.js: never trusted from

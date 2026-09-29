@@ -1,5 +1,7 @@
 import express from "express";
-import { getRestaurantProfile, updateRestaurantProfile, uploadRestaurantLogo } from "../controllers/profileController.js";
+import {
+  getRestaurantProfile, updateRestaurantProfile, uploadRestaurantLogo, uploadPaymentQr, removePaymentQr,
+} from "../controllers/profileController.js";
 import { protect, dbFromHeader } from "../middleware/authMiddleware.js";
 import { requireAdmin } from "../middleware/rbac.js";
 import { isPhonePeConfigured } from "../services/paymentService.js";
@@ -18,6 +20,8 @@ router.get("/profile", async (req, res, next) => {
 router.put("/profile",  protect, requireAdmin, updateRestaurantProfile);
 // router.post("/logo",    protect,      uploadMiddleware, uploadRestaurantLogo);
 router.post("/logo",    protect, requireAdmin, upload.single("logo"), uploadRestaurantLogo);
+router.post("/payment-qr",   protect, requireAdmin, upload.single("paymentQr"), uploadPaymentQr);
+router.delete("/payment-qr", protect, requireAdmin, removePaymentQr);
 // In restaurantRoutes.js or profileRoutes.js — no protect middleware
 // NOTE: this previously had no tenant-resolving middleware at all, so
 // req.models was undefined and every call 500'd. dbFromHeader fixes that
