@@ -16,6 +16,7 @@ import HelpPage from "./pages/HelpPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
 import FavoritesPage from "./pages/FavoritesPage.jsx";
+import NotificationsPage from "./pages/NotificationsPage.jsx";
 
 const NO_CHROME_ROUTES = ["/login"];
 // Browsing screens show the floating "View cart" bar (as in the reference).
@@ -36,7 +37,8 @@ function Shell({ children }) {
     if (auth.isLoggedIn && isPushEnabled()) enablePushNotifications();
 
     let unsubscribe = () => {};
-    onForegroundMessage(({ title, body }) => toast(`${title || "New offer"}${body ? ` — ${body}` : ""}`))
+    onForegroundMessage(({ title, body, couponCode }) =>
+      toast(`${title || "New offer"}${body ? ` — ${body}` : ""}${couponCode ? ` · Code: ${couponCode}` : ""}`, { icon: "🔔", duration: 6000 }))
       .then((unsub) => { unsubscribe = unsub; });
     return () => unsubscribe();
   }, [auth.isLoggedIn]);
@@ -83,6 +85,7 @@ export default function App() {
             <Route path="/order/:id" element={<OrderDetailPage />} />
             <Route path="/help"      element={<HelpPage />} />
             <Route path="/profile"   element={<ProfilePage />} />
+            <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/login"     element={<LoginPage />} />
             <Route path="*"          element={<Navigate to="/" replace />} />
           </Routes>

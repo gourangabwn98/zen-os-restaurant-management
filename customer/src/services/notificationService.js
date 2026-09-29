@@ -68,9 +68,26 @@ export const needsIosHomeScreenInstall = () => {
 };
 
 /** Foreground handler — background messages are shown by the service
- * worker instead (see onBackgroundMessage in public/firebase-messaging-sw.js). */
+ * worker instead (see onBackgroundMessage in public/firebase-messaging-sw.js).
+ * Offers are data-only messages ({ id, title, body, couponCode, url }); the
+ * `notification` fallback covers anything sent by an older server build. */
 export const onForegroundMessage = async (cb) => {
   const messaging = await getMessagingIfSupported();
   if (!messaging) return () => {};
-  return onMessage(messaging, (payload) => cb(payload.notification || {}));
+  return onMessage(messaging, (payload) => {
+    cb(payload.data || payload.notification || {});
+    window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED));
+  });
 };
+
+// ── Notification history (Profile → Notifications) ──────────────────────────
+/** Fired when a new offer arrives in the foreground or the list is read, so
+ * any unread badge on screen refreshes without a reload. */
+export const NOTIFICATIONS_CHANGED = "notifications:changed";
+
+// GET /api/notifications → { notifications: [{ _id, title, body, couponCode, createdAt }], unreadCount, seenAt }
+export const getMyNotifications = () => api.get("/notifications");
+
+// POST /api/notifications/seen — everything up to now counts as read.
+export const markNotificationsSeen = () =>
+  api.post("/notifications/seen").then((r) => { window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED)); return r; });

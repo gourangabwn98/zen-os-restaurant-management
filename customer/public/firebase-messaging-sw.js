@@ -24,12 +24,42 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 // Fires only when the app isn't in the foreground (foreground messages are
-// handled instead by onForegroundMessage in src/services/notificationService.js,
-// via the Firebase SDK's own foreground/background routing).
+// handled instead by onForegroundMessage in src/services/notificationService.js).
+//
+// Offers arrive as DATA-ONLY messages (restaurant-server/services/
+// notificationService.js → sendOfferBroadcast), so this worker is the one
+// place the OS notification is built: icon, coupon line, and what a tap opens.
+// A message that still carries a `notification` block (sent by an older
+// server build) is shown by the Firebase SDK itself — showing it here too
+// would produce a duplicate, so it's skipped.
 messaging.onBackgroundMessage((payload) => {
-  const { title, body } = payload.notification || {};
-  // No app icon asset exists yet (customer/public has none) — omitting
-  // `icon` lets the browser fall back to its own default rather than
-  // pointing at a 404. Add one here once a real icon file exists.
-  self.registration.showNotification(title || "New offer", { body: body || "" });
+  if (payload.notification) return;
+  const d = payload.data || {};
+  const title = d.title || "New offer";
+  const body = d.couponCode ? `${d.body || ""}
+Use code: ${d.couponCode}` : (d.body || "");
+  return self.registration.showNotification(title, {
+    body,
+    icon: d.icon || "/icons/icon-192.png",
+    badge: "/icons/badge-96.png",
+    tag: d.id ? `offer-${d.id}` : undefined, // a re-delivered push replaces, never duplicates
+    data: { url: d.url || "/notifications" },
+  });
+});
+
+// Tapping the notification: focus an open app window (and route it to the
+// notification history), or open the app there if it isn't running.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = new URL(event.notification.data?.url || "/notifications", self.location.origin).href;
+  event.waitUntil((async () => {
+    const windows = await clients.matchAll({ type: "window", includeUncontrolled: true });
+    const existing = windows.find((w) => new URL(w.url).origin === self.location.origin);
+    if (existing) {
+      await existing.focus();
+      if ("navigate" in existing) return existing.navigate(target).catch(() => {});
+      return;
+    }
+    return clients.openWindow(target);
+  })());
 });

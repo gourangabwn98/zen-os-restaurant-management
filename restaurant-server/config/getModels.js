@@ -50,6 +50,9 @@ const userSchema = new mongoose.Schema({
   // controller — so subscribe/unsubscribe always stays in sync with the
   // matching Firebase Cloud Messaging topic subscription.
   pushTokens: { type: [String], default: [] },
+  // Customer's notification-history "read up to" marker: broadcasts newer
+  // than this count as unread (GET /api/notifications).
+  notificationsSeenAt: { type: Date, default: null },
 }, { timestamps: true });
 
 // Small reusable "who did this" subdocument — used for audit fields on Order.
@@ -623,6 +626,9 @@ attendanceSessionSchema.index({ loginAt: -1 });
 const notificationLogSchema = new mongoose.Schema({
   title:          { type: String, required: true, trim: true },
   body:           { type: String, required: true, trim: true },
+  // Optional coupon code shown with the offer (validated/normalized in
+  // services/notificationService.js — uppercase A–Z, 0–9, "-" and "_").
+  couponCode:     { type: String, default: "", trim: true },
   sentBy:         actorSchema,
   recipientCount: { type: Number, default: 0 },
 }, { timestamps: true });

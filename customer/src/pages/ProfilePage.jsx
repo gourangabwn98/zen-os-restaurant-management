@@ -1,10 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAppState } from "../context/AppState.jsx";
 import { updateProfile } from "../services/authService.js";
 import { disconnectSocket } from "../services/socketService.js";
-import { enablePushNotifications, disablePushNotifications, isPushEnabled, needsIosHomeScreenInstall } from "../services/notificationService.js";
+import {
+  enablePushNotifications, disablePushNotifications, isPushEnabled, needsIosHomeScreenInstall,
+  getMyNotifications, NOTIFICATIONS_CHANGED,
+} from "../services/notificationService.js";
 import Button from "../components/ui/Button.jsx";
 import { getTheme, setTheme } from "../theme.js";
 
@@ -52,6 +55,7 @@ function LoggedInView({ nav, auth }) {
   const [saving, setSaving]   = useState(false);
   const [pushOn, setPushOn]   = useState(isPushEnabled);
   const [pushBusy, setPushBusy] = useState(false);
+  const unread = useUnreadNotifications();
 
   const handleTogglePush = async () => {
     setPushBusy(true);
@@ -136,7 +140,7 @@ function LoggedInView({ nav, auth }) {
           <span style={{ fontSize: 20 }} aria-hidden="true">🔔</span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <b>Offer notifications</b>
-            <div className="muted small">Get notified about offers, even when the app is closed</div>
+            <div className="muted small">Get offers and coupon codes on your phone, even when the app is closed</div>
           </div>
           <button
             type="button" role="switch" className="switch" aria-checked={pushOn}
@@ -152,6 +156,7 @@ function LoggedInView({ nav, auth }) {
       </div>
 
       <div className="card menu-list" style={{ padding: "2px 14px" }}>
+        <MenuRow icon="🔔" label="Notifications" to="/notifications" count={unread} />
         <MenuRow icon="❤️" label="Favorites" to="/favorites" />
         <MenuRow icon="🧾" label="My Orders" to="/orders" />
         <MenuRow icon="💬" label="Help & Support" to="/help" />
@@ -176,12 +181,32 @@ function AppearanceCard() {
   );
 }
 
-function MenuRow({ icon, label, to, onClick, danger }) {
+/** Unread offer count for the Notifications row; refreshes when a new offer
+ * arrives in the foreground or the list is marked read. */
+function useUnreadNotifications() {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    const load = () => getMyNotifications().then(({ data }) => setCount(data.unreadCount || 0)).catch(() => {});
+    load();
+    window.addEventListener(NOTIFICATIONS_CHANGED, load);
+    return () => window.removeEventListener(NOTIFICATIONS_CHANGED, load);
+  }, []);
+  return count;
+}
+
+function MenuRow({ icon, label, to, onClick, danger, count = 0 }) {
   const inner = (
     <>
       <span className="ic" aria-hidden="true">{icon}</span>
       <span>{label}</span>
-      <span className="chev" aria-hidden="true">›</span>
+      {count > 0 && (
+        <span aria-label={`${count} new`} style={{
+          marginLeft: "auto", minWidth: 22, height: 22, padding: "0 7px", borderRadius: 999,
+          background: "var(--brand)", color: "#fff", fontSize: 12, fontWeight: 800,
+          display: "inline-grid", placeItems: "center",
+        }}>{count > 9 ? "9+" : count}</span>
+      )}
+      <span className="chev" aria-hidden="true" style={count > 0 ? { marginLeft: 8 } : undefined}>›</span>
     </>
   );
   const cls = `row${danger ? " danger" : ""}`;

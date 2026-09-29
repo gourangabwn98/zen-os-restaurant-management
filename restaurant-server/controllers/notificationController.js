@@ -2,6 +2,7 @@
 import {
   subscribeToken, unsubscribeToken, sendOfferBroadcast,
   listNotificationHistory, countSubscribedCustomers,
+  listCustomerNotifications, markCustomerNotificationsSeen,
 } from "../services/notificationService.js";
 import { buildActor } from "../services/orderService.js";
 
@@ -25,12 +26,32 @@ export const unsubscribe = async (req, res) => {
   }
 };
 
+// ── GET /api/notifications — the logged-in customer's notification history ──
+export const getMyNotifications = async (req, res) => {
+  try {
+    res.json(await listCustomerNotifications({ models: req.models, userId: req.user._id }));
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message });
+  }
+};
+
+// ── POST /api/notifications/seen — marks the history as read ────────────────
+export const markSeen = async (req, res) => {
+  try {
+    await markCustomerNotificationsSeen({ models: req.models, userId: req.user._id });
+    res.json({ unreadCount: 0 });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message });
+  }
+};
+
 // ── POST /api/notifications/admin/send ────────────────────────────────────────
 export const sendBroadcast = async (req, res) => {
   try {
     const actor = buildActor(req.user);
     const log = await sendOfferBroadcast({
-      models: req.models, title: req.body.title, body: req.body.body, actor,
+      models: req.models, title: req.body.title, body: req.body.body,
+      couponCode: req.body.couponCode, actor,
     });
     res.json({ message: "Notification sent", log });
   } catch (err) {
