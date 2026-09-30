@@ -6,6 +6,17 @@ export const renderLinesToPrinter = (printer, lines) => {
   printer.clear();
   for (const line of lines) {
     if (line.type === "cut") { printer.cut(); continue; }
+    if (line.type === "image") {
+      // { bitmap: { width, height, data } } — already black/white (src/logo.js).
+      // A logo that can't be encoded is skipped: never fail the bill over it.
+      try {
+        const { width, height, data } = line.bitmap;
+        printer.alignCenter();
+        printer.append(printer.printer.printImageBuffer(width, height, data));
+        printer.newLine();
+      } catch { /* print without the logo */ }
+      continue;
+    }
     if (line.type === "feed") { printer.newLine(); continue; }
     if (line.bold) printer.bold(true);
     if (line.align === "center") printer.alignCenter();

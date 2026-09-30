@@ -37,6 +37,7 @@ export class MockDriver {
       const fit = (l) => {
         if (l.type === "feed") return "";
         if (l.type === "cut") return "-".repeat(W) + " ✂";
+        if (l.type === "image") return `[ logo ${l.bitmap.width}×${l.bitmap.height} ]`.padStart(Math.floor((W + 16) / 2));
         const t = String(l.text ?? "");
         if (l.align === "center") return t.padStart(Math.floor((W + t.length) / 2)).padEnd(W);
         if (l.align === "right") return t.padStart(W);

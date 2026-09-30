@@ -13,13 +13,14 @@ export class Processor {
    * @param {PrintQueue} queue
    * @param {PrinterManager} printerManager
    * @param {(jobId:string, jobType:string, status:string, error?:string) => Promise<void>} reportStatus
-   * @param {{maxAttempts:number}} opts
+   * @param {{maxAttempts:number, logoProvider?:{get(url:string):Promise<object|null>}}} opts
    */
   constructor(queue, printerManager, reportStatus, opts = {}) {
     this.queue = queue;
     this.printerManager = printerManager;
     this.reportStatus = reportStatus;
     this.maxAttempts = opts.maxAttempts ?? 5;
+    this.logoProvider = opts.logoProvider || null; // restaurant logo on bills (src/logo.js)
     this._processing = new Set(); // jobIds currently mid-print, in THIS process
   }
 
@@ -38,6 +39,18 @@ export class Processor {
     this.queue.upsert({ ...job, status: job.status || "PENDING" });
     if (!wasKnown) logger.info(`Queued new ${job.jobType} job ${job.jobId}`);
     await this.tryPrint(job.jobId);
+  }
+
+  /** The bill's logo bitmap, or null — a logo problem never fails a bill. */
+  async _logoFor(job) {
+    const url = (job.payload || {}).logoUrl;
+    if (!this.logoProvider || !url) return null;
+    try {
+      return await this.logoProvider.get(url);
+    } catch (err) {
+      logger.warn("Logo skipped:", err.message);
+      return null;
+    }
   }
 
   /** Attempts to print exactly one job, exactly once, right now. */
@@ -71,7 +84,7 @@ export class Processor {
         throw new Error(`Printer "${entry.driver.id}" is offline`);
       }
 
-      const lines = job.jobType === "KOT" ? renderKot(job) : renderBill(job);
+      const lines = job.jobType === "KOT" ? renderKot(job) : renderBill(job, { logo: await this._logoFor(job) });
       await entry.driver.printText(lines);
 
       this.queue.markPrinted(jobId);

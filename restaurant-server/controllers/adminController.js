@@ -381,11 +381,16 @@ export const getCombinedBill = async (req, res) => {
 // ── POST /api/admin/orders/:id/print-bill ────────────────────────────────────
 export const printBill = async (req, res) => {
   try {
-    const { Order, BillPrintJob } = req.models;
+    const { Order, BillPrintJob, RestaurantProfile } = req.models;
     const order = await Order.findById(req.params.id).populate("user","name phone");
     if (!order) return res.status(404).json({ message: "Order not found" });
+    const restaurant = await RestaurantProfile.findOne().select("restaurantName logo").lean();
 
     const payload = {
+      // Bill header: name + logo (Admin → Profile). The print service turns
+      // the logo URL into receipt art itself (print-service/src/logo.js).
+      restaurantName: restaurant?.restaurantName || "",
+      logoUrl:        /^https?:\/\//i.test(restaurant?.logo || "") ? restaurant.logo : "",
       orderId:       order.orderId,
       tableNo:       order.tableNo,
       orderType:     order.orderType,

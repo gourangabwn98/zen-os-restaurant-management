@@ -1,7 +1,9 @@
 // src/renderers/billRenderer.js
-export const renderBill = (job) => {
+/** `logo` (optional): receipt bitmap from src/logo.js, printed above the name. */
+export const renderBill = (job, { logo = null } = {}) => {
   const p = job.payload || job.data?.payload || job.data || {};
   const lines = [];
+  if (logo) lines.push({ type: "image", bitmap: logo });
   lines.push({ text: p.restaurantName || "RECEIPT", bold: true, align: "center", size: "large" });
   lines.push({ type: "feed" });
   lines.push({ text: `Order: ${p.orderId || job.orderId || "-"}` });

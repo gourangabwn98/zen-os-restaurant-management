@@ -5,6 +5,7 @@ import { PrintQueue } from "./queue.js";
 import { PrinterManager } from "./printerManager.js";
 import { Processor } from "./processor.js";
 import { SocketClient } from "./socketClient.js";
+import { LogoProvider } from "./logo.js";
 
 // True when running as the packaged .exe (scripts/build-exe.mjs), not `node`.
 const PACKAGED = !["node", "node.exe"].includes(path.basename(process.execPath).toLowerCase());
@@ -30,7 +31,12 @@ async function main() {
     queue,
     printerManager,
     (jobId, jobType, status, error) => socketClient.reportStatus(jobId, jobType, status, error),
-    { maxAttempts: config.maxAttempts }
+    {
+      maxAttempts: config.maxAttempts,
+      logoProvider: config.printLogo
+        ? new LogoProvider({ cacheDir: path.dirname(config.queueFile), width: config.logoWidth, height: config.logoHeight, invert: config.logoInvert })
+        : null,
+    }
   );
 
   socketClient = new SocketClient({ backendUrl: config.backendUrl, printerKey: config.printerKey, processor }).connect();

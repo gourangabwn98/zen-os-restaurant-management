@@ -41,6 +41,12 @@ export const config = {
   retryBaseDelayMs: Number(process.env.RETRY_BASE_DELAY_MS || 3000),
   retrySweepIntervalMs: Number(process.env.RETRY_SWEEP_INTERVAL_MS || 15000),
   healthCheckIntervalMs: Number(process.env.HEALTH_CHECK_INTERVAL_MS || 20000),
+  // Bill logo (Admin → Profile logo): max size in printer dots — a 58 mm
+  // roll is ~384 dots wide, 80 mm ~576. LOGO_INVERT: auto | true | false.
+  logoWidth:  Number(process.env.LOGO_WIDTH || 192),
+  logoHeight: Number(process.env.LOGO_HEIGHT || 160),
+  logoInvert: ({ true: true, false: false })[String(process.env.LOGO_INVERT || "auto").toLowerCase()] ?? "auto",
+  printLogo:  String(process.env.PRINT_LOGO || "true").toLowerCase() !== "false",
   queuePollIntervalMs: Number(process.env.QUEUE_POLL_INTERVAL_MS || 20000),
   useMockPrinter: String(process.env.USE_MOCK_PRINTER || "false").toLowerCase() === "true",
   printers: readPrintersConfig(),
