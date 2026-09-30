@@ -101,6 +101,12 @@ h1,h2,h3,h4,p{margin:0}
 .search .mic.on{background:var(--brand);color:#fff;animation:mic-pulse 1.2s ease-in-out infinite}
 @keyframes mic-pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--brand) 45%,transparent)}50%{box-shadow:0 0 0 7px transparent}}
 @media (prefers-reduced-motion:reduce){.search .mic.on{animation:none}}
+.vo-list{display:grid;gap:10px}
+.vo-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:18px;background:var(--surface);box-shadow:var(--sh-1);border:1.5px solid transparent}
+.vo-row.on{border-color:var(--brand)}
+.vo-row input[type=checkbox]{flex:none;width:20px;height:20px;accent-color:var(--brand)}
+.vo-row select{flex:1;min-width:0;height:40px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--text);padding:0 8px;font:inherit;font-size:14px;font-weight:650}
+.vo-miss{flex:1;min-width:0;font-size:14px;color:var(--text-2)}
 .filter-on{background:var(--brand)!important;color:#fff!important}
 @media (max-width:360px){.search{height:48px;padding:0 16px}}
 
