@@ -17,6 +17,11 @@
 import { computeCouponDiscount } from "../utils/pricing.js";
 
 export const DISCOUNT_TYPES = ["PERCENT", "FLAT"];
+export const AUDIENCES = ["ALL", "REGISTERED", "GUEST"];
+
+/** Can this customer (logged in or guest) use a coupon with this audience? */
+export const audienceAllows = (c, isRegistered) =>
+  (c?.audience || "ALL") === "ALL" || (c.audience === "REGISTERED") === Boolean(isRegistered);
 
 const httpError = (msg, statusCode = 400) => {
   const err = new Error(msg);
@@ -44,7 +49,7 @@ const toPublicCoupon = (c) => ({
   code: c.code, title: c.title, description: c.description || "",
   discountType: c.discountType, discountValue: c.discountValue,
   maxDiscount: c.maxDiscount ?? null, minOrderAmount: c.minOrderAmount || 0,
-  startsAt: c.startsAt, endsAt: c.endsAt,
+  startsAt: c.startsAt, endsAt: c.endsAt, audience: c.audience || "ALL",
 });
 
 /** The terms copied onto an order (Order.coupon). */
@@ -104,6 +109,9 @@ export const normalizeCouponInput = (body = {}, existing = null) => {
   out.endsAt   = dateOrThrow(pick("endsAt"), "End date");
   if (out.endsAt <= out.startsAt) throw httpError("End date must be after the start date");
 
+  out.audience = String(pick("audience") ?? "ALL").toUpperCase();
+  if (!AUDIENCES.includes(out.audience)) throw httpError(`Audience must be one of: ${AUDIENCES.join(", ")}`);
+
   out.isActive = has(body, "isActive") ? Boolean(body.isActive) : (existing ? Boolean(existing.isActive) : true);
   return out;
 };
@@ -112,9 +120,12 @@ const duplicateCode = (err) => err?.code === 11000 && (err.keyPattern?.code || /
 
 // ── Admin CRUD ───────────────────────────────────────────────────────────────
 
-/** Every coupon, newest window first — the admin sees upcoming/expired too. */
+/** Every coupon, newest window first — the admin sees upcoming/expired too,
+ * plus the state of its announcement push, if any. */
 export const listAllCoupons = ({ models }) =>
-  models.Coupon.find().sort({ startsAt: -1, createdAt: -1 }).lean();
+  models.Coupon.find().sort({ startsAt: -1, createdAt: -1 })
+    .populate("notification", "status startsAt sentAt error")
+    .lean();
 
 export const createCoupon = async ({ models, body, actor }) => {
   const data = normalizeCouponInput(body);
@@ -147,28 +158,34 @@ export const deleteCoupon = async ({ models, id }) => {
 
 // ── Customer side ────────────────────────────────────────────────────────────
 
-/** Coupons a customer can use right now, ending soonest first. */
-export const listLiveCoupons = async ({ models, now = new Date() }) => {
+/** Coupons this customer can use right now, ending soonest first.
+ * `lockedCount`: live coupons a guest could unlock by logging in. */
+export const listLiveCoupons = async ({ models, isRegistered = false, now = new Date() }) => {
   const rows = await models.Coupon.find({ isActive: true, startsAt: { $lte: now }, endsAt: { $gte: now } })
     .sort({ endsAt: 1 })
     .lean();
-  return { coupons: rows.map(toPublicCoupon), serverNow: now };
+  const coupons = rows.filter((c) => audienceAllows(c, isRegistered)).map(toPublicCoupon);
+  const lockedCount = isRegistered ? 0 : rows.filter((c) => c.audience === "REGISTERED").length;
+  return { coupons, lockedCount, serverNow: now };
 };
 
 /** Looks a code up and throws a customer-readable 400 unless it's live now. */
-const findLiveCoupon = async ({ models, code, now }) => {
+const findLiveCoupon = async ({ models, code, isRegistered, now }) => {
   const clean = String(code ?? "").trim().toUpperCase();
   if (!clean) throw httpError("Enter a coupon code");
   const c = await models.Coupon.findOne({ code: clean }).lean();
   if (!c || !c.isActive) throw httpError("This coupon code isn't valid");
   if (now < new Date(c.startsAt)) throw httpError("This coupon isn't active yet");
   if (now > new Date(c.endsAt)) throw httpError("This coupon has expired");
+  if (!audienceAllows(c, isRegistered)) {
+    throw httpError(c.audience === "REGISTERED" ? "Log in to use this coupon" : "This coupon is only for guest orders");
+  }
   return c;
 };
 
 /** GET /api/coupons/:code — lets the cart check a typed-in code. */
-export const getLiveCoupon = async ({ models, code, now = new Date() }) =>
-  toPublicCoupon(await findLiveCoupon({ models, code, now }));
+export const getLiveCoupon = async ({ models, code, isRegistered = false, now = new Date() }) =>
+  toPublicCoupon(await findLiveCoupon({ models, code, isRegistered, now }));
 
 /**
  * Called by orderService.placeOrderTx with the server-computed item subtotal.
@@ -177,9 +194,9 @@ export const getLiveCoupon = async ({ models, code, now = new Date() }) =>
  * is below the coupon's minimum — the order is refused rather than silently
  * placed at full price, so the customer never pays more than they were shown.
  */
-export const resolveCouponForOrder = async ({ models, code, subtotal, now = new Date() }) => {
+export const resolveCouponForOrder = async ({ models, code, subtotal, isRegistered = false, now = new Date() }) => {
   if (code === undefined || code === null || String(code).trim() === "") return null;
-  const c = await findLiveCoupon({ models, code, now });
+  const c = await findLiveCoupon({ models, code, isRegistered, now });
   const min = c.minOrderAmount || 0;
   if (subtotal < min) throw httpError(`Coupon ${c.code} needs an order of at least ₹${min} — add ₹${min - subtotal} more`);
   if (computeCouponDiscount(c, subtotal) <= 0) throw httpError(`Coupon ${c.code} doesn't apply to this order`);

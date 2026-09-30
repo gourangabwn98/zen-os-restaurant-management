@@ -54,6 +54,11 @@ const SPECIAL = {
   maxDiscount: null, minOrderAmount: 0, startsAt: day(20), endsAt: day(30, 23), isActive: true,
 };
 
+const valid = {
+  code: "diwali10", title: "Diwali", discountType: "percent", discountValue: 10,
+  startsAt: day(1).toISOString(), endsAt: day(5).toISOString(),
+};
+
 console.log("── discount maths ──────────────────────────────");
 
 await test("percent coupon: 20% of subtotal, capped at maxDiscount", () => {
@@ -148,12 +153,57 @@ await test("no code sent → no coupon", async () => {
   assert.equal(await resolveCouponForOrder({ models: fakeModels([SPECIAL]), code: "", subtotal: 500, now: day(25) }), null);
 });
 
+console.log("── audience (registered / guest) ───────────────");
+
+const MEMBERS = { ...SPECIAL, code: "MEMBERS30", audience: "REGISTERED" };
+const WALKIN  = { ...SPECIAL, code: "WALKIN10", audience: "GUEST" };
+
+await test("a guest sees ALL + GUEST coupons, and how many a login would unlock", async () => {
+  const res = await listLiveCoupons({ models: fakeModels([SPECIAL, MEMBERS, WALKIN]), isRegistered: false, now: day(25) });
+  assert.deepEqual(res.coupons.map((c) => c.code).sort(), ["SPECIAL50", "WALKIN10"]);
+  assert.equal(res.lockedCount, 1);
+});
+
+await test("a registered customer sees ALL + REGISTERED coupons, not guest-only ones", async () => {
+  const res = await listLiveCoupons({ models: fakeModels([SPECIAL, MEMBERS, WALKIN]), isRegistered: true, now: day(25) });
+  assert.deepEqual(res.coupons.map((c) => c.code).sort(), ["MEMBERS30", "SPECIAL50"]);
+  assert.equal(res.lockedCount, 0);
+});
+
+await test("a guest can't place an order with a registered-only coupon", async () => {
+  await assert.rejects(
+    resolveCouponForOrder({ models: fakeModels([MEMBERS]), code: "MEMBERS30", subtotal: 500, isRegistered: false, now: day(25) }),
+    (e) => e.statusCode === 400 && /Log in/.test(e.message),
+  );
+});
+
+await test("a registered customer can't use a guest-only coupon", async () => {
+  await assert.rejects(
+    resolveCouponForOrder({ models: fakeModels([WALKIN]), code: "WALKIN10", subtotal: 500, isRegistered: true, now: day(25) }),
+    (e) => e.statusCode === 400 && /guest/.test(e.message),
+  );
+});
+
+await test("a registered customer can use a registered-only coupon", async () => {
+  const snap = await resolveCouponForOrder({ models: fakeModels([MEMBERS]), code: "MEMBERS30", subtotal: 500, isRegistered: true, now: day(25) });
+  assert.equal(snap.code, "MEMBERS30");
+});
+
+await test("coupons without an audience (created before this field) are for everyone", async () => {
+  const { audience, ...old } = { ...SPECIAL, audience: undefined };
+  const res = await listLiveCoupons({ models: fakeModels([old]), isRegistered: true, now: day(25) });
+  assert.equal(res.coupons.length, 1);
+  assert.equal(res.coupons[0].audience, "ALL");
+});
+
+await test("audience is validated and defaults to ALL", () => {
+  assert.equal(normalizeCouponInput(valid).audience, "ALL");
+  assert.equal(normalizeCouponInput({ ...valid, audience: "registered" }).audience, "REGISTERED");
+  assert.throws(() => normalizeCouponInput({ ...valid, audience: "VIP" }), /Audience/);
+});
+
 console.log("── admin input ─────────────────────────────────");
 
-const valid = {
-  code: "diwali10", title: "Diwali", discountType: "percent", discountValue: 10,
-  startsAt: day(1).toISOString(), endsAt: day(5).toISOString(),
-};
 
 await test("normalizes code/type and defaults isActive/minOrder", () => {
   const c = normalizeCouponInput(valid);

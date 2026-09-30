@@ -699,6 +699,13 @@ const couponSchema = new mongoose.Schema({
   startsAt:       { type: Date, required: true },
   endsAt:         { type: Date, required: true },
   isActive:       { type: Boolean, default: true },   // admin pause switch
+  // Who may see/use it: ALL, REGISTERED (logged-in customers only) or GUEST
+  // (not logged in only). Enforced when listing AND when an order is placed.
+  audience:       { type: String, enum: ["ALL", "REGISTERED", "GUEST"], default: "ALL" },
+  // The offer push announcing it to registered customers, if the admin chose
+  // to send one (NotificationLog — scheduled for startsAt, expires at endsAt).
+  announce:       { type: Boolean, default: false },  // admin wants it pushed (kept across pause/resume)
+  notification:   { type: mongoose.Schema.Types.ObjectId, ref: "NotificationLog", default: null },
   createdBy:      actorSchema,
 }, { timestamps: true });
 couponSchema.index({ isActive: 1, startsAt: 1, endsAt: 1 });

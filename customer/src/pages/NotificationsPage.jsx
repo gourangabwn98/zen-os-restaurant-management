@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAppState } from "../context/AppState.jsx";
 import { getMyNotifications, markNotificationsSeen, NOTIFICATIONS_CHANGED } from "../services/notificationService.js";
@@ -67,6 +67,7 @@ export default function NotificationsPage() {
 const fmt = (d) => new Date(d).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
 function NotificationCard({ n, isNew, expired }) {
+  const nav = useNavigate();
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(n.couponCode);
@@ -108,6 +109,14 @@ function NotificationCard({ n, isNew, expired }) {
           <span aria-hidden="true">🏷️</span>
           <span style={{ fontWeight: 800, letterSpacing: ".06em" }}>{n.couponCode}</span>
           <span className="small" style={{ marginLeft: "auto", color: "var(--brand)", fontWeight: 700 }}>Copy</span>
+        </button>
+      )}
+      {n.couponCode && !expired && (
+        // The cart checks the code with the server (dates, who it's for,
+        // minimum order) before applying it.
+        <button type="button" className="btn btn-primary btn-sm" style={{ marginTop: 10, width: "100%" }}
+          onClick={() => nav("/cart", { state: { applyCoupon: n.couponCode } })}>
+          Apply in cart
         </button>
       )}
       <div className="muted tiny" style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: "2px 12px" }}>

@@ -7,6 +7,12 @@
 // The discount is always computed by the server when the order is placed
 // (restaurant-server/services/couponService.js); nothing here is trusted
 // from the customer's side.
+//
+// Audience: all customers, registered (logged-in) only, or guests only —
+// enforced by the server when listing and when ordering. A coupon that
+// includes registered customers can also be pushed to their phones as an
+// offer (couponOfferService.js): scheduled for the start date, shown in
+// their notification list with an "Apply in cart" button.
 import { useState, useEffect, useCallback } from "react";
 import toast from "react-hot-toast";
 import PageHeader from "./shared/PageHeader.jsx";
@@ -29,6 +35,21 @@ const fmtDay = (d) => new Date(d).toLocaleDateString([], { day: "numeric", month
 const EMPTY = {
   code: "", title: "", description: "", discountType: "PERCENT", discountValue: "",
   maxDiscount: "", minOrderAmount: "", start: "", end: "", isActive: true,
+  audience: "ALL", notify: false,
+};
+
+const AUDIENCE = {
+  ALL:        { label: "All customers",   hint: "Registered and guest customers both see it in the coupon list." },
+  REGISTERED: { label: "Registered users", hint: "Only logged-in customers see and can use it. Guests are told to log in." },
+  GUEST:      { label: "Guests only",     hint: "Only customers ordering without logging in see and can use it." },
+};
+
+const NOTIFY_TAG = {
+  SCHEDULED: { cls: "vio",   label: (n) => `🔔 Sends ${fmtDay(n.startsAt)}` },
+  SENDING:   { cls: "live",  label: () => "🔔 Sending" },
+  SENT:      { cls: "ready", label: (n) => `🔔 Sent ${fmtDay(n.sentAt || n.startsAt)}` },
+  FAILED:    { cls: "stop",  label: () => "🔔 Failed" },
+  CANCELLED: { cls: "done",  label: () => "🔔 Cancelled" },
 };
 
 /** Where a coupon is in its life right now. */
@@ -64,6 +85,13 @@ export default function CouponsPage() {
   }, []);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
+  // Picking "Registered users" turns the phone notification on by default;
+  // guests can't get pushes at all (opt-in needs a login).
+  const setAudience = (a) => setForm((f) => ({
+    ...f, audience: a, notify: a === "GUEST" ? false : a === "REGISTERED" && f.audience !== "REGISTERED" ? true : f.notify,
+  }));
+  const editing = editingId ? (coupons || []).find((c) => c._id === editingId) : null;
+  const alreadySent = ["SENT", "SENDING"].includes(editing?.notification?.status);
 
   const isPercent = form.discountType === "PERCENT";
   const value = Number(form.discountValue);
@@ -86,6 +114,7 @@ export default function CouponsPage() {
       discountType: c.discountType, discountValue: String(c.discountValue),
       maxDiscount: c.maxDiscount ? String(c.maxDiscount) : "", minOrderAmount: c.minOrderAmount ? String(c.minOrderAmount) : "",
       start: toDateInput(new Date(c.startsAt)), end: toDateInput(new Date(c.endsAt)), isActive: c.isActive,
+      audience: c.audience || "ALL", notify: Boolean(c.announce),
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -100,11 +129,16 @@ export default function CouponsPage() {
       minOrderAmount: form.minOrderAmount !== "" ? Number(form.minOrderAmount) : 0,
       startsAt: startOfDay(form.start).toISOString(), endsAt: endOfDay(form.end).toISOString(),
       isActive: form.isActive,
+      audience: form.audience, notify: form.audience !== "GUEST" && form.notify,
     };
     try {
-      if (editingId) await updateCoupon(editingId, payload);
-      else await createCoupon(payload);
-      toast.success(editingId ? "Coupon updated" : "Coupon created");
+      const { data } = editingId ? await updateCoupon(editingId, payload) : await createCoupon(payload);
+      const n = data?.coupon?.notification;
+      toast.success(
+        (editingId ? "Coupon updated" : "Coupon created")
+        + (n?.status === "SCHEDULED" ? ` — notification will be sent on ${fmtDay(n.startsAt)}` : n?.status === "SENT" && !alreadySent ? " — notification sent" : ""),
+      );
+      if (data?.warning) toast(data.warning, { icon: "⚠️", duration: 6000 });
       reset();
       load();
     } catch (err) {
@@ -144,7 +178,7 @@ export default function CouponsPage() {
 
   return (
     <div>
-      <PageHeader title="Coupons" sub="Discount codes customers can apply in their cart — each one is shown only between its start and end date" />
+      <PageHeader title="Coupons" sub="Discount codes customers apply in their cart — shown only between the start and end date, to all customers, registered users or guests" />
 
       <div className="zc-card" style={{ marginBottom: 20 }}>
         <div className="zc-card-h">
@@ -204,6 +238,35 @@ export default function CouponsPage() {
             </div>
           </div>
 
+          <div>
+            <span style={labelStyle}>Who can use it</span>
+            <div role="radiogroup" aria-label="Who can use this coupon" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {Object.entries(AUDIENCE).map(([key, a]) => (
+                <button
+                  key={key} type="button" role="radio" aria-checked={form.audience === key}
+                  className={`zc-btn sm${form.audience === key ? " pri" : ""}`} onClick={() => setAudience(key)}
+                >
+                  {a.label}
+                </button>
+              ))}
+            </div>
+            <div style={hintStyle(false)}>{AUDIENCE[form.audience].hint}</div>
+          </div>
+
+          {form.audience !== "GUEST" && (
+            <div>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: alreadySent ? "default" : "pointer" }}>
+                <input type="checkbox" checked={alreadySent || form.notify} disabled={alreadySent} onChange={set("notify")} />
+                🔔 Send a notification to registered customers' phones
+              </label>
+              <div style={hintStyle(false)}>
+                {alreadySent
+                  ? "Already sent — it can't be recalled or sent twice. Use Offers to send another message."
+                  : "Goes out automatically on the start date to customers who turned on offer notifications, and appears in their Notifications list with an “Apply in cart” button."}
+              </div>
+            </div>
+          )}
+
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
             <div style={field}>
               <label htmlFor="cp-start" style={labelStyle}>Start date</label>
@@ -241,12 +304,13 @@ export default function CouponsPage() {
             <div style={{ padding: 20, textAlign: "center", color: "var(--text-3)", fontSize: 13 }}>No coupons yet</div>
           ) : (
             <div style={{ overflowX: "auto" }}>
-              <table className="zc-ledger" style={{ minWidth: 900 }}>
+              <table className="zc-ledger" style={{ minWidth: 1050 }}>
                 <thead>
                   <tr>
                     <th style={{ width: 100 }}>Status</th>
                     <th style={{ width: 120 }}>Code</th>
                     <th>Title</th>
+                    <th style={{ width: 150 }}>Who</th>
                     <th style={{ width: 170 }}>Discount</th>
                     <th style={{ width: 100 }}>Min order</th>
                     <th style={{ width: 210 }}>Valid</th>
@@ -263,6 +327,16 @@ export default function CouponsPage() {
                         <td>
                           {c.title}
                           {c.description && <div style={{ fontSize: 11.5, color: "var(--text-3)", marginTop: 2 }}>{c.description}</div>}
+                        </td>
+                        <td>
+                          {AUDIENCE[c.audience || "ALL"].label}
+                          {c.notification && NOTIFY_TAG[c.notification.status] && (
+                            <div style={{ marginTop: 4 }}>
+                              <span className={`zc-tag ${NOTIFY_TAG[c.notification.status].cls}`} title={c.notification.error || undefined}>
+                                <i />{NOTIFY_TAG[c.notification.status].label(c.notification)}
+                              </span>
+                            </div>
+                          )}
                         </td>
                         <td>{describeDiscount(c)}</td>
                         <td>{c.minOrderAmount ? `₹${c.minOrderAmount}` : "—"}</td>

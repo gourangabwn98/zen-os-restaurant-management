@@ -181,6 +181,12 @@ on `Order.coupon`. The discount is computed only in `utils/pricing.js`
 (`modifyOrderItemsTx`, admin `addItemsToOrder`) must pass `order.coupon` to
 `computeTotals`, or an edit silently wipes the discount. Staff orders take
 no coupon. Never accept a discount amount from a client.
+`Coupon.audience` (`ALL | REGISTERED | GUEST`, "registered" = request has a
+logged-in user) is enforced both when listing and in `resolveCouponForOrder`
+— hiding it in the UI alone is not enough. Announcing a coupon by push goes
+through `couponOfferService.js`, which reuses the Offers broadcast (scheduled
+for `startsAt`); keep that out of `couponService.js`, which orderService
+imports and must not load Firebase Admin.
 
 ## OTP / SMS provider selection
 

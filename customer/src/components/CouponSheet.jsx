@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import Sheet from "./ui/Sheet.jsx";
 import { getLiveCoupons, checkCoupon } from "../services/couponService.js";
 import { couponDiscount, couponShortfall, describeCoupon, couponValidTill } from "../utils/coupon.js";
@@ -20,6 +21,7 @@ export function CouponTicket({ coupon, subtotal, applied, onApply }) {
           )}
         </div>
         <div className="coupon-title">{coupon.title} · {describeCoupon(coupon)}</div>
+        {coupon.audience === "REGISTERED" && <div className="coupon-hint member">★ Members-only offer</div>}
         {coupon.description && <div className="muted small">{coupon.description}</div>}
         {short > 0
           ? <div className="coupon-hint warn">Add ₹{short} more to unlock</div>
@@ -36,13 +38,14 @@ export function CouponTicket({ coupon, subtotal, applied, onApply }) {
  * right now (the server only returns coupons inside their date window). */
 export default function CouponSheet({ subtotal, applied, onApply, onClose }) {
   const [coupons, setCoupons] = useState(null);
+  const [lockedCount, setLockedCount] = useState(0); // registered-only coupons a guest can't see
   const [code, setCode] = useState("");
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     getLiveCoupons()
-      .then(({ data }) => setCoupons(data.coupons || []))
+      .then(({ data }) => { setCoupons(data.coupons || []); setLockedCount(data.lockedCount || 0); })
       .catch(() => setCoupons([]));
   }, []);
 
@@ -77,7 +80,13 @@ export default function CouponSheet({ subtotal, applied, onApply, onClose }) {
 
       <div className="card-title" style={{ margin: "18px 0 8px" }}>Available coupons</div>
       {coupons === null && <p className="muted small">Loading coupons…</p>}
-      {coupons?.length === 0 && <p className="muted small">No coupons available right now — check back during our next offer.</p>}
+      {coupons?.length === 0 && !lockedCount && <p className="muted small">No coupons available right now — check back during our next offer.</p>}
+      {lockedCount > 0 && (
+        <Link to="/login" className="coupon-unlock" onClick={onClose}>
+          <span aria-hidden="true">🔒</span>
+          <span>{lockedCount} more coupon{lockedCount === 1 ? "" : "s"} for registered customers — <b>log in to unlock</b></span>
+        </Link>
+      )}
       <div className="coupon-list">
         {(coupons || []).map((c) => (
           <CouponTicket key={c.code} coupon={c} subtotal={subtotal} applied={applied?.code === c.code} onApply={onApply} />

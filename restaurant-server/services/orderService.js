@@ -140,6 +140,7 @@ export const placeOrderTx = async ({ req, body }) => {
   // client only sends the code. Staff orders don't take one.
   const coupon = isStaffOrder ? null : await resolveCouponForOrder({
     models: req.models, code: couponCode, subtotal: dbItems.reduce((s, i) => s + i.price * i.qty, 0),
+    isRegistered: Boolean(req.user), // audience rule (REGISTERED / GUEST coupons)
   });
   const { subtotal, tax, serviceCharge, discount, total } = computeTotals(dbItems, restaurant, coupon);
 

@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAppState } from "../context/AppState.jsx";
 import { placeOrder, saveGuestOrderToken, newIdempotencyKey } from "../services/orderService.js";
+import { checkCoupon } from "../services/couponService.js";
 import { getRestaurantProfile } from "../services/restaurantService.js";
 import { initiatePhonePePayment } from "../services/paymentService.js";
 import { EmptyState } from "../components/StateViews.jsx";
@@ -16,6 +17,7 @@ import { couponDiscount, couponShortfall, describeCoupon } from "../utils/coupon
 
 export default function CartPage() {
   const nav = useNavigate();
+  const location = useLocation();
   const { cart, auth, table } = useAppState();
 
   const [orderType, setOrderType] = useState(table.isDineIn ? "DINE_IN" : "TAKEAWAY");
@@ -68,8 +70,20 @@ export default function CartPage() {
     setCoupon(c);
     setCouponOpen(false);
     const off = couponDiscount(c, cart.subtotal);
-    toast.success(off ? `🎉 ${c.code} applied — you save ₹${off}` : `${c.code} applied`);
+    toast.success(off ? `🎉 ${c.code} applied — you save ₹${off}` : `${c.code} applied — add ₹${couponShortfall(c, cart.subtotal)} more to use it`);
   };
+
+  // "Apply in cart" from a coupon notification (NotificationsPage) — check
+  // it with the server first (dates, who it's for), then apply.
+  const pendingCode = location.state?.applyCoupon;
+  useEffect(() => {
+    if (!pendingCode) return;
+    nav(location.pathname, { replace: true, state: null }); // don't re-apply on refresh/back
+    checkCoupon(pendingCode)
+      .then(({ data }) => applyCoupon(data.coupon))
+      .catch((err) => toast.error(err.response?.data?.message || `Couldn't apply ${pendingCode}`));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingCode]);
 
   const canPlace = useMemo(() => {
     if (cart.itemCount === 0) return false;
