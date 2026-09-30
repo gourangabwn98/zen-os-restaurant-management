@@ -74,7 +74,7 @@ const MANAGEMENT_NAV = [
   { id: "attendance", label: "Attendance", icon: "attendance" },
   { id: "users", label: "Users", icon: "users" },
   { id: "menu", label: "Menu Items", icon: "menu" },
-  { id: "notifications", label: "Offers", icon: "bell" },
+  { id: "notifications", label: "Notifications", icon: "bell" },
   { id: "coupons", label: "Coupons", icon: "coupon" },
 ];
 const FINANCE_NAV = [

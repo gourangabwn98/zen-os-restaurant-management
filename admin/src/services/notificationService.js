@@ -1,4 +1,4 @@
-// src/services/notificationService.js — Admin "Offers" broadcast
+// src/services/notificationService.js — Admin "Notifications" broadcast
 import api from "./api.js";
 
 // couponCode is optional ("" = none); the server uppercases and validates it.

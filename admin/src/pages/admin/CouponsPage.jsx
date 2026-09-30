@@ -261,7 +261,7 @@ export default function CouponsPage() {
               </label>
               <div style={hintStyle(false)}>
                 {alreadySent
-                  ? "Already sent — it can't be recalled or sent twice. Use Offers to send another message."
+                  ? "Already sent — it can't be recalled or sent twice. Use Notifications to send another message."
                   : "Goes out automatically on the start date to customers who turned on offer notifications, and appears in their Notifications list with an “Apply in cart” button."}
               </div>
             </div>
