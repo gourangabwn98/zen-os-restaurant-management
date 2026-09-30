@@ -49,6 +49,12 @@ confirmation, "Print Bill").
 3. **Configure your printers** in `printers.config.json`:
    - **LAN printer**: set `type: "LAN"`, `ip`, and `port` (thermal printers
      almost always use port `9100`). No extra setup needed.
+   - **USB printer without a Windows driver** (many cheap ESC/POS
+     "POS-58/80" printers enumerate as a generic WinUSB device and never
+     appear in Printers & scanners): set `type: "USB_DIRECT"` (optionally
+     `vendorId`/`productId` in hex). Bytes go straight to the printer's USB
+     endpoint via the `usb` package (prebuilt binary, no toolchain) — no
+     driver, share, Print Spooler or admin rights needed.
    - **USB printer**: set `type: "USB"` and `windowsPrinterName` to the
      *exact* name shown in Windows under Settings → Printers & Scanners.
      **The printer must also be shared:** right-click it there → Printer
@@ -69,6 +75,33 @@ confirmation, "Print Bill").
    to run the full pipeline against an in-memory simulated printer — useful
    to confirm the backend connection and job flow work before plugging in
    real hardware.
+
+## Windows .exe (no Node.js needed on the restaurant PC)
+
+```
+npm install
+npm run build:exe
+```
+
+Builds `dist/SohojPrintService.exe` (Node's built-in single-executable
+support — `scripts/build-exe.mjs`) and lays out `dist/` with everything it
+needs next to it:
+
+| File | Needed? | What |
+|---|---|---|
+| `SohojPrintService.exe` | yes | the program (includes Node.js) |
+| `.env` | yes | `BACKEND_URL`, `PRINTER_KEY` |
+| `printers.config.json` | yes | which printer prints what — for bills only, one printer with `"role": "BILL"` (or `"BOTH"`) |
+| `node_modules\` | for `USB_DIRECT` | the `usb` package's native binary (can't be embedded in the .exe) |
+| `data\` | created automatically | the persisted print queue — don't delete while jobs are pending |
+| `README.txt`, `.env.example` | no | setup notes for the restaurant |
+
+Copy the whole `dist/` folder to the restaurant PC. Config is read from the
+.exe's own folder, not baked in, so one build serves every restaurant; a
+rebuild never overwrites an existing `dist/.env` or
+`dist/printers.config.json`. Build on Windows (the .exe is a copy of the
+building machine's `node.exe`); it isn't code-signed, so SmartScreen may ask
+to "Run anyway" the first time.
 
 ## Running as a background service
 

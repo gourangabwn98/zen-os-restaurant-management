@@ -44,3 +44,6 @@ lerna-debug.log*
 
 # print-service runtime state (disk-persisted print queue — local, not shared)
 print-service/data/queue.json
+
+# Print-service install folder for the restaurant PC (84 MB .exe + printer key)
+Admin_provider/

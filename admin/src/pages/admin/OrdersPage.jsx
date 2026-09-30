@@ -537,14 +537,14 @@ const PAYMENT_STATUS_OPTIONS = [
   { value:"PAID",                 label:"Paid", icon:"✓"  },
 ];
 
-const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null }) => {
+const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOrderType = "DINE_IN" }) => {
   const [vegFilter,  setVegFilter]  = useState("All");
   const [tempFilter, setTempFilter] = useState("All");
   const [mi,          setMi]          = useState([]);
   const [selCat,      setSelCat]      = useState("All");
   const [search,      setSearch]      = useState("");
   const [cart,        setCart]        = useState([]);
-  const [orderType,   setOrderType]   = useState("DINE_IN");
+  const [orderType,   setOrderType]   = useState(initialOrderType);
   // Pre-filled when opened by tapping a specific table on the floor map
   // (see openNewOrder in the parent) — saves re-typing a number just picked.
   const [tableNo,     setTableNo]     = useState(initialTableNo ? String(initialTableNo) : "");
@@ -1502,8 +1502,12 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
 // MULTI-ORDER TABLE VIEW
 // ══════════════════════════════════════════════════════════════════════════════
 
-const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPaymentChange, onCombinedBill, onAddItems, onNewOrder }) => {
+// `label` / `billTarget` let the same view show a takeaway order (no table):
+// the heading reads "Takeaway #…" and the bill goes by order id, not tableNo.
+const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPaymentChange, onCombinedBill, onAddItems, onNewOrder, label, billTarget }) => {
   const [expandedOrder, setExpandedOrder] = useState(null);
+  const heading = label || `Table ${tableNo}`;
+  const bill = billTarget || { mode: "table", value: tableNo };
 
   if (orders.length === 0) {
     return (
@@ -1539,7 +1543,7 @@ const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPayme
 
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10, flexWrap:"wrap", gap:6 }}>
         <span style={{ fontSize:11, fontWeight:600, color:T2, letterSpacing:1, textTransform:"uppercase" }}>
-          Table {tableNo} · {orders.length} order{orders.length!==1?"s":""}
+          {heading} · {orders.length} order{orders.length!==1?"s":""}
         </span>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
           <span className="zc-tag" style={{
@@ -1604,7 +1608,7 @@ const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPayme
       <div style={{ padding:14, background:`var(--violet-faint)`, borderRadius:RADIUS,
         border:`1px solid var(--violet-mid)`, marginTop:8 }}>
         <div style={{ fontSize:11, fontWeight:600, color:T2, textTransform:"uppercase",
-          letterSpacing:1, marginBottom:10 }}>Table Bill Summary</div>
+          letterSpacing:1, marginBottom:10 }}>{label ? "Bill Summary" : "Table Bill Summary"}</div>
 
         {orders.map((o,i) => {
           const paid = o.paymentStatus==="PAID";
@@ -1653,11 +1657,11 @@ const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPayme
       </div>
 
       {onCombinedBill && (
-        <button className="op-btn" onClick={()=>onCombinedBill("table", tableNo)}
+        <button className="op-btn" onClick={()=>onCombinedBill(bill.mode, bill.value)}
           style={{ width:"100%", marginTop:10, padding:"10px", borderRadius:10,
             border:`1px solid var(--violet-mid)`, background:`var(--violet-faint)`,
             color:PINK, cursor:"pointer", fontSize:13, fontWeight:600 }}>
-          🧾 Generate Combined Bill for Table {tableNo}
+          🧾 {label ? `Generate Bill for ${heading}` : `Generate Combined Bill for Table ${tableNo}`}
         </button>
       )}
     </div>
@@ -1949,7 +1953,9 @@ export default function OrdersPage() {
   // Opens the New order form. Passing a table number (e.g. from tapping a
   // free table on the map) pre-fills it there instead of leaving the admin
   // to re-type a number they already picked.
-  const openNewOrder = (tableNo = null) => { setPresetTableNo(tableNo); setShowCreate(true); };
+  const openNewOrder = (tableNo = null) => { setPresetTableNo(tableNo); setPresetTakeaway(false); setShowCreate(true); };
+  const [presetTakeaway,setPresetTakeaway]=useState(false);
+  const openNewTakeaway = () => { setPresetTableNo(null); setPresetTakeaway(true); setShowCreate(true); };
   const [showAddItems, setShowAddItems] = useState(null);
   const [showEditItems, setShowEditItems] = useState(null); // order _id being edited
   const [page,setPage]=useState(1);
@@ -1961,6 +1967,9 @@ export default function OrdersPage() {
   const [tableSelected,setTableSelected]=useState(null);
   const [showCombinedBill, setShowCombinedBill] = useState(null);
   const [showTables, setShowTables] = useState(true);
+  // Floor card shows either the dine-in tables or active takeaway orders.
+  const [mapMode, setMapMode] = useState("tables"); // "tables" | "takeaway"
+  const [takeawaySelected, setTakeawaySelected] = useState(null); // order _id
   // Ticks every 30s purely to re-render live "since placed" timers — no refetch.
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [error, setError] = useState(false);
@@ -2162,6 +2171,13 @@ export default function OrdersPage() {
     });
 
   const selectedTableOrders = tableSelected ? tableOrderMap[tableSelected] || [] : [];
+
+  // Active takeaway orders — same "active, any day" rule as tableOrderMap,
+  // oldest first so the longest-waiting pickup sits at the top-left.
+  const takeawayOrders = orders
+    .filter(o => o.orderType === "TAKEAWAY" && ACTIVE_ORDER_STATUSES.includes(o.status))
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  const selectedTakeaway = takeawayOrders.find(o => o._id === takeawaySelected) || null;
 
   const paginated=displayedOrders.slice((page-1)*PER_PAGE,page*PER_PAGE);
   const totalPages=Math.ceil(displayedOrders.length/PER_PAGE);
@@ -2450,11 +2466,76 @@ export default function OrdersPage() {
         <div className="op-floor">
           <div className="zc-card">
             <div className="zc-card-h">
-              <span className="t">Table map</span>
-              <span className="s">{tables.length} tables · {occupiedTables} seated</span>
+              <span className="t">{mapMode === "takeaway" ? "Takeaway orders" : "Table map"}</span>
+              <span className="s">
+                {mapMode === "takeaway"
+                  ? `${takeawayOrders.length} active`
+                  : `${tables.length} tables · ${occupiedTables} seated`}
+              </span>
+              <div style={{ flex: 1 }} />
+              <div className="zc-seg">
+                <button type="button" className={mapMode === "tables" ? "on" : ""}
+                  onClick={() => setMapMode("tables")}>Tables</button>
+                <button type="button" className={mapMode === "takeaway" ? "on" : ""}
+                  onClick={() => setMapMode("takeaway")}>
+                  Takeaway{takeawayOrders.length > 0 ? ` · ${takeawayOrders.length}` : ""}
+                </button>
+              </div>
             </div>
             <div style={{ padding: "14px 16px 16px" }}>
-              {tablesLoading ? (
+              {mapMode === "takeaway" ? (
+                loading ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(94px, 1fr))", gap: 10 }}>
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <div key={i} className="zc-skel" style={{ height: 100, borderRadius: 14 }} />
+                    ))}
+                  </div>
+                ) : takeawayOrders.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: 28, color: "var(--text-3)", fontSize: 13 }}>
+                    No active takeaway orders
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(94px, 1fr))", gap: 10 }}>
+                    {takeawayOrders.map((o) => {
+                      const isSel = takeawaySelected === o._id;
+                      const hasDue = o.paymentStatus === "PENDING_VERIFICATION";
+                      const kind = statusKind(o.status);
+                      const placedMs = nowTick - new Date(o.createdAt).getTime();
+                      const placedKind = durationKind(Math.floor(placedMs / 60000));
+                      const cls = isSel ? " sel" : hasDue ? " due" : "";
+                      const tileStyle = !isSel && !hasDue
+                        ? { background: KIND_FILL[kind], borderColor: KIND_LINE[kind] }
+                        : undefined;
+                      const who = o.user?.name || o.guestName;
+                      return (
+                        <button
+                          type="button"
+                          key={o._id}
+                          className={`zc-tbl${cls}`}
+                          style={tileStyle}
+                          title={who ? `${o.orderId} · ${who}` : o.orderId}
+                          onClick={() => setTakeawaySelected(isSel ? null : o._id)}
+                        >
+                          <span className="dot" style={{ background: hasDue ? "var(--stop)" : KIND_HUE[kind], boxShadow: `0 0 8px ${hasDue ? "var(--stop)" : KIND_HUE[kind]}` }} />
+                          <div className="no" style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            #{String(o.orderId || "").slice(-4)}
+                          </div>
+                          <div className="st" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {who || formatStatus(o.status)}
+                          </div>
+                          <div style={{ fontSize: 9.5, fontWeight: 700, color: KIND_INK[placedKind], marginTop: 1 }}>
+                            ⏱ {formatDuration(placedMs)}
+                          </div>
+                          <div className="ft">
+                            <span className="amt tnum" style={{ color: hasDue ? "var(--stop-ink)" : KIND_INK[kind] }}>₹{Math.round(Number(o.total || 0))}</span>
+                            <span style={{ fontSize: 10, color: hasDue ? "var(--stop-ink)" : KIND_INK[kind] }}>{hasDue ? "Due" : o.paymentStatus === "PAID" ? "Paid" : "Open"}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )
+              ) : tablesLoading ? (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(94px, 1fr))", gap: 10 }}>
                   {Array.from({ length: 8 }).map((_, i) => (
                     <div key={i} className="zc-skel" style={{ height: 100, borderRadius: 14 }} />
@@ -2522,7 +2603,28 @@ export default function OrdersPage() {
           </div>
 
           <div className="zc-rail" style={{ padding: 16, alignSelf: "start", position: "sticky", top: 8 }}>
-            {tableSelected ? (
+            {mapMode === "takeaway" ? (
+              selectedTakeaway ? (
+                <MultiOrderTableView
+                  key={selectedTakeaway._id}
+                  orders={[selectedTakeaway]}
+                  label={`Takeaway ${selectedTakeaway.orderId}`}
+                  billTarget={{ mode: "orders", value: selectedTakeaway._id }}
+                  nowTick={nowTick}
+                  onStatusChange={(id, s) => { handleStatusChange(id, s); }}
+                  onPaymentChange={handlePaymentChange}
+                  onCombinedBill={(mode, value) => setShowCombinedBill({ mode, value })}
+                  onAddItems={(order) => setShowAddItems(order._id)}
+                  onNewOrder={openNewTakeaway}
+                />
+              ) : (
+                <div className="zc-empty" style={{ padding: "44px 16px" }}>
+                  <h4>Pick a takeaway order</h4>
+                  <p>Tap an order to see its items, update status, or take payment.</p>
+                  <button type="button" className="zc-btn pri" style={{ marginTop: 16 }} onClick={openNewTakeaway}>＋ New takeaway order</button>
+                </div>
+              )
+            ) : tableSelected ? (
               <MultiOrderTableView
                 orders={selectedTableOrders}
                 tableNo={tableSelected}
@@ -2715,7 +2817,8 @@ export default function OrdersPage() {
       {showCreate && (
         <CreateOrderModal
           initialTableNo={presetTableNo}
-          onClose={() => { setShowCreate(false); setPresetTableNo(null); }}
+          initialOrderType={presetTakeaway ? "TAKEAWAY" : "DINE_IN"}
+          onClose={() => { setShowCreate(false); setPresetTableNo(null); setPresetTakeaway(false); }}
           onCreated={(o) => upsertOrder(o)}
         />
       )}

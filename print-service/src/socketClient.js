@@ -80,14 +80,22 @@ export class SocketClient {
   }
 
   /** Pull the backend's current view of the queue and feed every job through
-   * ingest() — a no-op for anything we've already printed locally. */
-  async reconcileQueue() {
+   * ingest() — a no-op for anything we've already printed locally.
+   *
+   * `onlyNew` (the periodic poll, index.js): only jobs this service has
+   * never seen. A job can be created on a backend instance this socket isn't
+   * connected to (several servers / a local + a deployed one sharing the
+   * database) — its live push never reaches us, so we'd otherwise only find
+   * it on the next reconnect. Known jobs are left to the retry sweep and its
+   * backoff, so polling never speeds up or repeats their attempts. */
+  async reconcileQueue({ onlyNew = false } = {}) {
     if (!this.socket?.connected) return;
     try {
       const { jobs, error } = await this._ack("get-queue", {});
       if (error) { logger.error("get-queue failed:", error); return; }
-      logger.info(`Reconciling ${jobs.length} job(s) from backend queue`);
-      for (const job of jobs) {
+      const todo = onlyNew ? jobs.filter((j) => !this.processor.queue.has(j.jobId)) : jobs;
+      if (!onlyNew || todo.length) logger.info(`Reconciling ${todo.length} job(s) from backend queue`);
+      for (const job of todo) {
         await this.processor.ingest(job);
       }
     } catch (err) {

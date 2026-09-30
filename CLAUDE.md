@@ -237,7 +237,11 @@ with a purely event-driven push model.
 USB printing goes through the Windows print **share** (`copy /b file
 \\localhost\ShareName`), not the `printer` npm package — that package is a
 native addon with a broken dependency tree and needs a C++ build
-toolchain. Don't reintroduce it.
+toolchain. Don't reintroduce it. A printer with no Windows driver (generic
+WinUSB device, e.g. POS-58/80 boards) uses `type: "USB_DIRECT"`
+(`drivers/usbDirectDriver.js`, the `usb` v3 package — prebuilt N-API
+binary, no toolchain); the packaged .exe loads it from `node_modules/` next
+to itself.
 
 ## Conventions to follow when adding features
 

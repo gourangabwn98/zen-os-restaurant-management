@@ -1,15 +1,16 @@
 // src/printerManager.js
 import { LanDriver } from "./drivers/lanDriver.js";
 import { UsbDriver } from "./drivers/usbDriver.js";
+import { UsbDirectDriver } from "./drivers/usbDirectDriver.js";
 import { MockDriver } from "./drivers/mockDriver.js";
 import { logger } from "./logger.js";
 
 export class PrinterManager {
-  constructor(printerConfigs, { useMock = false } = {}) {
+  constructor(printerConfigs, { useMock = false, echoMock = false } = {}) {
     this.drivers = [];
     for (const cfg of printerConfigs) {
       try {
-        const driver = useMock ? new MockDriver(cfg) : this._buildRealDriver(cfg);
+        const driver = useMock ? new MockDriver(cfg, { echo: echoMock }) : this._buildRealDriver(cfg);
         this.drivers.push({ role: cfg.role, driver, status: "unknown" });
       } catch (err) {
         // A single bad printer entry (wrong type, missing field, etc.) must
@@ -26,7 +27,8 @@ export class PrinterManager {
   _buildRealDriver(cfg) {
     if (cfg.type === "LAN") return new LanDriver(cfg);
     if (cfg.type === "USB") return new UsbDriver(cfg);
-    throw new Error(`Unknown printer type "${cfg.type}" (expected "LAN" or "USB")`);
+    if (cfg.type === "USB_DIRECT") return new UsbDirectDriver(cfg);
+    throw new Error(`Unknown printer type "${cfg.type}" (expected "LAN", "USB" or "USB_DIRECT")`);
   }
 
   /** KOT jobs prefer a KOT/BOTH printer; BILL jobs prefer a BILL/BOTH printer. */

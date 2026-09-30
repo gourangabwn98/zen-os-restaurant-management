@@ -7,8 +7,9 @@
 //     simulate offline printers, printer errors, and recovery.
 // ─────────────────────────────────────────────────────────────────────────────
 export class MockDriver {
-  constructor(printerConfig) {
+  constructor(printerConfig, { echo = false } = {}) {
     this.id = printerConfig.id;
+    this.echo = echo; // USE_MOCK_PRINTER dry run: show the ticket on screen
     this.type = printerConfig.type;
     this.online = printerConfig.startOnline ?? true;
     this.failNext = 0; // number of upcoming print attempts to force-fail
@@ -31,6 +32,19 @@ export class MockDriver {
       throw new Error(`Mock printer "${this.id}" simulated failure`);
     }
     this.printedJobs.push(lines);
+    if (this.echo) {
+      const W = 32; // characters per line on a 58 mm roll
+      const fit = (l) => {
+        if (l.type === "feed") return "";
+        if (l.type === "cut") return "-".repeat(W) + " ✂";
+        const t = String(l.text ?? "");
+        if (l.align === "center") return t.padStart(Math.floor((W + t.length) / 2)).padEnd(W);
+        if (l.align === "right") return t.padStart(W);
+        return t;
+      };
+      const body = lines.map((l) => `   | ${fit(l)}`).join("\n");
+      console.log(`\n🖨️  [MOCK ${this.id}] would print:\n${body}\n`);
+    }
     return true;
   }
 }

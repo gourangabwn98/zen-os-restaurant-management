@@ -1,11 +1,21 @@
 // src/config.js
-import "dotenv/config";
+import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, "..");
+// Where .env, printers.config.json and data/ live. Run with Node (`npm
+// start`) that's this project folder; run as the packaged .exe
+// (scripts/build-exe.mjs) it's the folder the .exe sits in — so the .exe
+// can be copied anywhere with its config files next to it.
+const PACKAGED = !["node", "node.exe"].includes(path.basename(process.execPath).toLowerCase());
+const ROOT = PACKAGED
+  ? path.dirname(process.execPath)
+  : path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+// Explicit path, not the working directory — a shortcut or Task Scheduler
+// may start the .exe from somewhere else.
+dotenv.config({ path: path.join(ROOT, ".env") });
 
 const readPrintersConfig = () => {
   const configPath = path.join(ROOT, "printers.config.json");
@@ -13,13 +23,13 @@ const readPrintersConfig = () => {
     const raw = JSON.parse(fs.readFileSync(configPath, "utf-8"));
     return raw.printers || [];
   } catch (err) {
-    throw new Error(`Could not read printers.config.json: ${err.message}`);
+    throw new Error(`Could not read ${configPath}: ${err.message}`);
   }
 };
 
 const required = (name) => {
   const v = process.env[name];
-  if (!v) throw new Error(`Missing required env var: ${name}`);
+  if (!v) throw new Error(`Missing required setting ${name} — add it to ${path.join(ROOT, ".env")}`);
   return v;
 };
 
@@ -31,6 +41,7 @@ export const config = {
   retryBaseDelayMs: Number(process.env.RETRY_BASE_DELAY_MS || 3000),
   retrySweepIntervalMs: Number(process.env.RETRY_SWEEP_INTERVAL_MS || 15000),
   healthCheckIntervalMs: Number(process.env.HEALTH_CHECK_INTERVAL_MS || 20000),
+  queuePollIntervalMs: Number(process.env.QUEUE_POLL_INTERVAL_MS || 20000),
   useMockPrinter: String(process.env.USE_MOCK_PRINTER || "false").toLowerCase() === "true",
   printers: readPrintersConfig(),
 };
