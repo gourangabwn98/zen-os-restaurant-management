@@ -7,7 +7,7 @@
 // Speech recognition mishears food names ("biriyani", "panner"), so matching
 // is tolerant: word-by-word with small spelling differences allowed. Nothing
 // is ever added to an order from here — the UI shows these as suggestions
-// the admin confirms.
+// the waiter confirms.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Quantity words — English plus the romanized Hindi/Bengali numbers an

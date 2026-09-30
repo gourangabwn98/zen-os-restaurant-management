@@ -6,8 +6,8 @@
 //
 // Speech recognition mishears food names ("biriyani", "panner"), so matching
 // is tolerant: word-by-word with small spelling differences allowed. Nothing
-// is ever added to an order from here — the UI shows these as suggestions
-// the admin confirms.
+// is ever added to an order from here — the customer app only uses the
+// spoken dish name as a menu search.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Quantity words — English plus the romanized Hindi/Bengali numbers an

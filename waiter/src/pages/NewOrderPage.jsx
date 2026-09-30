@@ -8,6 +8,7 @@ import { Loader, EmptyState } from "../components/StateViews.jsx";
 import GlassCard from "../components/ui/GlassCard.jsx";
 import PrimaryButton from "../components/ui/PrimaryButton.jsx";
 import Chip from "../components/ui/Chip.jsx";
+import VoiceOrder from "../components/VoiceOrder.jsx";
 import QtyStepper, { AddButton } from "../components/ui/QtyStepper.jsx";
 import { useAppState } from "../context/AppState.jsx";
 import { ACCENT, ACCENT_SOFT, ACCENT_GRADIENT, TEXT_MUTED, TEXT_FAINT, GLASS_BG, GLASS_BORDER, NAV_HEIGHT } from "../theme.js";
@@ -27,6 +28,8 @@ export default function NewOrderPage() {
   const [tables, setTables]       = useState([]);
 
   const [items, setItems]         = useState(null);
+  // Whole menu (unfiltered) — what voice ordering matches spoken names against.
+  const [fullMenu, setFullMenu]   = useState([]);
   const [categories, setCategories] = useState([]);
   const [search, setSearch]       = useState("");
   const [category, setCategory]   = useState("");
@@ -40,6 +43,7 @@ export default function NewOrderPage() {
   useEffect(() => {
     getAllTables().then(({ data }) => setTables((data.tables || []).filter((t) => t.status !== "Inactive"))).catch(() => {});
     getMenuCategories().then(({ data }) => setCategories(data || [])).catch(() => {});
+    getMenu().then(({ data }) => setFullMenu(Array.isArray(data) ? data : [])).catch(() => {});
   }, []);
 
   const loadMenu = useCallback(() => {
@@ -64,6 +68,23 @@ export default function NewOrderPage() {
       return prev.map((c) => (c.item._id === item._id ? { ...c, qty: nextQty } : c));
     });
   };
+
+  // Voice order: add each confirmed line, merging with what's already in the cart.
+  const addVoiceItems = (lines) => {
+    setCart((prev) => {
+      let next = prev;
+      for (const { item, qty } of lines) {
+        const ex = next.find((c) => c.item._id === item._id);
+        next = ex
+          ? next.map((c) => (c.item._id === item._id ? { ...c, qty: Math.min(99, c.qty + qty) } : c))
+          : [...next, { item, qty, notes: "" }];
+      }
+      return next;
+    });
+    const n = lines.reduce((s, l) => s + l.qty, 0);
+    toast.success(`Added ${n} item${n === 1 ? "" : "s"} by voice`);
+  };
+  const voiceMenu = useMemo(() => fullMenu.filter((it) => !(it.stockTracked && !it.stockAvailable)), [fullMenu]);
 
   const setNotes = (id, notes) => setCart((prev) => prev.map((c) => (c.item._id === id ? { ...c, notes } : c)));
 
@@ -221,15 +242,16 @@ export default function NewOrderPage() {
       </div>
 
       {/* Search */}
-      <div style={{ padding: "6px 16px" }}>
+      <div style={{ padding: "6px 16px", display: "flex", gap: 8 }}>
         <input
           value={search} onChange={(e) => setSearch(e.target.value)}
           placeholder="Search menu…"
           style={{
-            width: "100%", padding: "11px 15px", borderRadius: 14, border: `1px solid ${GLASS_BORDER}`,
+            flex: 1, minWidth: 0, padding: "11px 15px", borderRadius: 14, border: `1px solid ${GLASS_BORDER}`,
             fontSize: 14, boxSizing: "border-box", background: GLASS_BG, color: "#fff",
           }}
         />
+        <VoiceOrder menu={voiceMenu} onAdd={addVoiceItems} onSearch={(q) => { setCategory(""); setSearch(q); }} />
       </div>
 
       {categories.length > 0 && (

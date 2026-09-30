@@ -15,7 +15,9 @@ const PATHS = {
   arrow:   <path d="M5 12h14M13 6l6 6-6 6" />,
   chevron: <path d="M9 6l6 6-6 6" />,
   back:    <path d="M15 6l-6 6 6 6" />,
-  star:    <path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z" />,
+  mic:     <><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" /></>,
+  stop:    <rect x="7" y="7" width="10" height="10" rx="2" />,
+  star:<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z" />,
 };
 
 export default function Icon({ name, className = "ico", ...rest }) {
