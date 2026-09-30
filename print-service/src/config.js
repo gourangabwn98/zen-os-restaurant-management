@@ -50,6 +50,8 @@ export const config = {
   // Last line of the bill, under "Thank you! Visit again :)". Empty = none.
   billFooter: process.env.BILL_FOOTER ?? "Powered by Zen OS",
   // "Scan & Pay" QR at the bottom of unpaid bills (src/payQr.js).
+  // Windows font used to print Bengali/Hindi/other non-Latin text as images.
+  unicodeFont: process.env.UNICODE_FONT || "Nirmala UI",
   printPayQr: String(process.env.PRINT_PAY_QR || "true").toLowerCase() !== "false",
   payQrSize:  Number(process.env.PAY_QR_SIZE || 240), // dots; ~30 mm
   queuePollIntervalMs: Number(process.env.QUEUE_POLL_INTERVAL_MS || 20000),

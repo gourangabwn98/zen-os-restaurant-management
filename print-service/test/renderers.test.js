@@ -166,7 +166,7 @@ const run = async () => {
     assert.deepEqual(wrapText("abcdefghij", 4), ["abcd", "efgh", "ij"]);
     assert.equal(keyValue("Bill No", "X1", 20)[0].text, "Bill No    :      X1");
     assert.equal(toPrintable("Café ‘Ad’s’ ₹ 50 – ok"), "Cafe 'Ad's' Rs 50 - ok");
-    assert.equal(toPrintable("আম"), "??"); // scripts the printer can't show
+    assert.equal(toPrintable("আম"), "আম"); // kept — printed as an image (src/textImage.js)
     assert.equal(money(180), "Rs180");
     assert.equal(money(12.5), "Rs12.50");
     assert.equal(money(-50), "-Rs50");

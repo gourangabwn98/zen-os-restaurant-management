@@ -13,7 +13,9 @@ export const renderLinesToPrinter = (printer, lines) => {
         const { width, height, data } = line.bitmap;
         printer.alignCenter();
         printer.append(printer.printer.printImageBuffer(width, height, data));
-        printer.newLine();
+        // Text drawn as an image (src/textImage.js) is one printed line —
+        // no blank line after it.
+        if (line.feedAfter !== false) printer.newLine();
       } catch { /* print without the logo */ }
       continue;
     }
@@ -24,7 +26,9 @@ export const renderLinesToPrinter = (printer, lines) => {
     else printer.alignLeft();
     if (line.size === "large") printer.setTextDoubleHeight();
 
-    printer.println(line.text ?? "");
+    // Anything outside the printer's built-in characters that wasn't turned
+    // into an image (src/textImage.js) prints as "?" rather than garbage.
+    printer.println(String(line.text ?? "").replace(/[^\x20-\x7E]/g, "?"));
 
     if (line.size === "large") printer.setTextNormal();
     if (line.bold) printer.bold(false);

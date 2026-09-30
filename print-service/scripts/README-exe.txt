@@ -65,9 +65,13 @@ Keep ALL of these files together in one folder:
   The bill/KOT header (name, address, phone) and the logo come from Admin >
   Profile automatically. BILL_FOOTER in .env sets the last line of the bill.
 
-  Unpaid bills end with a "Scan & Pay" UPI QR with the bill amount filled
-  in (UPI ID from Admin > Profile > Payment; if none, the uploaded payment
-  QR image). PRINT_PAY_QR=false in .env turns it off.
+  Unpaid bills end with a "Scan & Pay" QR: the payment QR uploaded in
+  Admin > Profile (reprinted as a clean black-on-white QR), or - if none is
+  uploaded - one made from the UPI ID with the bill amount filled in.
+  PRINT_PAY_QR=false in .env turns it off.
+
+  Bengali / Hindi text (restaurant name, customer, items) is printed as an
+  image using the Windows font "Nirmala UI" (UNICODE_FONT in .env).
 
 
 3) Run it

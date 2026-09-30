@@ -1,7 +1,11 @@
 // test/payQr.test.js — "Scan & Pay" QR on unpaid bills (src/payQr.js + bill layout).
 import assert from "node:assert/strict";
 import QRCode from "qrcode";
-import { upiPayUrl, qrBitmap, isUpiId, PayQrProvider } from "../src/payQr.js";
+import fs from "fs";
+import os from "os";
+import path from "path";
+import { PNG } from "pngjs";
+import { upiPayUrl, qrBitmap, isUpiId, upiPayee, PayQrProvider } from "../src/payQr.js";
 import { renderBill } from "../src/renderers/billRenderer.js";
 
 let passed = 0, failed = 0;
@@ -45,30 +49,71 @@ await test("the printed bitmap is an exact dot-for-dot copy of the QR code (so i
   for (let x = 0; x < bm.width; x++) assert.equal(bm.data[x * 4], 255);
 });
 
-await test("unpaid bill with a UPI ID → generated QR with the amount", async () => {
-  const qr = await new PayQrProvider().forBill(BILL, PROFILE);
+/** A QR as a PNG file (optionally white-on-black, like the uploaded PhonePe one). */
+const qrPng = (text, { inverted = false } = {}) => {
+  const bm = qrBitmap(text, { sizeDots: 300 });
+  const png = new PNG({ width: bm.width, height: bm.height });
+  for (let i = 0; i < bm.width * bm.height; i++) {
+    const v = inverted ? 255 - bm.data[i * 4] : bm.data[i * 4];
+    png.data[i * 4] = png.data[i * 4 + 1] = png.data[i * 4 + 2] = v; png.data[i * 4 + 3] = 255;
+  }
+  return PNG.sync.write(png);
+};
+const serve = (buf, calls = []) => async (url) => { calls.push(url); return { ok: true, arrayBuffer: async () => buf }; };
+const MERCHANT = "upi://pay?pa=sourav.dutta66@ibl&pn=SOURAV%20DUTTA&mc=0000&mode=02&purpose=00";
+const UPLOADED = "https://res.cloudinary.com/demo/image/upload/v1/adda-payment-qr/qr.jpg";
+
+await test("uploaded QR comes first: its content is read and reprinted as a clean QR", async () => {
+  const calls = [];
+  const qr = await new PayQrProvider({ fetch: serve(qrPng(MERCHANT), calls) })
+    .forBill(BILL, { ...PROFILE, paymentQr: UPLOADED });
+  assert.deepEqual(qr.bitmap, qrBitmap(MERCHANT, { sizeDots: 240 })); // exact, unaltered content
+  assert.equal(qr.upiId, "sourav.dutta66@ibl");                        // payee read from the QR
+  assert.equal(qr.amount, 1743);
+  assert.match(calls[0], /\/upload\/c_limit,w_800,h_800\/f_png\//);
+});
+
+await test("an INVERTED (white-on-black) uploaded QR is read too", async () => {
+  const qr = await new PayQrProvider({ fetch: serve(qrPng(MERCHANT, { inverted: true })) })
+    .forBill(BILL, { paymentQr: UPLOADED });
+  assert.equal(qr.upiId, "sourav.dutta66@ibl");
+});
+
+await test("an unreadable uploaded image is printed itself (normalised)", async () => {
+  const img = { width: 8, height: 8, data: Buffer.alloc(256, 255) };
+  const blank = new PNG({ width: 40, height: 40 }); blank.data.fill(255);
+  const qr = await new PayQrProvider({ fetch: serve(PNG.sync.write(blank)), imageProvider: { get: async () => img } })
+    .forBill(BILL, { paymentQr: UPLOADED });
+  assert.equal(qr.bitmap, img);
+  assert.equal(qr.upiId, undefined);
+});
+
+await test("no uploaded QR → UPI ID fallback with the bill amount", async () => {
+  const qr = await new PayQrProvider().forBill(BILL, { ...PROFILE, paymentQr: "" });
   assert.equal(qr.upiId, "Q316276366@ybl");
   assert.equal(qr.amount, 1743);
-  assert.ok(qr.bitmap.width > 0);
+});
+
+await test("offline: the uploaded QR's content is remembered on disk", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "payqr-"));
+  await new PayQrProvider({ cacheDir: dir, fetch: serve(qrPng(MERCHANT)) }).forBill(BILL, { paymentQr: UPLOADED });
+  const offline = await new PayQrProvider({ cacheDir: dir, fetch: async () => { throw new Error("offline"); } })
+    .forBill(BILL, { paymentQr: UPLOADED });
+  assert.equal(offline.upiId, "sourav.dutta66@ibl");
 });
 
 await test("a PAID bill never gets a QR", async () => {
-  assert.equal(await new PayQrProvider().forBill({ ...BILL, paymentStatus: "PAID" }, PROFILE), null);
+  assert.equal(await new PayQrProvider({ fetch: serve(qrPng(MERCHANT)) }).forBill({ ...BILL, paymentStatus: "PAID" }, { ...PROFILE, paymentQr: UPLOADED }), null);
 });
 
-await test("no UPI ID → the uploaded payment QR image is used", async () => {
-  const img = { width: 8, height: 8, data: Buffer.alloc(256, 255) };
-  const calls = [];
-  const qr = await new PayQrProvider({ imageProvider: { get: async (u) => { calls.push(u); return img; } } })
-    .forBill(BILL, { ...PROFILE, upiId: "" });
-  assert.equal(qr.bitmap, img);
-  assert.equal(qr.upiId, undefined);
-  assert.deepEqual(calls, ["https://x/qr.png"]);
-});
-
-await test("nothing configured (or a zero total) → no QR", async () => {
+await test("nothing configured (or a zero total with only a UPI ID) → no QR", async () => {
   assert.equal(await new PayQrProvider().forBill(BILL, {}), null);
   assert.equal(await new PayQrProvider().forBill({ ...BILL, total: 0 }, { upiId: "a@ybl" }), null);
+});
+
+await test("upiPayee reads the VPA from a UPI QR", () => {
+  assert.equal(upiPayee(MERCHANT), "sourav.dutta66@ibl");
+  assert.equal(upiPayee("https://example.com"), "");
 });
 
 await test("bill layout: Scan & Pay block after TOTAL, before the thank-you", () => {

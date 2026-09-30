@@ -35,7 +35,7 @@ export const cloudinaryPngUrl = (url, width, height) => {
  * RGBA pixels → pure black/white RGBA (what node-thermal-printer's raster
  * conversion expects), inverting mostly-dark images and dithering. Pure.
  */
-export const toReceiptBitmap = ({ width, height, data }, { invert = "auto", dither = true } = {}) => {
+export const toReceiptBitmap = ({ width, height, data }, { invert = "auto", dither = true, threshold = 128 } = {}) => {
   const lum = new Float32Array(width * height);
   let sum = 0;
   for (let i = 0; i < width * height; i++) {
@@ -52,7 +52,7 @@ export const toReceiptBitmap = ({ width, height, data }, { invert = "auto", dith
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const i = y * width + x;
-      const v = lum[i] < 128 ? 0 : 255;
+      const v = lum[i] < threshold ? 0 : 255;
       if (!dither) { out[i * 4] = out[i * 4 + 1] = out[i * 4 + 2] = v; out[i * 4 + 3] = 255; continue; }
       const err = lum[i] - v;
       if (x + 1 < width) lum[i + 1] += (err * 7) / 16;

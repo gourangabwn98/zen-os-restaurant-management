@@ -8,6 +8,7 @@ import { SocketClient } from "./socketClient.js";
 import { LogoProvider } from "./logo.js";
 import { RestaurantProfileProvider } from "./restaurantProfile.js";
 import { PayQrProvider } from "./payQr.js";
+import { TextImageRenderer } from "./textImage.js";
 
 // True when running as the packaged .exe (scripts/build-exe.mjs), not `node`.
 const PACKAGED = !["node", "node.exe"].includes(path.basename(process.execPath).toLowerCase());
@@ -36,15 +37,18 @@ async function main() {
     {
       maxAttempts: config.maxAttempts,
       profileProvider: new RestaurantProfileProvider({ backendUrl: config.backendUrl, cacheDir: path.dirname(config.queueFile) }),
+      // Bengali / Hindi / any non-Latin text: printed as images (Windows font).
+      textImages: new TextImageRenderer({ cacheDir: path.dirname(config.queueFile), font: config.unicodeFont }),
       footer: config.billFooter,
       payQrProvider: config.printPayQr
         ? new PayQrProvider({
           sizeDots: config.payQrSize,
-          // Fallback when no UPI ID is set: the admin's uploaded QR image,
-          // kept crisp (no dithering/inversion) so it still scans.
+          cacheDir: path.dirname(config.queueFile),
+          // Only if the uploaded QR can't be read: print the image itself,
+          // crisp (no dithering) and turned black-on-white if it's inverted.
           imageProvider: new LogoProvider({
             cacheDir: path.dirname(config.queueFile), cacheName: "payment-qr-cache",
-            width: config.payQrSize, height: config.payQrSize, invert: false, dither: false,
+            width: config.payQrSize, height: config.payQrSize, invert: "auto", dither: false,
           }),
         })
         : null,

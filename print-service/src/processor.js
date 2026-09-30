@@ -26,6 +26,7 @@ export class Processor {
     this.profileProvider = opts.profileProvider || null; // header: name/address/phone (src/restaurantProfile.js)
     this.footer = opts.footer || "";
     this.payQrProvider = opts.payQrProvider || null; // "Scan & Pay" QR on unpaid bills (src/payQr.js)
+    this.textImages = opts.textImages || null; // non-Latin text as images (src/textImage.js)
     this._processing = new Set(); // jobIds currently mid-print, in THIS process
   }
 
@@ -113,13 +114,15 @@ export class Processor {
 
       const header = await this._header();
       const width = entry.charsPerLine;
-      const lines = job.jobType === "KOT"
+      let lines = job.jobType === "KOT"
         ? renderKot(job, { header, width })
         : renderBill(job, {
           header, width, footer: this.footer,
           logo: await this._logoFor(job, header),
           payQr: await this._payQrFor(job, header),
         });
+      // Bengali/other non-Latin text → drawn as images (src/textImage.js).
+      if (this.textImages) lines = await this.textImages.apply(lines, { charsPerLine: width });
       await entry.driver.printText(lines);
 
       this.queue.markPrinted(jobId);

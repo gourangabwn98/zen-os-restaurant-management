@@ -71,10 +71,16 @@ confirmation, "Print Bill").
      address, city, phone) and bill logo are read from Admin → Profile via
      the public profile endpoint (`src/restaurantProfile.js`, cached in
      `data/`); `BILL_FOOTER` in `.env` sets the bill's last line.
-   - **Scan & Pay QR** (`src/payQr.js`): unpaid bills end with a UPI QR
-     carrying the bill total and number (from the profile's `upiId`), or the
-     uploaded `paymentQr` image if no UPI ID is set. Printed as a raster
-     image, so it works without native QR support. Paying by it changes
+   - **Scan & Pay QR** (`src/payQr.js`): unpaid bills end with the
+     profile's uploaded `paymentQr` — its content is read (`jsqr`, handles
+     inverted QRs) and reprinted as a clean black-on-white QR, unaltered — or,
+     if none is uploaded, a UPI QR from `upiId` with the bill total and
+     number. Printed as a raster image, so it works without native QR support.
+   - **Bengali / non-Latin text** (`src/textImage.js`): ESC/POS printers have
+     no Bengali code page, so any line containing such text is drawn with a
+     Windows font (`UNICODE_FONT`, default Nirmala UI) via GDI+/PowerShell and
+     printed as an image, keeping its column positions; cached in
+     `data/text-images/`. Paying by it changes
      nothing — the order stays `PENDING_VERIFICATION` until staff mark it
      paid. `PRINT_PAY_QR=false` turns it off.
 

@@ -13,18 +13,25 @@
 export const DEFAULT_WIDTH = 48;
 
 // Thermal printers print only their code page (ASCII is always safe). Map the
-// typographic characters that commonly appear in names ("AD’s Cafe") and
-// strip accents, so nothing prints as garbage.
+// typographic characters that commonly appear in names ("AD's Cafe" typed
+// with a curly quote) and strip Latin accents. Other scripts (Bengali,
+// Hindi...) are KEPT: src/textImage.js prints any line containing them as an
+// image drawn with a Windows font; only if that isn't possible do they become
+// "?" (src/drivers/renderLines.js).
 const REPLACE = {
   "‘": "'", "’": "'", "‚": "'", "“": '"', "”": '"', "„": '"',
   "–": "-", "—": "-", "…": "...", "•": "*", "₹": "Rs", "×": "x",
 };
+const TYPOGRAPHIC_RE = /[‘’‚“”„–—…•₹×]/g;
 export const toPrintable = (value) => String(value ?? "")
-  .replace(/[‘’‚“”„–—…•₹×]/g, (c) => REPLACE[c])
-  .normalize("NFKD").replace(/[̀-ͯ]/g, "")
-  .replace(/[^\x20-\x7E]/g, "?")
+  .replace(TYPOGRAPHIC_RE, (c) => REPLACE[c])
+  .normalize("NFKD").replace(/[̀-ͯ]/g, "").normalize("NFC")
+  .replace(/[\u0000-\u001f\u007f]/g, " ")
   .replace(/\s+/g, " ")
   .trim();
+
+/** True if the printer's built-in font can't show this text (needs an image). */
+export const needsImage = (text) => /[^\x20-\x7E]/.test(String(text ?? ""));
 
 export const padRight = (s, w) => (s.length >= w ? s.slice(0, w) : s + " ".repeat(w - s.length));
 // Never truncates: callers size columns so values fit (a value that doesn't
@@ -68,6 +75,12 @@ export const keyValue = (label, value, width, { labelWidth = 11, bold = false } 
   const parts = wrapText(value, room);
   return parts.map((part, i) => ({
     text: (i === 0 ? head : " ".repeat(head.length)) + padLeft(part, room),
+    // Column positions (in characters) — used when the line is drawn as an
+    // image (src/textImage.js) so it lines up with the text lines around it.
+    cells: [
+      ...(i === 0 ? [{ text: head.trimEnd(), start: 0, width: head.length, align: "left" }] : []),
+      { text: part, start: head.length, width: room, align: "right" },
+    ],
     ...(bold ? { bold: true } : {}),
   }));
 };
@@ -94,6 +107,13 @@ export const billItemRows = (name, qty, amount, width, amtW = MIN_AMT_W) => {
   const names = wrapText(name, nameW - 1);
   return names.map((n, i) => ({
     text: i === 0 ? padRight(n, nameW) + padLeft(String(qty), QTY_W) + padLeft(amount, amtW) : n,
+    cells: i === 0
+      ? [
+        { text: n, start: 0, width: nameW, align: "left" },
+        { text: String(qty), start: nameW, width: QTY_W, align: "right" },
+        { text: amount, start: nameW + QTY_W, width: amtW, align: "right" },
+      ]
+      : [{ text: n, start: 0, width: nameW, align: "left" }],
   }));
 };
 
@@ -109,6 +129,9 @@ export const kotItemRows = (name, qty, width) => {
   const names = wrapText(name, width - qW - 1);
   return names.map((n, i) => ({
     text: i === names.length - 1 ? padRight(n, width - qW) + padLeft(q, qW) : n,
+    cells: i === names.length - 1
+      ? [{ text: n, start: 0, width: width - qW, align: "left" }, { text: q, start: width - qW, width: qW, align: "right" }]
+      : [{ text: n, start: 0, width, align: "left" }],
     bold: true,
   }));
 };
