@@ -1,26 +1,56 @@
 // src/renderers/kotRenderer.js
-// Converts a KOT job payload into printer-agnostic "lines" that any driver
-// (real or mock) knows how to render.
-export const renderKot = (job) => {
+// ─────────────────────────────────────────────────────────────────────────────
+// KITCHEN ORDER TICKET layout. Never shows prices or totals — only what the
+// kitchen needs. Data is the KOT job exactly as the backend sends it
+// (KOTJob: orderId, orderType, tableNo, items[{name, qty, notes}],
+// createdAt); `customerName` is printed only if a job carries one (KOTJob
+// doesn't store it today).
+//
+// `opts`: header – { name, address, city, phone } (src/restaurantProfile.js)
+//         width  – characters per line of the target printer (layout.js)
+// ─────────────────────────────────────────────────────────────────────────────
+import {
+  DEFAULT_WIDTH, separator, centered, keyValue, kotItemRows, dateTime,
+  orderTypeLabel, restaurantHeader, toPrintable, wrapText,
+} from "./layout.js";
+
+export const renderKot = (job, { header = null, width = DEFAULT_WIDTH } = {}) => {
+  const d = { ...(job.data || {}), ...job };
+  const W = width;
   const lines = [];
-  lines.push({ text: "KITCHEN ORDER TICKET", bold: true, align: "center", size: "large" });
-  lines.push({ type: "feed" });
-  lines.push({ text: `Order: ${job.orderId || job.data?.orderId || "-"}`, bold: true });
-  lines.push({ text: `Type: ${job.orderType || job.data?.orderType || "-"}` });
-  if (job.tableNo || job.data?.tableNo) {
-    lines.push({ text: `Table: ${job.tableNo || job.data?.tableNo}`, bold: true });
-  }
-  lines.push({ text: new Date().toLocaleString() });
-  lines.push({ text: "--------------------------------" });
+  const kv = (label, value) => lines.push(...keyValue(label, value, W));
 
-  const items = job.items || job.data?.items || [];
+  lines.push(...restaurantHeader(header, W));
+
+  lines.push(separator(W));
+  lines.push({ text: "*** KITCHEN ORDER TICKET ***", bold: true, align: "center" });
+  lines.push(separator(W));
+
+  const customer = d.customerName || d.guestName;
+  if (toPrintable(customer)) kv("Customer", customer);
+  kv("Order ID", d.orderId || "-");
+  kv("Type", orderTypeLabel(d.orderType));
+  if (d.tableNo !== null && d.tableNo !== undefined && d.tableNo !== "") kv("Table", String(d.tableNo));
+  const { date, time } = dateTime(d.createdAt);
+  kv("Date", date);
+  kv("Time", time);
+
+  lines.push(separator(W));
+  lines.push({ text: "ITEMS", bold: true, align: "center" });
+  lines.push(separator(W));
+
+  const items = d.items || [];
   for (const it of items) {
-    lines.push({ text: `${it.qty} x ${it.name}`, bold: true });
-    if (it.notes) lines.push({ text: `   note: ${it.notes}` });
+    lines.push(...kotItemRows(it.name, it.qty, W));
+    if (toPrintable(it.notes)) {
+      for (const n of wrapText(`Note: ${it.notes}`, W - 2)) lines.push({ text: `  ${n}` });
+    }
   }
 
-  lines.push({ text: "--------------------------------" });
-  lines.push({ text: `Items: ${items.reduce((s, i) => s + (i.qty || 0), 0)}`, align: "right" });
+  lines.push(separator(W));
+  lines.push({ text: `Total Items: ${items.reduce((s, i) => s + (Number(i.qty) || 0), 0)}`, bold: true, align: "right" });
+  lines.push({ type: "feed" });
+  lines.push({ text: "[ KITCHEN COPY ]", bold: true, align: "center" });
   lines.push({ type: "feed" });
   lines.push({ type: "cut" });
   return lines;

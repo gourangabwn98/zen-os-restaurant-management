@@ -6,6 +6,8 @@ import { PrinterManager } from "./printerManager.js";
 import { Processor } from "./processor.js";
 import { SocketClient } from "./socketClient.js";
 import { LogoProvider } from "./logo.js";
+import { RestaurantProfileProvider } from "./restaurantProfile.js";
+import { PayQrProvider } from "./payQr.js";
 
 // True when running as the packaged .exe (scripts/build-exe.mjs), not `node`.
 const PACKAGED = !["node", "node.exe"].includes(path.basename(process.execPath).toLowerCase());
@@ -33,6 +35,19 @@ async function main() {
     (jobId, jobType, status, error) => socketClient.reportStatus(jobId, jobType, status, error),
     {
       maxAttempts: config.maxAttempts,
+      profileProvider: new RestaurantProfileProvider({ backendUrl: config.backendUrl, cacheDir: path.dirname(config.queueFile) }),
+      footer: config.billFooter,
+      payQrProvider: config.printPayQr
+        ? new PayQrProvider({
+          sizeDots: config.payQrSize,
+          // Fallback when no UPI ID is set: the admin's uploaded QR image,
+          // kept crisp (no dithering/inversion) so it still scans.
+          imageProvider: new LogoProvider({
+            cacheDir: path.dirname(config.queueFile), cacheName: "payment-qr-cache",
+            width: config.payQrSize, height: config.payQrSize, invert: false, dither: false,
+          }),
+        })
+        : null,
       logoProvider: config.printLogo
         ? new LogoProvider({ cacheDir: path.dirname(config.queueFile), width: config.logoWidth, height: config.logoHeight, invert: config.logoInvert })
         : null,

@@ -4,6 +4,7 @@ import { UsbDriver } from "./drivers/usbDriver.js";
 import { UsbDirectDriver } from "./drivers/usbDirectDriver.js";
 import { MockDriver } from "./drivers/mockDriver.js";
 import { logger } from "./logger.js";
+import { DEFAULT_WIDTH } from "./renderers/layout.js";
 
 export class PrinterManager {
   constructor(printerConfigs, { useMock = false, echoMock = false } = {}) {
@@ -11,7 +12,10 @@ export class PrinterManager {
     for (const cfg of printerConfigs) {
       try {
         const driver = useMock ? new MockDriver(cfg, { echo: echoMock }) : this._buildRealDriver(cfg);
-        this.drivers.push({ role: cfg.role, driver, status: "unknown" });
+        // Characters per line for the ticket layout (src/renderers/layout.js):
+        // 48 = 80 mm roll, 32 = 58 mm. Formatting only — routing is unchanged.
+        const charsPerLine = Number(cfg.charsPerLine) >= 24 ? Math.floor(Number(cfg.charsPerLine)) : DEFAULT_WIDTH;
+        this.drivers.push({ role: cfg.role, driver, status: "unknown", charsPerLine });
       } catch (err) {
         // A single bad printer entry (wrong type, missing field, etc.) must
         // never take down every OTHER printer along with it — log clearly

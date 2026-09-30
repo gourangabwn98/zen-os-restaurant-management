@@ -47,6 +47,11 @@ export const config = {
   logoHeight: Number(process.env.LOGO_HEIGHT || 160),
   logoInvert: ({ true: true, false: false })[String(process.env.LOGO_INVERT || "auto").toLowerCase()] ?? "auto",
   printLogo:  String(process.env.PRINT_LOGO || "true").toLowerCase() !== "false",
+  // Last line of the bill, under "Thank you! Visit again :)". Empty = none.
+  billFooter: process.env.BILL_FOOTER ?? "Powered by Zen OS",
+  // "Scan & Pay" QR at the bottom of unpaid bills (src/payQr.js).
+  printPayQr: String(process.env.PRINT_PAY_QR || "true").toLowerCase() !== "false",
+  payQrSize:  Number(process.env.PAY_QR_SIZE || 240), // dots; ~30 mm
   queuePollIntervalMs: Number(process.env.QUEUE_POLL_INTERVAL_MS || 20000),
   useMockPrinter: String(process.env.USE_MOCK_PRINTER || "false").toLowerCase() === "true",
   printers: readPrintersConfig(),

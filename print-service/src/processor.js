@@ -13,7 +13,9 @@ export class Processor {
    * @param {PrintQueue} queue
    * @param {PrinterManager} printerManager
    * @param {(jobId:string, jobType:string, status:string, error?:string) => Promise<void>} reportStatus
-   * @param {{maxAttempts:number, logoProvider?:{get(url:string):Promise<object|null>}}} opts
+   * @param {{maxAttempts:number, logoProvider?:{get(url:string):Promise<object|null>},
+   *          profileProvider?:{get():Promise<object>}, footer?:string,
+   *          payQrProvider?:{forBill(payload:object, profile:object):Promise<object|null>}}} opts
    */
   constructor(queue, printerManager, reportStatus, opts = {}) {
     this.queue = queue;
@@ -21,6 +23,9 @@ export class Processor {
     this.reportStatus = reportStatus;
     this.maxAttempts = opts.maxAttempts ?? 5;
     this.logoProvider = opts.logoProvider || null; // restaurant logo on bills (src/logo.js)
+    this.profileProvider = opts.profileProvider || null; // header: name/address/phone (src/restaurantProfile.js)
+    this.footer = opts.footer || "";
+    this.payQrProvider = opts.payQrProvider || null; // "Scan & Pay" QR on unpaid bills (src/payQr.js)
     this._processing = new Set(); // jobIds currently mid-print, in THIS process
   }
 
@@ -41,9 +46,31 @@ export class Processor {
     await this.tryPrint(job.jobId);
   }
 
+  /** Restaurant header details, or null — never fails a print. */
+  async _header() {
+    if (!this.profileProvider) return null;
+    try {
+      return await this.profileProvider.get();
+    } catch (err) {
+      logger.warn("Header details skipped:", err.message);
+      return null;
+    }
+  }
+
+  /** The bill's "Scan & Pay" QR, or null — a QR problem never fails a bill. */
+  async _payQrFor(job, header) {
+    if (!this.payQrProvider || !header) return null;
+    try {
+      return await this.payQrProvider.forBill(job.payload || {}, header);
+    } catch (err) {
+      logger.warn("Payment QR skipped:", err.message);
+      return null;
+    }
+  }
+
   /** The bill's logo bitmap, or null — a logo problem never fails a bill. */
-  async _logoFor(job) {
-    const url = (job.payload || {}).logoUrl;
+  async _logoFor(job, header) {
+    const url = (job.payload || {}).logoUrl || header?.logo;
     if (!this.logoProvider || !url) return null;
     try {
       return await this.logoProvider.get(url);
@@ -84,7 +111,15 @@ export class Processor {
         throw new Error(`Printer "${entry.driver.id}" is offline`);
       }
 
-      const lines = job.jobType === "KOT" ? renderKot(job) : renderBill(job, { logo: await this._logoFor(job) });
+      const header = await this._header();
+      const width = entry.charsPerLine;
+      const lines = job.jobType === "KOT"
+        ? renderKot(job, { header, width })
+        : renderBill(job, {
+          header, width, footer: this.footer,
+          logo: await this._logoFor(job, header),
+          payQr: await this._payQrFor(job, header),
+        });
       await entry.driver.printText(lines);
 
       this.queue.markPrinted(jobId);

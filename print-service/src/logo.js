@@ -35,7 +35,7 @@ export const cloudinaryPngUrl = (url, width, height) => {
  * RGBA pixels → pure black/white RGBA (what node-thermal-printer's raster
  * conversion expects), inverting mostly-dark images and dithering. Pure.
  */
-export const toReceiptBitmap = ({ width, height, data }, { invert = "auto" } = {}) => {
+export const toReceiptBitmap = ({ width, height, data }, { invert = "auto", dither = true } = {}) => {
   const lum = new Float32Array(width * height);
   let sum = 0;
   for (let i = 0; i < width * height; i++) {
@@ -53,6 +53,7 @@ export const toReceiptBitmap = ({ width, height, data }, { invert = "auto" } = {
     for (let x = 0; x < width; x++) {
       const i = y * width + x;
       const v = lum[i] < 128 ? 0 : 255;
+      if (!dither) { out[i * 4] = out[i * 4 + 1] = out[i * 4 + 2] = v; out[i * 4 + 3] = 255; continue; }
       const err = lum[i] - v;
       if (x + 1 < width) lum[i + 1] += (err * 7) / 16;
       if (y + 1 < height) {
@@ -74,20 +75,24 @@ export class LogoProvider {
    * @param {number} [opts.width]    - max logo width in printer dots (58 mm ≈ 384 dots)
    * @param {number} [opts.height]   - max logo height in dots
    * @param {"auto"|boolean} [opts.invert]
+   * @param {boolean} [opts.dither]  - false = hard black/white (QR codes must stay crisp)
+   * @param {string} [opts.cacheName] - disk cache file name (one per use: logo, payment QR)
    * @param {Function} [opts.fetch]  - injectable for tests
    */
-  constructor({ cacheDir, width = 192, height = 160, invert = "auto", fetch: fetchImpl } = {}) {
+  constructor({ cacheDir, width = 192, height = 160, invert = "auto", dither = true, cacheName = "logo-cache", fetch: fetchImpl } = {}) {
     this.cacheDir = cacheDir;
     this.width = width;
     this.height = height;
     this.invert = invert;
+    this.dither = dither;
+    this.cacheName = cacheName;
     this._fetch = fetchImpl || globalThis.fetch;
     this._mem = new Map();       // url → bitmap
     this._failedAt = new Map();  // url → time of last failed download
   }
 
   _cachePaths() {
-    return { png: path.join(this.cacheDir, "logo-cache.png"), meta: path.join(this.cacheDir, "logo-cache.json") };
+    return { png: path.join(this.cacheDir, `${this.cacheName}.png`), meta: path.join(this.cacheDir, `${this.cacheName}.json`) };
   }
 
   _readDiskCache(url) {
@@ -150,7 +155,7 @@ export class LogoProvider {
       logger.warn(`Logo is ${png.width}×${png.height} — too large to print; upload a smaller one or use a Cloudinary URL`);
       return null;
     }
-    const bitmap = toReceiptBitmap(png, { invert: this.invert });
+    const bitmap = toReceiptBitmap(png, { invert: this.invert, dither: this.dither });
     this._mem.set(url, bitmap);
     return bitmap;
   }

@@ -10,6 +10,7 @@ export class MockDriver {
   constructor(printerConfig, { echo = false } = {}) {
     this.id = printerConfig.id;
     this.echo = echo; // USE_MOCK_PRINTER dry run: show the ticket on screen
+    this.width = Number(printerConfig.charsPerLine) >= 24 ? Number(printerConfig.charsPerLine) : 48;
     this.type = printerConfig.type;
     this.online = printerConfig.startOnline ?? true;
     this.failNext = 0; // number of upcoming print attempts to force-fail
@@ -33,11 +34,14 @@ export class MockDriver {
     }
     this.printedJobs.push(lines);
     if (this.echo) {
-      const W = 32; // characters per line on a 58 mm roll
+      const W = this.width; // characters per line (printers.config.json charsPerLine)
       const fit = (l) => {
         if (l.type === "feed") return "";
         if (l.type === "cut") return "-".repeat(W) + " ✂";
-        if (l.type === "image") return `[ logo ${l.bitmap.width}×${l.bitmap.height} ]`.padStart(Math.floor((W + 16) / 2));
+        if (l.type === "image") {
+          const t = `[ ${l.label || "logo"} ${l.bitmap.width}x${l.bitmap.height} ]`;
+          return t.padStart(Math.floor((W + t.length) / 2));
+        }
         const t = String(l.text ?? "");
         if (l.align === "center") return t.padStart(Math.floor((W + t.length) / 2)).padEnd(W);
         if (l.align === "right") return t.padStart(W);

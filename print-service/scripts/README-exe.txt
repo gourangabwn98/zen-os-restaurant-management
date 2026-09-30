@@ -59,6 +59,16 @@ Keep ALL of these files together in one folder:
 
   One printer for both bills and KOT: use "role": "BOTH".
 
+  Paper width: add "charsPerLine": 48 for an 80 mm roll (the default) or
+  32 for a 58 mm roll, so the bill/KOT columns fit the paper exactly.
+
+  The bill/KOT header (name, address, phone) and the logo come from Admin >
+  Profile automatically. BILL_FOOTER in .env sets the last line of the bill.
+
+  Unpaid bills end with a "Scan & Pay" UPI QR with the bill amount filled
+  in (UPI ID from Admin > Profile > Payment; if none, the uploaded payment
+  QR image). PRINT_PAY_QR=false in .env turns it off.
+
 
 3) Run it
 ---------

@@ -65,6 +65,19 @@ confirmation, "Print Bill").
      **not** need any native/compiled Node module, so `npm install` never
      needs a C++ build toolchain.
 
+   - **Paper width** (any printer): `"charsPerLine": 48` for an 80 mm roll
+     (default) or `32` for 58 mm — the BILL/KOT layout
+     (`src/renderers/layout.js`) fits every line to it. The header (name,
+     address, city, phone) and bill logo are read from Admin → Profile via
+     the public profile endpoint (`src/restaurantProfile.js`, cached in
+     `data/`); `BILL_FOOTER` in `.env` sets the bill's last line.
+   - **Scan & Pay QR** (`src/payQr.js`): unpaid bills end with a UPI QR
+     carrying the bill total and number (from the profile's `upiId`), or the
+     uploaded `paymentQr` image if no UPI ID is set. Printed as a raster
+     image, so it works without native QR support. Paying by it changes
+     nothing — the order stays `PENDING_VERIFICATION` until staff mark it
+     paid. `PRINT_PAY_QR=false` turns it off.
+
 4. **Install and run:**
    ```
    npm install
