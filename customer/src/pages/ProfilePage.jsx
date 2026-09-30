@@ -23,7 +23,17 @@ export default function ProfilePage() {
       </div>
       {auth.isLoggedIn ? <LoggedInView nav={nav} auth={auth} /> : <GuestView />}
       <AppearanceCard />
-      <p className="muted small center" style={{ marginTop: 18 }}>Powered by Zen OS · eZentix Labs</p>
+      <p className="muted small center" style={{ marginTop: 18 }}>
+        Powered by Zen OS ·{" "}
+        <a
+          href="https://ezentix.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: "inherit", textDecoration: "underline", fontWeight: 600 }}
+        >
+          eZentix Labs
+        </a>
+      </p>
     </>
   );
 }
