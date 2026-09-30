@@ -178,6 +178,7 @@ export default function CombinedBillModal({ mode, value, onClose, onPaymentChang
             <div style={{ marginTop:12, paddingTop:12, borderTop:`1px solid ${BDR}` }}>
               {[
                 { l:"Subtotal",       v:`₹${fmt(bill.subtotal)}` },
+                ...(bill.discount>0     ? [{ l:"Coupon discount", v:`−₹${fmt(bill.discount)}` }]   : []),
                 ...(bill.tax>0          ? [{ l:"GST",            v:`₹${fmt(bill.tax)}` }]          : []),
                 ...(bill.serviceCharge>0? [{ l:"Service Charge", v:`₹${fmt(bill.serviceCharge)}` }] : []),
               ].map(r => (

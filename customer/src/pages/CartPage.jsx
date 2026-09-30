@@ -11,6 +11,8 @@ import QtyStepper from "../components/ui/QtyStepper.jsx";
 import Button from "../components/ui/Button.jsx";
 import Icon from "../components/ui/Icon.jsx";
 import { VegDot } from "../components/ItemCard.jsx";
+import CouponSheet from "../components/CouponSheet.jsx";
+import { couponDiscount, couponShortfall, describeCoupon } from "../utils/coupon.js";
 
 export default function CartPage() {
   const nav = useNavigate();
@@ -26,6 +28,10 @@ export default function CartPage() {
   // Admin → Profile → Payment (server: utils/paymentMode.js). The server
   // enforces it too; this only decides which options to offer.
   const [payMode, setPayMode] = useState("BOTH");
+  // Applied coupon (public fields from GET /api/coupons). Only its CODE is
+  // sent with the order — the server re-checks it and computes the discount.
+  const [coupon, setCoupon] = useState(null);
+  const [couponOpen, setCouponOpen] = useState(false);
 
   useEffect(() => {
     getRestaurantProfile()
@@ -52,6 +58,18 @@ export default function CartPage() {
   }, [table.isDineIn]);
 
   const gstNote = "Taxes & charges calculated at checkout by the restaurant";
+  // Preview only (utils/coupon.js mirrors the server). Below the coupon's
+  // minimum it stays selected but saves nothing, and isn't sent.
+  const saving = couponDiscount(coupon, cart.subtotal);
+  const shortfall = couponShortfall(coupon, cart.subtotal);
+  const toPay = cart.subtotal - saving;
+
+  const applyCoupon = (c) => {
+    setCoupon(c);
+    setCouponOpen(false);
+    const off = couponDiscount(c, cart.subtotal);
+    toast.success(off ? `🎉 ${c.code} applied — you save ₹${off}` : `${c.code} applied`);
+  };
 
   const canPlace = useMemo(() => {
     if (cart.itemCount === 0) return false;
@@ -73,6 +91,7 @@ export default function CartPage() {
         customerName: name.trim(),
         customerPhone: phone.replace(/\D/g, ""),
         paymentMethod,
+        couponCode: coupon && saving > 0 ? coupon.code : undefined,
         notes: "",
         idempotencyKey: idemKey,
       };
@@ -100,7 +119,11 @@ export default function CartPage() {
       toast.success(`Order ${order.orderId} placed!`);
       nav(`/order/${order._id}`, { replace: true });
     } catch (err) {
-      toast.error(err.response?.data?.message || "Couldn't place your order. Please try again.");
+      const msg = err.response?.data?.message || "Couldn't place your order. Please try again.";
+      // e.g. the coupon expired while the cart was open — drop it so the
+      // customer sees the real price before trying again.
+      if (coupon && err.response?.status === 400 && /coupon/i.test(msg)) setCoupon(null);
+      toast.error(msg);
     } finally {
       setPlacing(false);
     }
@@ -192,11 +215,37 @@ export default function CartPage() {
         )}
       </div>
 
+      {/* ── Coupon ── */}
+      {coupon ? (
+        <div className="card coupon-applied">
+          <span className="ic" aria-hidden="true">🎟️</span>
+          <span className="grow">
+            <b>{coupon.code}</b>
+            <span className={`small ${shortfall ? "danger" : "ok"}`}>
+              {shortfall ? `Add ₹${shortfall} more to use this coupon` : `You save ₹${saving} · ${describeCoupon(coupon)}`}
+            </span>
+          </span>
+          <button type="button" className="link-btn" onClick={() => setCoupon(null)}>Remove</button>
+        </div>
+      ) : (
+        <button type="button" className="card coupon-cta" onClick={() => setCouponOpen(true)}>
+          <span className="ic" aria-hidden="true">🎟️</span>
+          <span className="grow"><b>Apply coupon</b><span className="muted small">See offers available right now</span></span>
+          <Icon name="chevron" />
+        </button>
+      )}
+      {coupon && (
+        <button type="button" className="link-btn small" style={{ margin: "-4px 4px 4px" }} onClick={() => setCouponOpen(true)}>
+          View all coupons
+        </button>
+      )}
+
       {/* ── Bill ── */}
       <div className="card bill">
         <div className="row"><span className="muted">Item total</span><span>₹{cart.subtotal}</span></div>
+        {saving > 0 && <div className="row"><span className="muted">Coupon ({coupon.code})</span><span className="ok">−₹{saving}</span></div>}
         <div className="row"><span className="muted">Taxes & charges</span><span className="muted small">added on the bill</span></div>
-        <div className="row total"><span>To pay</span><span>₹{cart.subtotal}<span className="muted small"> + tax</span></span></div>
+        <div className="row total"><span>To pay</span><span>₹{toPay}<span className="muted small"> + tax</span></span></div>
         <p className="muted tiny" style={{ marginTop: 6 }}>{gstNote}</p>
       </div>
 
@@ -232,13 +281,17 @@ export default function CartPage() {
       {/* ── Place order ── */}
       {blocker && <div className="notice" role="status">{blocker}</div>}
       <Button style={{ marginTop: 8 }} onClick={handlePlace} disabled={!canPlace || placing}>
-        {placing ? (payFirst ? "Opening payment…" : "Placing order…") : payFirst ? `Continue to pay · ₹${cart.subtotal} + tax` : `Place order · ₹${cart.subtotal}`}
+        {placing ? (payFirst ? "Opening payment…" : "Placing order…") : payFirst ? `Continue to pay · ₹${toPay} + tax` : `Place order · ₹${toPay}`}
       </Button>
       <p className="muted small center" style={{ marginTop: 10 }}>
         {payFirst
           ? "Your order is sent to the restaurant once your payment succeeds. Unpaid orders are cancelled after 15 minutes."
           : "The restaurant accepts your order first. Once it's placed you can still change it for a few minutes."}
       </p>
+
+      {couponOpen && (
+        <CouponSheet subtotal={cart.subtotal} applied={coupon} onApply={applyCoupon} onClose={() => setCouponOpen(false)} />
+      )}
     </>
   );
 }

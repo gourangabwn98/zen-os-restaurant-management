@@ -345,6 +345,7 @@ export default function OrderDetailPage() {
             ))}
             <div style={{ borderTop: `1px dashed ${GLASS_BORDER}`, marginTop: 8, paddingTop: 8 }}>
               <Row label="Subtotal" value={`₹${bill.subtotal}`} />
+              {bill.discount > 0 && <Row label="Coupon discount" value={`−₹${bill.discount}`} />}
               {bill.tax > 0 && <Row label="GST" value={`₹${bill.tax}`} />}
               {bill.serviceCharge > 0 && <Row label="Service Charge" value={`₹${bill.serviceCharge}`} />}
               <Row label="Grand Total" value={`₹${bill.grandTotal}`} bold />

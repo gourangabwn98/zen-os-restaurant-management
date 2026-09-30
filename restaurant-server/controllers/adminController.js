@@ -292,10 +292,12 @@ export const addItemsToOrder = async (req, res) => {
     });
 
     const restaurant = await RestaurantProfile.findOne();
-    const totals = computeTotals(order.items, restaurant);
+    // Re-applies the customer's coupon snapshot, if any (utils/pricing.js).
+    const totals = computeTotals(order.items, restaurant, order.coupon);
     order.subtotal      = totals.subtotal;
     order.tax            = totals.tax;
     order.serviceCharge  = totals.serviceCharge;
+    order.discount       = totals.discount;
     order.total           = totals.total;
 
     const actor = buildActor(req.user);
@@ -354,6 +356,7 @@ export const getCombinedBill = async (req, res) => {
     const grandTotal = matchOrders.reduce((s,o) => s + Number(o.total||0), 0);
     const totalTax   = matchOrders.reduce((s,o) => s + (o.tax||0), 0);
     const totalSC    = matchOrders.reduce((s,o) => s + (o.serviceCharge||0), 0);
+    const totalDiscount = matchOrders.reduce((s,o) => s + (o.discount||0), 0);
     const subtotal   = mergedItems.reduce((s,i) => s + i.price * i.qty, 0);
     const restaurant = await RestaurantProfile.findOne();
 
@@ -363,6 +366,7 @@ export const getCombinedBill = async (req, res) => {
       subtotal,
       tax: totalTax,
       serviceCharge: totalSC,
+      discount: totalDiscount,
       grandTotal,
       restaurantName: restaurant?.restaurantName || "Restaurant",
       paymentQr: restaurant?.paymentQr || "",
@@ -389,6 +393,8 @@ export const printBill = async (req, res) => {
       subtotal:      order.subtotal || 0,
       tax:           order.tax      || 0,
       serviceCharge: order.serviceCharge || 0,
+      discount:      order.discount || 0,
+      couponCode:    order.coupon?.code || "",
       total:         order.total,
       paymentMethod: order.paymentMethod || "Cash",
       paymentStatus: order.paymentStatus,

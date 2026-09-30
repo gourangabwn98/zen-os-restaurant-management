@@ -42,6 +42,7 @@ import catagoryRoutes from "./routes/catagoryRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import attendanceRoutes from "./routes/attendanceRoutes.js";
 import waiterCallRoutes from "./routes/waiterCallRoutes.js";
+import couponRoutes from "./routes/couponRoutes.js";
 import { errorHandler, notFound } from "./middleware/errorMiddleware.js";
 
 const app    = express();
@@ -101,6 +102,7 @@ app.use("/api/support",           supportRoutes);
 app.use("/api/admin/printer",     printerRoutes);
 app.use("/api/notifications",     notificationRoutes);
 app.use("/api/waiter-calls",      waiterCallRoutes);
+app.use("/api/coupons",           couponRoutes);
 app.use("/api/attendance",        attendanceRoutes);
 
 app.get("/api/test-whatsapp/:phone", async (req, res) => {

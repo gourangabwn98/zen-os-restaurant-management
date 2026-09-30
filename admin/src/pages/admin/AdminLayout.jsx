@@ -11,6 +11,7 @@ import TablesPage     from "./TablesPage.jsx";
 import MenuAdminPage  from "./MenuAdminPage.jsx";
 import UsersPage      from "./UsersPage.jsx";
 import NotificationsPage from "./NotificationsPage.jsx";
+import CouponsPage    from "./CouponsPage.jsx";
 import InvoicesPage   from "./InvoicesPage.jsx";
 import AnalyticsPage  from "./AnalyticsPage.jsx";
 import EmployeesPage   from "./EmployeesPage.jsx";
@@ -40,6 +41,7 @@ const ICONS = {
   employees: <><circle cx="9" cy="8" r="3" /><path d="M3 20a6 6 0 0 1 12 0" /><path d="M16 8h5M18.5 5.5v5" /></>,
   attendance: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></>,
   users:     <><circle cx="12" cy="8" r="3.5" /><path d="M5 20a7 7 0 0 1 14 0" /></>,
+  coupon:    <><path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4z" /><path d="M9 15l6-6" /><circle cx="9.5" cy="9.5" r=".6" /><circle cx="14.5" cy="14.5" r=".6" /></>,
   bell:      <><path d="M6 8a6 6 0 0 1 12 0c0 4 1.5 6 2 7H4c.5-1 2-3 2-7Z" /><path d="M10 19a2 2 0 0 0 4 0" /></>,
   profile:   <><circle cx="12" cy="12" r="3" /><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4" /></>,
   help:      <><circle cx="12" cy="12" r="9" /><path d="M9.5 9.5a2.5 2.5 0 1 1 3 2.4V14" /><path d="M12 17.5v.01" /></>,
@@ -73,6 +75,7 @@ const MANAGEMENT_NAV = [
   { id: "users", label: "Users", icon: "users" },
   { id: "menu", label: "Menu Items", icon: "menu" },
   { id: "notifications", label: "Offers", icon: "bell" },
+  { id: "coupons", label: "Coupons", icon: "coupon" },
 ];
 const FINANCE_NAV = [
   { id: "analytics", label: "Insights", icon: "insights" },
@@ -288,6 +291,7 @@ export default function AdminLayout() {
             {page === "inventory"  && <InventoryPage />}
             {page === "users"      && <UsersPage />}
             {page === "notifications" && <NotificationsPage />}
+            {page === "coupons"    && <CouponsPage />}
             {page === "invoices"   && <InvoicesPage data={dashboardData?.recentOrders} />}
             {page === "analytics"  && <AnalyticsPage data={dashboardData} />}
             {page === "profile"    && <ProfilePage />}

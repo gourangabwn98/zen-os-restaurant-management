@@ -310,7 +310,7 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
     ["Subtotal", subtotal],
     ...(order.serviceCharge > 0 ? [["Service charge", order.serviceCharge]] : []),
     ...(order.tax > 0 ? [["GST", order.tax]] : []),
-    ...(order.discount > 0 ? [["Discount", -order.discount]] : []),
+    ...(order.discount > 0 ? [[`Discount${order.coupon?.code ? ` (${order.coupon.code})` : ""}`, -order.discount]] : []),
   ];
 
   return (

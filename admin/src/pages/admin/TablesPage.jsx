@@ -445,6 +445,7 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
                 { l:"Subtotal", v:`₹${subtotal.toLocaleString()}` },
                 ...(order.serviceCharge>0 ? [{ l:"Service Charge", v:`₹${order.serviceCharge}` }] : []),
                 ...(order.tax>0           ? [{ l:"GST",            v:`₹${order.tax}`           }] : []),
+                ...(order.discount>0      ? [{ l:`Discount${order.coupon?.code ? ` (${order.coupon.code})` : ""}`, v:`−₹${order.discount}` }] : []),
               ].map(r => (
                 <div key={r.l} style={{ display:"flex", justifyContent:"space-between",
                   fontSize:12, color:T2, marginBottom:6 }}>

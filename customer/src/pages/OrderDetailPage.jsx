@@ -266,7 +266,7 @@ export default function OrderDetailPage() {
             <div className="row"><span className="muted">Subtotal</span><span>₹{order.subtotal}</span></div>
             {order.tax > 0 && <div className="row"><span className="muted">GST</span><span>₹{order.tax}</span></div>}
             {order.serviceCharge > 0 && <div className="row"><span className="muted">Service Charge</span><span>₹{order.serviceCharge}</span></div>}
-            {order.discount > 0 && <div className="row"><span className="muted">Discount</span><span className="ok">−₹{order.discount}</span></div>}
+            {order.discount > 0 && <div className="row"><span className="muted">Discount{order.coupon?.code ? ` (${order.coupon.code})` : ""}</span><span className="ok">−₹{order.discount}</span></div>}
             <div className="row total"><span>Total</span><span>₹{order.total}</span></div>
           </div>
         )}

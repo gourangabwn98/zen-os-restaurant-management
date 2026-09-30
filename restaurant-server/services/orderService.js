@@ -7,7 +7,8 @@
 // checks, and KOT creation can never drift between the three surfaces.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { priceOrder } from "../utils/pricing.js";
+import { priceOrder, priceItems, computeTotals } from "../utils/pricing.js";
+import { resolveCouponForOrder } from "./couponService.js";
 import { getScheduleContext } from "./menuScheduleService.js";
 import { normalizeOrderType, assertValidTransition, requiresPaidForTransition } from "../utils/orderStateMachine.js";
 import { createKotJobForOrder } from "./kotService.js";
@@ -92,7 +93,7 @@ export const placeOrderTx = async ({ req, body }) => {
   const { Order, MenuItem, RestaurantProfile, Table, TableSession } = req.models;
   const {
     items, orderType, tableNo, tableToken, notes,
-    customerName, customerPhone, paymentMethod, idempotencyKey, priority,
+    customerName, customerPhone, paymentMethod, idempotencyKey, priority, couponCode,
   } = body;
 
   // ── Idempotency: replay-safe "place order" ────────────────────────────────
@@ -133,8 +134,14 @@ export const placeOrderTx = async ({ req, body }) => {
   const payFirst = !isStaffOrder && isPayFirst(method, phonePeEnabled);
 
   const scheduleCtx = await getScheduleContext({ models: req.models, profile: restaurant });
-  const { dbItems, subtotal, tax, serviceCharge, discount, total } =
-    await priceOrder({ items, MenuItem, restaurantProfile: restaurant, scheduleCtx });
+  const dbItems = await priceItems(items, MenuItem, scheduleCtx);
+  // Coupons are a customer checkout feature: validated against the
+  // server-priced item subtotal and the server clock (couponService); the
+  // client only sends the code. Staff orders don't take one.
+  const coupon = isStaffOrder ? null : await resolveCouponForOrder({
+    models: req.models, code: couponCode, subtotal: dbItems.reduce((s, i) => s + i.price * i.qty, 0),
+  });
+  const { subtotal, tax, serviceCharge, discount, total } = computeTotals(dbItems, restaurant, coupon);
 
   // ── Table / QR verification (soft — see schema comment) + session ─────────
   let tableSessionId = null;
@@ -191,6 +198,7 @@ export const placeOrderTx = async ({ req, body }) => {
     isGuest:       !req.user,
     items:         dbItems,
     subtotal, tax, serviceCharge, discount, total,
+    coupon,
     orderType:     normalizedType,
     tableNo:       tableNo ? Number(tableNo) : null,
     tableSession:  tableSessionId,
@@ -476,13 +484,18 @@ export const modifyOrderItemsTx = async ({ req, orderId, items, revision }) => {
   const restaurant = await RestaurantProfile.findOne();
   const scheduleCtx = await getScheduleContext({ models: req.models, profile: restaurant });
   const { dbItems, subtotal, tax, serviceCharge, discount, total } =
-    await priceOrder({ items, MenuItem, restaurantProfile: restaurant, scheduleCtx });
+    await priceOrder({ items, MenuItem, restaurantProfile: restaurant, scheduleCtx, coupon: order.coupon });
   await assertStockForItems({ models: req.models, items: dbItems });
 
   const actor = buildActor(req.user, order.guestName);
-  const note = order.paymentStatus === "PAID" && total !== order.total
+  let note = order.paymentStatus === "PAID" && total !== order.total
     ? `Order changed by ${actor.name} after payment — paid ₹${order.total}, new total ₹${total}`
     : `Order changed by ${actor.name}`;
+  // The coupon's own terms are re-applied (the order keeps its snapshot); it
+  // stops discounting if the change took the order below its minimum.
+  if (order.coupon && order.discount > 0 && discount === 0) {
+    note += ` — coupon ${order.coupon.code} no longer applies (below ₹${order.coupon.minOrderAmount} minimum)`;
+  }
 
   const updated = await Order.findOneAndUpdate(
     { _id: orderId, status: "CONFIRMED", stockDeducted: { $ne: true }, revision },

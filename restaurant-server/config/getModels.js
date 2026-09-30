@@ -185,6 +185,21 @@ const orderSchema = new mongoose.Schema({
   serviceCharge: { type: Number, default: 0 },
   discount:      { type: Number, default: 0 },
   total:         { type: Number, required: true },
+  // Snapshot of the coupon the customer applied (services/couponService.js).
+  // Re-pricing an edited order re-applies THIS snapshot (utils/pricing.js),
+  // so a later admin change to the coupon never alters a placed order;
+  // `discount` above is the amount it actually took off.
+  coupon: {
+    type: new mongoose.Schema({
+      code:           { type: String, required: true },
+      title:          { type: String, default: "" },
+      discountType:   { type: String, enum: ["PERCENT", "FLAT"], required: true },
+      discountValue:  { type: Number, required: true },
+      maxDiscount:    { type: Number, default: null },
+      minOrderAmount: { type: Number, default: 0 },
+    }, { _id: false }),
+    default: null,
+  },
   guestName:     { type: String, default: "" },
   guestPhone:    { type: String, default: "" },
   orderType:     { type: String, enum: ORDER_TYPES, default: "DINE_IN" },
@@ -668,6 +683,26 @@ const notificationLogSchema = new mongoose.Schema({
 }, { timestamps: true });
 notificationLogSchema.index({ status: 1, startsAt: 1 });
 
+// ── Coupons (services/couponService.js) ──────────────────────────────────────
+// Admin-created discount codes. A coupon is offered to customers only while
+// isActive and startsAt <= now <= endsAt — outside that window it is neither
+// listed nor accepted when an order is placed. The discount itself is always
+// computed server-side (utils/pricing.js), never taken from the client.
+const couponSchema = new mongoose.Schema({
+  code:           { type: String, required: true, unique: true, uppercase: true, trim: true },
+  title:          { type: String, required: true, trim: true },
+  description:    { type: String, default: "", trim: true },
+  discountType:   { type: String, enum: ["PERCENT", "FLAT"], required: true },
+  discountValue:  { type: Number, required: true },   // % (1–100) or ₹
+  maxDiscount:    { type: Number, default: null },    // ₹ cap for PERCENT; null = no cap
+  minOrderAmount: { type: Number, default: 0 },       // ₹, on the item subtotal
+  startsAt:       { type: Date, required: true },
+  endsAt:         { type: Date, required: true },
+  isActive:       { type: Boolean, default: true },   // admin pause switch
+  createdBy:      actorSchema,
+}, { timestamps: true });
+couponSchema.index({ isActive: 1, startsAt: 1, endsAt: 1 });
+
 // ── Call waiter (customer → the order's waiter) ─────────────────────────────
 // services/waiterCallService.js. Attempt 1 rings the waiter who took/accepted
 // the order (if on duty) for 3 min; attempt 2 rings every on-duty waiter for
@@ -724,5 +759,6 @@ export function getModels(conn) {
     StockLedger:        conn.models.StockLedger       || conn.model("StockLedger",       stockLedgerSchema),
     WastageLog:          conn.models.WastageLog         || conn.model("WastageLog",         wastageLogSchema),
     WaiterCall:          conn.models.WaiterCall         || conn.model("WaiterCall",         waiterCallSchema),
+    Coupon:              conn.models.Coupon             || conn.model("Coupon",             couponSchema),
   };
 }

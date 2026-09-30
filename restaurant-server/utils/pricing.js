@@ -70,16 +70,35 @@ export const priceItems = async (items, MenuItem, scheduleCtx = null) => {
   );
 };
 
-/** Computes subtotal/tax/serviceCharge/total from already-resolved dbItems. */
-export const computeTotals = (dbItems, restaurantProfile) => {
+/**
+ * ₹ a coupon takes off an item subtotal. `coupon` is a Coupon doc or an
+ * order's coupon snapshot ({ discountType, discountValue, maxDiscount,
+ * minOrderAmount }). 0 when there's no coupon or the subtotal is below its
+ * minimum (e.g. items were removed after it was applied); never more than
+ * the subtotal. Whole rupees, like every other amount here.
+ */
+export const computeCouponDiscount = (coupon, subtotal) => {
+  if (!coupon || !(subtotal > 0)) return 0;
+  if (subtotal < (Number(coupon.minOrderAmount) || 0)) return 0;
+  const value = Number(coupon.discountValue) || 0;
+  let off = coupon.discountType === "PERCENT" ? Math.round((subtotal * value) / 100) : Math.round(value);
+  if (coupon.discountType === "PERCENT" && Number(coupon.maxDiscount) > 0) off = Math.min(off, Number(coupon.maxDiscount));
+  return Math.max(0, Math.min(off, subtotal));
+};
+
+/** Computes subtotal/discount/tax/serviceCharge/total from already-resolved
+ * dbItems. The only discount is a customer's coupon (`coupon`, validated
+ * server-side by couponService — never an amount sent by a client); GST is
+ * charged on the discounted item value. */
+export const computeTotals = (dbItems, restaurantProfile, coupon = null) => {
   const gstRate           = (restaurantProfile?.gstRate || 0) / 100;
   const serviceChargeRate = restaurantProfile?.serviceCharge || 0;
   const subtotal          = dbItems.reduce((s, i) => s + i.price * i.qty, 0);
   const totalQty          = dbItems.reduce((s, i) => s + i.qty, 0);
-  const tax                = Math.round(subtotal * gstRate);
+  const discount           = computeCouponDiscount(coupon, subtotal);
+  const tax                = Math.round((subtotal - discount) * gstRate);
   const serviceCharge      = Math.round(serviceChargeRate * totalQty);
-  const discount           = 0; // discounts are applied by staff server-side only, never client-supplied
-  const total               = subtotal + tax + serviceCharge - discount;
+  const total               = subtotal - discount + tax + serviceCharge;
   return { subtotal, tax, serviceCharge, discount, total, totalQty };
 };
 
@@ -87,8 +106,8 @@ export const computeTotals = (dbItems, restaurantProfile) => {
  * Full convenience wrapper used by placeOrder: resolve + compute in one call.
  * @returns {{ dbItems, subtotal, tax, serviceCharge, discount, total, totalQty }}
  */
-export const priceOrder = async ({ items, MenuItem, restaurantProfile, scheduleCtx = null }) => {
+export const priceOrder = async ({ items, MenuItem, restaurantProfile, scheduleCtx = null, coupon = null }) => {
   const dbItems = await priceItems(items, MenuItem, scheduleCtx);
-  const totals  = computeTotals(dbItems, restaurantProfile);
+  const totals  = computeTotals(dbItems, restaurantProfile, coupon);
   return { dbItems, ...totals };
 };

@@ -169,6 +169,19 @@ extend `paymentService.js` with the same "verified result only, atomic
 apply" contract. No gateway may ever mark an order `PAID` on anything less
 than a checksum-verified success.
 
+## Coupons
+
+`services/couponService.js` (`/api/coupons`, `Admin → Coupons`). A coupon is
+live only while `isActive` and `startsAt <= now <= endsAt` by the **server**
+clock — only live ones are listed to customers or accepted at order time.
+The customer sends only `couponCode`; `placeOrderTx` validates it against
+the server-priced subtotal (`resolveCouponForOrder`) and stores a snapshot
+on `Order.coupon`. The discount is computed only in `utils/pricing.js`
+(`computeCouponDiscount`, GST on the discounted amount); every re-price
+(`modifyOrderItemsTx`, admin `addItemsToOrder`) must pass `order.coupon` to
+`computeTotals`, or an edit silently wipes the discount. Staff orders take
+no coupon. Never accept a discount amount from a client.
+
 ## OTP / SMS provider selection
 
 `restaurant-server/utils/sendOTP.js` **auto-detects** the provider from

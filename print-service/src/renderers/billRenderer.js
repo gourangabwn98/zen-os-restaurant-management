@@ -17,6 +17,7 @@ export const renderBill = (job) => {
 
   lines.push({ text: "--------------------------------" });
   lines.push({ text: `Subtotal: Rs.${(p.subtotal || 0).toFixed(2)}`, align: "right" });
+  if (p.discount) lines.push({ text: `Discount${p.couponCode ? ` (${p.couponCode})` : ""}: -Rs.${p.discount.toFixed(2)}`, align: "right" });
   if (p.tax) lines.push({ text: `GST: Rs.${p.tax.toFixed(2)}`, align: "right" });
   if (p.serviceCharge) lines.push({ text: `Service: Rs.${p.serviceCharge.toFixed(2)}`, align: "right" });
   lines.push({ text: `TOTAL: Rs.${(p.total || 0).toFixed(2)}`, bold: true, align: "right", size: "large" });

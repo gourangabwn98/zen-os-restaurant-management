@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAppState } from "../context/AppState.jsx";
 import { useMenu, isOutOfStock, discountPct } from "../hooks/useMenu.js";
@@ -7,13 +8,21 @@ import ItemDetailSheet from "../components/ItemDetailSheet.jsx";
 import { MenuSkeleton } from "../components/ui/Skeleton.jsx";
 import { EmptyState, ErrorState } from "../components/StateViews.jsx";
 import { PromoStrip } from "./HomePage.jsx";
+import { CouponTicket } from "../components/CouponSheet.jsx";
+import { getLiveCoupons } from "../services/couponService.js";
 
-/** Items the restaurant has priced below their original price (admin-set
- * `originalPrice`). Prices shown are the live menu prices, nothing derived. */
+/** Coupons live right now (applied in the cart), then items the restaurant
+ * has priced below their original price (admin-set `originalPrice`). Prices
+ * shown are the live menu prices, nothing derived. */
 export default function OffersPage() {
   const { cart } = useAppState();
   const { items, loading, error, reload } = useMenu();
   const [openItem, setOpenItem] = useState(null);
+  const [coupons, setCoupons] = useState([]);
+
+  useEffect(() => {
+    getLiveCoupons().then(({ data }) => setCoupons(data.coupons || [])).catch(() => {});
+  }, []);
 
   const deals = useMemo(() => (items || [])
     .filter((m) => discountPct(m) > 0)
@@ -34,7 +43,19 @@ export default function OffersPage() {
       {loading && !items && <MenuSkeleton />}
       {!loading && error && !items && <ErrorState message={error} onRetry={reload} />}
 
-      {items && deals.length === 0 && (
+      {coupons.length > 0 && (
+        <>
+          <div className="sec-h"><h3>Coupons</h3></div>
+          <p className="muted small" style={{ margin: "-6px 0 10px" }}>
+            Apply one in your <Link to="/cart" className="link-btn">cart</Link> before placing the order.
+          </p>
+          <div className="coupon-list" style={{ marginBottom: 18 }}>
+            {coupons.map((c) => <CouponTicket key={c.code} coupon={c} subtotal={cart.itemCount ? cart.subtotal : null} />)}
+          </div>
+        </>
+      )}
+
+      {items && deals.length === 0 && coupons.length === 0 && (
         <EmptyState icon="🏷️" title="No offers right now" sub="Check back later — or try our Popular Picks on Home." />
       )}
 
