@@ -8,6 +8,7 @@ import mongoose from "mongoose";
 import { ORDER_STATUSES, ORDER_SOURCES, ORDER_TYPES } from "../utils/orderStateMachine.js";
 import { STOCK_UNITS, LEDGER_TYPES, WASTAGE_REASONS } from "../utils/inventoryConstants.js";
 import { nextOrderId } from "../utils/orderNumber.js";
+import { INGREDIENT_SOURCES } from "../utils/recipeCost.js";
 
 // ── Atomic counters ──────────────────────────────────────────────────────────
 // One document per sequence (currently just "orderId"). Incremented with a
@@ -166,6 +167,11 @@ const orderItemSchema = new mongoose.Schema({
   price:    { type: Number, required: true },
   qty:      { type: Number, required: true, min: 1 },
   notes:    { type: String, default: "" },
+  // Recipe making cost of ONE of this item, snapshotted when the order goes
+  // to the kitchen (inventoryService.deductStockForOrder) — Insights' COGS
+  // uses this, so later stock-price or recipe changes never rewrite history.
+  // null = no recipe at that time, or an order from before costing existed.
+  makingCost: { type: Number, default: null },
 });
 
 const statusHistoryEntrySchema = new mongoose.Schema({
@@ -488,19 +494,30 @@ const inventoryBatchSchema = new mongoose.Schema({
 
 inventoryBatchSchema.index({ inventoryItem: 1, expiryDate: 1 });
 
-// One recipe per menu item. Ingredient quantities are in the SAME unit as
-// the referenced InventoryItem (see utils/inventoryConstants.js comment) —
-// scaled by the ordered item's qty at confirmation time.
+// One recipe per menu item. Quantities are per ONE unit of the menu item, in
+// any unit convertible to the stock item's unit (utils/units.js: 100 ml of
+// Milk stocked in l deducts 0.1 l) — scaled by the ordered qty when the
+// order goes to the kitchen. CUSTOM ingredients aren't stocked: they only
+// add their entered price to the making cost and are never deducted.
+// unitCost/cost are a snapshot taken at save (utils/recipeCost.js); reads
+// also return the live cost at today's stock prices.
 const recipeIngredientSchema = new mongoose.Schema({
-  inventoryItem: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryItem", required: true },
+  sourceType:    { type: String, enum: INGREDIENT_SOURCES, default: "STOCK" },
+  inventoryItem: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryItem", default: null }, // STOCK only
+  name:          { type: String, default: "", trim: true },
   quantity:      { type: Number, required: true, min: 0 },
   unit:          { type: String, enum: STOCK_UNITS, required: true },
+  unitCost:      { type: Number, default: null }, // ₹ per `unit` at save time
+  cost:          { type: Number, default: null }, // ₹ for `quantity` (CUSTOM: the entered price)
 }, { _id: false });
 
 const recipeSchema = new mongoose.Schema({
   menuItem:    { type: mongoose.Schema.Types.ObjectId, ref: "MenuItem", required: true, unique: true },
   ingredients: { type: [recipeIngredientSchema], default: [] },
   status:      { type: String, enum: ["Active","Inactive"], default: "Active" },
+  totalCost:      { type: Number, default: null },  // making cost snapshot at save
+  costIncomplete: { type: Boolean, default: false }, // some ingredient had no usable cost
+  costedAt:       { type: Date, default: null },
 }, { timestamps: true });
 
 const stockPurchaseItemSchema = new mongoose.Schema({

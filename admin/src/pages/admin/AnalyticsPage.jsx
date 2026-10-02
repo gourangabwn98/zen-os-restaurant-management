@@ -13,14 +13,16 @@
 //   • Revenue          = sum of PAID orders' total (money actually collected)
 //   • Orders / AOV      = all non-cancelled orders' total (order volume/value,
 //                          independent of whether payment has cleared yet)
-//   • Order type / payment method / top items / category revenue
-//                       = grouped straight from those same orders
+//   • Order type / payment method = grouped straight from those same orders
+//   • Revenue by category / item, making cost, gross profit
+//                       = GET /admin/insights/sales (services/insightsService.js),
+//                         aggregated server-side with the SAME revenue rule
+//                         (PAID, not cancelled); item revenue = line price × qty
 // Cancelled orders are excluded everywhere (they were never fulfilled).
 // Where a breakdown has no data, the panel says so rather than estimating.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { getAllOrders } from "../../services/adminService.js";
-import { getMenu } from "../../services/menuService.js";
+import { getAllOrders, getSalesInsights } from "../../services/adminService.js";
 import PageHeader from "./shared/PageHeader.jsx";
 import StatCard from "./shared/StatCard.jsx";
 import Loader from "./shared/Loader.jsx";
@@ -47,6 +49,11 @@ if (typeof document !== "undefined" && !document.getElementById("ins-styles")) {
     @media (max-width: 980px) { .ins-row, .ins-row2 { grid-template-columns: 1fr; } }
     .ins-daybar { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; height: 100%; }
     .ins-daybar .col { flex: 1; width: 100%; display: flex; align-items: flex-end; }
+    .ins-scroll { max-height: 380px; overflow-y: auto; overscroll-behavior: contain; }
+    .ins-items { width: 100%; }
+    .ins-items thead th { position: sticky; top: 0; z-index: 1; background: var(--card); }
+    .ins-items .r { text-align: right; }
+    @media (max-width: 560px) { .ins-hide-sm { display: none; } }
   `;
   document.head.appendChild(s);
 }
@@ -80,35 +87,167 @@ function csvExport(rows, filename) {
   URL.revokeObjectURL(url);
 }
 
+// ── revenue by category / item (server-aggregated, see insightsService.js) ──
+const money2 = (n) => `₹${Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+const BREAKDOWN_VIEWS = [["category", "Category"], ["item", "Item"]];
+
+function RevenueBreakdown({ sales, state, rangeLabel, onRetry }) {
+  const [view, setView] = useState("category");
+  const categories = sales?.categories || [];
+  const items = sales?.items || [];
+  const total = sales?.totals?.revenue || 0;
+  const maxCat = Math.max(...categories.map((c) => c.revenue), 1);
+
+  return (
+    <div className="zc-card" style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+      <div className="zc-card-h" style={{ flexWrap: "wrap", rowGap: 8 }}>
+        <span className="t">Revenue by {view === "category" ? "category" : "item"}</span>
+        <span className="s">{rangeLabel}</span>
+        <div style={{ flex: 1 }} />
+        <div className="zc-seg" role="tablist" aria-label="Group revenue by">
+          {BREAKDOWN_VIEWS.map(([v, text]) => (
+            <button key={v} type="button" role="tab" aria-selected={view === v} className={view === v ? "on" : ""} onClick={() => setView(v)}>{text}</button>
+          ))}
+        </div>
+      </div>
+
+      {state === "loading" && !sales ? (
+        <div style={{ padding: 20 }}><Loader rows={5} /></div>
+      ) : state === "error" ? (
+        <ErrorState title="Could not load sales breakdown" onRetry={onRetry} />
+      ) : items.length === 0 ? (
+        <div className="ins-empty">No paid sales in this range yet</div>
+      ) : view === "category" ? (
+        <div className="ins-scroll" style={{ padding: "16px 20px", opacity: state === "loading" ? 0.6 : 1 }}>
+          {categories.map((c, i) => {
+            const pct = Math.round((c.revenue / maxCat) * 100);
+            const share = total ? Math.round((c.revenue / total) * 1000) / 10 : 0;
+            const color = CAT_COLORS[i % CAT_COLORS.length];
+            return (
+              <div key={c.category} style={{ marginBottom: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 6 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 7, color: "var(--text-1)", minWidth: 0 }}>
+                    <i style={{ width: 8, height: 8, borderRadius: 2, background: color, display: "inline-block", flex: "none" }} />
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.category}</span>
+                  </span>
+                  <span className="tnum" style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text-1)", whiteSpace: "nowrap" }}>
+                    {money2(c.revenue)} <span style={{ fontWeight: 400, color: "var(--text-3)" }}>· {share}%</span>
+                  </span>
+                </div>
+                <div className="zc-bar"><i style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${color}, transparent)` }} /></div>
+                <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 5 }}>
+                  {c.qty} sold · {c.items} item{c.items === 1 ? "" : "s"}
+                  {c.grossProfit != null && <> · gross profit {money2(c.grossProfit)}</>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="ins-scroll" style={{ padding: "0 10px 8px", opacity: state === "loading" ? 0.6 : 1 }}>
+          <table className="zc-ledger ins-items">
+            <thead>
+              <tr><th>Item</th><th className="r">Sold</th><th className="r">Revenue</th><th className="r ins-hide-sm">Cost</th><th className="r ins-hide-sm">Profit</th></tr>
+            </thead>
+            <tbody>
+              {items.map((it) => (
+                <tr key={it.menuItem || it.name}>
+                  <td>
+                    <div style={{ fontWeight: 600, color: "var(--text-1)" }}>{it.name}</div>
+                    <div style={{ fontSize: 10.5, color: "var(--text-3)" }}>{it.category}</div>
+                  </td>
+                  <td className="r tnum">{it.qty}</td>
+                  <td className="r tnum" style={{ fontWeight: 700, color: "var(--text-1)" }}>{money2(it.revenue)}</td>
+                  <td className="r tnum ins-hide-sm" title={it.costEstimated ? "Older sales costed at today's recipe cost" : undefined}>
+                    {it.makingCost == null ? <span style={{ color: "var(--text-3)" }}>no recipe</span> : <>{money2(it.makingCost)}{it.costEstimated && <span style={{ color: "var(--wait-ink)" }}> ~</span>}</>}
+                  </td>
+                  <td className="r tnum ins-hide-sm" style={{ color: it.grossProfit == null ? "var(--text-3)" : it.grossProfit < 0 ? "var(--stop-ink)" : "var(--ready-ink)" }}>
+                    {it.grossProfit == null ? "—" : money2(it.grossProfit)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {items.length > 0 && state !== "error" && (
+        <div style={{ padding: "10px 20px 14px", borderTop: "1px solid var(--edge)", display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-2)" }}>
+          <span>{view === "category" ? `${categories.length} categories` : `${items.length} items`} · item sales before tax &amp; discounts</span>
+          <span className="tnum" style={{ fontWeight: 700, color: "var(--text-1)" }}>{money2(total)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Profitability({ sales, state, rangeLabel }) {
+  const t = sales?.totals;
+  const o = sales?.orders;
+  const rows = t ? [
+    { k: "Item sales", v: money2(t.revenue), sub: `${t.qty} items sold` },
+    { k: "Making cost (COGS)", v: money2(t.makingCost), sub: "from recipe costs at time of sale" },
+    { k: "Gross profit", v: money2(t.grossProfit), tone: t.grossProfit < 0 ? "var(--stop-ink)" : "var(--ready-ink)",
+      sub: t.grossMarginPct != null ? `${t.grossMarginPct}% margin on costed sales` : "no costed sales yet" },
+  ] : [];
+
+  return (
+    <div className="zc-card">
+      <div className="zc-card-h"><span className="t">Profitability</span><span className="s">{rangeLabel}</span></div>
+      <div style={{ padding: 20 }}>
+        {state === "loading" && !sales ? <Loader rows={4} /> : !t || t.qty === 0 ? (
+          <div className="ins-empty">{state === "error" ? "Unavailable" : "No paid sales in this range yet"}</div>
+        ) : (
+          <>
+            {rows.map((r) => (
+              <div key={r.k} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, padding: "10px 0", borderBottom: "1px solid var(--edge)" }}>
+                <div>
+                  <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-1)" }}>{r.k}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 2 }}>{r.sub}</div>
+                </div>
+                <div className="tnum" style={{ fontSize: 17, fontWeight: 700, color: r.tone || "var(--text-1)" }}>{r.v}</div>
+              </div>
+            ))}
+            {t.itemsWithoutCost > 0 && (
+              <div style={{ fontSize: 11.5, color: "var(--wait-ink)", marginTop: 12 }}>
+                {t.itemsWithoutCost} sold item{t.itemsWithoutCost === 1 ? " has" : "s have"} no recipe — {money2(t.revenue - t.costedRevenue)} of sales is left out of cost &amp; profit.
+                Add recipes under Inventory → Recipes.
+              </div>
+            )}
+            {o && (
+              <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 12, lineHeight: 1.6 }}>
+                {o.count} paid order{o.count === 1 ? "" : "s"} collected <b className="tnum" style={{ color: "var(--text-2)" }}>{money2(o.collected)}</b>
+                {" "}= item sales {money2(o.subtotal)}{o.discount ? ` − discounts ${money2(o.discount)}` : ""}
+                {o.tax ? ` + tax ${money2(o.tax)}` : ""}{o.serviceCharge ? ` + service ${money2(o.serviceCharge)}` : ""}.
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function AnalyticsPage() {
   const [orders, setOrders] = useState([]);
-  const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [range, setRange] = useState("Week");
 
   const load = useCallback(() => {
     setLoading(true);
-    Promise.all([getAllOrders({ limit: 5000 }), getMenu({ includeUnavailable: true })])
-      .then(([oRes, mRes]) => {
+    getAllOrders({ limit: 5000 })
+      .then((oRes) => {
         setOrders(oRes.data?.orders || []);
-        setMenuItems(Array.isArray(mRes.data) ? mRes.data : []);
         setError(false);
         setLoading(false);
       })
       .catch(() => { setError(true); setLoading(false); });
   }, []);
   useEffect(() => { load(); }, [load]);
-
-  // menuItem id / name → category, for the revenue-by-category breakdown
-  const categoryOf = useMemo(() => {
-    const byId = new Map(), byName = new Map();
-    menuItems.forEach((m) => { byId.set(m._id, m.category); byName.set(m.name, m.category); });
-    return (item) => byId.get(item.menuItem) || byName.get(item.name) || "Other";
-  }, [menuItems]);
 
   const bounds = useMemo(() => {
     const now = new Date();
@@ -188,25 +327,21 @@ export default function AnalyticsPage() {
     return Object.entries(map).map(([method, count]) => ({ method, count })).sort((a, b) => b.count - a.count);
   }, [rangeOrders]);
 
-  // top items by revenue, and revenue by category — from rangeOrders' items
-  const { topItems, categoryRevenue } = useMemo(() => {
-    const items = {}, cats = {};
-    rangeOrders.forEach((o) => {
-      (o.items || []).forEach((it) => {
-        const rev = Number(it.price || 0) * Number(it.qty || 0);
-        if (!items[it.name]) items[it.name] = { name: it.name, qty: 0, revenue: 0 };
-        items[it.name].qty += it.qty || 0;
-        items[it.name].revenue += rev;
-        const cat = categoryOf(it);
-        cats[cat] = (cats[cat] || 0) + rev;
-      });
-    });
-    return {
-      topItems: Object.values(items).sort((a, b) => b.revenue - a.revenue).slice(0, 6),
-      categoryRevenue: Object.entries(cats).map(([category, rev]) => ({ category, revenue: rev })).sort((a, b) => b.revenue - a.revenue).slice(0, 6),
-    };
-  }, [rangeOrders, categoryOf]);
-  const maxCategoryRevenue = Math.max(...categoryRevenue.map((c) => c.revenue), 1);
+  // revenue by category / item + cost analysis — aggregated server-side for
+  // the selected range, refetched when it changes (stale responses ignored)
+  const [salesTick, setSalesTick] = useState(0);
+  const salesKey = `${bounds.start.toISOString()}|${bounds.end.toISOString()}|${salesTick}`;
+  // { key } says which request the data answers — loading = it's not this one yet
+  const [salesResult, setSalesResult] = useState({ key: null, data: null, error: false });
+  useEffect(() => {
+    let live = true;
+    getSalesInsights({ from: bounds.start.toISOString(), to: bounds.end.toISOString() })
+      .then((r) => { if (live) setSalesResult({ key: salesKey, data: r.data?.data || null, error: false }); })
+      .catch(() => { if (live) setSalesResult((prev) => ({ key: salesKey, data: prev.data, error: true })); });
+    return () => { live = false; };
+  }, [bounds, salesKey]);
+  const sales = salesResult.data;
+  const salesState = salesResult.key !== salesKey ? "loading" : salesResult.error ? "error" : "ready";
 
   const handleExport = () => {
     csvExport(
@@ -344,50 +479,10 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      {/* row 2: top items + revenue by category */}
-      <div className="ins-row2">
-        <div className="zc-card">
-          <div className="zc-card-h"><span className="t">Top items</span><span className="s">by revenue, {RANGE_LABEL[range]}</span></div>
-          <div style={{ padding: "8px 18px 16px" }}>
-            {topItems.length === 0 ? <div className="ins-empty">No sales data yet</div> : topItems.map((it, i) => (
-              <div key={it.name} style={{ display: "flex", alignItems: "center", gap: 13, padding: "11px 0", borderBottom: "1px solid var(--edge)" }}>
-                <span style={{
-                  width: 25, height: 25, borderRadius: 8, display: "grid", placeItems: "center", fontSize: 11.5, fontWeight: 700, flex: "none",
-                  color: i < 3 ? "var(--accent-ink)" : "var(--text-3)",
-                  background: i < 3 ? "var(--violet-weak)" : "var(--raise)",
-                  border: `1px solid ${i < 3 ? "var(--violet-mid)" : "var(--edge)"}`,
-                }}>{i + 1}</span>
-                <span style={{ flex: 1, fontSize: 12.5, fontWeight: 500, color: "var(--text-1)" }}>{it.name}</span>
-                <span style={{ fontSize: 11.5, color: "var(--text-3)", width: 64, textAlign: "right" }}>{it.qty} sold</span>
-                <span className="tnum" style={{ fontSize: 13, fontWeight: 700, width: 76, textAlign: "right", color: "var(--text-1)" }}>₹{fmt(it.revenue)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="zc-card">
-          <div className="zc-card-h"><span className="t">Revenue by category</span><span className="s">{RANGE_LABEL[range]}</span></div>
-          <div style={{ padding: 20 }}>
-            {categoryRevenue.length === 0 ? <div className="ins-empty">No sales data yet</div> : categoryRevenue.map((c, i) => {
-              const pct = Math.round((c.revenue / maxCategoryRevenue) * 100);
-              const color = CAT_COLORS[i % CAT_COLORS.length];
-              return (
-                <div key={c.category} style={{ marginBottom: 14 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 500, display: "flex", alignItems: "center", gap: 7, color: "var(--text-1)" }}>
-                      <i style={{ width: 8, height: 8, borderRadius: 2, background: color, display: "inline-block" }} />
-                      {c.category}
-                    </span>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-1)" }}>
-                      {c.revenue >= 1000 ? `₹${(c.revenue / 1000).toFixed(1)}k` : `₹${fmt(c.revenue)}`}
-                    </span>
-                  </div>
-                  <div className="zc-bar"><i style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${color}, transparent)` }} /></div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+      {/* row 2: revenue by category / item + profitability */}
+      <div className="ins-row">
+        <RevenueBreakdown sales={sales} state={salesState} rangeLabel={RANGE_LABEL[range]} onRetry={() => setSalesTick((t) => t + 1)} />
+        <Profitability sales={sales} state={salesState} rangeLabel={RANGE_LABEL[range]} />
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { getInventoryOverview, getPrinterStatus } from "../services/adminService.js";
 import { PRIMARY, BG_CARD, BORDER, TEXT_PRIMARY, TEXT_MUTED } from "../theme.js";
 import { Modal, LevelBadge } from "../pages/admin/inventory/invUI.jsx";
+import { formatQty } from "../utils/units.js";
 
 const num = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "—");
@@ -135,7 +136,7 @@ function AlertGroup({ title, items, level }) {
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-1)" }}>{it.name}</div>
             <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 1 }}>
-              {num(it.currentStock)} {it.unit} in stock · reorder at {num(it.reorderLevel)} {it.unit}
+              {formatQty(it.currentStock, it.unit)} in stock · reorder at {formatQty(it.reorderLevel, it.unit)}
             </div>
           </div>
           <LevelBadge level={level} />

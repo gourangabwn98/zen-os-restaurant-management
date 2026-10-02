@@ -4,11 +4,10 @@
 // utils/orderStateMachine.js centralizes the order enums.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// No automatic conversion between units in Phase 2 — a recipe ingredient's
-// unit must match its InventoryItem's unit exactly (e.g. an item stocked in
-// "g" must have its recipe quantities specified in "g", not "kg"). This is a
-// deliberate scope decision to avoid a whole unit-conversion subsystem; a
-// mismatched unit is rejected at recipe-save time (see inventoryService.js).
+// A recipe ingredient may use any unit convertible to its InventoryItem's
+// unit (g ↔ kg, ml ↔ l, pcs ↔ dozen) — see utils/units.js, the one place
+// conversion happens. Units of different dimensions (g vs ml) are rejected at
+// recipe-save time and never silently converted.
 export const STOCK_UNITS = ["g", "kg", "ml", "l", "pcs", "dozen", "packet", "box"];
 
 // Every row ever written to StockLedger has exactly one of these types.

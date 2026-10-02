@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { getLowStock } from "../../../services/inventoryService.js";
 import { Loading, ErrorBox, LevelBadge } from "./invUI.jsx";
-import { levelInk, num, money } from "./invKit.js";
+import { levelInk, money } from "./invKit.js";
 import EmptyState from "../shared/EmptyState.jsx";
+import { formatQty } from "../../../utils/units.js";
 
 export default function LowStockTab({ onNavigate }) {
   const [items, setItems] = useState([]);
@@ -47,9 +48,9 @@ export default function LowStockTab({ onNavigate }) {
             </div>
             <div style={{ textAlign: "right", flex: "none" }}>
               <div className="tnum" style={{ fontSize: 19, fontWeight: 700, letterSpacing: "-.03em", color: levelInk(it.stockLevel) }}>
-                {num(it.currentStock)} {it.unit}
+                {formatQty(it.currentStock, it.unit)}
               </div>
-              <div style={{ fontSize: 10.5, color: "var(--text-3)" }}>reorder at {num(it.reorderLevel)} {it.unit}</div>
+              <div style={{ fontSize: 10.5, color: "var(--text-3)" }}>reorder at {formatQty(it.reorderLevel, it.unit)}</div>
             </div>
             {onNavigate && (
               <button type="button" className="zc-btn pri" style={{ flex: "none" }} onClick={() => onNavigate("purchases")}>

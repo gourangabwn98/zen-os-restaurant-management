@@ -216,6 +216,18 @@ concurrent confirms can't oversell. If you touch sending to the kitchen, keep
 deduction and KOT creation in the same transaction; splitting them apart
 reopens the "order confirmed but stock never moved" failure mode.
 
+**Units and making cost.** A recipe line may use any unit convertible to its
+stock item's unit (100 ml of Milk stocked in `l` deducts 0.1 l). All
+conversion goes through `utils/units.js` — never compare unit strings or
+multiply by 1000 inline. `InventoryItem.costPrice` is ₹ per the item's own
+unit. Making cost is computed only by `utils/recipeCost.js` (STOCK lines:
+cost price × converted qty; CUSTOM lines: the admin-entered price, never
+deducted). A stock item with no cost price is reported as missing, never as
+₹0. `deductStockForOrder` snapshots each line's cost onto
+`Order.items[].makingCost` so a later price/recipe change never rewrites a
+past sale; Insights (`services/insightsService.js`) uses that snapshot.
+Revenue for Insights = PAID and not CANCELLED, item revenue = line price × qty.
+
 Low-stock alerts must fire from **every** path that changes stock,
 including the order-confirmation deduction path — this was a real gap
 (manual adjustment/wastage alerted correctly, but the actual KOT-triggered

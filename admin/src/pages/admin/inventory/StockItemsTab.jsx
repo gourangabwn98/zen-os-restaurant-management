@@ -208,17 +208,17 @@ export default function StockItemsTab() {
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
-                <label style={label}>Reorder level</label>
+                <label style={label}>Reorder level ({form.unit || "unit"})</label>
                 <input type="number" style={inp} value={form.reorderLevel} onChange={(e) => setForm({ ...form, reorderLevel: e.target.value })} />
               </div>
               <div>
-                <label style={label}>Critical level</label>
+                <label style={label}>Critical level ({form.unit || "unit"})</label>
                 <input type="number" style={inp} value={form.criticalLevel} onChange={(e) => setForm({ ...form, criticalLevel: e.target.value })} />
               </div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
-                <label style={label}>Cost price / unit (₹)</label>
+                <label style={label}>Cost price per {form.unit || "unit"} (₹)</label>
                 <input type="number" style={inp} value={form.costPrice} onChange={(e) => setForm({ ...form, costPrice: e.target.value })} />
               </div>
               <div>

@@ -8,6 +8,7 @@ import {
   emitKotCreated, emitBillPrint, emitPaymentStatusChanged, emitTableCleared,
   emitTableFreed, emitInventoryAlert, emitSentToKitchen,
 } from "../sockets/socket.js";
+import { computeSalesBreakdown } from "../services/insightsService.js";
 
 // ── GET /api/admin/dashboard ──────────────────────────────────────────────────
 export const getDashboardStats = async (req, res) => {
@@ -70,6 +71,28 @@ export const getDashboardStats = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Dashboard error" });
+  }
+};
+
+// ── GET /api/admin/insights/sales?from=ISO&to=ISO ────────────────────────────
+// Revenue by item / category + making cost, aggregated server-side (see
+// services/insightsService.js for exactly which orders count).
+export const getSalesInsights = async (req, res) => {
+  try {
+    const parse = (v) => {
+      if (!v) return null;
+      const d = new Date(v);
+      if (Number.isNaN(d.getTime())) {
+        const err = new Error(`Invalid date: ${v}`);
+        err.statusCode = 400;
+        throw err;
+      }
+      return d;
+    };
+    const data = await computeSalesBreakdown({ models: req.models, from: parse(req.query.from), to: parse(req.query.to) });
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message });
   }
 };
 

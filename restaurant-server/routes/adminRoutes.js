@@ -5,7 +5,7 @@ import { requireWaiterOnDuty } from "../middleware/dutyMiddleware.js";
 import {
   getDashboardStats, getAllOrders, updateOrderPayment, updateOrderStatus,
   getAllUsers, deleteUser, getAllInvoices, updateInvoiceStatus,
-  addItemsToOrder, getCombinedBill, printBill,
+  addItemsToOrder, getCombinedBill, printBill, getSalesInsights,
 } from "../controllers/adminController.js";
 import {
   getAdminAttendanceToday, getAdminAttendanceHistory,
@@ -27,6 +27,8 @@ router.post("/orders/:id/add-items", requireStaff, requireWaiterOnDuty, addItems
 router.post("/orders/:id/print-bill",requireStaff, printBill);
 
 // Admin only — account/user management
+// Admin → Insights: revenue by item/category, making cost, gross profit.
+router.get("/insights/sales", requireAdmin, getSalesInsights);
 router.get("/users",         requireAdmin, getAllUsers);
 router.delete("/users/:id",  requireAdmin, deleteUser);
 

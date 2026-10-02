@@ -10,6 +10,7 @@ import { buildActor } from "../services/orderService.js";
 import {
   recordPurchase, recordWastage, adjustStock,
   computeInventoryOverview, computeMenuItemStockStatus,
+  listRecipesWithCost, saveRecipe,
 } from "../services/inventoryService.js";
 import { classifyStockLevel } from "../utils/inventoryConstants.js";
 import { emitInventoryAlert } from "../sockets/socket.js";
@@ -269,54 +270,28 @@ export const createWastage = async (req, res) => {
 // ═══════════════════════════════ Recipes ═════════════════════════════════════
 export const getRecipes = async (req, res) => {
   try {
-    const { Recipe } = req.models;
-    const recipes = await Recipe.find()
-      .populate("menuItem", "name category image isAvailable")
-      .populate("ingredients.inventoryItem", "name unit currentStock");
+    const recipes = await listRecipesWithCost({ models: req.models });
     res.json({ recipes });
-  } catch (err) { res.status(500).json({ message: err.message }); }
+  } catch (err) { res.status(err.statusCode || 500).json({ message: err.message }); }
 };
 
-// GET /recipes/menu-item/:menuItemId — recipe + live computed stock status,
-// this is the "connect inventory availability with menu availability" surface.
+// GET /recipes/menu-item/:menuItemId — recipe (with live cost) + live computed
+// stock status; the "connect inventory availability with menu availability" surface.
 export const getRecipeForMenuItem = async (req, res) => {
   try {
-    const { Recipe } = req.models;
-    const recipe = await Recipe.findOne({ menuItem: req.params.menuItemId })
-      .populate("ingredients.inventoryItem", "name unit currentStock");
+    const [recipe] = await listRecipesWithCost({ models: req.models, menuItemId: req.params.menuItemId });
     const stockStatus = await computeMenuItemStockStatus({ models: req.models, menuItemId: req.params.menuItemId });
     res.json({ recipe: recipe || null, stockStatus });
-  } catch (err) { res.status(500).json({ message: err.message }); }
+  } catch (err) { res.status(err.statusCode || 500).json({ message: err.message }); }
 };
 
+// Validation, unit compatibility and the cost snapshot live in
+// inventoryService.saveRecipe.
 export const upsertRecipe = async (req, res) => {
   try {
-    const { Recipe, InventoryItem } = req.models;
-    const { menuItem, ingredients } = req.body;
-    if (!menuItem || !Array.isArray(ingredients)) {
-      return res.status(400).json({ message: "menuItem and ingredients[] are required" });
-    }
-
-    // Unit-mismatch guard — see utils/inventoryConstants.js: no auto-conversion.
-    const items = await InventoryItem.find({ _id: { $in: ingredients.map((i) => i.inventoryItem) } });
-    const byId = new Map(items.map((i) => [String(i._id), i]));
-    for (const ing of ingredients) {
-      const stockItem = byId.get(String(ing.inventoryItem));
-      if (!stockItem) return res.status(400).json({ message: `Unknown ingredient ${ing.inventoryItem}` });
-      if (stockItem.unit !== ing.unit) {
-        return res.status(400).json({
-          message: `"${stockItem.name}" is stocked in "${stockItem.unit}" — recipe quantity must use the same unit`,
-        });
-      }
-    }
-
-    const recipe = await Recipe.findOneAndUpdate(
-      { menuItem },
-      { menuItem, ingredients, status: "Active" },
-      { new: true, upsert: true }
-    );
+    const recipe = await saveRecipe({ models: req.models, body: req.body });
     res.status(201).json({ recipe });
-  } catch (err) { res.status(400).json({ message: err.message }); }
+  } catch (err) { res.status(err.statusCode || 400).json({ message: err.message }); }
 };
 
 export const deleteRecipe = async (req, res) => {

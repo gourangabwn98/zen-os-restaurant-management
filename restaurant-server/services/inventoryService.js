@@ -3,58 +3,79 @@
 // All inventory business logic lives here — controllers are thin HTTP
 // wrappers, and services/orderService.js calls into deductStockForOrder /
 // reverseStockForOrder so the order lifecycle and inventory stay in lockstep.
+// Units convert only through utils/units.js; making cost is computed only by
+// utils/recipeCost.js.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { classifyStockLevel } from "../utils/inventoryConstants.js";
+import { classifyStockLevel, STOCK_UNITS } from "../utils/inventoryConstants.js";
+import { convertQuantity, toBaseUnit, roundQty, normalizeUnit, areUnitsCompatible } from "../utils/units.js";
+import {
+  computeRecipeCost, ingredientSource, stockIngredientIds, INGREDIENT_SOURCES,
+} from "../utils/recipeCost.js";
 
 const money = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 
+const httpError = (message, statusCode = 400) => {
+  const err = new Error(message);
+  err.statusCode = statusCode;
+  return err;
+};
+
+const loadActiveRecipes = (Recipe, items) => {
+  const menuItemIds = [...new Set(items.map((i) => String(i.menuItem)))];
+  return Recipe.find({ menuItem: { $in: menuItemIds }, status: "Active" });
+};
+
+const loadItemsById = async (InventoryItem, ids, session) => {
+  if (!ids.length) return new Map();
+  const items = await InventoryItem.find({ _id: { $in: ids } }).session(session || null);
+  return new Map(items.map((i) => [String(i._id), i]));
+};
+
 // ── Recipe consumption calculation ─────────────────────────────────────────
 /**
- * Aggregates every ingredient required to fulfil an order's items, summed
- * across all order lines that share an ingredient. Menu items with no
- * active recipe are silently skipped (no recipe = not inventory-tracked).
- * @returns {Array<{ inventoryItem, name, unit, qty }>}
+ * Pure: every STOCK ingredient an order's lines need, summed across lines
+ * that share an ingredient. Quantities are normalised to their dimension's
+ * base unit (ml / g / pcs) so "100 ml" in one recipe and "0.5 l" in another
+ * add up correctly. CUSTOM ingredients aren't stocked and are skipped.
+ * @returns {Array<{ inventoryItem, unit, qty }>}
  */
-export const calculateRecipeConsumption = async ({ Recipe, order }) => {
-  const menuItemIds = [...new Set(order.items.map((i) => String(i.menuItem)))];
-  const recipes = await Recipe.find({ menuItem: { $in: menuItemIds }, status: "Active" });
+export const consumptionFromRecipes = (recipes, items) => {
   const recipeByMenuItem = new Map(recipes.map((r) => [String(r.menuItem), r]));
-
   const required = new Map(); // inventoryItemId -> { inventoryItem, unit, qty }
 
-  for (const line of order.items) {
+  for (const line of items) {
     const recipe = recipeByMenuItem.get(String(line.menuItem));
     if (!recipe) continue; // no recipe → not inventory-tracked
 
     for (const ing of recipe.ingredients) {
-      const key = String(ing.inventoryItem);
-      const needed = ing.quantity * line.qty;
-      if (required.has(key)) {
-        required.get(key).qty += needed;
-      } else {
-        required.set(key, { inventoryItem: ing.inventoryItem, unit: ing.unit, qty: needed });
+      if (ingredientSource(ing) !== "STOCK" || !ing.inventoryItem) continue;
+      const id = ing.inventoryItem?._id || ing.inventoryItem;
+      const base = toBaseUnit(ing.quantity * line.qty, ing.unit);
+      const prev = required.get(String(id));
+      if (prev && prev.unit !== base.unit) {
+        // Two recipes use incompatible units for one stock item — recipe
+        // save rejects this, so only legacy data can get here.
+        throw httpError(`Recipes use incompatible units (${prev.unit} / ${base.unit}) for the same stock item`, 409);
       }
+      if (prev) prev.qty = roundQty(prev.qty + base.qty);
+      else required.set(String(id), { inventoryItem: id, unit: base.unit, qty: base.qty });
     }
   }
 
   return [...required.values()];
 };
 
-// ── Validate availability (step 1 of the confirm workflow) ─────────────────
-/**
- * Throws (statusCode 409) listing every ingredient that's short, without
- * mutating anything. Call BEFORE deduction so an order can never be
- * confirmed into a state inventory can't actually fulfil.
- */
-export const validateInventoryForConsumption = async ({ InventoryItem, consumption, session }) => {
-  if (!consumption.length) return;
+/** Menu items with no active recipe are silently skipped (not inventory-tracked). */
+export const calculateRecipeConsumption = async ({ Recipe, order }) => {
+  const recipes = await loadActiveRecipes(Recipe, order.items);
+  return consumptionFromRecipes(recipes, order.items);
+};
 
-  const ids = consumption.map((c) => c.inventoryItem);
-  const items = await InventoryItem.find({ _id: { $in: ids } }).session(session || null);
-  const byId = new Map(items.map((i) => [String(i._id), i]));
-
+// Converts each need into its stock item's own unit and collects shortages.
+const resolveAgainstStock = (consumption, byId) => {
   const shortages = [];
+  const resolved = [];
   for (const need of consumption) {
     const item = byId.get(String(need.inventoryItem));
     if (!item) {
@@ -65,26 +86,51 @@ export const validateInventoryForConsumption = async ({ InventoryItem, consumpti
       shortages.push(`"${item.name}" is inactive and cannot be used`);
       continue;
     }
-    if (item.currentStock < need.qty) {
-      shortages.push(
-        `"${item.name}": need ${need.qty}${need.unit}, only ${item.currentStock}${item.unit} in stock`
-      );
+    const unit = item.unit || need.unit;
+    let qty;
+    try {
+      qty = convertQuantity(need.qty, need.unit, unit);
+    } catch {
+      shortages.push(`"${item.name}" is stocked in ${item.unit} but a recipe uses ${need.unit}`);
+      continue;
     }
+    if (item.currentStock < qty) {
+      shortages.push(`"${item.name}": need ${qty}${unit}, only ${roundQty(item.currentStock)}${unit} in stock`);
+    }
+    resolved.push({ inventoryItem: need.inventoryItem, qty, unit });
   }
-
-  if (shortages.length) {
-    const err = new Error(`Insufficient stock — ${shortages.join("; ")}`);
-    err.statusCode = 409;
-    err.shortages = shortages;
-    throw err;
-  }
+  return { shortages, resolved };
 };
 
-// ── Deduct stock for a confirmed order (steps 2–4 of the confirm workflow) ─
+const throwShortages = (shortages) => {
+  const err = new Error(`Insufficient stock — ${shortages.join("; ")}`);
+  err.statusCode = 409;
+  err.shortages = shortages;
+  throw err;
+};
+
+// ── Validate availability (step 1 of the confirm workflow) ─────────────────
+/**
+ * Throws (statusCode 409) listing every ingredient that's short, without
+ * mutating anything. Call BEFORE deduction so an order can never be
+ * confirmed into a state inventory can't actually fulfil.
+ */
+export const validateInventoryForConsumption = async ({ InventoryItem, consumption, session }) => {
+  if (!consumption.length) return;
+  const byId = await loadItemsById(InventoryItem, consumption.map((c) => c.inventoryItem), session);
+  const { shortages } = resolveAgainstStock(consumption, byId);
+  if (shortages.length) throwShortages(shortages);
+};
+
+// ── Deduct stock for an order sent to the kitchen ──────────────────────────
 /**
  * MUST be called from inside the same Mongo transaction/session as the
- * order's PENDING_CONFIRMATION → CONFIRMED write (or, for staff orders that
- * are created already-CONFIRMED, from inside that same creation transaction).
+ * order's CONFIRMED → PREPARING write (orderService.sendToKitchenTx), next
+ * to the KOT creation.
+ *
+ * Deducts  recipe quantity × qty ordered  of every STOCK ingredient,
+ * converted into the stock item's own unit, and snapshots each line's
+ * making cost onto `items[].makingCost` at today's stock prices.
  *
  * Idempotency: `Order.stockDeducted` flips false→true via an atomic
  * conditional update — a second call for the same order is a safe no-op.
@@ -105,15 +151,18 @@ export const deductStockForOrder = async ({ models, order, actor, session }) => 
     return { deducted: false, deductions: [], alerts: [] };
   }
 
-  const consumption = await calculateRecipeConsumption({ Recipe, order });
-  if (!consumption.length) return { deducted: true, deductions: [], alerts: [] };
+  const recipes = await loadActiveRecipes(Recipe, order.items);
+  if (!recipes.length) return { deducted: true, deductions: [], alerts: [] };
 
-  await validateInventoryForConsumption({ InventoryItem, consumption, session });
+  const consumption = consumptionFromRecipes(recipes, order.items);
+  const byId = await loadItemsById(InventoryItem, stockIngredientIds(recipes), session);
+  const { shortages, resolved } = resolveAgainstStock(consumption, byId);
+  if (shortages.length) throwShortages(shortages);
 
   const deductions = [];
   const alerts = [];
-  for (const need of consumption) {
-    const updated = await InventoryItem.findOneAndUpdate(
+  for (const need of resolved) {
+    let updated = await InventoryItem.findOneAndUpdate(
       { _id: need.inventoryItem, currentStock: { $gte: need.qty } },
       { $inc: { currentStock: -need.qty } },
       { new: true, session }
@@ -123,6 +172,13 @@ export const deductStockForOrder = async ({ models, order, actor, session }) => 
       const err = new Error(`Stock for ingredient ${need.inventoryItem} changed concurrently — please retry`);
       err.statusCode = 409;
       throw err;
+    }
+    // Fractional units (0.1 l) leave float residue after $inc (0.19999…) —
+    // pin the stored balance to the same 6-dp precision as the quantities.
+    if (updated.currentStock !== roundQty(updated.currentStock)) {
+      updated = await InventoryItem.findByIdAndUpdate(
+        updated._id, { $set: { currentStock: roundQty(updated.currentStock) } }, { new: true, session }
+      );
     }
 
     await StockLedger.create(
@@ -152,11 +208,23 @@ export const deductStockForOrder = async ({ models, order, actor, session }) => 
     // for the order-confirmation path specifically.)
     const level = classifyStockLevel(updated.currentStock, updated.reorderLevel, updated.criticalLevel);
     if (level !== "OK") {
-      alerts.push({ item: updated.toObject(), level });
+      alerts.push({ item: typeof updated.toObject === "function" ? updated.toObject() : updated, level });
     }
   }
 
-  await Order.findByIdAndUpdate(order._id, { $set: { stockDeductions: deductions } }, { session });
+  // Making-cost snapshot per order line. Uses the items loaded before the
+  // $inc — fine, since a deduction changes stock, never cost price.
+  const recipeByMenuItem = new Map(recipes.map((r) => [String(r.menuItem), r]));
+  const update = { stockDeductions: deductions };
+  (order.items || []).forEach((line, idx) => {
+    const recipe = recipeByMenuItem.get(String(line.menuItem));
+    if (!recipe) return;
+    const { totalCost, incomplete } = computeRecipeCost(recipe.ingredients, byId);
+    // A partly-costed recipe still records its known lower bound; a recipe
+    // with no usable cost at all records nothing rather than a fake ₹0.
+    update[`items.${idx}.makingCost`] = incomplete && totalCost === 0 ? null : totalCost;
+  });
+  await Order.findByIdAndUpdate(order._id, { $set: update }, { session });
 
   return { deducted: true, deductions, alerts };
 };
@@ -180,12 +248,17 @@ export const reverseStockForOrder = async ({ models, order, actor, session }) =>
   if (!claimed) return { reversed: false };
 
   for (const d of claimed.stockDeductions) {
-    const updated = await InventoryItem.findByIdAndUpdate(
+    let updated = await InventoryItem.findByIdAndUpdate(
       d.inventoryItem,
       { $inc: { currentStock: d.qty } },
       { new: true, session }
     );
     if (!updated) continue; // item was deleted since — nothing to credit back to
+    if (updated.currentStock !== roundQty(updated.currentStock)) {
+      updated = await InventoryItem.findByIdAndUpdate(
+        updated._id, { $set: { currentStock: roundQty(updated.currentStock) } }, { new: true, session }
+      );
+    }
 
     await StockLedger.create(
       [{
@@ -385,35 +458,48 @@ export const adjustStock = async ({ models, inventoryItemId, newStock, type, rea
 };
 
 // ── Menu-item ↔ inventory linkage ──────────────────────────────────────────
+// One serving's shortfall for a STOCK ingredient, in the stock item's unit —
+// or null when there's enough. A unit that can't convert counts as short.
+const servingShortfall = (ing, item) => {
+  let required = Number(ing.quantity);
+  if (item?.unit) {
+    try { required = convertQuantity(ing.quantity, ing.unit, item.unit); }
+    catch { required = Infinity; }
+  }
+  if (item && item.status === "Active" && item.currentStock >= required) return null;
+  return {
+    inventoryItem: ing.inventoryItem,
+    name: item?.name || ing.name || "Unknown ingredient",
+    required: Number.isFinite(required) ? required : ing.quantity,
+    available: item?.currentStock ?? 0,
+    unit: item?.unit || ing.unit,
+  };
+};
+
+const stockIngredients = (recipe) =>
+  (recipe.ingredients || []).filter((i) => ingredientSource(i) === "STOCK" && i.inventoryItem);
+
 /**
  * Bulk version of computeMenuItemStockStatus, for menu listing endpoints
  * (avoids N+1 queries). Returns a Map<menuItemId, { tracked, inStock }>.
- * Menu items with no active recipe are always `{ tracked: false, inStock: true }`
- * — i.e. untracked items never get hidden or flagged by this.
+ * Menu items with no active recipe (or a recipe of only CUSTOM ingredients)
+ * are always `{ tracked: false, inStock: true }` — i.e. untracked items never
+ * get hidden or flagged by this.
  */
 export const computeStockStatusForMenuItems = async ({ models, menuItemIds }) => {
   const { Recipe, InventoryItem } = models;
   const result = new Map();
   if (!menuItemIds?.length) return result;
 
-  const recipes = await Recipe.find({ menuItem: { $in: menuItemIds }, status: "Active" }).lean();
+  const recipes = (await Recipe.find({ menuItem: { $in: menuItemIds }, status: "Active" }).lean())
+    .filter((r) => stockIngredients(r).length);
   if (!recipes.length) return result; // nobody tracked → caller treats all as inStock
 
-  const allIngredientIds = [...new Set(
-    recipes.flatMap((r) => r.ingredients.map((i) => String(i.inventoryItem)))
-  )];
-  const items = await InventoryItem.find({ _id: { $in: allIngredientIds } }).lean();
+  const items = await InventoryItem.find({ _id: { $in: stockIngredientIds(recipes) } }).lean();
   const byId = new Map(items.map((i) => [String(i._id), i]));
 
   for (const recipe of recipes) {
-    let inStock = true;
-    for (const ing of recipe.ingredients) {
-      const item = byId.get(String(ing.inventoryItem));
-      if (!item || item.status !== "Active" || item.currentStock < ing.quantity) {
-        inStock = false;
-        break;
-      }
-    }
+    const inStock = stockIngredients(recipe).every((ing) => !servingShortfall(ing, byId.get(String(ing.inventoryItem))));
     result.set(String(recipe.menuItem), { tracked: true, inStock });
   }
 
@@ -423,27 +509,138 @@ export const computeStockStatusForMenuItems = async ({ models, menuItemIds }) =>
 export const computeMenuItemStockStatus = async ({ models, menuItemId }) => {
   const { Recipe, InventoryItem } = models;
   const recipe = await Recipe.findOne({ menuItem: menuItemId, status: "Active" });
-  if (!recipe || !recipe.ingredients.length) return { tracked: false, inStock: true, shortages: [] };
+  const ings = recipe ? stockIngredients(recipe) : [];
+  if (!ings.length) return { tracked: false, inStock: true, shortages: [] };
 
-  const ids = recipe.ingredients.map((i) => i.inventoryItem);
-  const items = await InventoryItem.find({ _id: { $in: ids } });
+  const items = await InventoryItem.find({ _id: { $in: ings.map((i) => i.inventoryItem) } });
   const byId = new Map(items.map((i) => [String(i._id), i]));
 
-  const shortages = [];
-  for (const ing of recipe.ingredients) {
-    const item = byId.get(String(ing.inventoryItem));
-    if (!item || item.status !== "Active" || item.currentStock < ing.quantity) {
-      shortages.push({
-        inventoryItem: ing.inventoryItem,
-        name: item?.name || "Unknown ingredient",
-        required: ing.quantity,
-        available: item?.currentStock ?? 0,
-        unit: ing.unit,
-      });
-    }
-  }
+  const shortages = ings
+    .map((ing) => servingShortfall(ing, byId.get(String(ing.inventoryItem))))
+    .filter(Boolean);
 
   return { tracked: true, inStock: shortages.length === 0, shortages };
+};
+
+// ── Recipes (save + costed reads) ──────────────────────────────────────────
+/**
+ * Validates and saves one menu item's recipe, with a cost snapshot.
+ * Body: { menuItem, ingredients: [{ sourceType, inventoryItem?, name?, quantity, unit, cost? }] }
+ *   STOCK:  inventoryItem required; unit must convert to the stock item's unit.
+ *   CUSTOM: name required; `cost` is the price of `quantity` (₹, >= 0).
+ * Never trusts a client-sent unitCost/cost for STOCK lines — re-derived here.
+ */
+export const saveRecipe = async ({ models, body }) => {
+  const { Recipe, InventoryItem, MenuItem } = models;
+  const { menuItem, ingredients } = body || {};
+  if (!menuItem || !Array.isArray(ingredients)) throw httpError("menuItem and ingredients[] are required");
+  if (!ingredients.length) throw httpError("Add at least one ingredient");
+  if (ingredients.length > 60) throw httpError("A recipe can have at most 60 ingredients");
+
+  const menuDoc = await MenuItem.findById(menuItem).lean();
+  if (!menuDoc) throw httpError("Menu item not found", 404);
+
+  const stockIds = ingredients
+    .filter((i) => ingredientSource(i) === "STOCK" && i.inventoryItem)
+    .map((i) => String(i.inventoryItem));
+  const items = stockIds.length ? await InventoryItem.find({ _id: { $in: stockIds } }).lean() : [];
+  const byId = new Map(items.map((i) => [String(i._id), i]));
+  const stockNames = new Set(
+    (await InventoryItem.find({ status: "Active" }, { name: 1 }).lean()).map((i) => i.name.trim().toLowerCase()),
+  );
+
+  const seenStock = new Set();
+  const seenCustom = new Set();
+  const clean = ingredients.map((raw, idx) => {
+    const n = idx + 1;
+    const sourceType = raw.sourceType ?? "STOCK";
+    if (!INGREDIENT_SOURCES.includes(sourceType)) throw httpError(`Ingredient ${n}: unknown type "${sourceType}"`);
+
+    const quantity = Number(raw.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) throw httpError(`Ingredient ${n}: quantity must be greater than 0`);
+    const unit = normalizeUnit(raw.unit);
+    if (!unit || !STOCK_UNITS.includes(unit)) throw httpError(`Ingredient ${n}: unknown unit "${raw.unit ?? ""}"`);
+
+    if (sourceType === "STOCK") {
+      const item = byId.get(String(raw.inventoryItem));
+      if (!item) throw httpError(`Ingredient ${n}: stock item not found`);
+      if (item.status !== "Active") throw httpError(`"${item.name}" is inactive — reactivate it or remove it from the recipe`);
+      if (seenStock.has(String(item._id))) throw httpError(`"${item.name}" is listed twice — combine it into one line`);
+      seenStock.add(String(item._id));
+      if (!areUnitsCompatible(unit, item.unit)) {
+        throw httpError(`"${item.name}" is stocked in ${item.unit} — ${unit} can't be converted to it`);
+      }
+      return { sourceType, inventoryItem: item._id, name: item.name, quantity, unit };
+    }
+
+    const name = String(raw.name || "").trim();
+    if (!name) throw httpError(`Ingredient ${n}: a custom ingredient needs a name`);
+    const key = name.toLowerCase();
+    if (seenCustom.has(key)) throw httpError(`"${name}" is listed twice — combine it into one line`);
+    seenCustom.add(key);
+    if (stockNames.has(key)) throw httpError(`"${name}" is a stock item — pick it as a Stock item so its stock is deducted`);
+    const cost = Number(raw.cost);
+    if (raw.cost === "" || raw.cost == null || !Number.isFinite(cost) || cost < 0) {
+      throw httpError(`"${name}": price must be 0 or more`);
+    }
+    return { sourceType, inventoryItem: null, name, quantity, unit, cost };
+  });
+
+  const { lines, totalCost, incomplete } = computeRecipeCost(clean, byId);
+  const snapshot = clean.map((ing, i) => ({ ...ing, unitCost: lines[i].unitCost, cost: lines[i].cost }));
+
+  return Recipe.findOneAndUpdate(
+    { menuItem },
+    {
+      menuItem, ingredients: snapshot, status: "Active",
+      totalCost, costIncomplete: incomplete, costedAt: new Date(),
+    },
+    { new: true, upsert: true, runValidators: true },
+  );
+};
+
+/**
+ * Recipes with their live cost (today's stock prices) and the menu price
+ * margin. `savedCost` is the snapshot from the last save, for comparison.
+ */
+export const listRecipesWithCost = async ({ models, menuItemId }) => {
+  const { Recipe, InventoryItem } = models;
+  const filter = menuItemId ? { menuItem: menuItemId } : {};
+  const recipes = await Recipe.find(filter)
+    .populate("menuItem", "name category image isAvailable price")
+    .lean();
+
+  const items = await InventoryItem.find({ _id: { $in: stockIngredientIds(recipes) } })
+    .select("name unit currentStock costPrice status reorderLevel criticalLevel").lean();
+  const byId = new Map(items.map((i) => [String(i._id), i]));
+
+  return recipes.map((r) => {
+    const { lines, totalCost, incomplete } = computeRecipeCost(r.ingredients, byId);
+    const price = Number(r.menuItem?.price) || 0;
+    const ingredients = r.ingredients.map((ing, i) => {
+      const stockItem = ing.inventoryItem ? byId.get(String(ing.inventoryItem)) : null;
+      return {
+        ...ing,
+        sourceType: ingredientSource(ing),
+        name: stockItem?.name || ing.name || "",
+        // Populated-shape kept for existing UI consumers ({ _id, name, unit, … }).
+        inventoryItem: stockItem || ing.inventoryItem || null,
+        liveUnitCost: lines[i].unitCost,
+        liveCost: lines[i].cost,
+        costError: lines[i].error,
+      };
+    });
+    return {
+      ...r,
+      ingredients,
+      savedCost: r.totalCost ?? null,
+      makingCost: totalCost,
+      costIncomplete: incomplete,
+      sellingPrice: price,
+      grossMargin: price ? money(price - totalCost) : null,
+      foodCostPct: price ? Math.round((totalCost / price) * 1000) / 10 : null,
+    };
+  });
 };
 
 // ── Overview / dashboard ───────────────────────────────────────────────────
