@@ -410,3 +410,12 @@ h1,h2,h3,h4,p{margin:0}
 .auth .icon-btn{position:absolute;top:16px;left:20px;width:48px;height:48px;border-radius:17px}
 
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ── Rate the meal (components/RateOrderCard.jsx) ── */
+.rate-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px;font-size:14.5px;font-weight:650}
+.rate-stars{display:inline-flex;gap:2px;flex:none}
+.rate-stars button{border:0;background:none;padding:2px 3px;font-size:26px;line-height:1;color:var(--text-3);cursor:pointer;min-width:34px;min-height:40px}
+.rate-stars button.on{color:var(--brand)}
+.rate-tags{margin-top:8px}
+.rate-tags .chip{min-height:36px;font-size:13px;padding:0 13px}
+.rate-skip{display:block;margin:10px auto 0;font-size:14px;color:var(--text-2)}

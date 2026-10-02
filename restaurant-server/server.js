@@ -36,6 +36,7 @@ import inventoryRoutes from "./routes/inventoryRoutes.js";
 import { warmUpOcr } from "./utils/purchaseImportExtract.js";
 import chefRoutes    from "./routes/chefRoutes.js";
 import employeeRoutes from "./routes/employeeRoutes.js";
+import reviewRoutes from "./routes/reviewRoutes.js";
 import kitchenRoutes  from "./routes/kitchenRoutes.js";
 import profileRoutes from "./routes/profileRoutes.js";
 import catagoryRoutes from "./routes/catagoryRoutes.js";
@@ -99,6 +100,7 @@ app.use("/api/admin/chefs",       chefRoutes);
 // Chef directory above for anything NEW; chefRoutes/Chef model are left
 // mounted and untouched so nothing that already depends on them breaks.
 app.use("/api/admin/employees",   employeeRoutes);
+app.use("/api/reviews",           reviewRoutes);
 app.use("/api/kitchen",           kitchenRoutes);
 app.use("/api/admin/restaurant",  profileRoutes);
 app.use("/api/admin",             adminRoutes);

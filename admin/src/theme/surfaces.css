@@ -337,6 +337,9 @@
   background: var(--scrim);
   backdrop-filter: blur(7px);
   display: grid;
+  /* minmax(0,1fr): without it the column grows to the modal's own width, so
+     max-width:100% never applies and wide modals run off a phone screen. */
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
   z-index: 1000;
   padding: 20px;

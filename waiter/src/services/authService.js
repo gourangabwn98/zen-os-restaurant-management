@@ -22,3 +22,8 @@ export const getMyDashboard = () => api.get("/admin/employees/me/dashboard");
 // duty activity for a date range (defaults to today). Used by ActivityPage.jsx.
 export const getMyActivity = ({ from, to } = {}) =>
   api.get("/admin/employees/me/activity", { params: { from: from || undefined, to: to || undefined } });
+
+// Leave — own requests only (approved on the admin Employees page).
+export const getMyLeave = () => api.get("/admin/employees/me/leave");
+export const requestMyLeave = (body) => api.post("/admin/employees/me/leave", body);
+export const cancelMyLeave = (id) => api.patch(`/admin/employees/me/leave/${id}/cancel`);

@@ -54,6 +54,25 @@ const userSchema = new mongoose.Schema({
   // Customer's notification-history "read up to" marker: broadcasts newer
   // than this count as unread (GET /api/notifications).
   notificationsSeenAt: { type: Date, default: null },
+  // ── Staff HR record (Employees page → Pay / Documents) ────────────────────
+  // Only ever written through employeeService.updateEmployee's whitelist.
+  // ID proof keeps the type + last 4 digits only — never the full number.
+  hr: {
+    type: new mongoose.Schema({
+      salary:         { type: Number, default: 0, min: 0 },   // ₹ per month
+      otRate:         { type: Number, default: 0, min: 0 },   // ₹ per overtime hour
+      shiftHours:     { type: Number, default: 8, min: 1, max: 16 }, // daily hours before overtime
+      joinedAt:       { type: Date, default: null },
+      idProofType:    { type: String, default: "" },
+      idProofLast4:   { type: String, default: "" },
+      emergencyName:  { type: String, default: "" },
+      emergencyPhone: { type: String, default: "" },
+      photo:          { type: String, default: "" },
+      payoutUpi:      { type: String, default: "" },
+      payoutBank:     { type: String, default: "" },
+    }, { _id: false }),
+    default: () => ({}),
+  },
 }, { timestamps: true });
 
 // Small reusable "who did this" subdocument — used for audit fields on Order.
@@ -122,6 +141,11 @@ const restaurantProfileSchema = new mongoose.Schema({
   // IANA timezone used to evaluate menu schedules (utils/menuSchedule.js).
   // An invalid value falls back to Asia/Kolkata at read time.
   timezone:          { type: String, default: "Asia/Kolkata" },
+  // Staff rules (Employees → Pay / Leave). Admin-editable, never env vars.
+  staffPolicy: {
+    paidLeavePerMonth: { type: Number, default: 1, min: 0, max: 31 },
+    salaryDay:         { type: Number, default: 5, min: 1, max: 28 },
+  },
 }, { timestamps: true });
 
 // ── Scheduled menu visibility (utils/menuSchedule.js) ─────────────────────────
@@ -680,6 +704,68 @@ attendanceSessionSchema.index({ employee: 1, loginAt: -1 });
 attendanceSessionSchema.index({ role: 1, status: 1 });
 attendanceSessionSchema.index({ loginAt: -1 });
 
+// ── Staff reviews (services/reviewService.js) ─────────────────────────────
+// A customer's rating of a PAID order, split per kind: FOOD goes to the chef
+// who cooked it, SERVICE to the waiter who took it (attributed server-side
+// from the order's actor fields, never from the client). The unique
+// {order, kind} index makes a re-submit a no-op instead of a duplicate.
+const staffReviewSchema = new mongoose.Schema({
+  order:        { type: mongoose.Schema.Types.ObjectId, ref: "Order", required: true },
+  orderNo:      { type: String, default: "" },
+  kind:         { type: String, enum: ["FOOD","SERVICE"], required: true },
+  employee:     { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+  employeeRole: { type: String, default: "" },
+  rating:       { type: Number, required: true, min: 1, max: 5 },
+  tags:         { type: [String], default: [] },
+  comment:      { type: String, default: "", maxlength: 500 },
+  customerName: { type: String, default: "" },
+  tableNo:      { type: Number, default: null },
+  // Low rating or a negative tag → a complaint the owner marks as looked into.
+  complaint:    { type: Boolean, default: false },
+  lookedInto:   {
+    type: new mongoose.Schema({ at: Date, by: actorSchema, note: { type: String, default: "" } }, { _id: false }),
+    default: null,
+  },
+}, { timestamps: true });
+staffReviewSchema.index({ order: 1, kind: 1 }, { unique: true });
+staffReviewSchema.index({ employee: 1, createdAt: -1 });
+
+// ── Staff leave (services/leaveService.js) ─────────────────────────────────
+// PENDING → APPROVED | DECLINED, one atomic conditional update (never
+// check-then-save), so two admins deciding at once can't both win.
+const staffLeaveSchema = new mongoose.Schema({
+  employee:    { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  from:        { type: Date, required: true },
+  to:          { type: Date, required: true },
+  days:        { type: Number, required: true, min: 1 },
+  reason:      { type: String, default: "", maxlength: 300 },
+  status:      { type: String, enum: ["PENDING","APPROVED","DECLINED","CANCELLED"], default: "PENDING" },
+  paid:        { type: Boolean, default: false },
+  source:      { type: String, enum: ["SELF","ADMIN"], default: "SELF" },
+  requestedBy: { type: actorSchema, default: null },
+  decidedBy:   { type: actorSchema, default: null },
+  decidedAt:   { type: Date, default: null },
+}, { timestamps: true });
+staffLeaveSchema.index({ employee: 1, from: -1 });
+staffLeaveSchema.index({ status: 1 });
+
+// ── Staff pay ledger (services/payService.js) ──────────────────────────────
+// ADVANCE rows (any number per month) and one SALARY row per person per
+// month — enforced by a partial unique index, so "Mark paid" clicked twice
+// (or by two admins) records the salary once.
+const staffPaySchema = new mongoose.Schema({
+  employee:  { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  month:     { type: String, required: true, match: /^\d{4}-\d{2}$/ },
+  type:      { type: String, enum: ["ADVANCE","SALARY"], required: true },
+  amount:    { type: Number, required: true, min: 0 },
+  method:    { type: String, enum: ["Cash","UPI","Bank"], default: "Cash" },
+  note:      { type: String, default: "", maxlength: 200 },
+  breakdown: { type: Object, default: null }, // SALARY: snapshot of the calculation
+  by:        { type: actorSchema, default: null },
+}, { timestamps: true });
+staffPaySchema.index({ employee: 1, month: 1, type: 1 }, { unique: true, partialFilterExpression: { type: "SALARY" }, name: "one_salary_per_month" });
+staffPaySchema.index({ employee: 1, createdAt: -1 });
+
 // A sent-offer log — one row per admin broadcast (services/notificationService.js).
 // recipientCount is a best-effort snapshot of how many customers were
 // opted in at send time, not a delivery receipt — FCM topic sends don't
@@ -779,6 +865,9 @@ export function getModels(conn) {
     WaitlistEntry:     conn.models.WaitlistEntry     || conn.model("WaitlistEntry",     waitlistEntrySchema),
     NotificationLog:   conn.models.NotificationLog   || conn.model("NotificationLog",   notificationLogSchema),
     AttendanceSession: conn.models.AttendanceSession || conn.model("AttendanceSession", attendanceSessionSchema),
+    StaffReview:       conn.models.StaffReview       || conn.model("StaffReview",       staffReviewSchema),
+    StaffLeave:        conn.models.StaffLeave        || conn.model("StaffLeave",        staffLeaveSchema),
+    StaffPay:          conn.models.StaffPay          || conn.model("StaffPay",          staffPaySchema),
 
     // ── Inventory (Phase 2) ────────────────────────────────────────────────
     Supplier:          conn.models.Supplier          || conn.model("Supplier",          supplierSchema),

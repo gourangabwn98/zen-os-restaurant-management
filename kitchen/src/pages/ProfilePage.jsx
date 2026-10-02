@@ -4,6 +4,7 @@ import { getMyDashboard } from "../services/kitchenService.js";
 import { useAppState } from "../context/AppState.jsx";
 import { disconnectSocket } from "../services/socketService.js";
 import DutyPanel from "../components/DutyPanel.jsx";
+import LeaveRequestCard from "../components/LeaveRequestCard.jsx";
 import { CARD, BORDER, TEXT_MUTED, AMBER } from "../theme.js";
 
 export default function ProfilePage() {
@@ -45,6 +46,10 @@ export default function ProfilePage() {
             <Stat label="Completed" value={stats.completedToday} />
           </div>
         )}
+      </div>
+
+      <div style={{ marginTop: 18 }}>
+        <LeaveRequestCard />
       </div>
 
       <button onClick={handleLogout} style={{

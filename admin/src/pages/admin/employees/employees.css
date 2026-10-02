@@ -1,0 +1,208 @@
+/* src/pages/admin/employees/employees.css
+   Layout only. Every colour, radius, shadow and font size here is an existing
+   token from src/theme/tokens.css or a size already used by the shared
+   components (PageHeader 21/12.5, zc-card-h .t 14, zc-btn 12.5/11.5,
+   zc-tag 11, zc-metric .k 11.5). Surfaces reuse .zc-card / .zc-panel. */
+
+.emp { container-type: inline-size; display: flex; flex-direction: column; gap: 16px; }
+.emp .tnum { font-variant-numeric: tabular-nums; }
+
+/* ── team strip: one card, five cells (zc-metric typography) ── */
+.emp-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); overflow: hidden; }
+.emp-strip > * {
+  font-family: inherit; text-align: left; background: transparent; border: 0;
+  border-left: 1px solid var(--edge); padding: 14px 18px;
+  display: flex; flex-direction: column; justify-content: center; gap: 3px; color: var(--text-1);
+  transition: var(--theme-transition);
+}
+.emp-strip button { cursor: pointer; }
+.emp-strip > :first-child { border-left: 0; }
+.emp-strip button:hover { background: var(--violet-faint); }
+.emp-strip button[aria-pressed="true"] { background: var(--violet-weak); }
+.emp-strip .k { font-size: 11.5px; color: var(--text-2); font-weight: 500; }
+.emp-strip .v { font-size: 21px; font-weight: 700; letter-spacing: -.025em; line-height: 1.15; }
+.emp-strip .d { font-size: 11.5px; color: var(--text-3); }
+
+/* ── body: people list | profile ── */
+.emp-body { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; align-items: start; }
+.emp-list { padding: 14px; }
+.emp-tools { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.emp-tools .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.emp-tools .zc-select { width: auto; flex: 0 0 auto; }
+.emp-grp { font-size: 11px; font-weight: 700; color: var(--text-3); letter-spacing: .06em; text-transform: uppercase; margin: 10px 6px 4px; }
+.emp-rows { display: flex; flex-direction: column; gap: 4px; }
+
+.emp-row {
+  font-family: inherit; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px;
+  align-items: center; padding: 10px; border-radius: var(--r-row); border: 1px solid transparent;
+  background: transparent; text-align: left; width: 100%; color: var(--text-1); cursor: pointer;
+  transition: var(--theme-transition);
+}
+.emp-row:hover { background: var(--violet-faint); }
+.emp-row[aria-current="true"] { background: var(--violet-weak); border-color: var(--violet-line); }
+.emp-row.static { cursor: default; }
+.emp-row.static:hover { background: transparent; }
+.emp-row.off { opacity: .62; }
+.emp-row .nm { font-size: 13.5px; font-weight: 600; display: flex; gap: 6px; align-items: center; min-width: 0; }
+.emp-row .nm span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.emp-row .sub { font-size: 11.5px; color: var(--text-2); display: flex; gap: 6px; align-items: center; margin-top: 2px; min-width: 0; }
+.emp-row .sub span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.emp-row .flags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 5px; }
+.emp-row .cnt { text-align: right; font-size: 18px; font-weight: 700; line-height: 1; letter-spacing: -.02em; }
+.emp-row .cnt small { display: block; font-size: 10.5px; font-weight: 500; color: var(--text-3); margin-top: 3px; letter-spacing: 0; }
+
+/* initials avatar, tinted by role with the existing status palettes */
+.emp-av { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-size: 12.5px; font-weight: 700; flex: none; border: 1px solid transparent; }
+.emp-av.lg { width: 52px; height: 52px; font-size: 18px; }
+.emp-av.waiter { background: var(--live-fill); color: var(--live-ink); border-color: var(--live-line); }
+.emp-av.chef { background: var(--wait-fill); color: var(--wait-ink); border-color: var(--wait-line); }
+.emp-av.admin { background: var(--violet-weak); color: var(--accent-ink); border-color: var(--violet-mid); }
+
+/* duty status: never red — off duty is normal, so it is grey */
+.emp-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
+.emp-dot.ONLINE { background: var(--ready); box-shadow: 0 0 0 3px var(--ready-fill); }
+.emp-dot.BREAK { background: var(--wait); box-shadow: 0 0 0 3px var(--wait-fill); }
+.emp-dot.OFFLINE { background: var(--done); }
+
+/* ── profile ── */
+.emp-prof { padding: 18px 20px; min-width: 0; }
+.emp-ph { display: flex; gap: 14px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+.emp-who { display: flex; gap: 14px; align-items: center; min-width: 0; }
+.emp-who h3 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -.02em; color: var(--text-1); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.emp-who .meta { font-size: 12.5px; color: var(--text-2); margin-top: 3px; overflow-wrap: anywhere; }
+.emp-acts { display: flex; gap: 8px; align-items: center; position: relative; flex-wrap: wrap; }
+.emp-acts a.zc-btn { text-decoration: none; }
+.emp-menu {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: 280px;
+  background: var(--grad-modal); border: 1px solid var(--edge-hi); border-radius: var(--r-ctl);
+  padding: 6px; box-shadow: var(--shadow-pop);
+}
+.emp-menu .mi {
+  font-family: inherit; width: 100%; text-align: left; border: 0; background: transparent; cursor: pointer;
+  padding: 9px 10px; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: var(--text-1);
+}
+.emp-menu .mi:hover { background: var(--raise); }
+.emp-menu .mi.danger { color: var(--stop-ink); }
+.emp-menu .mi.good { color: var(--ready-ink); }
+.emp-confirm { padding: 8px 10px 4px; font-size: 12.5px; color: var(--text-2); line-height: 1.5; }
+.emp-confirm .row { display: flex; gap: 6px; justify-content: flex-end; margin-top: 10px; }
+
+.emp-prof .zc-subnav { margin: 16px 0 14px; }
+
+.emp-grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+.emp-panel { padding: 14px 16px; }
+.emp-panel h4 { margin: 0 0 6px; font-size: 14px; font-weight: 600; color: var(--text-1); display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.emp-panel h4 small { font-size: 11.5px; font-weight: 400; color: var(--text-3); }
+.emp-kv { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--edge); font-size: 12.5px; }
+.emp-kv:first-of-type { border-top: 0; }
+.emp-kv span { color: var(--text-2); }
+.emp-kv b { font-weight: 600; color: var(--text-1); font-variant-numeric: tabular-nums; text-align: right; }
+
+/* attendance month calendar */
+.emp-calh { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+.emp-calh b { font-size: 14px; font-weight: 600; color: var(--text-1); }
+.emp-cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
+.emp-cal .h { font-size: 11px; color: var(--text-3); text-align: center; font-weight: 600; padding-bottom: 2px; }
+.emp-cal .d {
+  min-height: 42px; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-3);
+  border: 1px dashed var(--edge-hi);
+}
+.emp-cal .d small { font-size: 10px; font-weight: 500; margin-top: 1px; }
+.emp-cal .d.work { background: var(--ready-fill); color: var(--ready-ink); border: 1px solid var(--ready-line); }
+.emp-cal .d.open { background: var(--live-fill); color: var(--live-ink); border: 1px solid var(--live-line); }
+.emp-cal .d.future { border-color: transparent; opacity: .45; }
+.emp-cal .d.today { box-shadow: inset 0 0 0 2px var(--text-1); }
+.emp-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11.5px; color: var(--text-2); margin-top: 10px; }
+.emp-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.emp-legend i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+
+.emp-presets { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.emp-range { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+.emp-range .zc-input { flex: 1 1 140px; width: auto; }
+.emp-range span { font-size: 12px; color: var(--text-3); }
+.emp-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+
+/* ── responsive (container = the page's own width) ── */
+@container (max-width: 980px) {
+  .emp-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .emp-strip > :nth-child(4) { border-left: 0; }
+  .emp-strip > :nth-child(n+4) { border-top: 1px solid var(--edge); }
+  .emp-body { grid-template-columns: 280px minmax(0, 1fr); }
+}
+@container (max-width: 860px) {
+  .emp-body { grid-template-columns: minmax(0, 1fr); }
+  .emp-grid2 { grid-template-columns: minmax(0, 1fr); }
+}
+@container (max-width: 560px) {
+  .emp-row .nm { flex-wrap: wrap; row-gap: 3px; }
+  .emp-row .nm span:first-child, .emp-row .sub span:last-child { white-space: normal; overflow: visible; }
+  .emp-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .emp-strip > * { padding: 12px 14px; }
+  .emp-strip > :nth-child(4) { border-left: 1px solid var(--edge); }
+  .emp-strip > :nth-child(odd) { border-left: 0; }
+  .emp-strip > :nth-child(n+3) { border-top: 1px solid var(--edge); }
+  .emp-strip > :last-child { grid-column: 1 / -1; }
+  .emp-prof { padding: 16px; }
+  .emp-acts { width: 100%; }
+  .emp-menu { left: 0; right: auto; width: min(280px, 100%); }
+  .emp-cal { gap: 3px; }
+  .emp-cal .d { min-height: 36px; font-size: 11.5px; }
+  .emp-cal .d small { display: none; }
+}
+
+/* ── tabs: count badges ── */
+.emp-tabn { font-size: 10.5px; font-weight: 700; padding: 0 6px; border-radius: 99px; line-height: 16px; }
+.emp-tabn.stop { background: var(--stop-fill); color: var(--stop-ink); }
+.emp-tabn.wait { background: var(--wait-fill); color: var(--wait-ink); }
+.zc-subnav button.on .emp-tabn { background: rgba(255, 255, 255, .22); color: #fff; }
+img.emp-av { object-fit: cover; }
+
+.emp-hint { font-size: 11.5px; color: var(--text-3); }
+.emp-tabhead { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.emp-tabhead h4 { margin: 0; font-size: 14px; font-weight: 600; color: var(--text-1); }
+.emp-actrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+.emp-kv.total { border-top: 1px solid var(--edge-hi); font-size: 14px; }
+.emp-kv.total span { color: var(--text-1); font-weight: 600; }
+.emp-kv.total b { font-size: 17px; }
+
+/* reviews */
+.emp-stars { color: var(--wait); letter-spacing: 1px; white-space: nowrap; }
+.emp-stars i { font-style: normal; color: var(--edge-hi); }
+.emp-revs { display: flex; flex-direction: column; gap: 8px; }
+.emp-rv { padding: 11px 14px; }
+.emp-rv.bad { border-color: var(--stop-line); }
+.emp-rv-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.emp-rv-tags { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.emp-rv-text { margin: 6px 0 0; font-size: 13px; color: var(--text-1); line-height: 1.5; overflow-wrap: anywhere; }
+.emp-rv-act { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 9px; }
+
+/* pay / leave forms */
+.emp-form3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.emp-form2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.emp-form2 .full { grid-column: 1 / -1; }
+.emp-form3 label, .emp-form2 label, .emp-inline-form label { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.emp-form3 label > span, .emp-form2 label > span, .emp-inline-form label > span { font-size: 11.5px; font-weight: 600; color: var(--text-2); }
+.emp-inline-form { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-top: 10px; }
+.emp-inline-form .zc-input, .emp-inline-form .zc-select { width: auto; flex: 1 1 120px; }
+.emp-rules { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--edge); }
+.emp-req h4 { font-size: 13.5px; }
+.emp-log { display: flex; flex-direction: column; border-left: 2px solid var(--edge-hi); margin-left: 5px; }
+.emp-log > div { position: relative; padding: 0 0 9px 16px; font-size: 12.5px; color: var(--text-2); }
+.emp-log > div::before { content: ""; position: absolute; left: -6px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: var(--c, var(--violet)); }
+.emp-log b { color: var(--text-1); font-weight: 600; margin-right: 6px; }
+
+/* documents */
+.emp-docs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.emp-doc { display: flex; gap: 10px; align-items: center; padding: 11px 13px; }
+.emp-doc.miss { border-style: dashed; border-color: var(--wait-line); }
+.emp-doc-k { font-size: 13px; font-weight: 600; color: var(--text-1); }
+.emp-doc small { display: block; font-size: 11.5px; color: var(--text-3); margin-top: 2px; overflow-wrap: anywhere; }
+.emp-doc.miss small { color: var(--wait-ink); }
+.emp-doc-photo { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex: none; }
+
+@container (max-width: 560px) {
+  .emp-form3, .emp-form2, .emp-docs { grid-template-columns: minmax(0, 1fr); }
+  .emp .zc-subnav { flex-wrap: nowrap; overflow-x: auto; }
+  .emp .zc-subnav button { flex: none; }
+}

@@ -111,6 +111,22 @@ export const getEmployeeStats    = (id, { from, to } = {}) =>
   api.get(`/admin/employees/${id}/stats`, { params: { from: from || undefined, to: to || undefined } });
 export const getEmployeePerformance = (params) => api.get("/admin/employees/performance", { params });
 
+// ── Employees HR: reviews / pay / leave / documents (Employees page tabs) ──
+export const getHrSummary          = (params) => api.get("/admin/employees/hr/summary", { params });
+export const updateHrPolicy        = (body) => api.patch("/admin/employees/hr/policy", body);
+export const getEmployeeReviews    = (id, params) => api.get(`/admin/employees/${id}/reviews`, { params });
+export const markReviewLookedInto  = (reviewId, note) => api.patch(`/admin/employees/reviews/${reviewId}/looked-into`, { note });
+export const getEmployeePay        = (id, month) => api.get(`/admin/employees/${id}/pay`, { params: { month } });
+export const addEmployeeAdvance    = (id, body) => api.post(`/admin/employees/${id}/pay/advances`, body);
+export const payEmployeeSalary     = (id, body) => api.post(`/admin/employees/${id}/pay/salary`, body);
+export const getEmployeeLeave      = (id) => api.get(`/admin/employees/${id}/leave`);
+export const addEmployeeLeave      = (id, body) => api.post(`/admin/employees/${id}/leave`, body);
+export const decideEmployeeLeave   = (leaveId, body) => api.patch(`/admin/employees/leave/${leaveId}`, body);
+export const uploadEmployeePhoto   = (id, file) => {
+  const fd = new FormData(); fd.append("photo", file);
+  return api.post(`/admin/employees/${id}/photo`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+};
+
 // ── Support tickets (Help & Support → Raise a ticket) ─────────────────────
 export const createSupportTicket = (body) => api.post("/support", body);
 

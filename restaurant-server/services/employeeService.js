@@ -47,7 +47,57 @@ export const createEmployee = async ({ User, name, phone, address, role }) => {
   });
 };
 
-export const updateEmployee = async ({ User, id, name, address, role }) => {
+// ── HR fields (Pay / Documents) — whitelist + validation ────────────────────
+export const ID_PROOF_TYPES = ["Aadhaar", "PAN", "Voter ID", "Driving licence", "Passport"];
+const hrFail = (msg) => { const err = new Error(msg); err.statusCode = 400; throw err; };
+
+/** Returns only the allowed, validated hr.* keys present in `input` (pure). */
+export const cleanHrInput = (input = {}) => {
+  const out = {};
+  const num = (key, label, { min = 0, max = 10000000 } = {}) => {
+    if (input[key] === undefined) return;
+    const v = Number(input[key]);
+    if (!Number.isFinite(v) || v < min || v > max) hrFail(`${label} must be between ${min} and ${max}`);
+    out[key] = Math.round(v * 100) / 100;
+  };
+  const str = (key, max = 120) => { if (input[key] !== undefined) out[key] = String(input[key] ?? "").trim().slice(0, max); };
+  num("salary", "Monthly salary");
+  num("otRate", "Overtime rate", { max: 10000 });
+  num("shiftHours", "Shift hours", { min: 1, max: 16 });
+  if (input.joinedAt !== undefined) {
+    if (!input.joinedAt) out.joinedAt = null;
+    else {
+      const d = new Date(input.joinedAt);
+      if (Number.isNaN(d.getTime()) || d > new Date()) hrFail("Enter a valid joining date");
+      out.joinedAt = d;
+    }
+  }
+  if (input.idProofType !== undefined) {
+    if (input.idProofType && !ID_PROOF_TYPES.includes(input.idProofType)) hrFail(`ID proof must be one of: ${ID_PROOF_TYPES.join(", ")}`);
+    out.idProofType = input.idProofType || "";
+  }
+  if (input.idProofLast4 !== undefined) {
+    const v = String(input.idProofLast4 || "").trim().toUpperCase();
+    // Only the last 4 characters are ever stored — never the full ID number.
+    if (v && !/^[A-Z0-9]{4}$/.test(v)) hrFail("Enter only the last 4 characters of the ID");
+    out.idProofLast4 = v;
+  }
+  str("emergencyName", 80);
+  if (input.emergencyPhone !== undefined) {
+    const v = String(input.emergencyPhone || "").replace(/\D/g, "");
+    if (v && !/^[6-9]\d{9}$/.test(v)) hrFail("Enter a valid 10-digit emergency phone number");
+    out.emergencyPhone = v;
+  }
+  if (input.payoutUpi !== undefined) {
+    const v = String(input.payoutUpi || "").trim();
+    if (v && !/^[\w.-]{2,}@[a-zA-Z]{2,}$/.test(v)) hrFail("Enter a valid UPI ID, e.g. name@ybl");
+    out.payoutUpi = v;
+  }
+  str("payoutBank", 120);
+  return out;
+};
+
+export const updateEmployee = async ({ User, id, name, address, role, hr }) => {
   const employee = await User.findOne({ _id: id, role: { $in: EMPLOYEE_ROLES } });
   if (!employee) { const err = new Error("Employee not found"); err.statusCode = 404; throw err; }
 
@@ -58,6 +108,11 @@ export const updateEmployee = async ({ User, id, name, address, role }) => {
       const err = new Error(`Category must be one of: ${EMPLOYEE_ROLES.join(", ")}`); err.statusCode = 400; throw err;
     }
     employee.role = role;
+  }
+  if (hr && typeof hr === "object") {
+    const clean = cleanHrInput(hr);
+    const current = employee.hr?.toObject ? employee.hr.toObject() : (employee.hr || {});
+    employee.hr = { ...current, ...clean };
   }
   await employee.save();
   return employee;

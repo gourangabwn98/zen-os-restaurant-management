@@ -1,321 +1,362 @@
-import { useState, useEffect, useCallback } from "react";
+// src/pages/admin/EmployeesPage.jsx — Admin → Management → Employees
+// Layout: team strip on top, people list on the left, the selected person on
+// the right (Overview / Attendance / Orders). Data is all existing endpoints:
+//   GET   /admin/employees                 the people (CRUD as before)
+//   PATCH /admin/employees/:id/status      activate / deactivate
+//   GET   /admin/attendance/today          live duty status + today's hours
+//   GET   /admin/employees/performance     today's order counts per person
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import toast from "react-hot-toast";
-import {
-  getEmployees, addEmployee, editEmployee, setEmployeeStatus, getEmployeeStats,
-} from "../../services/adminService.js";
-import {
-  PRIMARY, BG_CARD, BG_INPUT, BORDER, TEXT_PRIMARY, TEXT_MUTED, GREEN, GREEN_LIGHT,
-} from "../../theme.js";
-import { t, N_, fmtNum, fmtDate } from "../../i18n/core.js";
+import { getEmployees, setEmployeeStatus, getEmployeePerformance, getHrSummary } from "../../services/adminService.js";
+import { getAttendanceToday } from "../../services/attendanceService.js";
+import { getSocket } from "../../services/socketService.js";
+import { useVisibleInterval } from "../../hooks/useVisibleInterval.js";
+import { PageHeader, Loader, EmptyState, Badge } from "./shared/index.js";
+import ErrorState from "./shared/ErrorState.jsx";
+import EmployeeForm from "./employees/EmployeeForm.jsx";
+import EmployeeProfile from "./employees/EmployeeProfile.jsx";
+import { ROLE_LABEL, DUTY_LABEL, initials, fmtDuration, count } from "./employees/shared.js";
+import { t, N_, tn, fmtTime, fmtNum, fmtDate } from "../../i18n/core.js";
+import "./employees/employees.css";
 
-const RED = "#ef4444";
-const CATEGORY_LABEL = { waiter: N_("Waiter"), chef: N_("Chef") };
-const CATEGORY_ICON  = { waiter: "🧑‍🍽️", chef: "🧑‍🍳" };
+const STAFF_ROLES = ["waiter", "chef"];
+const ROLE_FILTERS = [
+  { key: "", label: N_("All") },
+  { key: "waiter", label: N_("Waiters") },
+  { key: "chef", label: N_("Chefs") },
+];
+const DUTY_FILTER_LABEL = { on: N_("On duty now"), worked: N_("Worked today") };
 
 export default function EmployeesPage() {
-  const [employees, setEmployees] = useState(null);
-  const [search, setSearch]       = useState("");
+  const [employees, setEmployees] = useState(null); // null = loading
+  const [loadError, setLoadError] = useState(false);
+  const [attendance, setAttendance] = useState([]); // today's rows, incl. admins
+  const [performance, setPerformance] = useState([]);
+  const [hr, setHr] = useState(null); // GET /admin/employees/hr/summary
+  const [tab, setTab] = useState("overview");
+  const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [showAdd, setShowAdd]     = useState(false);
-  const [editing, setEditing]     = useState(null);
-  const [statsFor, setStatsFor]   = useState(null);
+  const [dutyFilter, setDutyFilter] = useState(""); // "" | on | worked
+  const [selectedId, setSelectedId] = useState(null);
+  const [formFor, setFormFor] = useState(null); // null | "new" | employee
+  const profileRef = useRef(null);
+  const listRef = useRef(null);
 
-  const load = useCallback(async () => {
+  // The whole team is a few dozen people at most, so it is loaded once and
+  // searched / filtered instantly in the browser.
+  const loadEmployees = useCallback(async () => {
     try {
-      const { data } = await getEmployees({
-        search: search || undefined, role: roleFilter || undefined, status: statusFilter || undefined,
-      });
+      const { data } = await getEmployees({});
       setEmployees(data.employees || []);
+      setLoadError(false);
     } catch {
+      setLoadError(true);
       toast.error(t("Couldn't load employees"));
     }
-  }, [search, roleFilter, statusFilter]);
+  }, []);
 
+  const loadLive = useCallback(() => {
+    getAttendanceToday({}).then(({ data }) => setAttendance(data.employees || [])).catch(() => {});
+    getEmployeePerformance({}).then(({ data }) => setPerformance(data.performance || [])).catch(() => {});
+  }, []);
+
+  const loadHr = useCallback(() => {
+    getHrSummary({}).then(({ data }) => setHr(data)).catch(() => {});
+  }, []);
+
+  useEffect(() => { loadEmployees(); }, [loadEmployees]);
+  useEffect(() => { loadHr(); }, [loadHr]);
+  useVisibleInterval(loadHr, 60000);
+  useEffect(() => { loadLive(); }, [loadLive]);
+  useVisibleInterval(loadLive, 20000);
   useEffect(() => {
-    const id = setTimeout(load, 250);
-    return () => clearTimeout(id);
-  }, [load]);
+    const socket = getSocket();
+    if (!socket) return undefined;
+    socket.on("employee:attendance:updated", loadLive);
+    return () => socket.off("employee:attendance:updated", loadLive);
+  }, [loadLive]);
+
+  const dutyById = useMemo(() => new Map(attendance.map((r) => [String(r.employee._id), r])), [attendance]);
+  const ordersById = useMemo(() => new Map(performance.map((p) => [String(p._id), p.orderCount || 0])), [performance]);
+
+  // ── team strip (staff only; admins are attendance-only) ──────────────────
+  const staffRows = attendance.filter((r) => STAFF_ROLES.includes(r.employee.role));
+  const onDuty = staffRows.filter((r) => r.status === "ONLINE" || r.status === "BREAK");
+  const onBreak = staffRows.filter((r) => r.status === "BREAK").length;
+  const worked = staffRows.filter((r) => r.firstLogin);
+  const hours = staffRows.reduce((s, r) => s + (r.workingSeconds || 0), 0);
+  const floorOrders = performance.filter((p) => p.role === "waiter").reduce((s, p) => s + (p.orderCount || 0), 0);
+  const kitchenOrders = performance.filter((p) => p.role === "chef").reduce((s, p) => s + (p.orderCount || 0), 0);
+  const inactiveCount = (employees || []).filter((e) => e.status === "Inactive").length;
+  const activeCount = (employees || []).length - inactiveCount;
+
+  // ── list ──────────────────────────────────────────────────────────────────
+  const q = search.trim().toLowerCase();
+  const matchesSearch = (name, phone) => !q || name?.toLowerCase().includes(q) || String(phone || "").includes(q);
+  const dutyOf = (id) => dutyById.get(String(id))?.status || "OFFLINE";
+  const passesDuty = (id) => {
+    const row = dutyById.get(String(id));
+    if (dutyFilter === "on") return row && (row.status === "ONLINE" || row.status === "BREAK");
+    if (dutyFilter === "worked") return !!row?.firstLogin;
+    return true;
+  };
+
+  const visible = useMemo(() => {
+    if (!employees) return [];
+    const rank = { ONLINE: 0, BREAK: 1, OFFLINE: 2 };
+    return employees
+      .filter((e) => (!roleFilter || e.role === roleFilter)
+        && (!statusFilter || e.status === statusFilter)
+        && matchesSearch(e.name, e.phone) && passesDuty(e._id))
+      .sort((a, b) => ((a.status === "Inactive") - (b.status === "Inactive"))
+        || (rank[dutyOf(a._id)] - rank[dutyOf(b._id)])
+        || a.name.localeCompare(b.name));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employees, roleFilter, statusFilter, q, dutyFilter, dutyById]);
+
+  const admins = attendance.filter((r) => r.employee.role === "admin"
+    && !roleFilter && !statusFilter && dutyFilter !== "worked"
+    && matchesSearch(r.employee.name, r.employee.phone)
+    && (dutyFilter !== "on" || r.status !== "OFFLINE"));
+
+  const selected = visible.find((e) => e._id === selectedId) || visible[0] || null;
+  const visibleIds = () => visible.map((e) => String(e._id));
+
+  const scrollToProfile = () => {
+    // Stacked layout (tablet / phone): bring the profile into view.
+    requestAnimationFrame(() => {
+      const p = profileRef.current, l = listRef.current;
+      if (p && l && p.getBoundingClientRect().top > l.getBoundingClientRect().bottom - 4) {
+        p.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
+  };
+  const select = (id) => { setSelectedId(id); scrollToProfile(); };
+  const handleEmployeeUpdated = (emp) => {
+    if (!emp?._id) return;
+    setEmployees((list) => list.map((e) => (e._id === emp._id ? { ...e, ...emp } : e)));
+    loadHr();
+  };
 
   const handleToggleStatus = async (emp) => {
     const next = emp.status === "Active" ? "Inactive" : "Active";
-    if (!window.confirm(t(next === "Inactive" ? "Deactivate {name}?" : "Activate {name}?", { name: emp.name }))) return;
     try {
       await setEmployeeStatus(emp._id, next);
+      setEmployees((list) => list.map((e) => (e._id === emp._id ? { ...e, status: next } : e)));
       toast.success(t("{name} is now {status}", { name: emp.name, status: t(next) }));
-      load();
+      loadLive();
     } catch (err) {
       toast.error(err.response?.data?.message || t("Couldn't update status"));
+      throw err;
     }
   };
 
+  const handleSaved = (saved) => {
+    setFormFor(null);
+    if (saved?._id) {
+      setEmployees((list) => {
+        const exists = (list || []).some((e) => e._id === saved._id);
+        return exists ? list.map((e) => (e._id === saved._id ? { ...e, ...saved } : e)) : [saved, ...(list || [])];
+      });
+      setSelectedId(saved._id);
+    }
+    loadEmployees();
+  };
+
+  const people = hr?.people || {};
+  const totals = hr?.totals;
+  const firstWith = (pred) => visibleIds().find((id) => pred(people[id] || {}));
+  const monthName = hr ? fmtDate(new Date(`${hr.month}-01T00:00:00`), { month: "long" }) : "";
+  const stripCells = [
+    { key: "on", k: t("On duty now"), v: `${count(onDuty.length)} / ${count(activeCount)}`, d: `${tn(onBreak, "{n} on break", "{n} on break")} · ${t("Worked today")} ${count(worked.length)}`, color: onDuty.length ? "var(--ready-ink)" : undefined },
+    { key: "orders", k: t("Orders today"), v: count(floorOrders + kitchenOrders), d: `${t("{f} floor · {k} kitchen", { f: count(floorOrders), k: count(kitchenOrders) })} · ${fmtDuration(hours)}` },
+    { key: "leave", k: t("Leave requests"), v: totals ? count(totals.pendingLeaves) : "—", d: totals?.pendingLeaves ? t("Waiting for you") : "✓", color: totals?.pendingLeaves ? "var(--live-ink)" : undefined },
+    { key: "complaints", k: t("Complaints to look into"), v: totals ? count(totals.openComplaints) : "—", d: totals?.openComplaints ? t("From customers") : "✓", color: totals?.openComplaints ? "var(--stop-ink)" : totals ? "var(--ready-ink)" : undefined },
+    { key: "pay", k: t("{month} salary", { month: monthName }), v: totals ? `₹${fmtNum(totals.salaryDue)}` : "—", d: totals ? (totals.unpaidPeople ? tn(totals.unpaidPeople, "{n} person to pay", "{n} people to pay") : t("All paid ✓")) : "" },
+  ];
+  // Each cell jumps to the first person it is about, on the matching tab.
+  const onStrip = (key) => {
+    if (key === "on") { setStatusFilter(""); setDutyFilter((d) => (d === "on" ? "" : "on")); return; }
+    if (key === "orders") { setDutyFilter((d) => (d === "worked" ? "" : "worked")); return; }
+    const target = key === "leave" ? firstWith((x) => x.pendingLeave > 0)
+      : key === "complaints" ? firstWith((x) => x.openComplaints > 0)
+      : firstWith((x) => x.pay && !x.pay.paid && !x.pay.noSalary) || visibleIds()[0];
+    if (target) { setSelectedId(target); setTab(key === "complaints" ? "reviews" : key); scrollToProfile(); }
+  };
+  const stripOn = (key) => (key === "on" ? dutyFilter === "on" : key === "orders" ? dutyFilter === "worked" : false);
+
+  const subLine = employees
+    ? `${tn(employees.length, "{n} person", "{n} people")} · ${tn(employees.filter((e) => e.role === "waiter").length, "{n} waiter", "{n} waiters")} · ${tn(employees.filter((e) => e.role === "chef").length, "{n} chef", "{n} chefs")}`
+    : t("Waiters and kitchen staff — created here, log in with their own phone + OTP");
+
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 800, color: TEXT_PRIMARY }}>{t("Employees")}</div>
-          <div style={{ fontSize: 12.5, color: TEXT_MUTED, marginTop: 2 }}>{t("Waiters and kitchen staff — created here, log in with their own phone + OTP")}</div>
-        </div>
-        <button onClick={() => setShowAdd(true)} style={primaryBtnStyle}>+ {t("Add Employee")}</button>
-      </div>
+    <div className="emp">
+      <PageHeader
+        title={t("Employees")}
+        sub={subLine}
+        right={<button type="button" className="zc-btn pri" onClick={() => setFormFor("new")}>+ {t("Add Employee")}</button>}
+      />
 
-      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-        <input
-          value={search} onChange={(e) => setSearch(e.target.value)}
-          placeholder={t("Search name or phone…")} style={{ ...inputStyle, flex: "1 1 220px" }}
-        />
-        <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} style={inputStyle}>
-          <option value="">{t("All categories")}</option>
-          <option value="waiter">{t("Waiter")}</option>
-          <option value="chef">{t("Chef")}</option>
-        </select>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={inputStyle}>
-          <option value="">{t("All statuses")}</option>
-          <option value="Active">{t("Active")}</option>
-          <option value="Inactive">{t("Inactive")}</option>
-        </select>
-      </div>
-
-      {employees === null ? (
-        <div style={{ padding: 40, textAlign: "center", color: TEXT_MUTED }}>{t("Loading…")}</div>
-      ) : employees.length === 0 ? (
-        <div style={{ padding: 40, textAlign: "center", color: TEXT_MUTED, background: BG_CARD, borderRadius: 14, border: `1px solid ${BORDER}` }}>
-          {t("No employees found")}
+      {loadError && !employees ? (
+        <div className="zc-card"><ErrorState onRetry={loadEmployees} /></div>
+      ) : employees && employees.length === 0 ? (
+        <div className="zc-card">
+          <EmptyState
+            title={t("No employees yet")}
+            sub={t("Add your waiters and kitchen staff. Each one signs in with their own phone and OTP.")}
+            action={<button type="button" className="zc-btn pri" onClick={() => setFormFor("new")}>+ {t("Add Employee")}</button>}
+          />
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>
-          {employees.map((emp) => (
-            <div key={emp._id} style={{ background: BG_CARD, border: `1px solid ${BORDER}`, borderRadius: 14, padding: 16 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  <span style={{ fontSize: 22 }}>{CATEGORY_ICON[emp.role] || "👤"}</span>
-                  <div>
-                    <div style={{ fontWeight: 700, color: TEXT_PRIMARY, fontSize: 14.5 }}>{emp.name}</div>
-                    <div style={{ fontSize: 11.5, color: PRIMARY, fontWeight: 700, textTransform: "uppercase" }}>{t(CATEGORY_LABEL[emp.role] || emp.role)}</div>
+        <>
+          <div className="zc-card emp-strip">
+            {stripCells.map((c) => {
+              const inner = (
+                <>
+                  <span className="k">{c.k}</span>
+                  <span className="v tnum" style={c.color ? { color: c.color } : undefined}>{c.v}</span>
+                  <span className="d">{c.d}</span>
+                </>
+              );
+              return c.key
+                ? <button type="button" key={c.k} aria-pressed={!!stripOn(c.key)} onClick={() => onStrip(c.key)}>{inner}</button>
+                : <div key={c.k}>{inner}</div>;
+            })}
+          </div>
+
+          <div className="emp-body">
+            <div className="zc-card emp-list" ref={listRef}>
+              <div className="emp-tools">
+                <input className="zc-input" type="search" placeholder={t("Search name or phone…")} value={search} onChange={(e) => setSearch(e.target.value)} aria-label={t("Search name or phone…")} />
+                <div className="row">
+                  <div className="zc-seg" role="group" aria-label={t("Role")}>
+                    {ROLE_FILTERS.map((r) => (
+                      <button type="button" key={r.key || "all"} className={roleFilter === r.key ? "on" : ""} onClick={() => setRoleFilter(r.key)}>{t(r.label)}</button>
+                    ))}
                   </div>
+                  <select className="zc-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label={t("All statuses")}>
+                    <option value="">{t("All statuses")}</option>
+                    <option value="Active">{t("Active")}</option>
+                    <option value="Inactive">{t("Inactive")}</option>
+                  </select>
                 </div>
-                <span style={{
-                  fontSize: 10.5, fontWeight: 800, padding: "3px 9px", borderRadius: 20,
-                  background: emp.status === "Active" ? GREEN_LIGHT : "rgba(239,68,68,0.15)",
-                  color: emp.status === "Active" ? GREEN : RED,
-                }}>
-                  {t(emp.status)}
-                </span>
+                {dutyFilter && (
+                  <div className="row">
+                    <button type="button" className="zc-btn sm ghost" onClick={() => setDutyFilter("")}>
+                      {t(DUTY_FILTER_LABEL[dutyFilter])} ✕
+                    </button>
+                  </div>
+                )}
               </div>
 
-              <div style={{ marginTop: 10, fontSize: 12.5, color: TEXT_MUTED }}>
-                📞 +91 {emp.phone}
-                {emp.address && <div style={{ marginTop: 2 }}>📍 {emp.address}</div>}
-              </div>
+              {!employees ? <Loader rows={4} /> : (
+                <>
+                  <div className="emp-grp">{t("Staff")} · {count(visible.length)}</div>
+                  {visible.length === 0 ? (
+                    <div style={{ fontSize: 12.5, color: "var(--text-3)", padding: "14px 6px" }}>{t("No employees found")}</div>
+                  ) : (
+                    <div className="emp-rows">
+                      {visible.map((e) => {
+                        const row = dutyById.get(String(e._id));
+                        const st = row?.status || "OFFLINE";
+                        const inactive = e.status === "Inactive";
+                        return (
+                          <button
+                            type="button" key={e._id}
+                            className={`emp-row${inactive ? " off" : ""}`}
+                            aria-current={selected?._id === e._id}
+                            onClick={() => select(e._id)}
+                          >
+                            <span className={`emp-av ${e.role}`}>{initials(e.name)}</span>
+                            <span style={{ minWidth: 0 }}>
+                              <span className="nm"><span>{e.name}</span><Badge label={ROLE_LABEL[e.role] || e.role} kind="vio" dot={false} /></span>
+                              <span className="sub">
+                                {inactive ? <span>{t("Inactive")}</span> : (
+                                  <>
+                                    <i className={`emp-dot ${st}`} />
+                                    <span>
+                                      {t(DUTY_LABEL[st])}
+                                      {st !== "OFFLINE" && row?.firstLogin ? ` · ${t("since {time}", { time: fmtTime(row.firstLogin) })}` : ""}
+                                    </span>
+                                  </>
+                                )}
+                              </span>
+                            </span>
+                            {(() => {
+                              const x = people[String(e._id)] || {};
+                              const flags = [];
+                              if (x.openComplaints) flags.push(<Badge key="c" label={N_("Complaint")} kind="stop" dot={false} />);
+                              if (x.pendingLeave) flags.push(<Badge key="l" label={N_("Leave request")} kind="live" dot={false} />);
+                              return flags.length ? <span className="flags" style={{ gridColumn: "2 / 4" }}>{flags}</span> : null;
+                            })()}
+                            <span className="cnt tnum" style={{ gridRow: 1, gridColumn: 3 }}>
+                              {count(ordersById.get(String(e._id)))}
+                              <small>{t("orders today")}</small>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
 
-              <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                <button onClick={() => setStatsFor(emp)} style={smallBtnStyle}>📊 {t("Stats")}</button>
-                <button onClick={() => setEditing(emp)} style={smallBtnStyle}>✎ {t("Edit")}</button>
-                <button
-                  onClick={() => handleToggleStatus(emp)}
-                  style={{ ...smallBtnStyle, color: emp.status === "Active" ? RED : GREEN, borderColor: emp.status === "Active" ? RED : GREEN }}
-                >
-                  {emp.status === "Active" ? t("Deactivate") : t("Activate")}
-                </button>
-              </div>
+                  {admins.length > 0 && (
+                    <>
+                      <div className="emp-grp">{t("Admins · attendance only")}</div>
+                      <div className="emp-rows">
+                        {admins.map((r) => (
+                          <div className="emp-row static" key={r.employee._id}>
+                            <span className="emp-av admin">{initials(r.employee.name)}</span>
+                            <span style={{ minWidth: 0 }}>
+                              <span className="nm"><span>{r.employee.name || t("Admin")}</span></span>
+                              <span className="sub">
+                                <i className={`emp-dot ${r.status}`} />
+                                <span>{t(DUTY_LABEL[r.status] || r.status)}{r.firstLogin && r.status !== "OFFLINE" ? ` · ${t("since {time}", { time: fmtTime(r.firstLogin) })}` : ""}</span>
+                              </span>
+                            </span>
+                            <span />
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
             </div>
-          ))}
-        </div>
+
+            <div ref={profileRef} style={{ minWidth: 0, scrollMarginTop: 16 }}>
+              {!employees ? (
+                <div className="zc-card emp-prof"><Loader rows={6} /></div>
+              ) : selected ? (
+                <EmployeeProfile
+                  key={selected._id}
+                  employee={selected}
+                  duty={dutyById.get(String(selected._id))}
+                  ordersToday={ordersById.get(String(selected._id))}
+                  hr={people[String(selected._id)]}
+                  policy={hr?.policy}
+                  tab={tab}
+                  onTab={setTab}
+                  onEdit={(emp) => setFormFor(emp)}
+                  onToggleStatus={handleToggleStatus}
+                  onEmployeeUpdated={handleEmployeeUpdated}
+                  onHrChanged={loadHr}
+                />
+              ) : (
+                <div className="zc-card"><EmptyState title={t("No employees found")} sub={t("Try another search or filter.")} /></div>
+              )}
+            </div>
+          </div>
+        </>
       )}
 
-      {showAdd && <EmployeeFormModal onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />}
-      {editing && <EmployeeFormModal employee={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
-      {statsFor && <StatsModal employee={statsFor} onClose={() => setStatsFor(null)} />}
-    </div>
-  );
-}
-
-function EmployeeFormModal({ employee, onClose, onSaved }) {
-  const isEdit = !!employee;
-  const [name, setName] = useState(employee?.name || "");
-  const [phone, setPhone] = useState(employee?.phone || "");
-  const [address, setAddress] = useState(employee?.address || "");
-  const [role, setRole] = useState(employee?.role || "waiter");
-  const [saving, setSaving] = useState(false);
-
-  const handleSubmit = async () => {
-    if (!name.trim()) return toast.error(t("Enter employee name"));
-    if (!isEdit && !/^[6-9]\d{9}$/.test(phone)) return toast.error(t("Enter a valid 10-digit phone number"));
-    setSaving(true);
-    try {
-      if (isEdit) {
-        await editEmployee(employee._id, { name, address, role });
-        toast.success(t("Employee updated"));
-      } else {
-        await addEmployee({ name, phone, address, role });
-        toast.success(t("{name} added as {role}", { name, role: t(CATEGORY_LABEL[role]) }));
-      }
-      onSaved();
-    } catch (err) {
-      toast.error(err.response?.data?.message || t("Couldn't save employee"));
-    } finally { setSaving(false); }
-  };
-
-  return (
-    <Modal onClose={onClose} title={isEdit ? t("Edit Employee") : t("Add Employee")}>
-      <Field label={t("Employee Name")}>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("e.g. Rahul")} style={inputStyle} />
-      </Field>
-      <Field label={t("Phone Number")}>
-        <input
-          value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
-          placeholder="9876543210" disabled={isEdit} style={{ ...inputStyle, opacity: isEdit ? 0.6 : 1 }}
+      {formFor && (
+        <EmployeeForm
+          employee={formFor === "new" ? null : formFor}
+          onClose={() => setFormFor(null)}
+          onSaved={handleSaved}
         />
-        {isEdit && <div style={{ fontSize: 11, color: TEXT_MUTED, marginTop: 4 }}>{t("Phone number can't be changed after creation.")}</div>}
-      </Field>
-      <Field label={t("Address")}>
-        <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder={t("e.g. Kolkata, West Bengal")} style={inputStyle} />
-      </Field>
-      <Field label={t("Category")}>
-        <select value={role} onChange={(e) => setRole(e.target.value)} style={inputStyle}>
-          <option value="waiter">{t("Waiter")}</option>
-          <option value="chef">{t("Chef")}</option>
-        </select>
-      </Field>
-      <button onClick={handleSubmit} disabled={saving} style={{ ...primaryBtnStyle, width: "100%", marginTop: 6, opacity: saving ? 0.6 : 1 }}>
-        {saving ? t("Saving…") : isEdit ? t("Save Changes") : t("Add Employee")}
-      </button>
-    </Modal>
-  );
-}
-
-// Local-day "YYYY-MM-DD" (never toISOString(), which shifts by the UTC
-// offset and can land on the wrong day near midnight).
-const toDateInput = (d) => {
-  const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, "0"), day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-};
-const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d; };
-
-const RANGE_PRESETS = [
-  { key: "today",     label: N_("Today"),       range: () => ({ from: toDateInput(new Date()), to: toDateInput(new Date()) }) },
-  { key: "yesterday", label: N_("Yesterday"),   range: () => ({ from: toDateInput(daysAgo(1)), to: toDateInput(daysAgo(1)) }) },
-  { key: "week",      label: N_("Last 7 Days"), range: () => ({ from: toDateInput(daysAgo(6)), to: toDateInput(new Date()) }) },
-  { key: "month",     label: N_("Last 30 Days"), range: () => ({ from: toDateInput(daysAgo(29)), to: toDateInput(new Date()) }) },
-];
-
-function StatsModal({ employee, onClose }) {
-  const [stats, setStats] = useState(null);
-  const [preset, setPreset] = useState("today");
-  const [from, setFrom] = useState(() => RANGE_PRESETS[0].range().from);
-  const [to, setTo] = useState(() => RANGE_PRESETS[0].range().to);
-
-  useEffect(() => {
-    setStats(null);
-    getEmployeeStats(employee._id, { from, to })
-      .then(({ data }) => setStats(data.stats))
-      .catch(() => toast.error(t("Couldn't load stats")));
-  }, [employee._id, from, to]);
-
-  const applyPreset = (key) => {
-    setPreset(key);
-    const r = RANGE_PRESETS.find((p) => p.key === key).range();
-    setFrom(r.from); setTo(r.to);
-  };
-
-  const handleFrom = (v) => { setPreset(""); setFrom(v); if (to < v) setTo(v); };
-  const handleTo = (v) => { setPreset(""); setTo(v); if (from > v) setFrom(v); };
-
-  const isChef = employee.role === "chef";
-  const presetLabel = RANGE_PRESETS.find((p) => p.key === preset)?.label;
-  const rangeLabel = presetLabel ? t(presetLabel)
-    : (from === to ? fmtDate(from) : `${fmtDate(from)} → ${fmtDate(to)}`);
-
-  return (
-    <Modal onClose={onClose} title={t("{name}'s Stats", { name: employee.name })}>
-      <div style={{ fontSize: 12, color: TEXT_MUTED, marginBottom: 12, textTransform: "uppercase", fontWeight: 700 }}>
-        {t(CATEGORY_LABEL[employee.role] || employee.role)} · {rangeLabel}
-      </div>
-
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-        {RANGE_PRESETS.map((p) => (
-          <button
-            key={p.key}
-            onClick={() => applyPreset(p.key)}
-            style={{
-              ...smallBtnStyle, flex: "0 0 auto", padding: "6px 10px",
-              background: preset === p.key ? PRIMARY : "transparent",
-              color: preset === p.key ? "#fff" : TEXT_PRIMARY,
-              borderColor: preset === p.key ? PRIMARY : BORDER,
-            }}
-          >
-            {t(p.label)}
-          </button>
-        ))}
-      </div>
-
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
-        <input type="date" value={from} max={to} onChange={(e) => handleFrom(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
-        <span style={{ color: TEXT_MUTED, fontSize: 12 }}>{t("to")}</span>
-        <input type="date" value={to} min={from} max={toDateInput(new Date())} onChange={(e) => handleTo(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
-      </div>
-
-      {!stats ? (
-        <div style={{ color: TEXT_MUTED, fontSize: 13 }}>{t("Loading…")}</div>
-      ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          {isChef ? (
-            <>
-              <StatBox label={t("Prepared")} value={stats.preparedToday} />
-              <StatBox label={t("Preparing (live)")} value={stats.preparing} />
-              <StatBox label={t("Ready (live)")} value={stats.ready} />
-              <StatBox label={t("Completed")} value={stats.completedToday} />
-            </>
-          ) : (
-            <>
-              <StatBox label={t("Orders")} value={stats.ordersToday} />
-              <StatBox label={t("Active (live)")} value={stats.pending} />
-              <StatBox label={t("Completed")} value={stats.completed} />
-            </>
-          )}
-        </div>
       )}
-    </Modal>
-  );
-}
-
-const StatBox = ({ label, value }) => (
-  <div style={{ textAlign: "center", padding: "14px 8px", background: BG_INPUT, borderRadius: 12 }}>
-    <div style={{ fontSize: 24, fontWeight: 800, color: PRIMARY }}>{fmtNum(value ?? 0)}</div>
-    <div style={{ fontSize: 11, color: TEXT_MUTED, marginTop: 4 }}>{label}</div>
-  </div>
-);
-
-const Field = ({ label, children }) => (
-  <div style={{ marginBottom: 14 }}>
-    <label style={{ fontSize: 11.5, fontWeight: 700, color: TEXT_MUTED, display: "block", marginBottom: 6 }}>{label}</label>
-    {children}
-  </div>
-);
-
-function Modal({ title, onClose, children }) {
-  return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, background: BG_CARD, border: `1px solid ${BORDER}`, borderRadius: 18, padding: 22 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <div style={{ fontWeight: 800, fontSize: 16, color: TEXT_PRIMARY }}>{title}</div>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: TEXT_MUTED, fontSize: 18, cursor: "pointer" }} aria-label={t("Close")}>✕</button>
-        </div>
-        {children}
-      </div>
     </div>
   );
 }
-
-const inputStyle = {
-  padding: "10px 13px", borderRadius: 10, border: `1px solid ${BORDER}`, background: BG_INPUT,
-  color: TEXT_PRIMARY, fontSize: 13.5, width: "100%", boxSizing: "border-box",
-};
-const primaryBtnStyle = {
-  padding: "10px 18px", borderRadius: 10, border: "none", background: PRIMARY,
-  color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer",
-};
-const smallBtnStyle = {
-  flex: 1, padding: "8px 6px", borderRadius: 8, border: `1px solid ${BORDER}`, background: "transparent",
-  color: TEXT_PRIMARY, fontSize: 11.5, fontWeight: 700, cursor: "pointer",
-};

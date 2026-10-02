@@ -7,6 +7,7 @@ import { getRestaurantProfile } from "../services/restaurantService.js";
 import { subscribeToOrder } from "../services/socketService.js";
 import StatusStepper from "../components/StatusStepper.jsx";
 import WaiterCallCard from "../components/WaiterCallCard.jsx";
+import RateOrderCard from "../components/RateOrderCard.jsx";
 import EditOrderSheet from "../components/EditOrderSheet.jsx";
 import { Loader, ErrorState } from "../components/StateViews.jsx";
 import Button from "../components/ui/Button.jsx";
@@ -237,6 +238,9 @@ export default function OrderDetailPage() {
           </>
         )}
       </div>
+
+      {/* ── Rate the meal (once paid) ── */}
+      {order.paymentStatus === "PAID" && order.status !== "CANCELLED" && <RateOrderCard orderId={order._id} />}
 
       {/* ── Call waiter (dine-in) ── */}
       {order.orderType === "DINE_IN" && CALLABLE.includes(order.status) && (

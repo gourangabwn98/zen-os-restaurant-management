@@ -21,7 +21,6 @@ const PAGE_LOADERS = {
   invoices:      () => import("./InvoicesPage.jsx"),
   analytics:     () => import("./AnalyticsPage.jsx"),
   employees:     () => import("./EmployeesPage.jsx"),
-  attendance:    () => import("./AttendancePage.jsx"),
   inventory:     () => import("./InventoryPage.jsx"),
   profile:       () => import("./ProfilePage.jsx"),
   help:          () => import("./HelpPage.jsx"),
@@ -35,7 +34,6 @@ const CouponsPage       = lazy(PAGE_LOADERS.coupons);
 const InvoicesPage      = lazy(PAGE_LOADERS.invoices);
 const AnalyticsPage     = lazy(PAGE_LOADERS.analytics);
 const EmployeesPage     = lazy(PAGE_LOADERS.employees);
-const AttendancePage    = lazy(PAGE_LOADERS.attendance);
 const InventoryPage     = lazy(PAGE_LOADERS.inventory);
 const ProfilePage       = lazy(PAGE_LOADERS.profile);
 const HelpPage          = lazy(PAGE_LOADERS.help);
@@ -75,7 +73,6 @@ const ICONS = {
   menu:      <path d="M4 5h16M4 12h16M4 19h10" />,
   inventory: <><path d="M3 7l9-4 9 4v10l-9 4-9-4z" /><path d="M3 7l9 4 9-4M12 11v10" /></>,
   employees: <><circle cx="9" cy="8" r="3" /><path d="M3 20a6 6 0 0 1 12 0" /><path d="M16 8h5M18.5 5.5v5" /></>,
-  attendance: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></>,
   users:     <><circle cx="12" cy="8" r="3.5" /><path d="M5 20a7 7 0 0 1 14 0" /></>,
   coupon:    <><path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4z" /><path d="M9 15l6-6" /><circle cx="9.5" cy="9.5" r=".6" /><circle cx="14.5" cy="14.5" r=".6" /></>,
   bell:      <><path d="M6 8a6 6 0 0 1 12 0c0 4 1.5 6 2 7H4c.5-1 2-3 2-7Z" /><path d="M10 19a2 2 0 0 0 4 0" /></>,
@@ -107,7 +104,6 @@ const OPERATIONS_NAV_B = [
 ];
 const MANAGEMENT_NAV = [
   { id: "employees", label: N_("Employees"), icon: "employees" },
-  { id: "attendance", label: N_("Attendance"), icon: "attendance" },
   { id: "users", label: N_("Users"), icon: "users" },
   { id: "menu", label: N_("Menu Items"), icon: "menu" },
   { id: "notifications", label: N_("Notifications"), icon: "bell" },
@@ -190,7 +186,8 @@ export default function AdminLayout() {
   // Open page survives a refresh and a language switch (which remounts the
   // app — see i18n/LanguageProvider.jsx). Per tab, so two tabs stay independent.
   const [page, setPage]               = useState(() => {
-    try { return sessionStorage.getItem("adminPage") || "orders"; } catch { return "orders"; }
+    // Attendance now lives inside Employees (person → Attendance tab).
+    try { const p = sessionStorage.getItem("adminPage") || "orders"; return p === "attendance" ? "employees" : p; } catch { return "orders"; }
   });
   useEffect(() => { try { sessionStorage.setItem("adminPage", page); } catch { /* storage disabled */ } }, [page]);
   const [dashboardData, setDashboardData] = useState(null);
@@ -333,7 +330,6 @@ export default function AdminLayout() {
             {page === "tables"     && <TablesPage />}
             {page === "menu"       && <MenuAdminPage />}
             {page === "employees"  && <EmployeesPage />}
-            {page === "attendance" && <AttendancePage />}
             {page === "inventory"  && <InventoryPage />}
             {page === "users"      && <UsersPage />}
             {page === "notifications" && <NotificationsPage />}

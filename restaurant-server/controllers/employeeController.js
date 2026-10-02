@@ -44,8 +44,8 @@ export const getEmployeeById = async (req, res) => {
 export const editEmployee = async (req, res) => {
   try {
     const { User } = req.models;
-    const { name, address, role } = req.body;
-    const employee = await updateEmployee({ User, id: req.params.id, name, address, role });
+    const { name, address, role, hr } = req.body;
+    const employee = await updateEmployee({ User, id: req.params.id, name, address, role, hr });
     res.json({ employee });
   } catch (err) {
     res.status(err.statusCode || 500).json({ message: err.message });

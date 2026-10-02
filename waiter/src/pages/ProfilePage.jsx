@@ -5,6 +5,7 @@ import { useAppState } from "../context/AppState.jsx";
 import { disconnectSocket } from "../services/socketService.js";
 import { getMyDashboard } from "../services/authService.js";
 import GlassCard from "../components/ui/GlassCard.jsx";
+import LeaveRequestCard from "../components/LeaveRequestCard.jsx";
 import { ACCENT, ACCENT_GRADIENT, ACCENT_GLOW, TEXT_FAINT, NAV_HEIGHT } from "../theme.js";
 
 export default function ProfilePage() {
@@ -65,6 +66,10 @@ export default function ProfilePage() {
           </div>
         </div>
       )}
+
+      <div style={{ margin: "0 16px 16px" }}>
+        <LeaveRequestCard />
+      </div>
 
       <div style={{ margin: "0 16px" }}>
         <GlassCard style={{ padding: "4px 4px" }}>

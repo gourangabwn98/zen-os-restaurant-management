@@ -226,8 +226,6 @@
 .zd-select { background: var(--zd-bg2); border: 1px solid var(--zd-line2); color: var(--zd-text); border-radius: 9px; padding: 4px 8px; font: inherit; font-size: 12.5px; cursor: pointer; }
 
 /* ── attention detail modal (portalled to <body>, so not inside .zd) ── */
-/* .zc-scrim is a grid, so max-width:100% alone lets a wide modal overflow a phone. */
-.zd-pop .zc-modal { max-width: calc(100vw - 40px); }
 .zd-pop .zd-mrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; padding: 12px 0; border-top: 1px solid var(--zd-line); color: var(--zd-text); font-size: 14px; }
 .zd-pop .zd-mrow:first-child { border-top: 0; padding-top: 0; }
 .zd-pop .zd-mrow .zd-mtop { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
