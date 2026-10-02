@@ -39,7 +39,6 @@ const AttendancePage    = lazy(PAGE_LOADERS.attendance);
 const InventoryPage     = lazy(PAGE_LOADERS.inventory);
 const ProfilePage       = lazy(PAGE_LOADERS.profile);
 const HelpPage          = lazy(PAGE_LOADERS.help);
-const OpsAlertsPanel    = lazy(() => import("../../components/OpsAlertsPanel.jsx"));
 
 // Warm every page chunk in the background once the first screen is up, so
 // switching pages later is instant. Network-friendly: one at a time, idle only.
@@ -329,8 +328,7 @@ export default function AdminLayout() {
       }}>
         <Suspense fallback={<PageFallback />}>
           <>
-            {page === "dashboard"  && <OpsAlertsPanel onNavigate={setPage} />}
-            {page === "dashboard"  && <DashboardPage data={dashboardData} />}
+            {page === "dashboard"  && <DashboardPage data={dashboardData} onNavigate={setPage} />}
             {page === "orders"     && <OrdersPage />}
             {page === "tables"     && <TablesPage />}
             {page === "menu"       && <MenuAdminPage />}

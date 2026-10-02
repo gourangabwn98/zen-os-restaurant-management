@@ -85,38 +85,50 @@ export default function OpsAlertsPanel({ onNavigate }) {
       )}
 
       {showModal && inv && (
-        <Modal
-          title={t("Stock alerts")}
-          sub={hasStockAlert
-            ? `${tn(outStock + critical + low, "{n} item needs attention", "{n} items need attention")} · ${tn(expiring, "{n} batch expiring soon", "{n} batches expiring soon")}`
-            : t("All stock levels are healthy right now.")}
-          onClose={() => setShowModal(false)}
-          width={560}
-          footer={
-            <button
-              type="button"
-              className="zc-btn pri"
-              onClick={() => { setShowModal(false); onNavigate?.("inventory"); }}
-            >
-              {t("Open inventory")} →
-            </button>
-          }
-        >
-          {!hasStockAlert ? (
-            <div style={{ color: "var(--text-3)", fontSize: 13, textAlign: "center", padding: "28px 0" }}>
-              {t("Everything is well-stocked ✓")}
-            </div>
-          ) : (
-            <>
-              <AlertGroup title={t("Out of stock")} items={inv.outOfStock?.items} level="OUT_OF_STOCK" />
-              <AlertGroup title={t("Critical")} items={inv.critical?.items} level="CRITICAL" />
-              <AlertGroup title={t("Low stock")} items={inv.lowStock?.items} level="LOW" />
-              <ExpiringGroup batches={inv.expiringSoon?.batches} withinDays={inv.expiringSoon?.withinDays} />
-            </>
-          )}
-        </Modal>
+        <StockAlertsModal inv={inv} onClose={() => setShowModal(false)} onNavigate={onNavigate} />
       )}
     </div>
+  );
+}
+
+// Stock alert detail — shared with the Dashboard's "Needs your attention" list.
+export function StockAlertsModal({ inv, onClose, onNavigate }) {
+  const low       = inv?.lowStock?.count      ?? 0;
+  const critical  = inv?.critical?.count      ?? 0;
+  const outStock  = inv?.outOfStock?.count    ?? 0;
+  const expiring  = inv?.expiringSoon?.count  ?? 0;
+  const hasStockAlert = low + critical + outStock + expiring > 0;
+  return (
+    <Modal
+      title={t("Stock alerts")}
+      sub={hasStockAlert
+        ? `${tn(outStock + critical + low, "{n} item needs attention", "{n} items need attention")} · ${tn(expiring, "{n} batch expiring soon", "{n} batches expiring soon")}`
+        : t("All stock levels are healthy right now.")}
+      onClose={onClose}
+      width={560}
+      footer={
+        <button
+          type="button"
+          className="zc-btn pri"
+          onClick={() => { onClose(); onNavigate?.("inventory"); }}
+        >
+          {t("Open inventory")} →
+        </button>
+      }
+    >
+      {!hasStockAlert ? (
+        <div style={{ color: "var(--text-3)", fontSize: 13, textAlign: "center", padding: "28px 0" }}>
+          {t("Everything is well-stocked ✓")}
+        </div>
+      ) : (
+        <>
+          <AlertGroup title={t("Out of stock")} items={inv.outOfStock?.items} level="OUT_OF_STOCK" />
+          <AlertGroup title={t("Critical")} items={inv.critical?.items} level="CRITICAL" />
+          <AlertGroup title={t("Low stock")} items={inv.lowStock?.items} level="LOW" />
+          <ExpiringGroup batches={inv.expiringSoon?.batches} withinDays={inv.expiringSoon?.withinDays} />
+        </>
+      )}
+    </Modal>
   );
 }
 

@@ -1966,7 +1966,11 @@ export default function OrdersPage() {
   const [typeF,setTypeF]=useState("All");
   const [payF,setPayF]=useState("All");
   const [expanded,setExpanded]=useState(null);
-  const [showCreate,setShowCreate]=useState(false);
+  // The Dashboard's "+ New order" button lands here with the form already open.
+  const [showCreate,setShowCreate]=useState(()=>{
+    try { if(sessionStorage.getItem("adminOpenNewOrder")==="1"){ sessionStorage.removeItem("adminOpenNewOrder"); return true; } } catch { /* storage disabled */ }
+    return false;
+  });
   const [presetTableNo,setPresetTableNo]=useState(null);
   // Opens the New order form. Passing a table number (e.g. from tapping a
   // free table on the map) pre-fills it there instead of leaving the admin

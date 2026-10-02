@@ -1,0 +1,298 @@
+/* src/pages/admin/dashboard/dashboard.css
+   Dashboard styles, scoped to .zd. Dark theme uses the redesign reference's
+   palette verbatim; light theme maps the same roles onto the app's tokens
+   (src/theme/tokens.css) so the light/dark toggle keeps working. */
+
+.zd, .zd-pop {
+  --zd-card: var(--card);
+  --zd-card2: var(--raise);
+  --zd-surface: var(--card-2);
+  --zd-bg2: var(--card-2);
+  --zd-line: var(--edge);
+  --zd-line2: var(--edge-hi);
+  --zd-text: var(--text-1);
+  --zd-muted: var(--text-2);
+  --zd-faint: var(--text-3);
+  --zd-accent: #7c5cfc;
+  --zd-accent2: #8b5cf6;
+  --zd-accent-soft: rgba(124, 92, 252, .12);
+  --zd-accent-ink: var(--accent-ink);
+  --zd-busy-line: #8b6ff0;
+  --zd-green: var(--ready-ink);  --zd-green-s: var(--ready-fill);
+  --zd-amber: var(--wait-ink);   --zd-amber-s: var(--wait-fill);
+  --zd-red: var(--stop-ink);     --zd-red-s: var(--stop-fill);
+  --zd-blue: var(--live-ink);    --zd-blue-s: var(--live-fill);
+  --zd-cyan: #0e7f96;            --zd-cyan-s: rgba(34, 211, 238, .16);
+  --zd-grey: var(--done-ink);    --zd-grey-s: var(--done-fill);
+  --zd-bar: #c9bcf7;
+  --zd-bar-today: #8b5cf6;
+  --zd-bar-empty: var(--edge-hi);
+  --zd-amber-bg: rgba(240, 169, 59, .08);
+  --zd-disp: "Bricolage Grotesque", Archivo, "Noto Sans Bengali", system-ui, sans-serif;
+}
+.zd {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: var(--zd-text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+:root[data-theme="dark"] .zd, :root[data-theme="dark"] .zd-pop {
+  --zd-card: #211a3d;
+  --zd-card2: #271f48;
+  --zd-surface: #1a1430;
+  --zd-bg2: #140f24;
+  --zd-line: #2e2653;
+  --zd-line2: #3a3166;
+  --zd-text: #ECE9F7;
+  --zd-muted: #A9A3C9;
+  --zd-faint: #8a83ad;
+  --zd-accent-soft: rgba(124, 92, 252, .16);
+  --zd-accent-ink: #b8a6ff;
+  --zd-busy-line: #6a55d6;
+  --zd-green: #34d399;  --zd-green-s: rgba(52, 211, 153, .14);
+  --zd-amber: #f5b73b;  --zd-amber-s: rgba(245, 183, 59, .15);
+  --zd-red: #f26d6d;    --zd-red-s: rgba(242, 109, 109, .15);
+  --zd-blue: #60a5fa;   --zd-blue-s: rgba(96, 165, 250, .15);
+  --zd-cyan: #22d3ee;   --zd-cyan-s: rgba(34, 211, 238, .14);
+  --zd-grey: #9a95b3;   --zd-grey-s: rgba(154, 149, 179, .14);
+  --zd-bar: #4b3c8f;
+  --zd-bar-today: #8b5cf6;
+  --zd-bar-empty: #3a3166;
+  --zd-amber-bg: rgba(245, 183, 59, .06);
+}
+:lang(bn) .zd, .zd:lang(bn) { font-size: 14.5px; }
+
+.zd h2, .zd h3 { margin: 0; line-height: 1.2; }
+.zd p { margin: 0; }
+.zd button, .zd-pop button { font: inherit; color: inherit; cursor: pointer; }
+.zd button:focus-visible, .zd-pop button:focus-visible { outline: 2px solid var(--zd-accent2); outline-offset: 2px; }
+.zd-ico { width: 18px; height: 18px; flex: 0 0 auto; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.zd .tnum { font-variant-numeric: tabular-nums; }
+
+/* ── header ─────────────────────────────────────────────────────────────── */
+.zd-mh { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.zd-mh h2 { font-family: var(--zd-disp); font-size: 28px; font-weight: 700; letter-spacing: -.01em; }
+.zd-sub { font-size: 14px; color: var(--zd-muted); margin-top: 4px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.zd-live { display: inline-flex; align-items: center; gap: 6px; color: var(--zd-green); font-size: 13px; font-weight: 600; }
+.zd-live i { width: 8px; height: 8px; border-radius: 50%; background: var(--zd-green); box-shadow: 0 0 0 4px var(--zd-green-s); }
+.zd-mh-r { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+.zd-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--zd-accent); color: #fff !important; border-radius: 11px; padding: 10px 16px; font-weight: 600; font-size: 14px; white-space: nowrap; border: 0; transition: filter .15s; }
+.zd-btn:hover { filter: brightness(1.08); }
+.zd-btn.ghost { background: transparent; border: 1px solid var(--zd-line2); color: var(--zd-text) !important; }
+.zd-btn.ghost:hover { border-color: var(--zd-accent); filter: none; }
+.zd-btn.sm { padding: 6px 11px; font-size: 13px; border-radius: 9px; }
+.zd-kbd { font-family: ui-monospace, Consolas, monospace; font-size: 11px; background: rgba(255, 255, 255, .18); border-radius: 5px; padding: 1px 6px; }
+
+.zd-mseg { display: inline-flex; background: var(--zd-bg2); border: 1px solid var(--zd-line); border-radius: 11px; padding: 3px; }
+.zd-mseg button { border: 0; background: transparent; padding: 6px 13px; border-radius: 8px; font-size: 13.5px; color: var(--zd-muted); }
+.zd-mseg button[aria-pressed="true"] { background: var(--zd-card2); color: var(--zd-text); box-shadow: inset 0 0 0 1px var(--zd-line2); }
+.zd-mseg button:hover:not([aria-pressed="true"]) { color: var(--zd-text); }
+
+/* ── cards ──────────────────────────────────────────────────────────────── */
+.zd-card { background: var(--zd-card); border: 1px solid var(--zd-line); border-radius: 16px; padding: 18px; position: relative; min-width: 0; }
+.zd-card h3 { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.zd-hint { font-size: 13px; color: var(--zd-faint); font-weight: 400; }
+.zd-ch { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+
+.zd-answers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.zd-lbl { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--zd-muted); font-weight: 500; }
+.zd-itile { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--zd-accent-soft); color: var(--zd-accent-ink); flex: none; }
+.zd-num { font-family: var(--zd-disp); font-size: 38px; font-weight: 700; line-height: 1.05; margin: 12px 0 6px; font-variant-numeric: tabular-nums; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.zd-num.zero { color: var(--zd-faint); }
+.zd-simple .zd-num { font-size: 48px; }
+.zd-foot { font-size: 13.5px; color: var(--zd-muted); }
+.zd-foot b { color: var(--zd-text); font-weight: 600; }
+.zd-act { margin-top: 12px; }
+.zd-split { height: 8px; border-radius: 99px; background: var(--zd-line); display: flex; overflow: hidden; margin-top: 12px; }
+.zd-split i { display: block; height: 100%; }
+.zd-legend { display: flex; gap: 6px 14px; flex-wrap: wrap; margin-top: 8px; font-size: 13px; color: var(--zd-muted); }
+.zd-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.zd-legend span::before { content: ""; width: 9px; height: 9px; border-radius: 3px; background: var(--c); flex: none; }
+
+.zd-row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.zd-row3 { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+
+/* ── chips ──────────────────────────────────────────────────────────────── */
+.zd-chip { display: inline-flex; align-items: center; gap: 5px; border-radius: 99px; padding: 2px 10px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.zd-c-red { background: var(--zd-red-s); color: var(--zd-red); }
+.zd-c-amber { background: var(--zd-amber-s); color: var(--zd-amber); }
+.zd-c-green { background: var(--zd-green-s); color: var(--zd-green); }
+.zd-c-blue { background: var(--zd-blue-s); color: var(--zd-blue); }
+.zd-c-grey { background: var(--zd-grey-s); color: var(--zd-grey); }
+.zd-c-violet { background: var(--zd-accent-soft); color: var(--zd-accent-ink); }
+.zd-c-cyan { background: var(--zd-cyan-s); color: var(--zd-cyan); }
+
+/* ── attention ──────────────────────────────────────────────────────────── */
+.zd-att-list { display: flex; flex-direction: column; }
+.zd-att { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 11px 0; border-top: 1px solid var(--zd-line); }
+.zd-att:first-child { border-top: 0; padding-top: 2px; }
+.zd-sevdot { width: 10px; height: 10px; border-radius: 50%; }
+.zd-att .t { font-size: 14px; color: var(--zd-text); margin-top: 4px; }
+.zd-att .d { font-size: 12.5px; color: var(--zd-faint); margin-top: 1px; overflow-wrap: anywhere; }
+.zd-allgood { display: flex; align-items: center; gap: 10px; color: var(--zd-green); font-size: 14px; padding: 6px 0; }
+
+/* ── floor ──────────────────────────────────────────────────────────────── */
+.zd-floor { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; }
+.zd-tb { border: 1px solid var(--zd-line2); border-radius: 11px; padding: 9px 10px; min-height: 74px; display: flex; flex-direction: column; gap: 2px; background: var(--zd-surface); text-align: left; min-width: 0; transition: border-color .12s, box-shadow .12s; }
+.zd-tb:hover { box-shadow: 0 0 0 1px var(--zd-accent2); }
+.zd-tb[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--zd-accent2); }
+.zd-tb b { font-size: 15px; }
+.zd-tb .s { font-size: 12px; color: var(--zd-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.zd-tb .s2 { font-size: 11.5px; color: var(--zd-faint); white-space: nowrap; }
+.zd-tb .top { display: flex; justify-content: space-between; align-items: baseline; gap: 4px; }
+.zd-tb .a { font-weight: 600; font-size: 13.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.zd-tb.free { border-style: dashed; background: transparent; opacity: .75; }
+.zd-tb.free .s { color: var(--zd-faint); }
+.zd-tb.eating, .zd-tb.cooking { border-color: var(--zd-busy-line); }
+.zd-tb.cooking .s { color: var(--zd-accent-ink); }
+.zd-tb.long, .zd-tb.bill { border-color: var(--zd-amber); background: var(--zd-amber-bg); }
+.zd-tb.long .s, .zd-tb.bill .s { color: var(--zd-amber); }
+.zd-fl-leg { display: flex; gap: 6px 14px; flex-wrap: wrap; margin-top: 12px; font-size: 12.5px; color: var(--zd-faint); }
+.zd-fl-leg span { display: inline-flex; align-items: center; gap: 6px; }
+.zd-fl-leg i { width: 12px; height: 12px; border-radius: 4px; border: 1.5px solid var(--c); display: inline-block; }
+.zd-fl-leg i.d { border-style: dashed; }
+
+.zd-tdetail { margin-top: 12px; background: var(--zd-surface); border: 1px solid var(--zd-line2); border-radius: 12px; padding: 14px; }
+.zd-tdetail.warn { border-color: var(--zd-amber); }
+.zd-tdetail-h { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.zd-tdetail-h b { font-size: 15px; }
+.zd-x { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--zd-line2); background: transparent; color: var(--zd-muted); display: grid; place-items: center; }
+.zd-x:hover { color: var(--zd-text); border-color: var(--zd-accent); }
+.zd-tord { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; padding-top: 10px; border-top: 1px solid var(--zd-line); }
+.zd-tord:first-of-type { border-top: 0; padding-top: 0; }
+.zd-tord + .zd-tord { margin-top: 12px; }
+.zd-cap { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--zd-faint); font-weight: 600; margin-bottom: 6px; }
+.zd-item { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--zd-line); font-size: 13px; }
+.zd-item span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.zd-qty { display: inline-grid; place-items: center; min-width: 20px; height: 20px; border-radius: 5px; background: var(--zd-accent-soft); color: var(--zd-accent-ink); font-size: 11px; font-weight: 700; margin-right: 6px; padding: 0 4px; }
+.zd-total { display: flex; justify-content: space-between; font-weight: 700; font-size: 15px; margin-top: 8px; }
+.zd-total span:last-child { color: var(--zd-accent-ink); }
+.zd-opts { display: flex; gap: 6px; flex-wrap: wrap; }
+.zd-opt { border: 1px solid var(--zd-line2); background: var(--zd-bg2); padding: 5px 11px; border-radius: 9px; font-size: 12.5px; font-weight: 500; min-height: 32px; }
+.zd-opt:hover:not(:disabled) { border-color: var(--zd-accent); }
+.zd-opt:disabled { opacity: .45; cursor: not-allowed; }
+.zd-opt.good { border-color: var(--zd-green); color: var(--zd-green); }
+.zd-opt.bad { border-color: var(--zd-red); color: var(--zd-red); }
+
+/* ── chart ──────────────────────────────────────────────────────────────── */
+.zd-chart svg { max-width: 100%; height: auto; display: block; overflow: visible; }
+.zd-chart .grid { stroke: var(--zd-line); stroke-width: 1; }
+.zd-chart .ax { fill: var(--zd-faint); font-size: 11.5px; font-family: inherit; }
+.zd-chart .bar { fill: var(--zd-bar); }
+.zd-chart .bar.today { fill: var(--zd-bar-today); }
+.zd-chart .bar.empty { fill: var(--zd-bar-empty); }
+.zd-chart .val { fill: var(--zd-text); font-size: 12.5px; font-weight: 600; font-family: inherit; }
+.zd-chart .nos { fill: var(--zd-faint); font-size: 11px; font-family: inherit; }
+.zd-chart .day { fill: var(--zd-muted); font-size: 12.5px; font-weight: 500; font-family: inherit; }
+.zd-chart .day.today { fill: var(--zd-text); font-weight: 700; }
+.zd-chart .tdy { fill: var(--zd-accent-ink); font-size: 11px; font-family: inherit; }
+
+/* ── detail stats ───────────────────────────────────────────────────────── */
+.zd-stat { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 9px 0; border-top: 1px solid var(--zd-line); font-size: 14px; }
+.zd-stat:first-child { border-top: 0; }
+.zd-stat span { color: var(--zd-muted); }
+.zd-stat b { font-variant-numeric: tabular-nums; text-align: right; }
+.zd-stat small { display: block; font-size: 12px; color: var(--zd-faint); font-weight: 400; }
+.zd-sect { padding: 9px 0; border-top: 1px solid var(--zd-line); }
+.zd-mini { height: 8px; border-radius: 99px; background: var(--zd-line); display: flex; overflow: hidden; margin: 6px 0 4px; }
+.zd-mini i { display: block; }
+.zd-statusbar { height: 14px; border-radius: 99px; background: var(--zd-line); display: flex; overflow: hidden; gap: 2px; }
+.zd-statusbar i { display: block; height: 100%; }
+.zd-totals { display: flex; flex-direction: column; }
+.zd-summary { font-size: 17px; line-height: 1.6; color: var(--zd-text); }
+.zd-summary b { color: var(--zd-accent-ink); }
+.zd-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 6px; padding: 26px 10px; color: var(--zd-muted); font-size: 14px; }
+.zd-empty b { color: var(--zd-text); font-size: 15px; }
+
+/* ── active orders ──────────────────────────────────────────────────────── */
+.zd-seg { display: inline-flex; background: var(--zd-bg2); border: 1px solid var(--zd-line); border-radius: 10px; padding: 3px; gap: 2px; flex-wrap: wrap; }
+.zd-seg button { border: 0; background: transparent; padding: 6px 12px; border-radius: 8px; font-size: 13px; color: var(--zd-muted); white-space: nowrap; }
+.zd-seg button[aria-pressed="true"] { background: var(--zd-accent); color: #fff; }
+.zd-seg button:hover:not([aria-pressed="true"]) { color: var(--zd-text); }
+.zd-olist { max-height: 560px; overflow-y: auto; margin-right: -6px; padding-right: 6px; }
+.zd-ord { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 11px 0; border-top: 1px solid var(--zd-line); }
+.zd-ord:first-child { border-top: 0; padding-top: 2px; }
+.zd-av { width: 32px; height: 32px; border-radius: 50%; background: var(--zd-accent); display: grid; place-items: center; font-weight: 700; color: #fff; font-size: 12.5px; }
+.zd-ord .n { font-size: 14px; font-weight: 600; }
+.zd-ord .n small { font-size: 12px; color: var(--zd-faint); font-weight: 400; margin-left: 6px; }
+.zd-ord .it { font-size: 12.5px; color: var(--zd-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.zd-ord .meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+.zd-ord .amt { font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; text-align: right; }
+.zd-ord .tm { font-size: 12px; color: var(--zd-faint); text-align: right; margin-top: 2px; }
+.zd-select { background: var(--zd-bg2); border: 1px solid var(--zd-line2); color: var(--zd-text); border-radius: 9px; padding: 4px 8px; font: inherit; font-size: 12.5px; cursor: pointer; }
+
+/* ── attention detail modal (portalled to <body>, so not inside .zd) ── */
+/* .zc-scrim is a grid, so max-width:100% alone lets a wide modal overflow a phone. */
+.zd-pop .zc-modal { max-width: calc(100vw - 40px); }
+.zd-pop .zd-mrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; padding: 12px 0; border-top: 1px solid var(--zd-line); color: var(--zd-text); font-size: 14px; }
+.zd-pop .zd-mrow:first-child { border-top: 0; padding-top: 0; }
+.zd-pop .zd-mrow .zd-mtop { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.zd-pop .zd-mrow .zd-mwho { font-size: 13.5px; color: var(--zd-muted); margin-top: 2px; }
+.zd-pop .zd-mrow .zd-mits { font-size: 12.5px; color: var(--zd-faint); margin-top: 2px; overflow-wrap: anywhere; }
+.zd-pop .zd-mrow .zd-mmeta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 7px; }
+.zd-pop .zd-mrow .zd-mside { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.zd-pop .zd-mamt { font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.zd-pop .zd-macts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.zd-pop .zd-opt:disabled { opacity: .5; cursor: wait; }
+.zd-pop .zd-mgroup { padding: 12px 0; border-top: 1px solid var(--zd-line); }
+.zd-pop .zd-mgroup:first-child { border-top: 0; padding-top: 0; }
+.zd-pop .zd-mgroup-h { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; color: var(--zd-text); }
+.zd-pop .zd-mgroup .zd-mrow { border-top: 1px dashed var(--zd-line); }
+.zd-pop .zd-mgroup .zd-mrow:first-of-type { border-top: 0; }
+.zd-pop .zd-stat { color: var(--zd-text); }
+.zd-pop .zd-mempty { text-align: center; padding: 26px 0; color: var(--zd-green); font-size: 14px; }
+.zd-pop .zd-mnote { margin: 12px 0 0; font-size: 13px; color: var(--zd-faint); }
+@media (max-width: 560px) {
+  .zd-pop .zd-mrow { grid-template-columns: minmax(0, 1fr); }
+  .zd-pop .zd-mrow .zd-mside { flex-direction: row; justify-content: space-between; align-items: center; }
+}
+
+/* ── loading ────────────────────────────────────────────────────────────── */
+.zd-skel { border-radius: 16px; background: var(--zd-card); border: 1px solid var(--zd-line); min-height: 150px; position: relative; overflow: hidden; }
+.zd-skel::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(139, 92, 246, .08), transparent); animation: zdShimmer 1.3s infinite; }
+@keyframes zdShimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .zd-skel::after { animation: none; } .zd * { transition: none !important; } }
+
+/* ── responsive (container width = the dashboard's own width, so it adapts
+      whether the sidebar is open or hidden) ─────────────────────────────── */
+@container (max-width: 1060px) {
+  .zd-row3 { grid-template-columns: minmax(0, 1fr); }
+}
+@container (max-width: 900px) {
+  .zd-row2 { grid-template-columns: minmax(0, 1fr); }
+  .zd-num { font-size: 34px; }
+  .zd-simple .zd-num { font-size: 42px; }
+}
+@container (max-width: 720px) {
+  .zd-answers { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .zd-answers > :first-child { grid-column: 1 / -1; }
+  .zd-floor { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .zd-mh h2 { font-size: 24px; }
+}
+@container (max-width: 560px) {
+  .zd { gap: 12px; }
+  .zd-answers { gap: 12px; }
+  .zd-card { padding: 15px; border-radius: 14px; }
+  .zd-num { font-size: 32px; margin: 10px 0 4px; }
+  .zd-simple .zd-num { font-size: 40px; }
+  .zd-floor { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .zd-mh-r { width: 100%; }
+  .zd-mh-r .zd-btn { flex: 1; }
+  .zd-tord { grid-template-columns: minmax(0, 1fr); }
+  .zd-olist { max-height: none; }
+  .zd-seg { width: 100%; flex-wrap: nowrap; }
+  .zd-seg button { flex: 1; padding: 6px 4px; font-size: 12.5px; }
+}
+@container (max-width: 440px) {
+  .zd-answers { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .zd-att { grid-template-columns: auto minmax(0, 1fr); }
+  .zd-att > .zd-btn { grid-column: 2; justify-self: start; }
+}
+@container (max-width: 380px) {
+  .zd-floor { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .zd-mseg button { padding: 6px 10px; }
+}
