@@ -5,16 +5,28 @@
 // every t()/fmt*() call in that render already uses the new language.
 import { useCallback, useEffect, useState } from "react";
 import { LangContext } from "./langContext.js";
-import { LANGS, readStoredLang, writeStoredLang, setCurrentLang } from "./core.js";
+import { LANGS, readStoredLang, writeStoredLang, setCurrentLang, loadLang, isLangLoaded } from "./core.js";
 
+// Only switch the module-level language once its dictionary is loaded, so
+// nothing ever renders half-translated (Bengali digits on English text).
 const initial = () => {
   const lang = readStoredLang();
-  setCurrentLang(lang);
+  if (isLangLoaded(lang)) setCurrentLang(lang);
   return lang;
 };
 
 export function LanguageProvider({ children }) {
   const [lang, setLangState] = useState(initial);
+  const [ready, setReady] = useState(() => isLangLoaded(lang));
+
+  // A saved Bengali choice: fetch the dictionary, then render (cached after
+  // the first visit, so this is a few ms).
+  useEffect(() => {
+    if (ready) return undefined;
+    let alive = true;
+    loadLang(lang).finally(() => { if (alive) { setCurrentLang(lang); setReady(true); } });
+    return () => { alive = false; };
+  }, [lang, ready]);
 
   // DOM write only: <html lang> drives fonts, screen readers and hyphenation.
   useEffect(() => {
@@ -23,9 +35,11 @@ export function LanguageProvider({ children }) {
 
   const setLang = useCallback((next) => {
     if (!LANGS.includes(next)) return;
-    setCurrentLang(next);
     writeStoredLang(next);
-    setLangState(next);
+    loadLang(next).then(() => {
+      setCurrentLang(next);
+      setLangState(next);
+    });
   }, []);
 
   return (
@@ -33,7 +47,7 @@ export function LanguageProvider({ children }) {
       {/* key: remount on switch so every screen — including memoised parts
           and module-level label maps — re-reads the new language. Pages keep
           their place because AdminLayout stores the open page outside React. */}
-      <div key={lang} style={{ display: "contents" }}>{children}</div>
+      {ready ? <div key={lang} style={{ display: "contents" }}>{children}</div> : null}
     </LangContext.Provider>
   );
 }

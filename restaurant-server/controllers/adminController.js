@@ -2,7 +2,7 @@
 import { priceItems, computeTotals } from "../utils/pricing.js";
 import { getScheduleContext } from "../services/menuScheduleService.js";
 import { transitionOrderStatusTx, buildActor, getRoleFromUser } from "../services/orderService.js";
-import { PAYMENT_STATUSES, canSetPaymentStatus } from "../utils/orderStateMachine.js";
+import { ORDER_STATUSES, PAYMENT_STATUSES, canSetPaymentStatus } from "../utils/orderStateMachine.js";
 import {
   emitOrderStatusChanged, emitOrderCancelled, emitOrderConfirmed,
   emitKotCreated, emitBillPrint, emitPaymentStatusChanged, emitTableCleared,
@@ -13,17 +13,21 @@ import { computeSalesBreakdown } from "../services/insightsService.js";
 // ── GET /api/admin/dashboard ──────────────────────────────────────────────────
 export const getDashboardStats = async (req, res) => {
   try {
-    const { User, MenuItem, Order, Invoice, RestaurantProfile, Table } = req.models;
+    const { User, MenuItem, Order, Invoice, Table } = req.models;
 
+    // Everything runs in parallel. The old payload also carried
+    // `recentOrders`, `topItems` (an $unwind over every order ever placed) and
+    // `tableOrders` (8 SEQUENTIAL populated queries) — no app read any of them,
+    // and this call gates the admin's first paint, so they were removed.
     const [
       totalUsers, totalItems, totalOrders, totalInvoices,
       revenueAgg, todayOrdersAgg, ordersByStatus,
-      recentOrders, topItems, weeklyRevenue, totalTables,
+      weeklyRevenue, totalTables,
     ] = await Promise.all([
-      User.countDocuments(),
+      User.estimatedDocumentCount(),
       MenuItem.countDocuments({ isAvailable: true }),
-      Order.countDocuments(),
-      Invoice.countDocuments(),
+      Order.estimatedDocumentCount(),
+      Invoice.estimatedDocumentCount(),
       Order.aggregate([
         { $match: { paymentStatus: "PAID" } },
         { $group: { _id: null, total: { $sum: "$total" } } },
@@ -33,13 +37,6 @@ export const getDashboardStats = async (req, res) => {
         { $group: { _id: null, count: { $sum: 1 }, revenue: { $sum: "$total" } } },
       ]),
       Order.aggregate([{ $group: { _id: "$status", count: { $sum: 1 }, revenue: { $sum: "$total" } } }]),
-      Order.find().sort({ createdAt: -1 }).limit(10).populate("user", "name phone").lean(),
-      Order.aggregate([
-        { $unwind: "$items" },
-        { $group: { _id: "$items.name", totalQty: { $sum: "$items.qty" }, revenue: { $sum: { $multiply: ["$items.price","$items.qty"] } } } },
-        { $sort: { totalQty: -1 } },
-        { $limit: 5 },
-      ]),
       Order.aggregate([
         { $match: { createdAt: { $gte: new Date(Date.now() - 7*24*60*60*1000) }, paymentStatus: "PAID" } },
         { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } }, revenue: { $sum: "$total" }, orders: { $sum: 1 } } },
@@ -47,16 +44,6 @@ export const getDashboardStats = async (req, res) => {
       ]),
       Table.countDocuments({ status: "Active" }).catch(() => 0),
     ]);
-
-    // Canonical order-lifecycle buckets (Phase 1 status machine).
-    const TABLE_STATUSES = [
-      "PENDING_CONFIRMATION","CONFIRMED","PREPARING","READY","DELIVERED","COMPLETED","CANCELLED","All",
-    ];
-    const tableOrders = {};
-    for (const s of TABLE_STATUSES) {
-      tableOrders[s] = await Order.find(s === "All" ? {} : { status: s })
-        .sort({ createdAt: -1 }).limit(20).populate("user","name phone").lean();
-    }
 
     res.json({
       stats: {
@@ -66,7 +53,7 @@ export const getDashboardStats = async (req, res) => {
         todayRevenue: todayOrdersAgg[0]?.revenue || 0,
         totalTables,
       },
-      ordersByStatus, recentOrders, topItems, weeklyRevenue, tableOrders,
+      ordersByStatus, weeklyRevenue,
     });
   } catch (err) {
     console.error(err);
@@ -97,26 +84,79 @@ export const getSalesInsights = async (req, res) => {
 };
 
 // ── GET /api/admin/orders ─────────────────────────────────────────────────────
+// Paged order list. Extra, optional filters (all server-side so the admin
+// never has to download thousands of orders to filter them in the browser):
+//   scope=live&since=<ISO>  every still-active order (any day) + all orders
+//                           created since `since` (the client's local midnight)
+//   type, paymentStatus     orderType / paymentStatus enum values
+//   from, to                createdAt range (ISO)
+//   search                  order id, guest name or guest phone
+//   summary=1               adds { billedCount, billedAmount } — COMPLETED+PAID
+//                           orders matching the date range
+// Lean + no gateway debug blob: list views never read `payment.raw`.
+const LIVE_STATUSES = ORDER_STATUSES.filter(
+  (s) => !["AWAITING_PAYMENT", "COMPLETED", "CANCELLED"].includes(s),
+);
+const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const MAX_LIMIT = 10000;
+
 export const getAllOrders = async (req, res) => {
   try {
     const { Order } = req.models;
-    const { page = 1, limit = 20, status, search } = req.query;
+    const { status, search, scope, since, type, paymentStatus, from, to, summary } = req.query;
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(MAX_LIMIT, Math.max(1, Number(req.query.limit) || 20));
+    const parseDate = (v) => {
+      if (!v) return null;
+      const d = new Date(v);
+      return Number.isNaN(d.getTime()) ? null : d;
+    };
+
     const filter = {};
     if (status && status !== "All") filter.status = status;
-    if (search) filter.orderId = { $regex: search, $options: "i" };
+    if (type && type !== "All") filter.orderType = type;
+    if (paymentStatus && paymentStatus !== "All") filter.paymentStatus = paymentStatus;
+    const fromD = parseDate(from), toD = parseDate(to);
+    if (fromD || toD) {
+      filter.createdAt = {};
+      if (fromD) filter.createdAt.$gte = fromD;
+      if (toD) filter.createdAt.$lte = toD;
+    }
+    if (search && String(search).trim()) {
+      const rx = { $regex: escapeRegex(String(search).trim()), $options: "i" };
+      filter.$or = [{ orderId: rx }, { guestName: rx }, { guestPhone: rx }];
+    }
+    if (scope === "live") {
+      const sinceD = parseDate(since) || new Date(new Date().setHours(0, 0, 0, 0));
+      const live = [{ status: { $in: LIVE_STATUSES } }, { createdAt: { $gte: sinceD } }];
+      // AND it with any search $or rather than overwriting it.
+      if (filter.$or) { filter.$and = [{ $or: filter.$or }, { $or: live }]; delete filter.$or; }
+      else filter.$or = live;
+    }
     // Unpaid pay-first orders haven't reached the floor yet — waiters never
     // see them (admin does, to follow up). See utils/paymentMode.js.
     if (getRoleFromUser(req.user) !== "admin") {
       filter.status = filter.status === "AWAITING_PAYMENT" ? { $in: [] } : (filter.status || { $ne: "AWAITING_PAYMENT" });
     }
 
-    const [orders, total] = await Promise.all([
-      Order.find(filter).sort({ createdAt: -1 })
-        .skip((page-1)*limit).limit(Number(limit))
-        .populate("user","name phone"),
+    const wantSummary = summary === "1" || summary === "true";
+    const [orders, total, billed] = await Promise.all([
+      Order.find(filter, { "payment.raw": 0 }).sort({ createdAt: -1 })
+        .skip((page - 1) * limit).limit(limit)
+        .populate("user", "name phone")
+        .lean(),
       Order.countDocuments(filter),
+      wantSummary
+        ? Order.aggregate([
+            { $match: { ...(filter.createdAt ? { createdAt: filter.createdAt } : {}), status: "COMPLETED", paymentStatus: "PAID" } },
+            { $group: { _id: null, count: { $sum: 1 }, amount: { $sum: "$total" } } },
+          ])
+        : null,
     ]);
-    res.json({ orders, total, page: Number(page), pages: Math.ceil(total/limit) });
+    res.json({
+      orders, total, page, pages: Math.ceil(total / limit),
+      ...(wantSummary ? { summary: { billedCount: billed[0]?.count || 0, billedAmount: billed[0]?.amount || 0 } } : {}),
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

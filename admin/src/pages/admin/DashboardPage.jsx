@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { needsPaidFirst, PAID_FIRST_HINT } from "./shared/paymentRules.js";
 import toast from "react-hot-toast";
+import { useVisibleInterval } from "../../hooks/useVisibleInterval.js";
 import {
   updateOrderStatus, getAllOrders, getAllInvoices,
   updateInvoiceStatus, getAllTables,
@@ -449,14 +450,30 @@ export default function DashboardPage({ data }) {
   const [allTodayOrders, setAllTodayOrders] = useState([]);
   const [invoiceMap, setInvoiceMap] = useState({});
   const [loading, setLoading] = useState(true);
+  // Last 1000 orders are loaded once; the 10s refresh only pulls today's +
+  // still-active orders (a few dozen) and merges them in by _id.
+  const fullRef = useRef(null);
 
   const fetchData = useCallback(async () => {
     try {
+      const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+      const first = !fullRef.current;
       const [ordersRes, invoicesRes] = await Promise.all([
-        getAllOrders({ limit: 1000 }),
+        first
+          ? getAllOrders({ limit: 1000 })
+          : getAllOrders({ scope: "live", since: midnight.toISOString(), limit: 1000 }),
         getAllInvoices().catch(() => ({ data: { invoices: [] } })),
       ]);
-      const full = ordersRes.data.orders || [];
+      const fetched = ordersRes.data.orders || [];
+      let full = fetched;
+      if (!first) {
+        const fresh = new Map(fetched.map((o) => [String(o._id), o]));
+        const kept = fullRef.current.map((o) => fresh.get(String(o._id)) || o);
+        const known = new Set(kept.map((o) => String(o._id)));
+        full = [...fetched.filter((o) => !known.has(String(o._id))), ...kept]
+          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      }
+      fullRef.current = full;
       const today = full.filter((o) => isToday(o.createdAt));
       const invoices = invoicesRes.data?.invoices || [];
 
@@ -484,17 +501,16 @@ export default function DashboardPage({ data }) {
     }
   }, []);
 
-  useEffect(() => {
-    fetchData();
-    const iv = setInterval(fetchData, 10000);
-    return () => clearInterval(iv);
-  }, [fetchData]);
+  useEffect(() => { fetchData(); }, [fetchData]);
+  // Refresh every 10s only while this tab is visible.
+  useVisibleInterval(fetchData, 10000);
 
   const handleStatusChange = async (id, st) => {
     try {
       await updateOrderStatus(id, st);
       toast.success(`${t("Order")} → ${statusLabel(st)}`);
       setAllOrders((p) => p.map((o) => (o._id === id ? { ...o, status: st } : o)));
+      if (fullRef.current) fullRef.current = fullRef.current.map((o) => (o._id === id ? { ...o, status: st } : o));
       setAllTodayOrders((p) => p.map((o) => (o._id === id ? { ...o, status: st } : o)));
     } catch (err) {
       toast.error(err.response?.data?.message || t("Update failed"));

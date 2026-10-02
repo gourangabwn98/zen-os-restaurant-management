@@ -44,6 +44,7 @@ import attendanceRoutes from "./routes/attendanceRoutes.js";
 import waiterCallRoutes from "./routes/waiterCallRoutes.js";
 import couponRoutes from "./routes/couponRoutes.js";
 import { errorHandler, notFound } from "./middleware/errorMiddleware.js";
+import compression from "compression";
 
 const app    = express();
 const server = http.createServer(app);
@@ -62,6 +63,10 @@ app.use(cors({
   // the customer app's order page fails with "Couldn't load this order".
   allowedHeaders: ["Content-Type","Authorization","x-guest-order-token"],
 }));
+
+// gzip every API response — order lists shrink ~85%, which is most of the
+// admin's load time on a phone connection.
+app.use(compression());
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));

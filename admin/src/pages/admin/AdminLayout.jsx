@@ -1,32 +1,67 @@
 // src/pages/admin/AdminLayout.jsx — Ad's Cafe admin shell
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.js";
 import { getDashboard, getRestaurantProfile } from "../../services/adminService.js";
+import { getSocket } from "../../services/socketService.js";
+import { invalidate } from "../../services/cache.js";
 import toast from "react-hot-toast";
 
-import DashboardPage  from "./DashboardPage.jsx";
+// Orders is the landing screen and the one used under rush — it ships in the
+// main bundle so it paints without an extra round trip. Every other page is a
+// separate chunk, fetched on first visit (and prefetched once the app is idle).
 import OrdersPage     from "./OrdersPage.jsx";
-import TablesPage     from "./TablesPage.jsx";
-import MenuAdminPage  from "./MenuAdminPage.jsx";
-import UsersPage      from "./UsersPage.jsx";
-import NotificationsPage from "./NotificationsPage.jsx";
-import CouponsPage    from "./CouponsPage.jsx";
-import InvoicesPage   from "./InvoicesPage.jsx";
-import AnalyticsPage  from "./AnalyticsPage.jsx";
-import EmployeesPage   from "./EmployeesPage.jsx";
-import AttendancePage  from "./AttendancePage.jsx";
-import InventoryPage  from "./InventoryPage.jsx";
-import ProfilePage    from "./ProfilePage.jsx";
-import HelpPage       from "./HelpPage.jsx";
+const PAGE_LOADERS = {
+  dashboard:     () => import("./DashboardPage.jsx"),
+  tables:        () => import("./TablesPage.jsx"),
+  menu:          () => import("./MenuAdminPage.jsx"),
+  users:         () => import("./UsersPage.jsx"),
+  notifications: () => import("./NotificationsPage.jsx"),
+  coupons:       () => import("./CouponsPage.jsx"),
+  invoices:      () => import("./InvoicesPage.jsx"),
+  analytics:     () => import("./AnalyticsPage.jsx"),
+  employees:     () => import("./EmployeesPage.jsx"),
+  attendance:    () => import("./AttendancePage.jsx"),
+  inventory:     () => import("./InventoryPage.jsx"),
+  profile:       () => import("./ProfilePage.jsx"),
+  help:          () => import("./HelpPage.jsx"),
+};
+const DashboardPage     = lazy(PAGE_LOADERS.dashboard);
+const TablesPage        = lazy(PAGE_LOADERS.tables);
+const MenuAdminPage     = lazy(PAGE_LOADERS.menu);
+const UsersPage         = lazy(PAGE_LOADERS.users);
+const NotificationsPage = lazy(PAGE_LOADERS.notifications);
+const CouponsPage       = lazy(PAGE_LOADERS.coupons);
+const InvoicesPage      = lazy(PAGE_LOADERS.invoices);
+const AnalyticsPage     = lazy(PAGE_LOADERS.analytics);
+const EmployeesPage     = lazy(PAGE_LOADERS.employees);
+const AttendancePage    = lazy(PAGE_LOADERS.attendance);
+const InventoryPage     = lazy(PAGE_LOADERS.inventory);
+const ProfilePage       = lazy(PAGE_LOADERS.profile);
+const HelpPage          = lazy(PAGE_LOADERS.help);
+const OpsAlertsPanel    = lazy(() => import("../../components/OpsAlertsPanel.jsx"));
+
+// Warm every page chunk in the background once the first screen is up, so
+// switching pages later is instant. Network-friendly: one at a time, idle only.
+const prefetchPages = () => {
+  const queue = Object.values(PAGE_LOADERS);
+  const idle = window.requestIdleCallback || ((cb) => setTimeout(cb, 300));
+  const next = () => { const load = queue.shift(); if (load) load().catch(() => {}).finally(() => idle(next)); };
+  idle(next);
+};
+
+const PageFallback = () => (
+  <div style={{ padding: "24px 4px" }} aria-busy="true">
+    {Array.from({ length: 5 }).map((_, i) => <div key={i} className="zc-skel" />)}
+  </div>
+);
 import NotificationBell from "../../components/NotificationBell.jsx";
-import OpsAlertsPanel from "../../components/OpsAlertsPanel.jsx";
 import ThemeToggle from "../../components/ThemeToggle.jsx";
 import LanguageToggle from "../../components/LanguageToggle.jsx";
 import { t, N_ } from "../../i18n/core.js";
 
 import {
-  BG_MAIN, TEXT_MUTED,
+  BG_MAIN,
   BRAND_NAME, BRAND_VERSION,
 } from "../../theme.js";
 
@@ -160,23 +195,31 @@ export default function AdminLayout() {
   });
   useEffect(() => { try { sessionStorage.setItem("adminPage", page); } catch { /* storage disabled */ } }, [page]);
   const [dashboardData, setDashboardData] = useState(null);
-  const [loading, setLoading]         = useState(true);
   const [restaurant, setRestaurant]   = useState(null);
   // Full sidebar show/hide, persisted across sessions.
   const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem("adminSidebarOpen") !== "0");
   useEffect(() => { localStorage.setItem("adminSidebarOpen", sidebarOpen ? "1" : "0"); }, [sidebarOpen]);
 
+  // Nothing here gates the first paint any more: the page renders at once and
+  // the sidebar badges / restaurant name fill in when these arrive.
   useEffect(() => {
     if (!user) { navigate("/login"); return; }
-    Promise.all([getDashboard(), getRestaurantProfile()])
-      .then(([dashRes, profileRes]) => {
-        setDashboardData(dashRes.data);
-        const p = profileRes?.data?.data || profileRes?.data;
-        setRestaurant(p || null);
-      })
-      .catch(() => toast.error(t("Failed to load dashboard")))
-      .finally(() => setLoading(false));
+    getRestaurantProfile()
+      .then((profileRes) => setRestaurant(profileRes?.data?.data || profileRes?.data || null))
+      .catch(() => {});
+    getDashboard()
+      .then((dashRes) => setDashboardData(dashRes.data))
+      .catch(() => toast.error(t("Failed to load dashboard")));
   }, [user, navigate]);
+  useEffect(() => { prefetchPages(); }, []);
+  // Any menu change (this admin or another device) drops the cached order data.
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return undefined;
+    const onMenu = () => invalidate("order:menu");
+    socket.on("menu:updated", onMenu);
+    return () => socket.off("menu:updated", onMenu);
+  }, []);
 
   const handleLogout = () => {
     if (!window.confirm(t("Are you sure you want to sign out?"))) return;
@@ -284,12 +327,7 @@ export default function AdminLayout() {
         backgroundImage: "var(--glow-main)",
         backgroundAttachment: "fixed",
       }}>
-        {loading ? (
-          <div style={{ textAlign: "center", padding: "100px 0", color: TEXT_MUTED }}>
-            <div className="zc-spin" style={{ margin: "0 auto 16px" }} />
-            <div style={{ fontSize: 14 }}>{t("Loading…")}</div>
-          </div>
-        ) : (
+        <Suspense fallback={<PageFallback />}>
           <>
             {page === "dashboard"  && <OpsAlertsPanel onNavigate={setPage} />}
             {page === "dashboard"  && <DashboardPage data={dashboardData} />}
@@ -302,12 +340,12 @@ export default function AdminLayout() {
             {page === "users"      && <UsersPage />}
             {page === "notifications" && <NotificationsPage />}
             {page === "coupons"    && <CouponsPage />}
-            {page === "invoices"   && <InvoicesPage data={dashboardData?.recentOrders} />}
+            {page === "invoices"   && <InvoicesPage />}
             {page === "analytics"  && <AnalyticsPage data={dashboardData} />}
             {page === "profile"    && <ProfilePage />}
             {page === "help"       && <HelpPage />}
           </>
-        )}
+        </Suspense>
       </main>
     </div>
   );

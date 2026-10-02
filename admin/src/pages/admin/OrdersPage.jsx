@@ -14,6 +14,16 @@ import { MANUAL_PAYMENT_STATUSES, needsPaidFirst, PAID_FIRST_HINT } from "./shar
 import ErrorState from "./shared/ErrorState.jsx";
 import EmptyState from "./shared/EmptyState.jsx";
 import { getMenu, getCategories } from "../../services/menuService.js";
+import { cached, invalidate } from "../../services/cache.js";
+
+// Menu / categories / pricing settings for the order modals — cached so
+// "New order" and "Add items" open instantly (prefetched with the page,
+// refreshed on the server's "menu:updated" event, max 60s old otherwise).
+const ORDER_DATA_TTL = 60 * 1000;
+const menuCached       = () => cached("order:menu", ORDER_DATA_TTL, () => getMenu({}));
+const profileCached    = () => cached("order:profile", 5 * ORDER_DATA_TTL, () => getRestaurantProfile());
+const categoriesCached = () => cached("order:categories", ORDER_DATA_TTL, () => getCategories());
+const prefetchOrderData = () => { menuCached().catch(() => {}); profileCached().catch(() => {}); categoriesCached().catch(() => {}); };
 import { t, tn, fmtNum, fmtDate, fmtDateTime, fmtTime, localName } from "../../i18n/core.js";
 
 // ── add this to adminService.js if not already there ─────────────────────────
@@ -563,9 +573,9 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
   const [idemKey] = useState(newIdempotencyKey);
 
   useEffect(()=>{
-    getMenu({}).then(r=>{ setMi(r.data||[]); setMenuLoading(false); }).catch(()=>setMenuLoading(false));
-    getRestaurantProfile().then(r=>{ const p=r.data?.data||r.data; setScpi(p?.serviceCharge||0); setGstRate(p?.gstRate||0); }).catch(()=>{});
-    getCategories().then(r=>{
+    menuCached().then(r=>{ setMi(r.data||[]); setMenuLoading(false); }).catch(()=>setMenuLoading(false));
+    profileCached().then(r=>{ const p=r.data?.data||r.data; setScpi(p?.serviceCharge||0); setGstRate(p?.gstRate||0); }).catch(()=>{});
+    categoriesCached().then(r=>{
       const list = r.data?.data || r.data || [];
       const map = {};
       const bn = {};
@@ -1037,9 +1047,9 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
   const [catBn, setCatBn] = useState({}); // category name → Bengali name
 
   useEffect(()=>{
-    getMenu({}).then(r=>{ setMi(r.data||[]); setMenuLoading(false); }).catch(()=>setMenuLoading(false));
-    getRestaurantProfile().then(r=>{ const p=r.data?.data||r.data; setScpi(p?.serviceCharge||0); setGstRate(p?.gstRate||0); }).catch(()=>{});
-    getCategories().then(r=>{
+    menuCached().then(r=>{ setMi(r.data||[]); setMenuLoading(false); }).catch(()=>setMenuLoading(false));
+    profileCached().then(r=>{ const p=r.data?.data||r.data; setScpi(p?.serviceCharge||0); setGstRate(p?.gstRate||0); }).catch(()=>{});
+    categoriesCached().then(r=>{
       const list = r.data?.data || r.data || [];
       const map = {};
       const bn = {};
@@ -1985,6 +1995,9 @@ export default function OrdersPage() {
   const [actionBusy, setActionBusy] = useState(false);
   const [showPending, setShowPending] = useState(false);
   const PER_PAGE=15;
+  // "All orders" view — one server page (see the fetch effect below).
+  const [allTick, setAllTick] = useState(0);
+  const [allResult, setAllResult] = useState({ key: null, orders: [], total: 0, pages: 1, summary: null, error: false });
 
   // ── Insert-or-update one order in local state, keyed by Mongo _id ──────────
   // Used by every realtime path so a socket event that arrives twice (or races
@@ -1998,6 +2011,15 @@ export default function OrdersPage() {
       next[i] = { ...next[i], ...incoming };
       return next;
     });
+    // Keep an open "All orders" page in step too (only rows it already shows).
+    setAllResult((r) => (r.orders.some((o) => o._id === incoming._id)
+      ? { ...r, orders: r.orders.map((o) => (o._id === incoming._id ? { ...o, ...incoming } : o)) }
+      : r));
+  }, []);
+  // Local edit (status / payment / items) applied to whichever list holds it.
+  const patchOrder = useCallback((id, patch) => {
+    setOrders((prev) => prev.map((o) => (o._id === id ? { ...o, ...patch } : o)));
+    setAllResult((r) => ({ ...r, orders: r.orders.map((o) => (o._id === id ? { ...o, ...patch } : o)) }));
   }, []);
 
   const fetchTables=useCallback(()=>{ getAllTables().then(r=>{setTables(r.data?.tables||[]);setTablesLoading(false);}).catch(()=>setTablesLoading(false)); },[]);
@@ -2005,12 +2027,42 @@ export default function OrdersPage() {
 
   useEffect(() => { const iv = setInterval(()=>setNowTick(Date.now()), 30000); return () => clearInterval(iv); }, []);
 
+  // ── Live set: every active order (any day) + everything placed today ──────
+  // This is all the floor, the pills, the table map and "Recent · Today" need —
+  // tens of orders instead of the whole history (it used to fetch up to
+  // 10,000 full orders before the page could show anything).
   const fetchOrders=useCallback(()=>{
-    getAllOrders({ limit:10000 })
+    const since = new Date(); since.setHours(0, 0, 0, 0);
+    getAllOrders({ scope:"live", since: since.toISOString(), limit:3000 })
       .then(r=>{ setOrders(r.data?.orders||[]); setError(false); setLoading(false); })
       .catch(()=>{ setError(true); setLoading(false); });
+    setAllTick((n) => n + 1);
   },[]);
   useEffect(()=>{ fetchOrders(); },[fetchOrders]);
+  // Warm the New-order data right away so the first tap on "New order" is instant.
+  useEffect(()=>{ prefetchOrderData(); },[]);
+
+  // ── "All orders": one server page at a time, filtered server-side ──────────
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => { const id = setTimeout(() => setDebouncedSearch(search.trim()), 300); return () => clearTimeout(id); }, [search]);
+  const allParams = useMemo(() => ({
+    page, limit: PER_PAGE, summary: 1,
+    status: filter, type: typeF, paymentStatus: payF,
+    search: debouncedSearch || undefined,
+    from: startDate ? new Date(`${startDate}T00:00:00`).toISOString() : undefined,
+    to: endDate ? new Date(`${endDate}T23:59:59.999`).toISOString() : undefined,
+  }), [page, filter, typeF, payF, debouncedSearch, startDate, endDate]);
+  const allKey = `${JSON.stringify(allParams)}|${allTick}`;
+  useEffect(() => {
+    if (viewMode !== "all") return undefined;
+    let alive = true;
+    getAllOrders(allParams)
+      .then((r) => { if (alive) setAllResult({ key: allKey, orders: r.data?.orders || [], total: r.data?.total || 0, pages: r.data?.pages || 1, summary: r.data?.summary || null, error: false }); })
+      .catch(() => { if (alive) setAllResult((p) => ({ ...p, key: allKey, error: true })); });
+    return () => { alive = false; };
+  }, [viewMode, allParams, allKey]);
+  const allLoading = viewMode === "all" && allResult.key !== allKey;
+  const findOrder = (id) => orders.find((o) => o._id === id) || allResult.orders.find((o) => o._id === id) || null;
 
   // ── Realtime: keep the list live off the SAME socket the notification bell
   // already uses (staff room). No polling. Every handler goes through
@@ -2037,9 +2089,12 @@ export default function OrdersPage() {
       toast.error(t("Order {id} couldn't start preparing — {reason}", { id: p.order.orderId, reason: p.reason || t("please check it") }), { duration: 8000 });
     };
     socket.on("order:needs_attention", onAttention);
+    const onMenu = () => { invalidate("order:"); prefetchOrderData(); };
+    socket.on("menu:updated", onMenu);
 
     return ()=>{
       socket.off("order:needs_attention", onAttention);
+      socket.off("menu:updated", onMenu);
       socket.off("order:new",             onNew);
       socket.off("order:confirmed",       onConfirmed);
       socket.off("order:status_changed",  onStatus);
@@ -2072,11 +2127,11 @@ export default function OrdersPage() {
   // Resolve a pending focus once the target order is actually in state.
   useEffect(()=>{
     if (!pendingFocus) return;
-    const hit = orders.find((o)=>
+    const hit = [...orders, ...allResult.orders].find((o)=>
       (pendingFocus._id && o._id===pendingFocus._id) ||
       (pendingFocus.orderId && o.orderId===pendingFocus.orderId));
     if (hit) { setExpanded(hit._id); setPendingFocus(null); }
-  },[pendingFocus, orders]);
+  },[pendingFocus, orders, allResult.orders]);
 
   useEffect(()=>{
     const on=()=>setOnline(true), off=()=>setOnline(false);
@@ -2096,15 +2151,6 @@ export default function OrdersPage() {
     return()=>window.removeEventListener("keydown",handleKeyDown);
   },[showCreate]);
 
-  const filtered=orders.filter(o=>{
-    const q=search.toLowerCase();
-    const d=new Date(o.createdAt).toISOString().slice(0,10);
-    return (filter==="All"||o.status===filter)&&(typeF==="All"||o.orderType===typeF)&&
-           (payF==="All"||o.paymentStatus===payF)&&(!startDate||d>=startDate)&&(!endDate||d<=endDate)&&
-           (!q||o.orderId?.toLowerCase().includes(q)||o.guestName?.toLowerCase().includes(q)||
-            o.guestPhone?.includes(q)||o.user?.phone?.includes(q));
-  });
-
   const recentFiltered=orders.filter(o=>{
     const q=search.toLowerCase();
     return new Date(o.createdAt).toDateString()===new Date().toDateString()&&
@@ -2113,12 +2159,12 @@ export default function OrdersPage() {
             o.guestPhone?.includes(q)||o.user?.phone?.includes(q));
   });
 
-  const displayedOrders=viewMode==="recent"?recentFiltered:filtered;
-  const ordersInRange=orders.filter(o=>{ const d=new Date(o.createdAt).toISOString().slice(0,10); return (!startDate||d>=startDate)&&(!endDate||d<=endDate); });
-  const rangeStats={ count:filtered.filter(o=>o.status==="COMPLETED"&&o.paymentStatus==="PAID").length, amount:ordersInRange.filter(o=>o.status==="COMPLETED"&&o.paymentStatus==="PAID").reduce((s,o)=>s+Number(o.total||0),0) };
+  const displayedOrders=viewMode==="recent"?recentFiltered:allResult.orders;
+  const displayedTotal=viewMode==="recent"?recentFiltered.length:allResult.total;
+  const rangeStats={ count: allResult.summary?.billedCount || 0, amount: allResult.summary?.billedAmount || 0 };
 
   const handleStatusChange=async(id,newStatus)=>{
-    try{ await updateOrderStatus(id,newStatus); setOrders(prev=>prev.map(o=>o._id===id?{...o,status:newStatus}:o)); toast.success(`→ ${formatStatus(newStatus)}`); }
+    try{ await updateOrderStatus(id,newStatus); patchOrder(id,{ status:newStatus }); toast.success(`→ ${formatStatus(newStatus)}`); }
     catch(e){ toast.error(e?.response?.data?.message || t("Update failed")); }
   };
 
@@ -2164,7 +2210,7 @@ export default function OrdersPage() {
         headers:{ "Content-Type":"application/json", Authorization:`Bearer ${localStorage.getItem("adminToken")}` },
         body:JSON.stringify(data),
       });
-      setOrders(prev=>prev.map(o=>o._id===id?{...o,...data}:o));
+      patchOrder(id, data);
       toast.success(t("Payment updated ✓"));
     }catch{ toast.error(t("Payment update failed")); }
   };
@@ -2187,8 +2233,9 @@ export default function OrdersPage() {
     .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   const selectedTakeaway = takeawayOrders.find(o => o._id === takeawaySelected) || null;
 
-  const paginated=displayedOrders.slice((page-1)*PER_PAGE,page*PER_PAGE);
-  const totalPages=Math.ceil(displayedOrders.length/PER_PAGE);
+  // Recent: client-side slice of the (small) live set. All: already one server page.
+  const paginated=viewMode==="recent"?displayedOrders.slice((page-1)*PER_PAGE,page*PER_PAGE):displayedOrders;
+  const totalPages=viewMode==="recent"?Math.ceil(displayedOrders.length/PER_PAGE):allResult.pages;
 
   // ── Live floor state — deliberately ALL-TIME, not today-only ───────────────
   // tableOrderMap (above) already ignores the calendar day so a table stays
@@ -2317,7 +2364,7 @@ export default function OrdersPage() {
     }
   };
 
-  const detailOrder = expanded ? orders.find((o) => o._id === expanded) || null : null;
+  const detailOrder = expanded ? findOrder(expanded) : null;
 
   const pageList = Array.from({ length: totalPages }, (_, i) => i + 1)
     .filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
@@ -2437,7 +2484,7 @@ export default function OrdersPage() {
         </button>
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 12, color: "var(--text-3)" }}>
-          {viewMode === "all" ? t("{n} orders total", { n: orders.length }) : t("{n} active today", { n: recentFiltered.length })}
+          {viewMode === "all" ? t("{n} orders total", { n: allResult.total }) : t("{n} active today", { n: recentFiltered.length })}
         </span>
       </div>
 
@@ -2664,15 +2711,15 @@ export default function OrdersPage() {
         <div className="zc-card-h">
           <span className="t">{viewMode === "recent" ? t("Active orders") : t("All orders")}</span>
           <span className="s">
-            {loading ? t("loading…") : error ? t("unavailable") : viewMode === "recent" ? t("{n} on the floor", { n: displayedOrders.length }) : t("{n} matching", { n: displayedOrders.length })}
+            {(loading || allLoading) ? t("loading…") : (error || (viewMode === "all" && allResult.error)) ? t("unavailable") : viewMode === "recent" ? t("{n} on the floor", { n: displayedTotal }) : t("{n} matching", { n: displayedTotal })}
           </span>
         </div>
 
-        {loading ? (
+        {(loading || (allLoading && !allResult.orders.length)) ? (
           <div style={{ padding: "16px 18px" }}>
             {Array.from({ length: 6 }).map((_, i) => <div key={i} className="zc-skel" />)}
           </div>
-        ) : error ? (
+        ) : (error || (viewMode === "all" && allResult.error)) ? (
           <ErrorState
             title={t("Could not load orders")}
             sub={t("The server did not respond. Check your connection, then try again.")}
@@ -2788,7 +2835,7 @@ export default function OrdersPage() {
             {totalPages > 1 && (
               <div className="zc-tfoot" style={{ padding: "14px 18px 6px" }}>
                 <span>
-                  {t("Showing {from}–{to} of {total}", { from: (page - 1) * PER_PAGE + 1, to: Math.min(page * PER_PAGE, displayedOrders.length), total: displayedOrders.length })}
+                  {t("Showing {from}–{to} of {total}", { from: (page - 1) * PER_PAGE + 1, to: Math.min(page * PER_PAGE, displayedTotal), total: displayedTotal })}
                 </span>
                 <div className="zc-pager">
                   <button type="button" disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>‹</button>
@@ -2833,17 +2880,17 @@ export default function OrdersPage() {
 
       {showAddItems && (
         <AddItemsToOrderModal
-          order={orders.find((o) => o._id === showAddItems)}
+          order={findOrder(showAddItems)}
           onClose={() => setShowAddItems(null)}
           onItemsAdded={(updatedOrder) =>
-            setOrders((prev) => prev.map((o) => (o._id === updatedOrder._id ? updatedOrder : o)))
+            patchOrder(updatedOrder._id, updatedOrder)
           }
         />
       )}
 
-      {showEditItems && orders.find((o) => o._id === showEditItems) && (
+      {showEditItems && findOrder(showEditItems) && (
         <EditOrderItemsModal
-          order={orders.find((o) => o._id === showEditItems)}
+          order={findOrder(showEditItems)}
           onClose={() => setShowEditItems(null)}
           onSaved={(updated) => upsertOrder(updated)}
           onAddMore={(o) => { setShowEditItems(null); setShowAddItems(o._id); }}

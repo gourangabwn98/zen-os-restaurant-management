@@ -19,7 +19,10 @@
 // it re-renders), so plain functions — toasts, CSV export, module-level
 // helpers — translate correctly without a hook.
 // ─────────────────────────────────────────────────────────────────────────────
-import BN from "./bn/index.js";
+// The Bengali dictionary (~190 KB) is its own chunk, fetched only when
+// Bengali is chosen — English users never download it. See loadLang().
+let BN = {};
+let bnPromise = null;
 
 export const LANGS = ["en", "bn"];
 export const LANG_STORAGE_KEY = "adsCafeLang";
@@ -28,6 +31,14 @@ let current = "en";
 const LOCALES = { en: "en-IN", bn: "bn-IN" };
 
 export const getLang = () => current;
+
+/** Resolves once `lang`'s dictionary is in memory (instant for en / after the first load). */
+export const loadLang = (lang) => {
+  if (lang !== "bn") return Promise.resolve();
+  if (!bnPromise) bnPromise = import("./bn/index.js").then((m) => { BN = m.default; });
+  return bnPromise;
+};
+export const isLangLoaded = (lang) => lang !== "bn" || Object.keys(BN).length > 0;
 export const setCurrentLang = (lang) => { current = LANGS.includes(lang) ? lang : "en"; };
 /** Locale for Intl / toLocaleString: "en-IN" or "bn-IN" (Bengali digits). */
 export const LOCALE = () => LOCALES[current];

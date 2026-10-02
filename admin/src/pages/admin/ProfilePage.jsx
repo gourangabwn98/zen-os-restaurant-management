@@ -28,6 +28,7 @@ import {
 } from "../../services/adminService.js";
 import PageHeader from "./shared/PageHeader.jsx";
 import { t, tn, N_, fmtNum } from "../../i18n/core.js";
+import { invalidate } from "../../services/cache.js";
 
 // ── page-scoped styles (tokens only — light / dark safe) ─────────────────────
 if (typeof document !== "undefined" && !document.getElementById("prof-styles")) {
@@ -238,6 +239,7 @@ export default function ProfilePage() {
       setProfile(updated); setEditing((p) => ({ ...p, [sec]: false }));
       try {
         await updateRestaurantProfile(updated);
+        invalidate("order:profile"); // GST / service charge feed order totals
         toast.success(t("Section saved"));
       } catch (err) {
         // Roll back and reopen the section, with the server's reason
@@ -378,7 +380,7 @@ export default function ProfilePage() {
 
   const handleSaveAll = async () => {
     setSaving(true);
-    try { await updateRestaurantProfile(profile); toast.success(t("All settings saved!")); }
+    try { await updateRestaurantProfile(profile); invalidate("order:profile"); toast.success(t("All settings saved!")); }
     catch { toast.error(t("Failed to save")); }
     finally { setSaving(false); }
   };

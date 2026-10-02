@@ -5,6 +5,7 @@ import {
   getAttendanceToday, getAttendanceHistory, getAttendanceEmployee, getAttendanceSummary,
 } from "../../services/attendanceService.js";
 import { getSocket } from "../../services/socketService.js";
+import { useVisibleInterval } from "../../hooks/useVisibleInterval.js";
 import { PageHeader, StatCard, Badge, Loader, EmptyState } from "./shared/index.js";
 import ErrorState from "./shared/ErrorState.jsx";
 import { Modal, TableShell } from "./inventory/invUI.jsx";
@@ -53,13 +54,12 @@ export default function AttendancePage() {
   // Live board refresh — poll as a safety net, plus socket-driven refetch on
   // any attendance change, mirroring OpsAlertsPanel's polling pattern and
   // OrdersPage's socket-merge pattern.
+  useVisibleInterval(loadLive, 20000);
   useEffect(() => {
-    const iv = setInterval(loadLive, 20000);
     const socket = getSocket();
     const onUpdate = () => loadLive();
     if (socket) socket.on("employee:attendance:updated", onUpdate);
     return () => {
-      clearInterval(iv);
       if (socket) socket.off("employee:attendance:updated", onUpdate);
     };
   }, [loadLive]);

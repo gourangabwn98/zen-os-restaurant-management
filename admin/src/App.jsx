@@ -1,4 +1,5 @@
 // src/App.jsx
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 
@@ -6,8 +7,12 @@ import { useAuth } from "./hooks/useAuth";
 
 // import LoginPage from "./pages/auth/LoginPage";
 import AdminLayout from "./pages/admin/AdminLayout";
-import LoginPage from "./pages/LoginPage";
-import KitchenDisplayPage from "./pages/KitchenDisplayPage";
+// Login pulls in the Firebase SDK (~half the old bundle) and the Kitchen
+// Display is a separate tablet screen — neither is needed to open the admin,
+// so both load as their own chunks.
+const LoginPage = lazy(() => import("./pages/LoginPage"));
+const KitchenDisplayPage = lazy(() => import("./pages/KitchenDisplayPage"));
+const RouteFallback = () => <div style={{ minHeight: "100vh", display: "grid", placeItems: "center" }}><div className="zc-spin" /></div>;
 
 function ProtectedAdmin({ children }) {
   const { user, isLoading } = useAuth();
@@ -30,6 +35,7 @@ export default function App() {
     <BrowserRouter>
       <Toaster position="top-center" />
 
+      <Suspense fallback={<RouteFallback />}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
 
@@ -56,6 +62,7 @@ export default function App() {
         <Route path="/" element={<Navigate to="/admin" replace />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

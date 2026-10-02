@@ -29,6 +29,7 @@ import Loader from "./shared/Loader.jsx";
 import EmptyState from "./shared/EmptyState.jsx";
 import ErrorState from "./shared/ErrorState.jsx";
 import { t, tn, N_, fmtNum, localName } from "../../i18n/core.js";
+import { invalidate } from "../../services/cache.js";
 
 // Stored values; labels go through t().
 const TAGS = ["Veg", "Non Veg"];
@@ -980,6 +981,7 @@ export default function MenuAdminPage() {
   };
 
   const handleCategoryCreated = (newCat) => {
+    invalidate("order:categories");
     if (newCat?._deleted) {
       const gone = cats.filter((c) => c.name === newCat.name).map((c) => c._id);
       setSelCats((p) => { const n = new Set(p); gone.forEach((id) => n.delete(id)); return n; });
@@ -994,6 +996,7 @@ export default function MenuAdminPage() {
   // server, so reload both lists; keep the category filter pointing at the
   // same category (or reset it if that category is gone).
   const handleCategoriesChanged = ({ deleted, deletedId, renamedFrom, saved } = {}) => {
+    invalidate("order:");
     if (deleted) {
       setSelCat((c) => (c === deleted ? "All" : c));
       if (deletedId) setSelCats((p) => { const n = new Set(p); n.delete(deletedId); return n; });

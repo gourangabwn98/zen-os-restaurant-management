@@ -9,6 +9,7 @@ import {
   getWaitlist, addWaitlistEntry, seatWaitlistEntry, cancelWaitlistEntry,
 } from "../../services/adminService.js";
 import { getSocket } from "../../services/socketService.js";
+import { useVisibleInterval } from "../../hooks/useVisibleInterval.js";
 import { t, tn, N_, fmtNum, fmtTime, localName } from "../../i18n/core.js";
 
 // ── Dark tokens ───────────────────────────────────────────────────────────────
@@ -796,7 +797,8 @@ export default function TablesPage() {
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchData(); const iv=setInterval(fetchData,30000); return()=>clearInterval(iv); }, [fetchData]);
+  useEffect(() => { fetchData(); }, [fetchData]);
+  useVisibleInterval(fetchData, 30000);
 
   // ── Realtime: a table clearing elsewhere (or here) can surface a queue
   // match instantly instead of waiting for the next 30s poll.

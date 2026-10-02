@@ -333,6 +333,8 @@ orderSchema.index(
   { unique: true, partialFilterExpression: { idempotencyKey: { $type: "string" } }, name: "idempotencyKey_str_unique" },
 );
 orderSchema.index({ status: 1, createdAt: -1 });
+// Newest-first lists and date-range filters (admin Orders "All", Invoices, Insights).
+orderSchema.index({ createdAt: -1 });
 orderSchema.index({ tableSession: 1 });
 // PhonePe callbacks/status polls look an order up by its gateway txn id.
 orderSchema.index(

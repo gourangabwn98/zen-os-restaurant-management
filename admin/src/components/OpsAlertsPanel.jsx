@@ -1,9 +1,10 @@
 // src/components/OpsAlertsPanel.jsx
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { getInventoryOverview, getPrinterStatus } from "../services/adminService.js";
 import { PRIMARY, BG_CARD, BORDER, TEXT_PRIMARY, TEXT_MUTED } from "../theme.js";
 import { Modal, LevelBadge } from "../pages/admin/inventory/invUI.jsx";
 import { formatQty } from "../utils/units.js";
+import { useVisibleInterval } from "../hooks/useVisibleInterval.js";
 import { t, tn, fmtNum, fmtDate as fmtDateL, localName } from "../i18n/core.js";
 
 const num = (n) => fmtNum(Math.round((Number(n) || 0) * 100) / 100);
@@ -14,15 +15,12 @@ export default function OpsAlertsPanel({ onNavigate }) {
   const [printer, setPrinter] = useState(null);
   const [showModal, setShowModal] = useState(false);
 
-  useEffect(() => {
-    const load = () => {
-      getInventoryOverview().then((r) => setInv(r.data?.data || null)).catch(() => {});
-      getPrinterStatus().then((r) => setPrinter(r.data || null)).catch(() => {});
-    };
-    load();
-    const iv = setInterval(load, 20000);
-    return () => clearInterval(iv);
+  const load = useCallback(() => {
+    getInventoryOverview().then((r) => setInv(r.data?.data || null)).catch(() => {});
+    getPrinterStatus().then((r) => setPrinter(r.data || null)).catch(() => {});
   }, []);
+  useEffect(() => { load(); }, [load]);
+  useVisibleInterval(load, 20000);
 
   const low       = inv?.lowStock?.count      ?? 0;
   const critical  = inv?.critical?.count      ?? 0;
