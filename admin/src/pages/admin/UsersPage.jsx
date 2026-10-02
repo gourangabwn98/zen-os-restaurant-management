@@ -24,9 +24,10 @@ import StatCard from "./shared/StatCard.jsx";
 import Loader from "./shared/Loader.jsx";
 import EmptyState from "./shared/EmptyState.jsx";
 import ErrorState from "./shared/ErrorState.jsx";
+import { t, tn, N_, fmtNum, fmtDate, fmtDateTime } from "../../i18n/core.js";
 
 const PER_PAGE = 12;
-const TYPE_SEG = ["All", "Registered", "Guest"];
+const TYPE_SEG = [N_("All"), N_("Registered"), N_("Guest")];
 
 const AVATAR_GRADS = [
   "linear-gradient(140deg,#8B5CF6,#6D28D9)",
@@ -38,7 +39,7 @@ const AVATAR_GRADS = [
 ];
 const avc = (n) => AVATAR_GRADS[(n?.charCodeAt(0) || 0) % AVATAR_GRADS.length];
 const ini = (n) => (!n || n === "Guest" ? "G" : n.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2));
-const fmt = (n) => Math.round(n || 0).toLocaleString("en-IN");
+const fmt = (n) => fmtNum(Math.round(n || 0));
 
 // ── page-scoped styles (tokens only — light / dark safe) ─────────────────────
 if (typeof document !== "undefined" && !document.getElementById("usr-styles")) {
@@ -80,26 +81,26 @@ function CustomerDetailModal({ customer, busy, onClose, onDelete }) {
   if (!customer) return null;
   const u = customer.user;
   const orderRows = [
-    ["Orders", customer.orderCount],
-    ["Lifetime", `₹${fmt(customer.lifetime)}`],
-    ["Average order", `₹${fmt(customer.average)}`],
+    [t("Orders"), fmtNum(customer.orderCount)],
+    [t("Lifetime"), `₹${fmt(customer.lifetime)}`],
+    [t("Average order"), `₹${fmt(customer.average)}`],
     [
-      "Last order",
+      t("Last order"),
       customer.lastOrderAt
-        ? new Date(customer.lastOrderAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+        ? fmtDateTime(customer.lastOrderAt)
         : "—",
     ],
   ];
   const accountRows = u
     ? [
-        ["User ID", `…${u._id.slice(-8)}`, true],
-        ["Verified", u.isVerified ? "Yes" : "No", false, u.isVerified ? "var(--ready-ink)" : "var(--stop-ink)"],
-        ["Veg mode", u.vegMode ? "On" : "Off", false, u.vegMode ? "var(--ready-ink)" : "var(--text-2)"],
-        ["Language", u.language || "English"],
+        [t("User ID"), `…${u._id.slice(-8)}`, true],
+        [t("Verified"), u.isVerified ? t("Yes") : t("No"), false, u.isVerified ? "var(--ready-ink)" : "var(--stop-ink)"],
+        [t("Veg mode"), u.vegMode ? t("On") : t("Off"), false, u.vegMode ? "var(--ready-ink)" : "var(--text-2)"],
+        [t("Language"), u.language || t("English")],
         [
-          "Joined",
+          t("Joined"),
           u.createdAt
-            ? new Date(u.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })
+            ? fmtDate(u.createdAt, { day: "2-digit", month: "long", year: "numeric" })
             : "—",
         ],
       ]
@@ -114,14 +115,14 @@ function CustomerDetailModal({ customer, busy, onClose, onDelete }) {
           </span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="t">{customer.name}</div>
-            <div className="s">{customer.phone ? `+91 ${customer.phone}` : "No phone on file"}</div>
+            <div className="s">{customer.phone ? `+91 ${customer.phone}` : t("No phone on file")}</div>
           </div>
-          <span className={`zc-tag ${customer.registered ? "live" : "done"} sq`}>{customer.registered ? "Registered" : "Guest"}</span>
-          <button type="button" className="zc-x" onClick={onClose} aria-label="Close">✕</button>
+          <span className={`zc-tag ${customer.registered ? "live" : "done"} sq`}>{customer.registered ? t("Registered") : t("Guest")}</span>
+          <button type="button" className="zc-x" onClick={onClose} aria-label={t("Close")}>✕</button>
         </div>
 
         <div className="mb">
-          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>Order history</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>{t("Order history")}</div>
           <div className="zc-panel" style={{ padding: "4px 14px", marginBottom: u ? 18 : 0 }}>
             {orderRows.map(([k, v]) => (
               <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderBottom: "1px solid var(--edge)", fontSize: 12.5 }}>
@@ -133,7 +134,7 @@ function CustomerDetailModal({ customer, busy, onClose, onDelete }) {
 
           {u && (
             <>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>Account info</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>{t("Account info")}</div>
               <div className="zc-panel" style={{ padding: "4px 14px" }}>
                 {accountRows.map(([k, v, mono, color]) => (
                   <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderBottom: "1px solid var(--edge)", fontSize: 12.5 }}>
@@ -146,12 +147,12 @@ function CustomerDetailModal({ customer, busy, onClose, onDelete }) {
               </div>
 
               <div style={{ marginTop: 16, padding: 14, borderRadius: "var(--r-ctl)", background: "var(--stop-fill)", border: "1px solid var(--stop-line)" }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--stop-ink)", marginBottom: 6 }}>Delete account</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--stop-ink)", marginBottom: 6 }}>{t("Delete account")}</div>
                 <div style={{ fontSize: 12, color: "var(--text-2)", marginBottom: 12, lineHeight: 1.5 }}>
-                  This will permanently remove the user. Their orders will remain in the system.
+                  {t("This will permanently remove the user. Their orders will remain in the system.")}
                 </div>
                 <button type="button" className="zc-btn danger block" disabled={busy} onClick={() => onDelete(u._id)}>
-                  {busy ? "Deleting…" : "Delete user"}
+                  {busy ? t("Deleting…") : t("Delete user")}
                 </button>
               </div>
             </>
@@ -159,7 +160,7 @@ function CustomerDetailModal({ customer, busy, onClose, onDelete }) {
         </div>
 
         <div className="mf">
-          <button type="button" className="zc-btn pri" onClick={onClose}>Done</button>
+          <button type="button" className="zc-btn pri" onClick={onClose}>{t("Done")}</button>
         </div>
       </div>
     </div>
@@ -195,15 +196,15 @@ export default function UsersPage() {
   useEffect(() => { load(); }, [load]);
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Delete this user permanently?")) return;
+    if (!window.confirm(t("Delete this user permanently?"))) return;
     setBusyId(id);
     try {
       await deleteUser(id);
       setUsers((p) => p.filter((u) => u._id !== id));
       setOpenKey(null);
-      toast.success("User deleted");
+      toast.success(t("User deleted"));
     } catch {
-      toast.error("Delete failed");
+      toast.error(t("Delete failed"));
     } finally {
       setBusyId(null);
     }
@@ -228,7 +229,7 @@ export default function UsersPage() {
       if (!map.has(key)) {
         map.set(key, {
           key, registered, phone,
-          name: (registered ? o.user?.name : o.guestName) || "Guest",
+          name: (registered ? o.user?.name : o.guestName) || t("Guest"),
           userId: registered ? o.user?._id : null,
           orders: [],
         });
@@ -289,21 +290,21 @@ export default function UsersPage() {
   const topSpender = customers.length ? customers[0] : null;
 
   const STATS = [
-    { label: "Registered", value: fmt(users.length), grad: true, sub: `+${registeredThisMonth} this month` },
-    { label: "Repeat customers", value: fmt(repeatCustomers), color: "var(--ready-ink)", sub: `${returnRate}% return rate` },
-    { label: "Guest orders", value: `${guestOrderPct}%`, color: "var(--text-2)", sub: "No account created" },
+    { label: t("Registered"), value: fmt(users.length), grad: true, sub: t("+{n} this month", { n: registeredThisMonth }) },
+    { label: t("Repeat customers"), value: fmt(repeatCustomers), color: "var(--ready-ink)", sub: t("{pct}% return rate", { pct: returnRate }) },
+    { label: t("Guest orders"), value: `${fmtNum(guestOrderPct)}%`, color: "var(--text-2)", sub: t("No account created") },
     {
-      label: "Highest spender",
+      label: t("Highest spender"),
       value: topSpender ? `₹${fmt(topSpender.lifetime)}` : "—",
-      sub: topSpender ? `${topSpender.name} · ${topSpender.orderCount} order${topSpender.orderCount === 1 ? "" : "s"}` : "No orders yet",
+      sub: topSpender ? `${topSpender.name} · ${tn(topSpender.orderCount, "{n} order", "{n} orders")}` : t("No orders yet"),
     },
   ];
 
   return (
     <div>
       <PageHeader
-        title="Users"
-        sub={`${users.length} registered customer${users.length === 1 ? "" : "s"} · ${customers.length} have ordered`}
+        title={t("Users")}
+        sub={`${tn(users.length, "{n} registered customer", "{n} registered customers")} · ${t("{n} have ordered", { n: customers.length })}`}
       />
 
       {/* stat row */}
@@ -317,18 +318,18 @@ export default function UsersPage() {
           className="zc-input"
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-          placeholder="Search by name or phone"
-          aria-label="Search customers"
+          placeholder={t("Search by name or phone")}
+          aria-label={t("Search customers")}
           style={{ flex: 1, minWidth: 240 }}
         />
-        <div className="zc-seg" role="tablist" aria-label="Customer type filter">
+        <div className="zc-seg" role="tablist" aria-label={t("Customer type filter")}>
           {TYPE_SEG.map((s) => (
             <button
               key={s} type="button" role="tab" aria-selected={typeFilter === s}
               className={typeFilter === s ? "on" : ""}
               onClick={() => { setTypeFilter(s); setPage(1); }}
             >
-              {s}
+              {t(s)}
             </button>
           ))}
         </div>
@@ -336,27 +337,27 @@ export default function UsersPage() {
         {hasFilters ? (
           <>
             <span style={{ fontSize: 12, color: "var(--text-2)" }}>
-              <b style={{ color: "var(--accent-ink)" }}>{filtered.length}</b> of {customers.length}
+              <b style={{ color: "var(--accent-ink)" }}>{fmtNum(filtered.length)}</b> {t("of {n}", { n: customers.length })}
             </span>
-            <button type="button" className="zc-btn sm" onClick={clearFilters}>Clear ✕</button>
+            <button type="button" className="zc-btn sm" onClick={clearFilters}>{t("Clear")} ✕</button>
           </>
         ) : (
-          <span style={{ fontSize: 12, color: "var(--text-3)" }}>{customers.length} customers</span>
+          <span style={{ fontSize: 12, color: "var(--text-3)" }}>{tn(customers.length, "{n} customer", "{n} customers")}</span>
         )}
       </div>
 
       {/* list */}
       <div className="zc-card">
         <div className="zc-card-h">
-          <span className="t">Customers</span>
-          <span className="s">{loading ? "loading…" : error ? "unavailable" : `${filtered.length} matching`}</span>
+          <span className="t">{t("Customers")}</span>
+          <span className="s">{loading ? t("loading…") : error ? t("unavailable") : t("{n} matching", { n: filtered.length })}</span>
         </div>
 
         {loading ? (
           <div style={{ padding: "16px 18px" }}><Loader rows={8} /></div>
         ) : error ? (
-          <ErrorState title="Could not load users"
-            sub="The server did not respond. Check that the backend is running, then try again."
+          <ErrorState title={t("Could not load users")}
+            sub={t("The server did not respond. Check that the backend is running, then try again.")}
             onRetry={load} />
         ) : filtered.length === 0 ? (
           <EmptyState
@@ -365,11 +366,11 @@ export default function UsersPage() {
                 <circle cx="12" cy="8" r="3.5" /><path d="M5 20a7 7 0 0 1 14 0" />
               </svg>
             }
-            title={customers.length === 0 ? "No customers yet" : "No customers match"}
+            title={customers.length === 0 ? t("No customers yet") : t("No customers match")}
             sub={customers.length === 0
-              ? "Customers appear here once they place an order or create an account."
-              : "Nothing matches these filters. Try clearing them."}
-            action={hasFilters ? <button type="button" className="zc-btn" onClick={clearFilters}>Clear filters</button> : null}
+              ? t("Customers appear here once they place an order or create an account.")
+              : t("Nothing matches these filters. Try clearing them.")}
+            action={hasFilters ? <button type="button" className="zc-btn" onClick={clearFilters}>{t("Clear filters")}</button> : null}
           />
         ) : (
           <>
@@ -378,13 +379,13 @@ export default function UsersPage() {
               <table className="zc-ledger" style={{ minWidth: 760 }}>
                 <thead>
                   <tr>
-                    <th>Customer</th>
-                    <th style={{ width: 140 }}>Phone</th>
-                    <th className="num" style={{ width: 90 }}>Orders</th>
-                    <th className="num" style={{ width: 110 }}>Lifetime</th>
-                    <th className="num" style={{ width: 100 }}>Average</th>
-                    <th style={{ width: 120 }}>Last order</th>
-                    <th style={{ width: 100 }}>Type</th>
+                    <th>{t("Customer")}</th>
+                    <th style={{ width: 140 }}>{t("Phone")}</th>
+                    <th className="num" style={{ width: 90 }}>{t("Orders")}</th>
+                    <th className="num" style={{ width: 110 }}>{t("Lifetime")}</th>
+                    <th className="num" style={{ width: 100 }}>{t("Average")}</th>
+                    <th style={{ width: 120 }}>{t("Last order")}</th>
+                    <th style={{ width: 100 }}>{t("Type")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -397,15 +398,15 @@ export default function UsersPage() {
                         </div>
                       </td>
                       <td style={{ color: "var(--text-2)", fontSize: 11.5 }}>{c.phone ? `+91 ${c.phone}` : "—"}</td>
-                      <td className="num" style={{ fontWeight: 600 }}>{c.orderCount}</td>
+                      <td className="num" style={{ fontWeight: 600 }}>{fmtNum(c.orderCount)}</td>
                       <td className="money">₹{fmt(c.lifetime)}</td>
                       <td className="num" style={{ color: "var(--text-2)" }}>₹{fmt(c.average)}</td>
                       <td className="usr-idc">
                         {c.lastOrderAt
-                          ? new Date(c.lastOrderAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })
+                          ? fmtDate(c.lastOrderAt, { day: "2-digit", month: "short" })
                           : "—"}
                       </td>
-                      <td><span className={`zc-tag ${c.registered ? "live" : "done"} sq`}>{c.registered ? "Registered" : "Guest"}</span></td>
+                      <td><span className={`zc-tag ${c.registered ? "live" : "done"} sq`}>{c.registered ? t("Registered") : t("Guest")}</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -423,10 +424,10 @@ export default function UsersPage() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-1)" }}>{c.name}</div>
                       <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 1 }}>
-                        {c.orderCount} order{c.orderCount === 1 ? "" : "s"} · ₹{fmt(c.lifetime)}
+                        {tn(c.orderCount, "{n} order", "{n} orders")} · ₹{fmt(c.lifetime)}
                       </div>
                     </div>
-                    <span className={`zc-tag ${c.registered ? "live" : "done"} sq`}>{c.registered ? "Registered" : "Guest"}</span>
+                    <span className={`zc-tag ${c.registered ? "live" : "done"} sq`}>{c.registered ? t("Registered") : t("Guest")}</span>
                   </div>
                 </div>
               ))}
@@ -435,16 +436,16 @@ export default function UsersPage() {
             {totalPages > 1 && (
               <div className="zc-tfoot" style={{ padding: "14px 18px 6px" }}>
                 <span>
-                  Showing {(safePage - 1) * PER_PAGE + 1}–{Math.min(safePage * PER_PAGE, filtered.length)} of {filtered.length}
+                  {t("Showing {from}–{to} of {total}", { from: (safePage - 1) * PER_PAGE + 1, to: Math.min(safePage * PER_PAGE, filtered.length), total: filtered.length })}
                 </span>
                 <div className="zc-pager">
-                  <button type="button" disabled={safePage === 1} onClick={() => setPage((p) => Math.max(1, p - 1))} aria-label="Previous page">‹</button>
+                  <button type="button" disabled={safePage === 1} onClick={() => setPage((p) => Math.max(1, p - 1))} aria-label={t("Previous page")}>‹</button>
                   {pageList.map((p, i) =>
                     p === "…"
                       ? <span key={`g${i}`} className="gap">…</span>
-                      : <button type="button" key={p} className={safePage === p ? "on" : ""} onClick={() => setPage(p)}>{p}</button>,
+                      : <button type="button" key={p} className={safePage === p ? "on" : ""} onClick={() => setPage(p)}>{fmtNum(p)}</button>,
                   )}
-                  <button type="button" disabled={safePage === totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} aria-label="Next page">›</button>
+                  <button type="button" disabled={safePage === totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} aria-label={t("Next page")}>›</button>
                 </div>
               </div>
             )}

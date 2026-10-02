@@ -45,7 +45,7 @@ export const createCategory = async (req, res) => {
     // "categoryName"/"category" accepted for older admin builds.
     const name = req.body.name ?? req.body.categoryName ?? req.body.category;
     const image = req.file ? await uploadCategoryImage(req.file) : (req.body.image || "");
-    const cat = await createCategorySvc({ models: req.models, name, image });
+    const cat = await createCategorySvc({ models: req.models, name, nameBn: req.body.nameBn, image });
     emitMenuUpdated(req.tenantKey);
     res.status(201).json(cat);
   } catch (err) { fail(res, err); }
@@ -59,7 +59,7 @@ export const updateCategory = async (req, res) => {
     if (req.file) image = await uploadCategoryImage(req.file);
     else if (req.body.removeImage === "true" || req.body.removeImage === true) image = "";
     const result = await updateCategorySvc({
-      models: req.models, db: req.db, id: req.params.id, name: req.body.name, image,
+      models: req.models, db: req.db, id: req.params.id, name: req.body.name, nameBn: req.body.nameBn, image,
     });
     emitMenuUpdated(req.tenantKey);
     res.json(result);

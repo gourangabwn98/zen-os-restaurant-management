@@ -4,6 +4,7 @@ import { MANUAL_PAYMENT_STATUSES, needsPaidFirst, PAID_FIRST_HINT } from "./paym
 import { PINK, STATUS_STYLE } from "./constants";
 import Badge from "./Badge";
 import toast from "react-hot-toast";
+import { t, N_, fmtTime, fmtNum, localName } from "../../../i18n/core.js";
 import {
   updateOrderStatus, confirmOrder, rejectOrder, updateOrderPayment,
 } from "../../../services/adminService";
@@ -15,7 +16,7 @@ import {
 const NEXT_STATUS_OPTIONS = ["PREPARING", "READY", "DELIVERED", "COMPLETED", "CANCELLED"];
 
 const PAYMENT_OPTIONS = MANUAL_PAYMENT_STATUSES; // FAILED is never set by hand
-const PAYMENT_LABEL = { PENDING_VERIFICATION: "Pending", PAID: "Paid", FAILED: "Failed" };
+const PAYMENT_LABEL = { PENDING_VERIFICATION: N_("Pending"), PAID: N_("Paid"), FAILED: N_("Failed") };
 
 export default function OrdersTable({ rows: initialRows, hideAction = false }) {
   const [rows, setRows] = useState(initialRows);
@@ -31,35 +32,35 @@ export default function OrdersTable({ rows: initialRows, hideAction = false }) {
     try {
       const { data } = await confirmOrder(order._id);
       patchRow(order._id, { status: "CONFIRMED" });
-      toast.success(`Order ${order.orderId || ""} confirmed${data?.kotJob ? " · KOT sent" : ""}`);
+      toast.success(t(data?.kotJob ? "Order {id} confirmed · KOT sent" : "Order {id} confirmed", { id: order.orderId || "" }));
     } catch (err) {
-      toast.error(err.response?.data?.message || "Couldn't confirm order");
+      toast.error(err.response?.data?.message || t("Couldn't confirm order"));
     } finally { setBusyId(null); }
   };
 
   const handleReject = async (order) => {
-    if (!window.confirm(`Reject order ${order.orderId || ""}? This cancels it.`)) return;
+    if (!window.confirm(t("Reject order {id}? This cancels it.", { id: order.orderId || "" }))) return;
     setBusyId(order._id);
     try {
       await rejectOrder(order._id, "Rejected by admin");
       patchRow(order._id, { status: "CANCELLED" });
-      toast.success("Order rejected");
+      toast.success(t("Order rejected"));
     } catch (err) {
-      toast.error(err.response?.data?.message || "Couldn't reject order");
+      toast.error(err.response?.data?.message || t("Couldn't reject order"));
     } finally { setBusyId(null); }
   };
 
   const handleStatusChange = async (orderId, newStatus) => {
     if (!newStatus) return;
-    if (!window.confirm(`Change order status to "${newStatus}"?`)) return;
+    if (!window.confirm(t("Change order status to \"{status}\"?", { status: t(newStatus) }))) return;
     const originalRows = [...rows];
     patchRow(orderId, { status: newStatus });
     try {
       await updateOrderStatus(orderId, newStatus);
-      toast.success(`Order updated to ${newStatus}`);
+      toast.success(t("Order updated to {status}", { status: t(newStatus) }));
     } catch (err) {
       setRows(originalRows);
-      toast.error(err.response?.data?.message || "Failed to update status");
+      toast.error(err.response?.data?.message || t("Failed to update status"));
     }
   };
 
@@ -69,17 +70,17 @@ export default function OrdersTable({ rows: initialRows, hideAction = false }) {
     patchRow(orderId, { paymentStatus });
     try {
       await updateOrderPayment(orderId, { paymentStatus });
-      toast.success(`Payment marked ${PAYMENT_LABEL[paymentStatus]}`);
+      toast.success(t("Payment marked {status}", { status: t(PAYMENT_LABEL[paymentStatus]) }));
     } catch (err) {
       setRows(originalRows);
-      toast.error(err.response?.data?.message || "Failed to update payment");
+      toast.error(err.response?.data?.message || t("Failed to update payment"));
     }
   };
 
   if (!rows?.length) {
     return (
       <div style={{ padding: "40px 0", textAlign: "center", color: "#4b5563" }}>
-        No orders found
+        {t("No orders found")}
       </div>
     );
   }
@@ -90,14 +91,14 @@ export default function OrdersTable({ rows: initialRows, hideAction = false }) {
         <thead>
           <tr>
             {[
-              "Order ID", "Table No", "Customer", "Items", "Total", "Type",
-              "Status", "Payment", "Time", !hideAction && "Action",
+              N_("Order ID"), N_("Table No"), N_("Customer"), N_("Items"), N_("Total"), N_("Type"),
+              N_("Status"), N_("Payment"), N_("Time"), !hideAction && N_("Action"),
             ].filter(Boolean).map((h) => (
               <th key={h} style={{
                 textAlign: "left", padding: "10px 12px", fontSize: 11, color: "#6b7280",
                 borderBottom: "0.5px solid #eee", fontWeight: 500, whiteSpace: "nowrap",
               }}>
-                {h}
+                {t(h)}
               </th>
             ))}
           </tr>
@@ -111,23 +112,23 @@ export default function OrdersTable({ rows: initialRows, hideAction = false }) {
                 <td style={{ padding: "11px 12px", fontWeight: 500, color: PINK }}>
                   {o.orderId || o._id?.slice(-8)}
                   {o.source && (
-                    <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 400 }}>{o.source}</div>
+                    <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 400 }}>{t(o.source)}</div>
                   )}
                 </td>
                 <td style={{ padding: "11px 12px", color: "#d1cfe0" }}>
-                  {o.tableNo ? `Table ${o.tableNo}` : "—"}
+                  {o.tableNo ? t("Table {n}", { n: o.tableNo }) : "—"}
                 </td>
                 <td style={{ padding: "11px 12px" }}>
-                  <div>{o.user?.name || o.guestName || (o.isGuest ? "Guest" : "—")}</div>
+                  <div>{o.user?.name || o.guestName || (o.isGuest ? t("Guest") : "—")}</div>
                   <div style={{ fontSize: 11, color: "#374151" }}>
                     {o.user?.phone || o.guestPhone || "—"}
                   </div>
                 </td>
                 <td style={{ padding: "11px 12px", fontSize: 12, color: "#6b7280", maxWidth: 160 }}>
-                  {o.items?.map((i) => `${i.name} ×${i.qty}`).join(", ")}
+                  {o.items?.map((i) => `${localName(i)} ×${fmtNum(i.qty)}`).join(", ")}
                 </td>
-                <td style={{ padding: "11px 12px", fontWeight: 500 }}>₹{o.total}</td>
-                <td style={{ padding: "11px 12px", fontSize: 12 }}>{o.orderType}</td>
+                <td style={{ padding: "11px 12px", fontWeight: 500 }}>₹{fmtNum(o.total)}</td>
+                <td style={{ padding: "11px 12px", fontSize: 12 }}>{t(o.orderType)}</td>
                 <td style={{ padding: "11px 12px" }}>
                   <Badge label={o.status} />
                 </td>
@@ -141,22 +142,22 @@ export default function OrdersTable({ rows: initialRows, hideAction = false }) {
                       style={selectStyle}
                     >
                       {PAYMENT_OPTIONS.map((p) => (
-                        <option key={p} value={p}>{PAYMENT_LABEL[p]}</option>
+                        <option key={p} value={p}>{t(PAYMENT_LABEL[p])}</option>
                       ))}
                       {/* historic orders only — shown, never offered */}
-                      {o.paymentStatus === "FAILED" && <option value="FAILED" disabled>{PAYMENT_LABEL.FAILED}</option>}
+                      {o.paymentStatus === "FAILED" && <option value="FAILED" disabled>{t(PAYMENT_LABEL.FAILED)}</option>}
                     </select>
                   )}
                 </td>
                 <td style={{ padding: "11px 12px", fontSize: 12, color: "#374151" }}>
-                  {new Date(o.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  {fmtTime(o.createdAt)}
                 </td>
                 {!hideAction && (
                   <td style={{ padding: "11px 12px" }}>
                     {isPending ? (
                       <div style={{ display: "flex", gap: 6 }}>
                         <button disabled={isBusy} onClick={() => handleConfirm(o)} style={confirmBtnStyle}>
-                          {isBusy ? "…" : "✓ Place"}
+                          {isBusy ? "…" : `✓ ${t("Place")}`}
                         </button>
                         <button disabled={isBusy} onClick={() => handleReject(o)} style={rejectBtnStyle}>
                           ✕
@@ -168,10 +169,10 @@ export default function OrdersTable({ rows: initialRows, hideAction = false }) {
                         value=""
                         style={selectStyle}
                       >
-                        <option value="" disabled>Update</option>
+                        <option value="" disabled>{t("Update")}</option>
                         {NEXT_STATUS_OPTIONS.map((s) => (
-                          <option key={s} value={s} disabled={needsPaidFirst(o, s)} title={needsPaidFirst(o, s) ? PAID_FIRST_HINT : undefined}>
-                            {s}{needsPaidFirst(o, s) ? " (mark Paid first)" : ""}
+                          <option key={s} value={s} disabled={needsPaidFirst(o, s)} title={needsPaidFirst(o, s) ? t(PAID_FIRST_HINT) : undefined}>
+                            {t(s)}{needsPaidFirst(o, s) ? ` (${t("mark Paid first")})` : ""}
                           </option>
                         ))}
                       </select>

@@ -11,6 +11,8 @@ import {
   signInWithPhoneNumber,
 } from "firebase/auth";
 // import logo from "../assets/charu_logo.webp";
+import LanguageToggle from "../components/LanguageToggle.jsx";
+import { t, fmtNum } from "../i18n/core.js";
 import logo from "../assets/charu_logo.webp";
 
 const PINK = PRIMARY;
@@ -30,7 +32,7 @@ export default function LoginPage() {
   // ── Countdown timer ────────────────────────────────────────────────────────
   useEffect(() => {
     if (timer <= 0) return;
-    const id = setInterval(() => setTimer(t => t - 1), 1000);
+    const id = setInterval(() => setTimer(s => s - 1), 1000);
     return () => clearInterval(id);
   }, [timer]);
 
@@ -47,7 +49,7 @@ export default function LoginPage() {
 
   // ── Step 1: Send OTP via Firebase ─────────────────────────────────────────
   const handleSend = async () => {
-    if (phone.length !== 10) return toast.error("Enter valid 10-digit phone");
+    if (phone.length !== 10) return toast.error(t("Enter valid 10-digit phone"));
     setLoading(true);
     try {
       setupRecaptcha();
@@ -58,7 +60,7 @@ export default function LoginPage() {
       confirmRef.current = result;
       setStep("otp");
       setTimer(120); // 2 min countdown
-      toast.success(`OTP sent to +91 ${phone}`);
+      toast.success(t("OTP sent to +91 {phone}", { phone }));
     } catch (err) {
       console.error(err);
       // Reset recaptcha on error so user can retry
@@ -66,7 +68,7 @@ export default function LoginPage() {
         window.recaptchaVerifier.clear();
         window.recaptchaVerifier = null;
       }
-      toast.error(err.message || "Failed to send OTP");
+      toast.error(err.message || t("Failed to send OTP"));
     } finally {
       setLoading(false);
     }
@@ -74,8 +76,8 @@ export default function LoginPage() {
 
   // ── Step 2: Verify OTP via Firebase then login via our backend ────────────
   const handleVerify = async () => {
-    if (otp.length !== 6) return toast.error("Enter 6-digit OTP");
-    if (!confirmRef.current) return toast.error("Please resend OTP");
+    if (otp.length !== 6) return toast.error(t("Enter 6-digit OTP"));
+    if (!confirmRef.current) return toast.error(t("Please resend OTP"));
     setLoading(true);
     try {
       // Verify with Firebase
@@ -85,17 +87,17 @@ export default function LoginPage() {
       const { data } = await api.post("/auth/admin/firebase-login", { phone });
       login(data);
       nav("/admin");
-      toast.success(`Welcome, ${data.name || "Admin"}!`);
+      toast.success(t("Welcome, {name}!", { name: data.name || t("Admin") }));
     } catch (err) {
       console.error(err);
       if (err.code === "auth/invalid-verification-code") {
-        toast.error("Wrong OTP. Try again.");
+        toast.error(t("Wrong OTP. Try again."));
       } else if (err.code === "auth/code-expired") {
-        toast.error("OTP expired. Please resend.");
+        toast.error(t("OTP expired. Please resend."));
         setStep("phone");
         setOtp("");
       } else {
-        toast.error(err.response?.data?.message || "Login failed");
+        toast.error(err.response?.data?.message || t("Login failed"));
       }
     } finally {
       setLoading(false);
@@ -124,7 +126,7 @@ export default function LoginPage() {
       background: "linear-gradient(135deg, #0f0d18 0%, #1a1625 50%, #12101a 100%)",
       backgroundImage: "radial-gradient(ellipse at 30% 30%, rgba(124,58,237,0.2) 0%, transparent 60%)",
       display: "flex", alignItems: "center", justifyContent: "center",
-      fontFamily: "'DM Sans', sans-serif",
+      fontFamily: "'DM Sans', 'Noto Sans Bengali', sans-serif",
     }}>
 
       {/* Invisible reCAPTCHA container — required by Firebase */}
@@ -147,7 +149,7 @@ export default function LoginPage() {
 }}>
   <img
     src={logo}
-    alt="Logo"
+    alt={t("Logo")}
     style={{ width: "100%", height: "100%", objectFit: "cover" }}
   />
 </div>
@@ -156,18 +158,21 @@ export default function LoginPage() {
           Zen OS
         </div>
         <div style={{ color: "#4b5563", fontSize: 11, letterSpacing: 3, marginBottom: 32 }}>
-          ADMIN PANEL
+          {t("ADMIN PANEL")}
         </div>
 
         {/* ── Step: Phone ── */}
         {step === "phone" && (
           <>
+            {/* Language first — switching remounts the app, so it's offered
+                before an OTP is in flight, not during. */}
+            <div style={{ marginBottom: 20 }}><LanguageToggle /></div>
             <div style={{ textAlign: "left", marginBottom: 20 }}>
               <label style={{
                 fontSize: 12, color: "#9ca3af", display: "block",
                 marginBottom: 8, fontWeight: 600, letterSpacing: 0.5,
               }}>
-                Admin Phone Number
+                {t("Admin Phone Number")}
               </label>
               <div style={{ display: "flex", gap: 8 }}>
                 <div style={{
@@ -200,11 +205,11 @@ export default function LoginPage() {
                 />
               </div>
               <div style={{ fontSize: 11, color: "#4b5563", marginTop: 8 }}>
-                Enter the phone number registered with your restaurant
+                {t("Enter the phone number registered with your restaurant")}
               </div>
             </div>
             <Btn onClick={handleSend} loading={loading} pink={PINK}>
-              Send OTP →
+              {t("Send OTP")} →
             </Btn>
           </>
         )}
@@ -218,10 +223,10 @@ export default function LoginPage() {
               borderRadius: 10, padding: "10px 14px", marginBottom: 20,
               fontSize: 13, color: "#9ca3af", lineHeight: 1.5,
             }}>
-              OTP sent to{" "}
+              {t("OTP sent to")}{" "}
               <span style={{ color: "#c4b5fd", fontWeight: 700 }}>+91 {phone}</span>
               <br/>
-              <span style={{ fontSize: 11 }}>Sent via Firebase · Check SMS</span>
+              <span style={{ fontSize: 11 }}>{t("Sent via Firebase · Check SMS")}</span>
             </div>
 
             <div style={{ marginBottom: 20 }}>
@@ -229,7 +234,7 @@ export default function LoginPage() {
                 fontSize: 12, color: "#9ca3af", display: "block",
                 marginBottom: 10, fontWeight: 600, textAlign: "left", letterSpacing: 0.5,
               }}>
-                Enter 6-digit OTP
+                {t("Enter 6-digit OTP")}
               </label>
               <input
                 value={otp}
@@ -259,7 +264,7 @@ export default function LoginPage() {
             </div>
 
             <Btn id="verify-btn" onClick={handleVerify} loading={loading} pink={PINK}>
-              {loading ? "Verifying…" : "Verify & Login ✓"}
+              {loading ? t("Verifying…") : `${t("Verify & Login")} ✓`}
             </Btn>
 
             {/* Timer + resend + back */}
@@ -268,7 +273,7 @@ export default function LoginPage() {
                 background: "none", border: "none", color: "#6b7280",
                 fontSize: 13, cursor: "pointer", fontWeight: 500,
               }}>
-                ← Change number
+                ← {t("Change number")}
               </button>
               <button onClick={handleResend} disabled={timer > 0 || loading} style={{
                 background: "none", border: "none",
@@ -276,8 +281,8 @@ export default function LoginPage() {
                 fontSize: 13, cursor: timer > 0 ? "default" : "pointer", fontWeight: 600,
               }}>
                 {timer > 0
-                  ? `Resend in ${Math.floor(timer/60)}:${String(timer%60).padStart(2,"0")}`
-                  : "Resend OTP"}
+                  ? t("Resend in {time}", { time: `${fmtNum(Math.floor(timer/60))}:${fmtNum(timer%60, { minimumIntegerDigits: 2 })}` })
+                  : t("Resend OTP")}
               </button>
             </div>
           </>
@@ -302,6 +307,6 @@ const Btn = ({ children, onClick, loading, pink, id }) => (
     boxShadow: loading ? "none" : "0 4px 20px rgba(124,58,237,0.4)",
     transition: "all .2s",
   }}>
-    {loading ? "Please wait…" : children}
+    {loading ? t("Please wait…") : children}
   </button>
 );

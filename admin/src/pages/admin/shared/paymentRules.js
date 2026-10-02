@@ -14,4 +14,7 @@ export const MANUAL_PAYMENT_STATUSES = ["PENDING_VERIFICATION", "PAID"];
 export const needsPaidFirst = (order, toStatus) =>
   toStatus === "COMPLETED" && order?.paymentStatus !== "PAID";
 
-export const PAID_FIRST_HINT = "Mark the payment Paid before completing this order";
+import { N_ } from "../../../i18n/core.js";
+
+// English key — render with t(PAID_FIRST_HINT).
+export const PAID_FIRST_HINT = N_("Mark the payment Paid before completing this order");

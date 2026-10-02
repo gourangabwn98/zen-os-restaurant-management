@@ -21,6 +21,7 @@ import Loader from "./shared/Loader.jsx";
 import EmptyState from "./shared/EmptyState.jsx";
 import ErrorState from "./shared/ErrorState.jsx";
 import { statusKind } from "./shared/statusKind.js";
+import { t, tn, N_, fmtNum, fmtTime, fmtDateTime, localName } from "../../i18n/core.js";
 
 // ── canonical vocabulary (restaurant-server/utils/orderStateMachine.js) ──────
 // FAILED is never set by hand (restaurant-server utils/orderStateMachine.js);
@@ -34,7 +35,7 @@ const PER_PAGE = 15;
 // inputs already use, so they compose with one filtering path instead of a
 // second parallel one. Rolling windows ending today, matching the Today/
 // Week/Month/Year convention already used on Insights (AnalyticsPage.jsx).
-const RANGE_PRESETS = ["All", "Today", "Week", "Month", "Year"];
+const RANGE_PRESETS = [N_("All"), N_("Today"), N_("Week"), N_("Month"), N_("Year")];
 const RANGE_DAYS = { Today: 1, Week: 7, Month: 30, Year: 365 };
 const localISODate = (d) => {
   const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
@@ -47,11 +48,11 @@ const presetDates = (key) => {
   return { start: localISODate(start), end: localISODate(end) };
 };
 
-const fmt = (n) => Math.round(n || 0).toLocaleString("en-IN");
+const fmt = (n) => fmtNum(Math.round(n || 0));
 const formatPayment = (s) =>
-  ({ PENDING_VERIFICATION: "Pending invoice", PAID: "Paid", FAILED: "Failed" }[s] || s || "—");
+  t({ PENDING_VERIFICATION: "Pending invoice", PAID: "Paid", FAILED: "Failed" }[s] || s || "—");
 const formatType = (s) =>
-  ({ DINE_IN: "Dine-in", TAKEAWAY: "Takeaway", ONLINE: "Online", All: "All types" }[s] || s || "—");
+  t({ DINE_IN: "Dine-in", TAKEAWAY: "Takeaway", ONLINE: "Online", All: "All types" }[s] || s || "—");
 
 const AVATAR_GRADS = [
   "linear-gradient(140deg,#8B5CF6,#6D28D9)",
@@ -63,7 +64,7 @@ const AVATAR_GRADS = [
 ];
 const avc = (n) => AVATAR_GRADS[(n?.charCodeAt(0) || 0) % AVATAR_GRADS.length];
 const ini = (n) => (!n || n === "Guest" ? "G" : n.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2));
-const custName = (o) => o.guestName || o.user?.name || "Guest";
+const custName = (o) => o.guestName || o.user?.name || t("Guest");
 const custPhone = (o) => o.guestPhone || o.user?.phone || null;
 
 // ── page-scoped styles (tokens only — light / dark safe) ─────────────────────
@@ -142,9 +143,9 @@ function CustomerDuesSummary({ invoices, onPaymentChange }) {
     try {
       await Promise.all(targets.map((i) => onPaymentChange(i._id, { paymentStatus: "PAID" })));
       selectAll(c, false);
-      toast.success(`${targets.length} invoice${targets.length > 1 ? "s" : ""} marked paid`);
+      toast.success(tn(targets.length, "{n} invoice marked paid", "{n} invoices marked paid"));
     } catch {
-      toast.error("Some invoices could not be updated");
+      toast.error(t("Some invoices could not be updated"));
     } finally {
       setBusyName(null);
     }
@@ -153,7 +154,7 @@ function CustomerDuesSummary({ invoices, onPaymentChange }) {
   return (
     <div style={{ marginBottom: 18 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: "var(--accent-ink)", letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 12 }}>
-        Customer-wise pending dues
+        {t("Customer-wise pending dues")}
       </div>
       <div className="inv-dues">
         {customers.map((c) => {
@@ -169,7 +170,7 @@ function CustomerDuesSummary({ invoices, onPaymentChange }) {
                 </div>
                 <div style={{ textAlign: "right", flex: "none" }}>
                   <div className="tnum" style={{ fontSize: 18, fontWeight: 700, color: "var(--stop-ink)" }}>₹{fmt(c.pendingTotal)}</div>
-                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 2 }}>{c.pending.length} pending</div>
+                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 2 }}>{t("{n} pending", { n: c.pending.length })}</div>
                 </div>
               </div>
 
@@ -197,10 +198,10 @@ function CustomerDuesSummary({ invoices, onPaymentChange }) {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                           <span className="tnum" style={{ fontSize: 12, fontWeight: 600, color: "var(--text-1)" }}>{inv.orderId}</span>
-                          <span className="tnum" style={{ fontSize: 12, fontWeight: 700, color: on ? "var(--accent-ink)" : "var(--text-1)" }}>₹{Math.round(inv.total)}</span>
+                          <span className="tnum" style={{ fontSize: 12, fontWeight: 700, color: on ? "var(--accent-ink)" : "var(--text-1)" }}>₹{fmt(inv.total)}</span>
                         </div>
                         <div style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {inv.items?.map((i) => `${i.name} ×${i.qty}`).join(", ") || "—"}
+                          {inv.items?.map((i) => `${localName(i)} ×${fmtNum(i.qty)}`).join(", ") || "—"}
                         </div>
                       </div>
                     </div>
@@ -210,9 +211,9 @@ function CustomerDuesSummary({ invoices, onPaymentChange }) {
 
               {sel.length > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, marginBottom: 10 }}>
-                  <button type="button" onClick={() => selectAll(c, false)} className="zc-btn ghost sm">Clear</button>
+                  <button type="button" onClick={() => selectAll(c, false)} className="zc-btn ghost sm">{t("Clear")}</button>
                   <span style={{ color: "var(--text-2)" }}>
-                    {sel.length} selected · <b className="tnum" style={{ color: "var(--accent-ink)" }}>₹{fmt(selTotal)}</b>
+                    {t("{n} selected", { n: sel.length })} · <b className="tnum" style={{ color: "var(--accent-ink)" }}>₹{fmt(selTotal)}</b>
                   </span>
                 </div>
               )}
@@ -224,7 +225,7 @@ function CustomerDuesSummary({ invoices, onPaymentChange }) {
                   onClick={() => payChosen(c)}
                   className="zc-btn pri" style={{ flex: 1, justifyContent: "center" }}
                 >
-                  {busy ? "Marking paid…" : `Mark paid · ₹${fmt(selTotal)}`}
+                  {busy ? t("Marking paid…") : `${t("Mark paid")} · ₹${fmt(selTotal)}`}
                 </button>
                 <button
                   type="button"
@@ -232,7 +233,7 @@ function CustomerDuesSummary({ invoices, onPaymentChange }) {
                   onClick={() => payChosen(c, c.pending)}
                   className="zc-btn sm" style={{ justifyContent: "center", whiteSpace: "nowrap" }}
                 >
-                  All · ₹{fmt(c.pendingTotal)}
+                  {t("All")} · ₹{fmt(c.pendingTotal)}
                 </button>
               </div>
             </div>
@@ -258,19 +259,19 @@ function InvoiceDetailModal({ inv, busy, onClose, onPaymentChange, onPrint }) {
   const phone = custPhone(inv);
   const subtotal = inv.subtotal ?? inv.items?.reduce((s, i) => s + i.price * i.qty, 0) ?? 0;
   const placedAt = inv.createdAt
-    ? new Date(inv.createdAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+    ? fmtDateTime(inv.createdAt)
     : "—";
   const summary = [
-    ["Subtotal", subtotal],
-    ...(inv.serviceCharge > 0 ? [["Service charge", inv.serviceCharge]] : []),
-    ...(inv.tax > 0 ? [["GST", inv.tax]] : []),
-    ...(inv.discount > 0 ? [["Discount", -inv.discount]] : []),
+    [t("Subtotal"), subtotal],
+    ...(inv.serviceCharge > 0 ? [[t("Service charge"), inv.serviceCharge]] : []),
+    ...(inv.tax > 0 ? [[t("GST"), inv.tax]] : []),
+    ...(inv.discount > 0 ? [[t("Discount"), -inv.discount]] : []),
   ];
   const info = [
-    ["Customer", name],
-    ["Phone", phone ? `+91 ${phone}` : "—"],
-    ["Type", formatType(inv.orderType)],
-    ["Table", inv.tableNo ? `T${inv.tableNo}` : "—"],
+    [t("Customer"), name],
+    [t("Phone"), phone ? `+91 ${phone}` : "—"],
+    [t("Type"), formatType(inv.orderType)],
+    [t("Table"), inv.tableNo ? t("T{n}", { n: inv.tableNo }) : "—"],
   ];
 
   return (
@@ -279,10 +280,10 @@ function InvoiceDetailModal({ inv, busy, onClose, onPaymentChange, onPrint }) {
         <div className="mh">
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="t tnum">{inv.orderId}</div>
-            <div className="s">placed {placedAt}</div>
+            <div className="s">{t("placed {when}", { when: placedAt })}</div>
           </div>
           <span className={`zc-tag ${statusKind(inv.paymentStatus)}`}><i />{formatPayment(inv.paymentStatus)}</span>
-          <button type="button" className="zc-x" onClick={onClose} aria-label="Close">✕</button>
+          <button type="button" className="zc-x" onClick={onClose} aria-label={t("Close")}>✕</button>
         </div>
 
         <div className="mb">
@@ -295,30 +296,30 @@ function InvoiceDetailModal({ inv, busy, onClose, onPaymentChange, onPrint }) {
             ))}
           </div>
 
-          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>Receipt</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>{t("Receipt")}</div>
           <div style={{ borderRadius: 13, border: "1px solid var(--edge)", overflow: "hidden", marginBottom: 20 }}>
             {inv.items?.map((item, i) => (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", borderBottom: "1px solid var(--edge)", fontSize: 12.5 }}>
-                <span className="zc-q">{item.qty}</span>
-                <span style={{ flex: 1, color: "var(--text-1)" }}>{item.name}</span>
-                <span className="tnum" style={{ fontWeight: 600, color: "var(--text-1)" }}>₹{item.price * item.qty}</span>
+                <span className="zc-q">{fmtNum(item.qty)}</span>
+                <span style={{ flex: 1, color: "var(--text-1)" }}>{localName(item)}</span>
+                <span className="tnum" style={{ fontWeight: 600, color: "var(--text-1)" }}>₹{fmtNum(item.price * item.qty)}</span>
               </div>
             ))}
             <div style={{ padding: "12px 14px", display: "grid", gap: 6, fontSize: 12.5, background: "var(--card-2)" }}>
               {summary.map(([k, v]) => (
                 <div key={k} style={{ display: "flex", justifyContent: "space-between" }}>
                   <span style={{ color: "var(--text-2)" }}>{k}</span>
-                  <span className="tnum" style={{ color: "var(--text-1)" }}>{v < 0 ? `−₹${Math.abs(v)}` : `₹${v}`}</span>
+                  <span className="tnum" style={{ color: "var(--text-1)" }}>{v < 0 ? `−₹${fmtNum(Math.abs(v))}` : `₹${fmtNum(v)}`}</span>
                 </div>
               ))}
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 700, paddingTop: 8, borderTop: "1px solid var(--edge)" }}>
-                <span style={{ color: "var(--text-1)" }}>Total</span>
-                <span className="tnum zc-grad-text">₹{Math.round(inv.total)}</span>
+                <span style={{ color: "var(--text-1)" }}>{t("Total")}</span>
+                <span className="tnum zc-grad-text">₹{fmt(inv.total)}</span>
               </div>
             </div>
           </div>
 
-          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>Payment status</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>{t("Payment status")}</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
             {PAYMENT_STATUSES.map((s) => {
               const active = inv.paymentStatus === s;
@@ -339,7 +340,7 @@ function InvoiceDetailModal({ inv, busy, onClose, onPaymentChange, onPrint }) {
             })}
           </div>
 
-          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>Payment method</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>{t("Payment method")}</div>
           <div style={{ display: "flex", gap: 8 }}>
             {["Cash", "Online"].map((m) => {
               const active = (inv.paymentMethod || "Cash") === m;
@@ -355,7 +356,7 @@ function InvoiceDetailModal({ inv, busy, onClose, onPaymentChange, onPrint }) {
                     color: active ? "var(--accent-ink)" : "var(--text-2)",
                   }}
                 >
-                  {m === "Cash" ? "💵 Cash" : "📱 Online"}
+                  {m === "Cash" ? `💵 ${t("Cash")}` : `📱 ${t("Online")}`}
                 </button>
               );
             })}
@@ -363,14 +364,14 @@ function InvoiceDetailModal({ inv, busy, onClose, onPaymentChange, onPrint }) {
         </div>
 
         <div className="mf" style={{ flexWrap: "wrap" }}>
-          <button type="button" className="zc-btn" onClick={() => onPrint(inv)}>🖨️ Print bill</button>
+          <button type="button" className="zc-btn" onClick={() => onPrint(inv)}>🖨️ {t("Print bill")}</button>
           {inv.paymentStatus !== "PAID" && (
             <button type="button" className="zc-btn good" disabled={busy}
               onClick={() => onPaymentChange(inv._id, { paymentStatus: "PAID" })}>
-              {busy ? "Updating…" : "✓ Mark as paid"}
+              {busy ? t("Updating…") : `✓ ${t("Mark as paid")}`}
             </button>
           )}
-          <button type="button" className="zc-btn pri" onClick={onClose}>Done</button>
+          <button type="button" className="zc-btn pri" onClick={onClose}>{t("Done")}</button>
         </div>
       </div>
     </div>
@@ -420,9 +421,9 @@ export default function InvoicesPage() {
     try {
       await updateOrderPayment(orderId, data);
       setOrders((prev) => prev.map((o) => (o._id === orderId ? { ...o, ...data } : o)));
-      toast.success("Payment updated ✓");
+      toast.success(t("Payment updated ✓"));
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Update failed");
+      toast.error(e?.response?.data?.message || t("Update failed"));
       throw e;
     } finally {
       setBusyId(null);
@@ -432,9 +433,9 @@ export default function InvoicesPage() {
   const handlePrint = async (o) => {
     try {
       await printOrderBill(o._id);
-      toast.success("Bill sent to printer ✓");
+      toast.success(t("Bill sent to printer ✓"));
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Printer not running");
+      toast.error(e?.response?.data?.message || t("Printer not running"));
     }
   };
 
@@ -489,10 +490,10 @@ export default function InvoicesPage() {
   const openInvoice = openId ? filtered.find((o) => o._id === openId) || invoiceOrders.find((o) => o._id === openId) || null : null;
 
   const STATS = [
-    { label: "Collected", value: `₹${fmt(totalCollected)}`, grad: true, sub: `${paid.length} paid invoice${paid.length === 1 ? "" : "s"}` },
-    { label: "Pending invoices", value: fmt(pendingVerif.length), color: "var(--stop-ink)", sub: `₹${fmt(pendingTotal)} unconfirmed` },
-    { label: "Failed", value: fmt(failed.length), color: "var(--stop-ink)", sub: failed.length ? `₹${fmt(failedTotal)} · retry or void` : "None" },
-    { label: "Total invoices", value: fmt(invoiceOrders.length), color: "var(--text-2)", sub: "Completed or paid" },
+    { label: t("Collected"), value: `₹${fmt(totalCollected)}`, grad: true, sub: tn(paid.length, "{n} paid invoice", "{n} paid invoices") },
+    { label: t("Pending invoices"), value: fmt(pendingVerif.length), color: "var(--stop-ink)", sub: t("₹{amount} unconfirmed", { amount: fmt(pendingTotal) }) },
+    { label: t("Failed"), value: fmt(failed.length), color: "var(--stop-ink)", sub: failed.length ? t("₹{amount} · retry or void", { amount: fmt(failedTotal) }) : t("None") },
+    { label: t("Total invoices"), value: fmt(invoiceOrders.length), color: "var(--text-2)", sub: t("Completed or paid") },
   ];
 
   const dateInputStyle = (v) => ({ width: "auto", color: v ? "var(--text-1)" : "var(--text-3)" });
@@ -500,8 +501,8 @@ export default function InvoicesPage() {
   return (
     <div>
       <PageHeader
-        title="Invoices"
-        sub={`${invoiceOrders.length} invoice${invoiceOrders.length === 1 ? "" : "s"} · ₹${fmt(totalCollected)} collected`}
+        title={t("Invoices")}
+        sub={`${tn(invoiceOrders.length, "{n} invoice", "{n} invoices")} · ${t("₹{amount} collected", { amount: fmt(totalCollected) })}`}
       />
 
       {/* stat row */}
@@ -515,56 +516,56 @@ export default function InvoicesPage() {
           className="zc-input"
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-          placeholder="Search by order ID, customer or phone"
-          aria-label="Search invoices"
+          placeholder={t("Search by order ID, customer or phone")}
+          aria-label={t("Search invoices")}
           style={{ flex: 1, minWidth: 240 }}
         />
-        <div className="zc-seg" role="tablist" aria-label="Payment status filter">
+        <div className="zc-seg" role="tablist" aria-label={t("Payment status filter")}>
           {PAY_SEG.map((s) => (
             <button
               key={s} type="button" role="tab" aria-selected={payF === s}
               className={payF === s ? "on" : ""}
               onClick={() => { setPayF(s); setPage(1); }}
-              title={s === "All" ? "All payments" : formatPayment(s)}
+              title={s === "All" ? t("All payments") : formatPayment(s)}
             >
-              {{ All: "All", PENDING_VERIFICATION: "Pending", PAID: "Paid", FAILED: "Failed" }[s]}
+              {t({ All: "All", PENDING_VERIFICATION: "Pending", PAID: "Paid", FAILED: "Failed" }[s])}
             </button>
           ))}
         </div>
         <select
-          className="zc-select" value={typeF} aria-label="Order type filter"
+          className="zc-select" value={typeF} aria-label={t("Order type filter")}
           onChange={(e) => { setTypeF(e.target.value); setPage(1); }}
           style={{ width: "auto" }}
         >
-          {TYPE_OPTIONS.map((t) => <option key={t} value={t}>{formatType(t)}</option>)}
+          {TYPE_OPTIONS.map((ty) => <option key={ty} value={ty}>{formatType(ty)}</option>)}
         </select>
-        <div className="zc-seg" role="tablist" aria-label="Date range preset">
+        <div className="zc-seg" role="tablist" aria-label={t("Date range preset")}>
           {RANGE_PRESETS.map((r) => (
             <button
               key={r} type="button" role="tab" aria-selected={quickRange === r}
               className={quickRange === r ? "on" : ""}
               onClick={() => applyQuickRange(r)}
             >
-              {r}
+              {t(r)}
             </button>
           ))}
         </div>
-        <input type="date" className="zc-input" value={startDate} aria-label="From date"
+        <input type="date" className="zc-input" value={startDate} aria-label={t("From date")}
           onChange={(e) => editStartDate(e.target.value)} style={dateInputStyle(startDate)} />
-        <span style={{ fontSize: 12, color: "var(--text-3)" }}>to</span>
-        <input type="date" className="zc-input" value={endDate} min={startDate || undefined} aria-label="To date"
+        <span style={{ fontSize: 12, color: "var(--text-3)" }}>{t("to")}</span>
+        <input type="date" className="zc-input" value={endDate} min={startDate || undefined} aria-label={t("To date")}
           onChange={(e) => editEndDate(e.target.value)} style={dateInputStyle(endDate)} />
         <div style={{ flex: 1 }} />
         {hasFilters ? (
           <>
             <span style={{ fontSize: 12, color: "var(--text-2)" }}>
-              <b style={{ color: "var(--accent-ink)" }}>{filtered.length}</b> of {invoiceOrders.length}
+              <b style={{ color: "var(--accent-ink)" }}>{fmtNum(filtered.length)}</b> {t("of {n}", { n: invoiceOrders.length })}
             </span>
-            <button type="button" className="zc-btn sm" onClick={clearFilters}>Clear ✕</button>
+            <button type="button" className="zc-btn sm" onClick={clearFilters}>{t("Clear")} ✕</button>
           </>
         ) : (
           <span style={{ fontSize: 12, color: "var(--text-3)" }}>
-            {pendingVerif.length} pending invoice{pendingVerif.length === 1 ? "" : "s"}
+            {tn(pendingVerif.length, "{n} pending invoice", "{n} pending invoices")}
           </span>
         )}
       </div>
@@ -577,15 +578,15 @@ export default function InvoicesPage() {
       {/* list */}
       <div className="zc-card">
         <div className="zc-card-h">
-          <span className="t">Invoices</span>
-          <span className="s">{loading ? "loading…" : error ? "unavailable" : `${filtered.length} matching`}</span>
+          <span className="t">{t("Invoices")}</span>
+          <span className="s">{loading ? t("loading…") : error ? t("unavailable") : t("{n} matching", { n: filtered.length })}</span>
         </div>
 
         {loading ? (
           <div style={{ padding: "16px 18px" }}><Loader rows={8} /></div>
         ) : error ? (
-          <ErrorState title="Could not load invoices"
-            sub="The server did not respond. Check that the backend is running, then try again."
+          <ErrorState title={t("Could not load invoices")}
+            sub={t("The server did not respond. Check that the backend is running, then try again.")}
             onRetry={load} />
         ) : filtered.length === 0 ? (
           <EmptyState
@@ -594,11 +595,11 @@ export default function InvoicesPage() {
                 <path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z" /><path d="M9 8h6M9 12h6" />
               </svg>
             }
-            title={invoiceOrders.length === 0 ? "No invoices yet" : "No invoices match"}
+            title={invoiceOrders.length === 0 ? t("No invoices yet") : t("No invoices match")}
             sub={invoiceOrders.length === 0
-              ? "Invoices appear here once an order is completed and billed. Start one from Billing."
-              : "Nothing matches these filters. Try clearing them."}
-            action={hasFilters ? <button type="button" className="zc-btn" onClick={clearFilters}>Clear filters</button> : null}
+              ? t("Invoices appear here once an order is completed and billed. Start one from Billing.")
+              : t("Nothing matches these filters. Try clearing them.")}
+            action={hasFilters ? <button type="button" className="zc-btn" onClick={clearFilters}>{t("Clear filters")}</button> : null}
           />
         ) : (
           <>
@@ -607,13 +608,13 @@ export default function InvoicesPage() {
               <table className="zc-ledger" style={{ minWidth: 760 }}>
                 <thead>
                   <tr>
-                    <th style={{ width: 108 }}>Invoice</th>
-                    <th>Customer</th>
-                    <th style={{ width: 64 }}>Table</th>
-                    <th style={{ width: 84 }}>Method</th>
-                    <th style={{ width: 176 }}>Payment</th>
-                    <th className="num" style={{ width: 104 }}>Amount</th>
-                    <th className="num" style={{ width: 78 }}>Time</th>
+                    <th style={{ width: 108 }}>{t("Invoice")}</th>
+                    <th>{t("Customer")}</th>
+                    <th style={{ width: 64 }}>{t("Table")}</th>
+                    <th style={{ width: 84 }}>{t("Method")}</th>
+                    <th style={{ width: 176 }}>{t("Payment")}</th>
+                    <th className="num" style={{ width: 104 }}>{t("Amount")}</th>
+                    <th className="num" style={{ width: 78 }}>{t("Time")}</th>
                     <th style={{ width: 108 }} />
                   </tr>
                 </thead>
@@ -640,23 +641,23 @@ export default function InvoicesPage() {
                         </td>
                         <td>
                           {o.tableNo
-                            ? <span className="zc-tag vio sq">T{o.tableNo}</span>
+                            ? <span className="zc-tag vio sq">{t("T{n}", { n: o.tableNo })}</span>
                             : <span style={{ color: "var(--text-3)" }}>—</span>}
                         </td>
-                        <td style={{ color: "var(--text-2)" }}>{o.paymentMethod || "Cash"}</td>
+                        <td style={{ color: "var(--text-2)" }}>{t(o.paymentMethod || "Cash")}</td>
                         <td><span className={`zc-tag ${statusKind(o.paymentStatus)}`}><i />{formatPayment(o.paymentStatus)}</span></td>
-                        <td className={`money${needsAction ? " neg" : ""}`}>₹{Math.round(o.total)}</td>
+                        <td className={`money${needsAction ? " neg" : ""}`}>₹{fmt(o.total)}</td>
                         <td className="num" style={{ color: "var(--text-3)" }}>
-                          {new Date(o.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          {fmtTime(o.createdAt)}
                         </td>
                         <td style={{ textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
                           {needsAction ? (
                             <button type="button" className="zc-btn good sm" disabled={busyId === o._id}
                               onClick={() => handlePaymentChange(o._id, { paymentStatus: "PAID" }).catch(() => {})}>
-                              {busyId === o._id ? "…" : "Mark paid"}
+                              {busyId === o._id ? "…" : t("Mark paid")}
                             </button>
                           ) : (
-                            <button type="button" className="zc-btn ghost sm" title="Print bill"
+                            <button type="button" className="zc-btn ghost sm" title={t("Print bill")}
                               onClick={() => handlePrint(o)}>🖨️</button>
                           )}
                         </td>
@@ -678,23 +679,23 @@ export default function InvoicesPage() {
                       <div style={{ minWidth: 0 }}>
                         <div className="tnum inv-idc">{o.orderId}</div>
                         <div style={{ fontSize: 12.5, color: "var(--text-1)", marginTop: 2, fontWeight: 600 }}>{name}</div>
-                        <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 2 }}>{o.paymentMethod || "Cash"}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 2 }}>{t(o.paymentMethod || "Cash")}</div>
                       </div>
                       <div style={{ textAlign: "right", flex: "none" }}>
-                        <div className="tnum" style={{ fontWeight: 700, fontSize: 14, color: needsAction ? "var(--stop-ink)" : "var(--text-1)" }}>₹{Math.round(o.total)}</div>
+                        <div className="tnum" style={{ fontWeight: 700, fontSize: 14, color: needsAction ? "var(--stop-ink)" : "var(--text-1)" }}>₹{fmt(o.total)}</div>
                         <div style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 2 }}>
-                          {new Date(o.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          {fmtTime(o.createdAt)}
                         </div>
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 9, alignItems: "center" }}>
-                      {o.tableNo && <span className="zc-tag vio sq">T{o.tableNo}</span>}
+                      {o.tableNo && <span className="zc-tag vio sq">{t("T{n}", { n: o.tableNo })}</span>}
                       <span className={`zc-tag ${statusKind(o.paymentStatus)}`}><i />{formatPayment(o.paymentStatus)}</span>
                       <div style={{ marginLeft: "auto" }} onClick={(e) => e.stopPropagation()}>
                         {needsAction ? (
                           <button type="button" className="zc-btn good sm" disabled={busyId === o._id}
                             onClick={() => handlePaymentChange(o._id, { paymentStatus: "PAID" }).catch(() => {})}>
-                            {busyId === o._id ? "…" : "Mark paid"}
+                            {busyId === o._id ? "…" : t("Mark paid")}
                           </button>
                         ) : (
                           <button type="button" className="zc-btn ghost sm" onClick={() => handlePrint(o)}>🖨️</button>
@@ -709,16 +710,16 @@ export default function InvoicesPage() {
             {totalPages > 1 && (
               <div className="zc-tfoot" style={{ padding: "14px 18px 6px" }}>
                 <span>
-                  Showing {(safePage - 1) * PER_PAGE + 1}–{Math.min(safePage * PER_PAGE, filtered.length)} of {filtered.length}
+                  {t("Showing {from}–{to} of {total}", { from: (safePage - 1) * PER_PAGE + 1, to: Math.min(safePage * PER_PAGE, filtered.length), total: filtered.length })}
                 </span>
                 <div className="zc-pager">
-                  <button type="button" disabled={safePage === 1} onClick={() => setPage((p) => Math.max(1, p - 1))} aria-label="Previous page">‹</button>
+                  <button type="button" disabled={safePage === 1} onClick={() => setPage((p) => Math.max(1, p - 1))} aria-label={t("Previous page")}>‹</button>
                   {pageList.map((p, i) =>
                     p === "…"
                       ? <span key={`g${i}`} className="gap">…</span>
-                      : <button type="button" key={p} className={safePage === p ? "on" : ""} onClick={() => setPage(p)}>{p}</button>,
+                      : <button type="button" key={p} className={safePage === p ? "on" : ""} onClick={() => setPage(p)}>{fmtNum(p)}</button>,
                   )}
-                  <button type="button" disabled={safePage === totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} aria-label="Next page">›</button>
+                  <button type="button" disabled={safePage === totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} aria-label={t("Next page")}>›</button>
                 </div>
               </div>
             )}

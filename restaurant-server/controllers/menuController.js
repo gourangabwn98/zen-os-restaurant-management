@@ -86,7 +86,7 @@ export const getCategories = async (req, res) => {
 export const addMenuItem = async (req, res) => {
   try {
     const { MenuItem } = req.models;
-    const { name, price, originalPrice, category, tag,
+    const { name, nameBn, price, originalPrice, category, tag,
             isAvailable, description, rating } = req.body;
 
     if (!name || !price || !category)
@@ -104,7 +104,7 @@ export const addMenuItem = async (req, res) => {
     }
 
     const item = await MenuItem.create({
-      name, price: Number(price),
+      name, nameBn: String(nameBn || "").trim(), price: Number(price),
       originalPrice: Number(originalPrice)||0,
       category, tag: tag||"Veg",
       isAvailable: isAvailable !== "false",
@@ -147,10 +147,11 @@ export const updateMenuItem = async (req, res) => {
     // else → keep item.image as is (don't touch it)
 
     // Update other fields
-    const { name, price, originalPrice, category, tag,
+    const { name, nameBn, price, originalPrice, category, tag,
             isAvailable, description, rating } = req.body;
 
     if (name)          item.name          = name;
+    if (nameBn !== undefined) item.nameBn = String(nameBn).trim(); // "" clears it
     if (price)         item.price         = Number(price);
     if (originalPrice !== undefined) item.originalPrice = Number(originalPrice)||0;
     if (category)      item.category      = category;

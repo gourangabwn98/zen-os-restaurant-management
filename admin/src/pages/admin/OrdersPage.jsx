@@ -14,6 +14,7 @@ import { MANUAL_PAYMENT_STATUSES, needsPaidFirst, PAID_FIRST_HINT } from "./shar
 import ErrorState from "./shared/ErrorState.jsx";
 import EmptyState from "./shared/EmptyState.jsx";
 import { getMenu, getCategories } from "../../services/menuService.js";
+import { t, tn, fmtNum, fmtDate, fmtDateTime, fmtTime, localName } from "../../i18n/core.js";
 
 // ── add this to adminService.js if not already there ─────────────────────────
 // export const updateOrderPayment = (id, data) => api.patch(`/admin/orders/${id}/payment`, data);
@@ -85,15 +86,15 @@ const getCategoryRank = (cat) => {
 
 const avc = (n) => AVATAR_GRADS[(n?.charCodeAt(0)||0) % AVATAR_GRADS.length];
 const ini = (n) => !n||n==="Guest" ? "G" : n.split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
-const fmt = (n) => Math.round(n||0).toLocaleString("en-IN");
+const fmt = (n) => fmtNum(Math.round(n||0));
 
 // ── Order timer ("how long since this table's order was placed") ──────────
 // Driven by the earliest still-active order's createdAt at that table, so a
 // free table (no active order) never shows a time.
 const formatDuration = (ms) => {
   const mins = Math.max(0, Math.floor(ms / 60000));
-  if (mins < 60) return `${mins}m`;
-  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+  if (mins < 60) return t("{m}m", { m: mins });
+  return t("{h}h {m}m", { h: Math.floor(mins / 60), m: mins % 60 });
 };
 // Reuses the same wait/stop semantic-kind palette as order status elsewhere
 // on this page: under 45m is normal, 45–90m worth watching, 90m+ flags a
@@ -103,10 +104,11 @@ const durationKind = (mins) => (mins >= 90 ? "stop" : mins >= 45 ? "wait" : "don
 // ── Display formatters (keep raw values for logic, format only for text) ───
 // CONFIRMED is shown to staff as "Placed" — the raw enum value is untouched
 // (see restaurant-server/utils/orderStateMachine.js), this is display-only.
+// The English label is the dictionary key, so t() translates it in bn mode.
 const formatStatus = (s="") =>
-  s === "CONFIRMED" ? "Placed" : s.replace(/_/g," ").toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
-const formatPayment = (s) => ({ PAID:"Paid", PENDING_VERIFICATION:"Pending", FAILED:"Failed" }[s] || formatStatus(s));
-const formatOrderType = (s) => ({ DINE_IN:"Dine In", TAKEAWAY:"Takeaway", All:"All" }[s] || formatStatus(s));
+  t(s === "CONFIRMED" ? "Placed" : s.replace(/_/g," ").toLowerCase().replace(/\b\w/g, c => c.toUpperCase()));
+const formatPayment = (s) => t({ PAID:"Paid", PENDING_VERIFICATION:"Pending", FAILED:"Failed" }[s] || formatStatus(s));
+const formatOrderType = (s) => t({ DINE_IN:"Dine In", TAKEAWAY:"Takeaway", All:"All" }[s] || formatStatus(s));
 
 // ── Shared hover / transition styles injected once ─────────────────────────
 const GlobalOrdersStyle = () => (
@@ -201,13 +203,13 @@ const useNow = () => {
 const SendCountdown = ({ order }) => {
   const now = useNow();
   if (order.sendError) {
-    return <span style={{ color: "var(--stop-ink)" }}>Couldn&rsquo;t start preparing automatically — {order.sendError}</span>;
+    return <span style={{ color: "var(--stop-ink)" }}>{t("Couldn’t start preparing automatically — {reason}", { reason: order.sendError })}</span>;
   }
-  if (!order.autoPrepareAt) return <span>Start preparing when ready</span>;
+  if (!order.autoPrepareAt) return <span>{t("Start preparing when ready")}</span>;
   const left = Math.max(0, Math.ceil((new Date(order.autoPrepareAt).getTime() - now) / 1000));
-  if (!left) return <span>Starting preparation…</span>;
+  if (!left) return <span>{t("Starting preparation…")}</span>;
   return (
-    <span>Starts preparing in <b className="tnum">{Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}</b> — can still be changed</span>
+    <span>{t("Starts preparing in")} <b className="tnum">{fmtNum(Math.floor(left / 60))}:{fmtNum(left % 60, { minimumIntegerDigits: 2 })}</b> — {t("can still be changed")}</span>
   );
 };
 
@@ -216,7 +218,7 @@ const lineKey = (i) => String(i.menuItem?._id ?? i.menuItem ?? i.menuItemId);
 // Change quantities / notes or remove lines while the order is editable.
 const EditOrderItemsModal = ({ order, onClose, onSaved, onAddMore }) => {
   const [lines, setLines] = useState(() => (order.items || []).map((i) => ({
-    menuItemId: lineKey(i), name: i.name, price: i.price, qty: i.qty, notes: i.notes || "",
+    menuItemId: lineKey(i), name: i.name, nameBn: i.nameBn || "", price: i.price, qty: i.qty, notes: i.notes || "",
   })));
   const [saving, setSaving] = useState(false);
 
@@ -232,15 +234,15 @@ const EditOrderItemsModal = ({ order, onClose, onSaved, onAddMore }) => {
   const subtotal = lines.reduce((s, l) => s + l.price * l.qty, 0);
 
   const save = async () => {
-    if (!lines.length) return toast.error("An order needs at least one item — cancel it instead");
+    if (!lines.length) return toast.error(t("An order needs at least one item — cancel it instead"));
     setSaving(true);
     try {
       const { data } = await modifyOrderItems(order._id, lines.map((l) => ({ menuItemId: l.menuItemId, qty: l.qty, notes: l.notes })), order.revision ?? 0);
-      toast.success(`Order ${order.orderId} updated`);
+      toast.success(t("Order {id} updated", { id: order.orderId }));
       onSaved(data);
       onClose();
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Couldn't update the order");
+      toast.error(e?.response?.data?.message || t("Couldn't update the order"));
     } finally { setSaving(false); }
   };
 
@@ -249,37 +251,37 @@ const EditOrderItemsModal = ({ order, onClose, onSaved, onAddMore }) => {
       <div className="zc-modal" style={{ width: 560 }} role="dialog" aria-modal="true" aria-labelledby="edit-items-title" onClick={(e) => e.stopPropagation()}>
         <div className="mh">
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="t" id="edit-items-title">Edit order {order.orderId}</div>
+            <div className="t" id="edit-items-title">{t("Edit order {id}", { id: order.orderId })}</div>
             <div className="s"><SendCountdown order={order} /></div>
           </div>
-          <button type="button" className="zc-x" onClick={onClose} disabled={saving} aria-label="Close">✕</button>
+          <button type="button" className="zc-x" onClick={onClose} disabled={saving} aria-label={t("Close")}>✕</button>
         </div>
         <div className="mb" style={{ display: "grid", gap: 8 }}>
           {lines.map((l) => (
             <div key={l.menuItemId} className="zc-panel" style={{ padding: "10px 12px", display: "grid", gap: 8 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-1)" }}>{l.name}</div>
-                  <div className="tnum" style={{ fontSize: 11.5, color: "var(--text-3)" }}>₹{l.price} each</div>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-1)" }}>{localName(l)}</div>
+                  <div className="tnum" style={{ fontSize: 11.5, color: "var(--text-3)" }}>{t("₹{price} each", { price: fmtNum(l.price) })}</div>
                 </div>
-                <button type="button" className="zc-btn sm" aria-label={`Less ${l.name}`} disabled={l.qty <= 1} onClick={() => setQty(l.menuItemId, -1)}>−</button>
-                <span className="tnum" style={{ minWidth: 22, textAlign: "center", fontWeight: 700 }}>{l.qty}</span>
-                <button type="button" className="zc-btn sm" aria-label={`More ${l.name}`} onClick={() => setQty(l.menuItemId, 1)}>＋</button>
-                <button type="button" className="zc-btn danger sm" aria-label={`Remove ${l.name}`} onClick={() => remove(l.menuItemId)}>✕</button>
+                <button type="button" className="zc-btn sm" aria-label={t("Less {name}", { name: localName(l) })} disabled={l.qty <= 1} onClick={() => setQty(l.menuItemId, -1)}>−</button>
+                <span className="tnum" style={{ minWidth: 22, textAlign: "center", fontWeight: 700 }}>{fmtNum(l.qty)}</span>
+                <button type="button" className="zc-btn sm" aria-label={t("More {name}", { name: localName(l) })} onClick={() => setQty(l.menuItemId, 1)}>＋</button>
+                <button type="button" className="zc-btn danger sm" aria-label={t("Remove {name}", { name: localName(l) })} onClick={() => remove(l.menuItemId)}>✕</button>
               </div>
-              <input className="zc-input" placeholder="Note for the kitchen (optional)" value={l.notes} maxLength={120}
+              <input className="zc-input" placeholder={t("Note for the kitchen (optional)")} value={l.notes} maxLength={120}
                 onChange={(e) => setNotes(l.menuItemId, e.target.value)} style={{ fontSize: 12 }} />
             </div>
           ))}
-          {!lines.length && <div style={{ fontSize: 12.5, color: "var(--text-3)", textAlign: "center", padding: 12 }}>No items left — add some, or cancel the order instead.</div>}
-          <button type="button" className="zc-btn ghost" onClick={() => onAddMore(order)}>＋ Add more items</button>
+          {!lines.length && <div style={{ fontSize: 12.5, color: "var(--text-3)", textAlign: "center", padding: 12 }}>{t("No items left — add some, or cancel the order instead.")}</div>}
+          <button type="button" className="zc-btn ghost" onClick={() => onAddMore(order)}>＋ {t("Add more items")}</button>
         </div>
         <div className="mf" style={{ alignItems: "center" }}>
           <span className="tnum" style={{ marginRight: "auto", fontSize: 12.5, color: "var(--text-2)" }}>
-            Items ₹{subtotal} <span style={{ color: "var(--text-3)" }}>· taxes recalculated on save</span>
+            {t("Items ₹{amount}", { amount: fmtNum(subtotal) })} <span style={{ color: "var(--text-3)" }}>· {t("taxes recalculated on save")}</span>
           </span>
-          <button type="button" className="zc-btn" disabled={saving} onClick={onClose}>Cancel</button>
-          <button type="button" className="zc-btn pri" disabled={saving || !lines.length} onClick={save}>{saving ? "Saving…" : "Save changes"}</button>
+          <button type="button" className="zc-btn" disabled={saving} onClick={onClose}>{t("Cancel")}</button>
+          <button type="button" className="zc-btn pri" disabled={saving || !lines.length} onClick={save}>{saving ? t("Saving…") : t("Save changes")}</button>
         </div>
       </div>
     </div>
@@ -290,27 +292,27 @@ const EditOrderItemsModal = ({ order, onClose, onSaved, onAddMore }) => {
 const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onCombinedBill, onPrint, onAddItems, onEditItems, onConfirm, onReject, actionBusy }) => {
   if (!order) return null;
   const isPending = order.status === "PENDING_CONFIRMATION";
-  const displayName  = order.user?.name || order.guestName || "Guest";
+  const displayName  = order.user?.name || order.guestName || t("Guest");
   const displayPhone = order.guestPhone || order.user?.phone || null;
   const subtotal     = order.subtotal ?? order.items?.reduce((s,i)=>s+i.price*i.qty,0) ?? 0;
   // Items can only change while Placed and before its KOT exists.
   const isPlaced     = order.status === "CONFIRMED" && !order.stockDeducted;
   const canAddItems  = isPlaced;
   const canCancel    = ["PENDING_CONFIRMATION","CONFIRMED","PREPARING"].includes(order.status);
-  const placedAt     = new Date(order.createdAt).toLocaleString("en-IN",{ day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" });
+  const placedAt     = fmtDateTime(order.createdAt);
   const timeline     = Array.isArray(order.statusHistory) ? order.statusHistory : [];
 
   const info = [
-    ["Customer", displayName],
-    ["Phone", displayPhone ? `+91 ${displayPhone}` : "—"],
-    ["Type", formatOrderType(order.orderType)],
-    ["Payment", `${order.paymentMethod || "Cash"} · ${formatPayment(order.paymentStatus)}`],
+    [t("Customer"), displayName],
+    [t("Phone"), displayPhone ? `+91 ${displayPhone}` : "—"],
+    [t("Type"), formatOrderType(order.orderType)],
+    [t("Payment"), `${t(order.paymentMethod || "Cash")} · ${formatPayment(order.paymentStatus)}`],
   ];
   const summary = [
-    ["Subtotal", subtotal],
-    ...(order.serviceCharge > 0 ? [["Service charge", order.serviceCharge]] : []),
-    ...(order.tax > 0 ? [["GST", order.tax]] : []),
-    ...(order.discount > 0 ? [[`Discount${order.coupon?.code ? ` (${order.coupon.code})` : ""}`, -order.discount]] : []),
+    [t("Subtotal"), subtotal],
+    ...(order.serviceCharge > 0 ? [[t("Service charge"), order.serviceCharge]] : []),
+    ...(order.tax > 0 ? [[t("GST"), order.tax]] : []),
+    ...(order.discount > 0 ? [[`${t("Discount")}${order.coupon?.code ? ` (${order.coupon.code})` : ""}`, -order.discount]] : []),
   ];
 
   return (
@@ -320,11 +322,11 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
           <div style={{ flex:1, minWidth:0 }}>
             <div className="t tnum">{order.orderId}</div>
             <div className="s">
-              {order.tableNo ? `Table ${order.tableNo} · ` : ""}placed {placedAt}
+              {order.tableNo ? `${t("Table {n}", { n: order.tableNo })} · ` : ""}{t("placed {when}", { when: placedAt })}
             </div>
           </div>
           <span className={`zc-tag ${statusKind(order.status)}`}><i />{formatStatus(order.status)}</span>
-          <button type="button" className="zc-x" onClick={onClose} aria-label="Close">✕</button>
+          <button type="button" className="zc-x" onClick={onClose} aria-label={t("Close")}>✕</button>
         </div>
 
         <div className="mb">
@@ -337,24 +339,24 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
             }}>
               <div style={{ flex:1, minWidth:140 }}>
                 <div style={{ fontSize:12.5, fontWeight:700, color:"var(--wait-ink)" }}>
-                  Awaiting your confirmation
+                  {t("Awaiting your confirmation")}
                 </div>
                 <div style={{ fontSize:11.5, color:T2, marginTop:2 }}>
-                  Accepting makes it Placed; it starts preparing (and the KOT prints) a few minutes later.
+                  {t("Accepting makes it Placed; it starts preparing (and the KOT prints) a few minutes later.")}
                 </div>
               </div>
               <button type="button" className="op-btn" disabled={actionBusy}
                 onClick={()=>onConfirm?.(order)}
                 style={{ padding:"9px 18px", borderRadius:10, border:"none", cursor:actionBusy?"wait":"pointer",
                   background:"var(--grad-btn)", color:"#fff", fontWeight:800, fontSize:13 }}>
-                {actionBusy ? "Working…" : "✓ Accept order"}
+                {actionBusy ? t("Working…") : `✓ ${t("Accept order")}`}
               </button>
               <button type="button" className="op-btn" disabled={actionBusy}
                 onClick={()=>onReject?.(order)}
                 style={{ padding:"9px 16px", borderRadius:10, cursor:actionBusy?"wait":"pointer",
                   border:"1px solid var(--stop-line)", background:"var(--stop-fill)",
                   color:"var(--stop-ink)", fontWeight:700, fontSize:13 }}>
-                ✕ Cancel order
+                ✕ {t("Cancel order")}
               </button>
             </div>
           )}
@@ -368,14 +370,14 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
               background: order.sendError ? "var(--stop-fill)" : "var(--live-fill)",
             }}>
               <div style={{ flex:1, minWidth:160 }}>
-                <div style={{ fontSize:12.5, fontWeight:700, color:"var(--live-ink)" }}>Placed</div>
+                <div style={{ fontSize:12.5, fontWeight:700, color:"var(--live-ink)" }}>{t("Placed")}</div>
                 <div style={{ fontSize:11.5, color:T2, marginTop:2 }}><SendCountdown order={order} /></div>
               </div>
               {onEditItems && (
-                <button type="button" className="zc-btn" disabled={actionBusy} onClick={()=>onEditItems(order)}>✎ Edit items</button>
+                <button type="button" className="zc-btn" disabled={actionBusy} onClick={()=>onEditItems(order)}>✎ {t("Edit items")}</button>
               )}
               <button type="button" className="zc-btn pri" disabled={actionBusy} onClick={()=>onStatusChange?.(order._id, "PREPARING")}>
-                🍳 Start preparing now
+                🍳 {t("Start preparing now")}
               </button>
             </div>
           )}
@@ -391,34 +393,34 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
           </div>
 
           {/* items */}
-          <DLabel>Items</DLabel>
+          <DLabel>{t("Items")}</DLabel>
           <div style={{ borderRadius:13, border:"1px solid var(--edge)", overflow:"hidden", marginBottom:20 }}>
             {order.items?.map((item,i) => (
               <div key={i} style={{ display:"flex", alignItems:"center", gap:11, padding:"10px 14px", borderBottom:"1px solid var(--edge)", fontSize:12.5 }}>
-                <span className="zc-q">{item.qty}</span>
-                <span style={{ flex:1, fontWeight:500, color:T1 }}>{item.name}</span>
-                <span className="tnum" style={{ fontWeight:600, color:T1 }}>₹{item.price * item.qty}</span>
+                <span className="zc-q">{fmtNum(item.qty)}</span>
+                <span style={{ flex:1, fontWeight:500, color:T1 }}>{localName(item)}</span>
+                <span className="tnum" style={{ fontWeight:600, color:T1 }}>₹{fmtNum(item.price * item.qty)}</span>
               </div>
             ))}
             <div style={{ padding:"12px 14px", display:"grid", gap:6, fontSize:12.5, background:"var(--card-2)" }}>
               {summary.map(([k,v]) => (
                 <div key={k} style={{ display:"flex", justifyContent:"space-between" }}>
                   <span style={{ color:T2 }}>{k}</span>
-                  <span className="tnum" style={{ color:T1 }}>{v < 0 ? `−₹${Math.abs(v)}` : `₹${v}`}</span>
+                  <span className="tnum" style={{ color:T1 }}>{v < 0 ? `−₹${fmtNum(Math.abs(v))}` : `₹${fmtNum(v)}`}</span>
                 </div>
               ))}
               <div style={{ display:"flex", justifyContent:"space-between", fontSize:16, fontWeight:700, paddingTop:8, borderTop:"1px solid var(--edge)" }}>
-                <span style={{ color:T1 }}>Total</span>
-                <span className="tnum zc-grad-text">₹{Math.round(order.total)}</span>
+                <span style={{ color:T1 }}>{t("Total")}</span>
+                <span className="tnum zc-grad-text">₹{fmtNum(Math.round(order.total))}</span>
               </div>
             </div>
           </div>
 
           {/* controls — status / payment / method (all preserved) */}
-          <DLabel>Update order status</DLabel>
+          <DLabel>{t("Update order status")}</DLabel>
           {order.status === "DELIVERED" && order.paymentStatus !== "PAID" && (
             <div style={{ fontSize:11.5, color:"var(--wait-ink)", marginBottom:8 }}>
-              💳 Payment required — mark it Paid below to complete this order.
+              💳 {t("Payment required — mark it Paid below to complete this order.")}
             </div>
           )}
           <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:16 }}>
@@ -426,7 +428,7 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
               const st = STATUS_STYLE[s] || DEFAULT_STATUS_STYLE;
               const blocked = needsPaidFirst(order, s);
               return (
-                <button key={s} type="button" className="op-chip" disabled={blocked} title={blocked ? PAID_FIRST_HINT : undefined}
+                <button key={s} type="button" className="op-chip" disabled={blocked} title={blocked ? t(PAID_FIRST_HINT) : undefined}
                   onClick={()=>!blocked && onStatusChange(order._id, s)}
                   style={{ padding:"6px 12px", borderRadius:20, border:`1px solid ${st.line}`, background:st.bg, color:st.color,
                     cursor:blocked?"not-allowed":"pointer", opacity:blocked?0.45:1, fontSize:12, fontWeight:600, font:"inherit" }}>
@@ -436,7 +438,7 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
             })}
           </div>
 
-          <DLabel>Payment status</DLabel>
+          <DLabel>{t("Payment status")}</DLabel>
           <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:16 }}>
             {MANUAL_PAYMENT_STATUSES.map(s => {
               const st = PAY_STYLE[s] || DEFAULT_STATUS_STYLE;
@@ -451,7 +453,7 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
             })}
           </div>
 
-          <DLabel>Payment method</DLabel>
+          <DLabel>{t("Payment method")}</DLabel>
           <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:timeline.length ? 20 : 0 }}>
             {["Cash","Online"].map(m => {
               const active = (order.paymentMethod || "Cash") === m;
@@ -461,7 +463,7 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
                     border:`2px solid ${active ? "var(--violet)" : "var(--edge)"}`,
                     background:active ? "var(--violet-weak)" : "var(--card-2)",
                     color:active ? "var(--accent-ink)" : T2 }}>
-                  {m === "Cash" ? "💵" : "📱"} {m}
+                  {m === "Cash" ? "💵" : "📱"} {t(m)}
                 </button>
               );
             })}
@@ -470,16 +472,16 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
           {/* timeline — real transitions from order.statusHistory */}
           {timeline.length > 0 && (
             <>
-              <DLabel>Timeline</DLabel>
+              <DLabel>{t("Timeline")}</DLabel>
               <div className="zc-timeline">
                 {timeline.map((entry, i) => {
                   const kind = statusKind(entry.status);
                   const tone = kind === "stop" ? "stop" : kind === "wait" ? "wait" : "done";
                   const who = entry.changedBy?.name
-                    ? `${entry.changedBy.name}${entry.changedBy.role ? ` (${entry.changedBy.role.toLowerCase()})` : ""}`
+                    ? `${entry.changedBy.name}${entry.changedBy.role ? ` (${t(entry.changedBy.role).toLowerCase()})` : ""}`
                     : "—";
                   const when = entry.changedAt
-                    ? new Date(entry.changedAt).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" })
+                    ? fmtTime(entry.changedAt)
                     : "";
                   return (
                     <div className="row" key={i}>
@@ -502,18 +504,18 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
         <div className="mf" style={{ flexWrap:"wrap" }}>
           {(order.guestPhone || order.user?.phone) && (
             <button type="button" className="zc-btn" onClick={()=>onCombinedBill?.("phone", order.guestPhone || order.user?.phone)}>
-              🧾 Customer bill
+              🧾 {t("Customer bill")}
             </button>
           )}
           {canAddItems && onAddItems && (
-            <button type="button" className="zc-btn" onClick={()=>onAddItems(order)}>＋ Add items</button>
+            <button type="button" className="zc-btn" onClick={()=>onAddItems(order)}>＋ {t("Add items")}</button>
           )}
           {onCombinedBill && (
-            <button type="button" className="zc-btn" onClick={()=>onCombinedBill("orders", order._id)}>📱 Bill + Payment QR</button>
+            <button type="button" className="zc-btn" onClick={()=>onCombinedBill("orders", order._id)}>📱 {t("Bill + Payment QR")}</button>
           )}
-          <button type="button" className="zc-btn" onClick={()=>onPrint(order)}>🖨️ Print bill</button>
+          <button type="button" className="zc-btn" onClick={()=>onPrint(order)}>🖨️ {t("Print bill")}</button>
           {canCancel && (
-            <button type="button" className="zc-btn danger" onClick={()=>onStatusChange(order._id, "CANCELLED")}>Cancel order</button>
+            <button type="button" className="zc-btn danger" onClick={()=>onStatusChange(order._id, "CANCELLED")}>{t("Cancel order")}</button>
           )}
         </div>
       </div>
@@ -529,7 +531,7 @@ const ItemImage = ({ src, name }) => isUrl(src)
 
 // ── CreateOrderModal — KFC-style rush ordering ────────────────────────────────
 const ORDER_TYPE_OPTIONS = [
-  { value:"DINE_IN",  label:"Dining",   icon:"🪑" },
+  { value:"DINE_IN",  label:"Dining",   icon:"🪑" },   // labels → t() at render
   { value:"TAKEAWAY", label:"Take Away", icon:"🛍️" },
 ];
 const PAYMENT_STATUS_OPTIONS = [
@@ -557,6 +559,7 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
   const [scpi,        setScpi]        = useState(0);
   const [gstRate,     setGstRate]     = useState(0);
   const [catImages, setCatImages] = useState({});
+  const [catBn, setCatBn] = useState({}); // category name → Bengali name
   const [idemKey] = useState(newIdempotencyKey);
 
   useEffect(()=>{
@@ -565,8 +568,10 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
     getCategories().then(r=>{
       const list = r.data?.data || r.data || [];
       const map = {};
-      list.forEach(c=>{ if(c.name && c.image) map[c.name] = c.image; });
+      const bn = {};
+      list.forEach(c=>{ if(c.name && c.image) map[c.name] = c.image; if(c.name && c.nameBn) bn[c.name] = c.nameBn; });
       setCatImages(map);
+      setCatBn(bn);
     }).catch(()=>{});
   },[]);
 
@@ -583,7 +588,7 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
 
   const filtered = mi.filter(m=>{
     const matchCat    = selCat==="All" || m.category===selCat;
-    const matchSearch = m.name.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = m.name.toLowerCase().includes(search.toLowerCase()) || (m.nameBn || "").toLowerCase().includes(search.toLowerCase());
     const matchVeg    = vegFilter==="All" || m.tag===vegFilter;
     const matchTemp   = tempFilter==="All"
       || (tempFilter==="Cold" && COLD_CATS.includes(m.category))
@@ -600,7 +605,7 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
       return ex?acc.map(c=>c.item._id===item._id?{...c,qty:Math.min(99,c.qty+qty)}:c):[...acc,{item,qty}];
     },p));
     const n=list.reduce((s,x)=>s+x.qty,0);
-    toast.success(`🎤 Added ${n} item${n===1?"":"s"}`);
+    toast.success(`🎤 ${tn(n, "Added {n} item", "Added {n} items")}`);
   };
   const removeItem= (id)  => setCart(p=>{ const ex=p.find(c=>c.item._id===id); if(!ex)return p; return ex.qty===1?p.filter(c=>c.item._id!==id):p.map(c=>c.item._id===id?{...c,qty:c.qty-1}:c); });
   const clearCart = () => setCart([]);
@@ -612,8 +617,8 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
   const total     = subtotal + tax + scAmt;
 
   const handleSubmit = async () => {
-    if(!cart.length) return toast.error("Add at least one item");
-    if(orderType==="DINE_IN" && !tableNo) return toast.error("Enter table number");
+    if(!cart.length) return toast.error(t("Add at least one item"));
+    if(orderType==="DINE_IN" && !tableNo) return toast.error(t("Enter table number"));
     try{
       setLoading(true);
       const { data } = await placeOrder({
@@ -626,10 +631,10 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
         idempotencyKey: idemKey,
       });
       // Only a real persisted order comes back with a Mongo _id + orderId.
-      if (!data?._id || !data?.orderId) throw new Error("Order was not created — please retry");
-      toast.success(`✓ Order ${data.orderId} placed!`);
+      if (!data?._id || !data?.orderId) throw new Error(t("Order was not created — please retry"));
+      toast.success(`✓ ${t("Order {id} placed!", { id: data.orderId })}`);
       onCreated(data); onClose();
-    }catch(e){ toast.error(e.response?.data?.message||"Failed"); }
+    }catch(e){ toast.error(e.response?.data?.message||e.message||t("Failed")); }
     finally{ setLoading(false); }
   };
 
@@ -655,20 +660,20 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
           padding:"14px 20px", borderBottom:"1px solid var(--edge)", flexShrink:0 }}>
 
           <div style={{ flexShrink:0 }}>
-            <div style={{ fontSize:16, fontWeight:700, letterSpacing:"-.02em", color:"var(--text-1)" }}>New order</div>
-            <div style={{ fontSize:11.5, color:"var(--text-3)" }}>Select items to add</div>
+            <div style={{ fontSize:16, fontWeight:700, letterSpacing:"-.02em", color:"var(--text-1)" }}>{t("New order")}</div>
+            <div style={{ fontSize:11.5, color:"var(--text-3)" }}>{t("Select items to add")}</div>
           </div>
 
           <div style={{ flex:1, display:"flex", alignItems:"center", gap:8 }}>
             <span style={{ fontSize:16 }}>🔍</span>
             <input value={search} onChange={e=>setSearch(e.target.value)}
-              placeholder="Search items…" className="zc-input" />
+              placeholder={t("Search items…")} className="zc-input" />
             {search && <button onClick={()=>setSearch("")}
               className="zc-btn ghost sm" style={{ flexShrink:0 }}>✕</button>}
-            <VoiceOrder menu={mi} onAdd={addVoiceItems} onSearch={(t)=>{ setSearch(t); setSelCat("All"); }} />
+            <VoiceOrder menu={mi} onAdd={addVoiceItems} onSearch={(q)=>{ setSearch(q); setSelCat("All"); }} />
           </div>
 
-          <button type="button" className="zc-x" onClick={onClose} aria-label="Close">✕</button>
+          <button type="button" className="zc-x" onClick={onClose} aria-label={t("Close")}>✕</button>
         </div>
 
         {/* ── MAIN CONTENT ── */}
@@ -701,9 +706,9 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
                   <span style={{ fontSize:10.5, fontWeight:active?700:500,
                     color:active?"#fff":"var(--text-2)", textAlign:"center",
                     lineHeight:1.2, wordBreak:"break-word" }}>
-                    {cat}
+                    {cat === "All" ? t("All") : (catBn[cat] && localName({ name: cat, nameBn: catBn[cat] })) || cat}
                   </span>
-                  <span style={{ fontSize:9, color:active?"rgba(255,255,255,.75)":"var(--text-3)" }}>{count}</span>
+                  <span style={{ fontSize:9, color:active?"rgba(255,255,255,.75)":"var(--text-3)" }}>{fmtNum(count)}</span>
                 </button>
               );
             })}
@@ -714,7 +719,7 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
 
             <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap", alignItems:"center" }}>
               <div className="zc-seg">
-                {[["All","🍽️ All"],["Veg","🟢 Veg"],["Non Veg","🔴 Non Veg"]].map(([v,label])=>(
+                {[["All",`🍽️ ${t("All")}`],["Veg",`🟢 ${t("Veg")}`],["Non Veg",`🔴 ${t("Non Veg")}`]].map(([v,label])=>(
                   <button key={v} onClick={()=>setVegFilter(v)} style={vegFilter===v ? {
                     background: v==="Veg" ? "var(--ready-fill)" : v==="Non Veg" ? "var(--stop-fill)" : "var(--grad-btn)",
                     color: v==="Veg" ? "var(--ready-ink)" : v==="Non Veg" ? "var(--stop-ink)" : "#fff",
@@ -725,7 +730,7 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
 
               {(isBeverageCat || selCat==="All") && (
                 <div className="zc-seg">
-                  {[["All","All"],["Hot","🔥 Hot"],["Cold","🧊 Cold"]].map(([v,label])=>(
+                  {[["All",t("All")],["Hot",`🔥 ${t("Hot")}`],["Cold",`🧊 ${t("Cold")}`]].map(([v,label])=>(
                     <button key={v} onClick={()=>setTempFilter(v)} style={tempFilter===v ? {
                       background: v==="Hot" ? "var(--wait-fill)" : v==="Cold" ? "var(--live-fill)" : "var(--grad-btn)",
                       color: v==="Hot" ? "var(--wait-ink)" : v==="Cold" ? "var(--live-ink)" : "#fff",
@@ -736,19 +741,19 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
               )}
 
               <span style={{ fontSize:12, color:"var(--text-3)", alignSelf:"center" }}>
-                {filtered.length} item{filtered.length!==1?"s":""}
+                {tn(filtered.length, "{n} item", "{n} items")}
               </span>
             </div>
 
             {menuLoading ? (
               <div style={{ textAlign:"center", padding:60, color:"var(--text-3)" }}>
                 <div className="zc-spin" style={{ margin:"0 auto 14px" }} />
-                Loading menu…
+                {t("Loading menu…")}
               </div>
             ) : filtered.length===0 ? (
               <div style={{ textAlign:"center", padding:60, color:"var(--text-3)" }}>
                 <div style={{ fontSize:32, marginBottom:8 }}>📭</div>
-                No items found
+                {t("No items found")}
               </div>
             ) : (
               <div style={{ display:"grid",
@@ -782,21 +787,21 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
                           background:"var(--grad-btn)", color:"#fff", borderRadius:"50%",
                           width:24, height:24, display:"flex",
                           alignItems:"center", justifyContent:"center",
-                          fontSize:12, fontWeight:700, boxShadow:"0 4px 10px -4px var(--violet-glow)" }}>{qty}</div>
+                          fontSize:12, fontWeight:700, boxShadow:"0 4px 10px -4px var(--violet-glow)" }}>{fmtNum(qty)}</div>
                       )}
 
                       <div style={{ padding:"10px 10px 6px", flex:1 }}>
                         <div style={{ fontWeight:600, fontSize:13, color:"var(--text-1)",
-                          lineHeight:1.3, marginBottom:3 }}>{m.name}</div>
-                        <div style={{ fontSize:11, color:"var(--text-3)" }}>{m.category}</div>
+                          lineHeight:1.3, marginBottom:3 }}>{localName(m)}</div>
+                        <div style={{ fontSize:11, color:"var(--text-3)" }}>{(catBn[m.category] && localName({ name: m.category, nameBn: catBn[m.category] })) || m.category}</div>
                         <div style={{ fontWeight:700, fontSize:15, color:"var(--text-1)",
-                          marginTop:4 }}>₹{m.price}</div>
+                          marginTop:4 }}>₹{fmtNum(m.price)}</div>
                       </div>
 
                       <div style={{ padding:"0 8px 10px",
                         display:"flex", alignItems:"center", gap:6 }}>
                         {qty===0 ? (
-                          <button className="zc-btn pri sm" onClick={()=>addItem(m)} style={{ flex:1, justifyContent:"center" }}>+ Add</button>
+                          <button className="zc-btn pri sm" onClick={()=>addItem(m)} style={{ flex:1, justifyContent:"center" }}>+ {t("Add")}</button>
                         ) : (
                           <>
                             <button onClick={()=>removeItem(m._id)} style={{
@@ -807,7 +812,7 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
                               justifyContent:"center",
                             }}>−</button>
                             <span className="tnum" style={{ flex:1, textAlign:"center",
-                              fontWeight:700, fontSize:16, color:"var(--text-1)" }}>{qty}</span>
+                              fontWeight:700, fontSize:16, color:"var(--text-1)" }}>{fmtNum(qty)}</span>
                             <button onClick={()=>addItem(m)} style={{
                               width:30, height:30, borderRadius:"50%",
                               background:"var(--grad-btn)", color:"#fff", border:"none",
@@ -836,17 +841,17 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
               <div style={{ display:"flex", justifyContent:"space-between",
                 alignItems:"center" }}>
                 <div style={{ fontWeight:700, fontSize:15, color:"var(--text-1)" }}>
-                  🛒 Cart
+                  🛒 {t("Cart")}
                   {totalQty>0 && <span className="tnum" style={{ marginLeft:8, background:"var(--grad-btn)",
                     color:"#fff", borderRadius:"50%", width:20, height:20,
                     display:"inline-flex", alignItems:"center",
                     justifyContent:"center", fontSize:11, fontWeight:700,
-                  }}>{totalQty}</span>}
+                  }}>{fmtNum(totalQty)}</span>}
                 </div>
                 {cart.length>0 && (
                   <button onClick={clearCart} style={{ background:"none",
                     border:"none", color:"var(--stop-ink)", cursor:"pointer",
-                    fontSize:12, fontWeight:600 }}>Clear</button>
+                    fontSize:12, fontWeight:600 }}>{t("Clear")}</button>
                 )}
               </div>
             </div>
@@ -860,7 +865,7 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
                 {ORDER_TYPE_OPTIONS.map(({value,label,icon})=>(
                   <button key={value} onClick={()=>setOrderType(value)}
                     className={orderType===value ? "on" : ""} style={{ flex:1, justifyContent:"center" }}>
-                    {icon} {label}
+                    {icon} {t(label)}
                   </button>
                 ))}
               </div>
@@ -870,10 +875,10 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
                 <div style={{ display:"flex", alignItems:"center", gap:8,
                   background:"var(--card-2)", border:`1px solid ${tableNo?"var(--violet-line)":"var(--edge)"}`,
                   borderRadius:"var(--r-ctl)", padding:"6px 14px" }}>
-                  <span style={{ fontSize:13, color:"var(--text-2)", fontWeight:500 }}>Table</span>
+                  <span style={{ fontSize:13, color:"var(--text-2)", fontWeight:500 }}>{t("Table")}</span>
                   <input type="number" min={1} value={tableNo}
                     onChange={e=>setTableNo(e.target.value)}
-                    placeholder="No."
+                    placeholder={t("No.")}
                     style={{ flex:1, background:"transparent", border:"none",
                       outline:"none", fontSize:15, fontWeight:700, color:"var(--text-1)",
                       textAlign:"center" }}/>
@@ -882,19 +887,19 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
 
               {/* Customer name */}
               <input value={customerName} onChange={e=>setCustomerName(e.target.value)}
-                placeholder="Customer name" className="zc-input" />
+                placeholder={t("Customer name")} className="zc-input" />
 
               {/* Customer phone */}
               <input value={customerPhone}
                 onChange={e=>setCustomerPhone(e.target.value.replace(/\D/g,""))}
-                maxLength={10} placeholder="Phone number" className="zc-input" />
+                maxLength={10} placeholder={t("Phone number")} className="zc-input" />
 
               {/* Payment Method */}
               <div className="zc-seg" style={{ width:"100%" }}>
                 {["Cash","Online"].map(m=>(
                   <button key={m} onClick={()=>setPaymentMethod(m)}
                     className={paymentMethod===m ? "on" : ""} style={{ flex:1, justifyContent:"center" }}>
-                    {m==="Cash"?"💵 Cash":"📱 Online"}
+                    {m==="Cash"?`💵 ${t("Cash")}`:`📱 ${t("Online")}`}
                   </button>
                 ))}
               </div>
@@ -910,7 +915,7 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
                       background:active?st.bg:"transparent",
                       color:active?st.color:"var(--text-2)",
                       fontWeight:active?600:500,
-                    }}>{icon} {label}</button>
+                    }}>{icon} {t(label)}</button>
                   );
                 })}
               </div>
@@ -918,7 +923,7 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
               {/* WhatsApp notice */}
               {customerPhone?.length===10 && (
                 <span style={{ fontSize:11, color:"var(--ready-ink)" }}>
-                  📱 Will notify +91 {customerPhone}
+                  📱 {t("Will notify +91 {phone}", { phone: customerPhone })}
                 </span>
               )}
             </div>
@@ -928,8 +933,8 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
               {cart.length===0 ? (
                 <div style={{ textAlign:"center", padding:"40px 0", color:"var(--text-3)" }}>
                   <div style={{ fontSize:36, marginBottom:8 }}>🛒</div>
-                  <div style={{ fontSize:13 }}>No items yet</div>
-                  <div style={{ fontSize:11, marginTop:4 }}>Tap items to add</div>
+                  <div style={{ fontSize:13 }}>{t("No items yet")}</div>
+                  <div style={{ fontSize:11, marginTop:4 }}>{t("Tap items to add")}</div>
                 </div>
               ) : (
                 <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
@@ -940,14 +945,14 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ fontSize:13, fontWeight:600, color:"var(--text-1)",
                           overflow:"hidden", textOverflow:"ellipsis",
-                          whiteSpace:"nowrap" }}>{c.item.name}</div>
+                          whiteSpace:"nowrap" }}>{localName(c.item)}</div>
                         <div className="tnum" style={{ fontSize:11, color:"var(--text-3)" }}>
-                          ₹{c.item.price} × {c.qty}
+                          ₹{fmtNum(c.item.price)} × {fmtNum(c.qty)}
                         </div>
                       </div>
                       <div className="tnum" style={{ fontWeight:700, color:"var(--text-1)", fontSize:13,
                         minWidth:44, textAlign:"right" }}>
-                        ₹{c.item.price*c.qty}
+                        ₹{fmtNum(c.item.price*c.qty)}
                       </div>
                       <div style={{ display:"flex", alignItems:"center", gap:4 }}>
                         <button onClick={()=>removeItem(c.item._id)} style={{
@@ -979,28 +984,28 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
                   marginBottom:12 }}>
                   <div className="tnum" style={{ display:"flex", justifyContent:"space-between",
                     fontSize:12, color:"var(--text-2)" }}>
-                    <span>Subtotal</span><span>₹{subtotal}</span>
+                    <span>{t("Subtotal")}</span><span>₹{fmtNum(subtotal)}</span>
                   </div>
                   {tax>0 && <div className="tnum" style={{ display:"flex",
                     justifyContent:"space-between", fontSize:12, color:"var(--text-2)" }}>
-                    <span>GST ({gstRate}%)</span><span>₹{tax}</span>
+                    <span>{t("GST")} ({fmtNum(gstRate)}%)</span><span>₹{fmtNum(tax)}</span>
                   </div>}
                   {scAmt>0 && <div className="tnum" style={{ display:"flex",
                     justifyContent:"space-between", fontSize:12, color:"var(--text-2)" }}>
-                    <span>Service</span><span>₹{scAmt}</span>
+                    <span>{t("Service")}</span><span>₹{fmtNum(scAmt)}</span>
                   </div>}
                   <div className="tnum" style={{ display:"flex", justifyContent:"space-between",
                     fontWeight:700, fontSize:17, paddingTop:8,
                     borderTop:"1px solid var(--edge)", marginTop:4 }}>
-                    <span style={{ color:"var(--text-1)" }}>Total</span>
-                    <span className="zc-grad-text">₹{total}</span>
+                    <span style={{ color:"var(--text-1)" }}>{t("Total")}</span>
+                    <span className="zc-grad-text">₹{fmtNum(total)}</span>
                   </div>
                 </div>
 
                 <button className="zc-btn pri" onClick={handleSubmit}
                   disabled={loading||cart.length===0}
                   style={{ width:"100%", justifyContent:"center", padding:"13px 0", fontSize:14 }}>
-                  {loading?"Placing…":`Place Order · ₹${total}`}
+                  {loading?t("Placing…"):t("Place Order · ₹{amount}", { amount: fmtNum(total) })}
                 </button>
               </div>
             )}
@@ -1029,6 +1034,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
   const [vegFilter,   setVegFilter]   = useState("All");
   const [tempFilter,  setTempFilter]  = useState("All");
   const [catImages, setCatImages] = useState({});
+  const [catBn, setCatBn] = useState({}); // category name → Bengali name
 
   useEffect(()=>{
     getMenu({}).then(r=>{ setMi(r.data||[]); setMenuLoading(false); }).catch(()=>setMenuLoading(false));
@@ -1036,8 +1042,10 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
     getCategories().then(r=>{
       const list = r.data?.data || r.data || [];
       const map = {};
-      list.forEach(c=>{ if(c.name && c.image) map[c.name] = c.image; });
+      const bn = {};
+      list.forEach(c=>{ if(c.name && c.image) map[c.name] = c.image; if(c.name && c.nameBn) bn[c.name] = c.nameBn; });
       setCatImages(map);
+      setCatBn(bn);
     }).catch(()=>{});
   },[]);
 
@@ -1054,7 +1062,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
 
   const filtered = mi.filter(m=>{
     const matchCat    = selCat==="All" || m.category===selCat;
-    const matchSearch = m.name.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = m.name.toLowerCase().includes(search.toLowerCase()) || (m.nameBn || "").toLowerCase().includes(search.toLowerCase());
     const matchVeg    = vegFilter==="All" || m.tag===vegFilter;
     const matchTemp   = tempFilter==="All"
       || (tempFilter==="Cold" && COLD_CATS.includes(m.category))
@@ -1071,7 +1079,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
       return ex?acc.map(c=>c.item._id===item._id?{...c,qty:Math.min(99,c.qty+qty)}:c):[...acc,{item,qty}];
     },p));
     const n=list.reduce((s,x)=>s+x.qty,0);
-    toast.success(`🎤 Added ${n} item${n===1?"":"s"}`);
+    toast.success(`🎤 ${tn(n, "Added {n} item", "Added {n} items")}`);
   };
   const removeItem= (id)  => setCart(p=>{ const ex=p.find(c=>c.item._id===id); if(!ex)return p; return ex.qty===1?p.filter(c=>c.item._id!==id):p.map(c=>c.item._id===id?{...c,qty:c.qty-1}:c); });
   const clearCart = () => setCart([]);
@@ -1091,7 +1099,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
   const getCatIcon = (cat) => catImages[cat] || CAT_ICONS[cat] || "🍽️";
 
   const handleSubmit = async () => {
-    if(!cart.length) return toast.error("Add at least one item");
+    if(!cart.length) return toast.error(t("Add at least one item"));
     try{
       setLoading(true);
       if (order.status === "CONFIRMED") {
@@ -1103,7 +1111,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
           merged.set(c.item._id, ex ? { ...ex, qty: ex.qty + c.qty } : { menuItemId: c.item._id, qty: c.qty, notes: "" });
         }
         const { data } = await modifyOrderItems(order._id, [...merged.values()], order.revision ?? 0);
-        toast.success(`✓ Added ${totalQty} items to order`);
+        toast.success(`✓ ${tn(totalQty, "Added {n} item to order", "Added {n} items to order")}`);
         onItemsAdded(data);
         onClose();
         return;
@@ -1121,11 +1129,11 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
         }
       );
       const data = await response.json();
-      if(!response.ok) throw new Error(data.message||"Failed");
-      toast.success(`✓ Added ${totalQty} items to order`);
+      if(!response.ok) throw new Error(data.message||t("Failed"));
+      toast.success(`✓ ${tn(totalQty, "Added {n} item to order", "Added {n} items to order")}`);
       onItemsAdded(data);
       onClose();
-    }catch(e){ toast.error(e?.response?.data?.message || e.message || "Failed"); }
+    }catch(e){ toast.error(e?.response?.data?.message || e.message || t("Failed")); }
     finally{ setLoading(false); }
   };
 
@@ -1146,13 +1154,13 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
 
           <div style={{ display:"flex", flexDirection:"column" }}>
             <span style={{ fontWeight:700, fontSize:15, color:T1 }}>
-              Add Items to Order
+              {t("Add Items to Order")}
             </span>
             <span style={{ fontSize:12, color:T2, marginTop:2 }}>
-              {order.orderId} · {order.guestName||order.user?.name||"Guest"}
-              {order.tableNo ? ` · T${order.tableNo}` : ""}
+              {order.orderId} · {order.guestName||order.user?.name||t("Guest")}
+              {order.tableNo ? ` · ${t("T{n}", { n: order.tableNo })}` : ""}
               · <span style={{ color:isPaid?"var(--ready-ink)":"var(--wait-ink)", fontWeight:600 }}>
-                  {isPaid?"✓ PAID":"⏳ DUE"} ₹{Math.round(order.total)}
+                  {isPaid?`✓ ${t("PAID")}`:`⏳ ${t("DUE")}`} ₹{fmtNum(Math.round(order.total))}
                 </span>
             </span>
           </div>
@@ -1164,14 +1172,14 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
             padding:"7px 14px", minWidth:200 }}>
             <span style={{ fontSize:16 }}>🔍</span>
             <input value={search} onChange={e=>setSearch(e.target.value)}
-              placeholder="Search items…"
+              placeholder={t("Search items…")}
               style={{ flex:1, background:"transparent", border:"none",
                 outline:"none", fontSize:13, color:T1 }}/>
             {search && <button onClick={()=>setSearch("")}
               style={{ background:"none", border:"none", color:T3,
                 cursor:"pointer", fontSize:14 }}>✕</button>}
           </div>
-          <VoiceOrder menu={mi} onAdd={addVoiceItems} onSearch={(t)=>{ setSearch(t); setSelCat("All"); }} />
+          <VoiceOrder menu={mi} onAdd={addVoiceItems} onSearch={(q)=>{ setSearch(q); setSelCat("All"); }} />
 
           <div style={{ display:"flex", gap:4, background:CARD2, padding:3,
             borderRadius:8, border:`1px solid ${BDR}` }}>
@@ -1181,7 +1189,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
                 fontWeight:600, fontSize:12, border:"none",
                 background:paymentMethod===m?PINK:"transparent",
                 color:paymentMethod===m?"#fff":T2,
-              }}>{m==="Cash"?"💵":"📱"} {m}</button>
+              }}>{m==="Cash"?"💵":"📱"} {t(m)}</button>
             ))}
           </div>
 
@@ -1196,7 +1204,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
                   fontWeight:600, fontSize:12, border:"none",
                   background:active?st.bg:"transparent",
                   color:active?st.color:T2,
-                }}>{icon} {label}</button>
+                }}>{icon} {t(label)}</button>
               );
             })}
           </div>
@@ -1204,7 +1212,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
           <button className="op-btn" onClick={onClose} style={{ width:34, height:34, borderRadius:"50%",
             border:`1px solid ${BDR}`, background:CARD, cursor:"pointer",
             display:"flex", alignItems:"center", justifyContent:"center",
-            color:T2, fontSize:16, flexShrink:0 }}>✕</button>
+            color:T2, fontSize:16, flexShrink:0 }} aria-label={t("Close")}>✕</button>
         </div>
 
         {/* ── MAIN CONTENT ── */}
@@ -1237,9 +1245,9 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
                   <span style={{ fontSize:10, fontWeight:active?700:500,
                     color:active?PINK:T2, textAlign:"center",
                     lineHeight:1.2, wordBreak:"break-word" }}>
-                    {cat}
+                    {cat === "All" ? t("All") : (catBn[cat] && localName({ name: cat, nameBn: catBn[cat] })) || cat}
                   </span>
-                  <span style={{ fontSize:9, color:T3 }}>{count}</span>
+                  <span style={{ fontSize:9, color:T3 }}>{fmtNum(count)}</span>
                 </button>
               );
             })}
@@ -1251,7 +1259,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
             <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap", alignItems:"center" }}>
               <div style={{ display:"flex", gap:3, background:CARD2, padding:3,
                 borderRadius:20, border:`1px solid ${BDR}` }}>
-                {[["All","🍽️ All"],["Veg","🟢 Veg"],["Non Veg","🔴 Non Veg"]].map(([v,label])=>(
+                {[["All",`🍽️ ${t("All")}`],["Veg",`🟢 ${t("Veg")}`],["Non Veg",`🔴 ${t("Non Veg")}`]].map(([v,label])=>(
                   <button key={v} onClick={()=>setVegFilter(v)} style={{
                     padding:"5px 12px", borderRadius:16, border:"none",
                     cursor:"pointer", fontSize:12, fontWeight:600,
@@ -1272,7 +1280,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
               {(isBeverageCat || selCat==="All") && (
                 <div style={{ display:"flex", gap:3, background:CARD2, padding:3,
                   borderRadius:20, border:`1px solid ${BDR}` }}>
-                  {[["All","All"],["Hot","🔥 Hot"],["Cold","🧊 Cold"]].map(([v,label])=>(
+                  {[["All",t("All")],["Hot",`🔥 ${t("Hot")}`],["Cold",`🧊 ${t("Cold")}`]].map(([v,label])=>(
                     <button key={v} onClick={()=>setTempFilter(v)} style={{
                       padding:"5px 12px", borderRadius:16, border:"none",
                       cursor:"pointer", fontSize:12, fontWeight:600,
@@ -1290,16 +1298,16 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
                   ))}
                 </div>
               )}
-              <span style={{ fontSize:12, color:T3 }}>{filtered.length} items</span>
+              <span style={{ fontSize:12, color:T3 }}>{tn(filtered.length, "{n} item", "{n} items")}</span>
             </div>
 
             {menuLoading ? (
               <div style={{ textAlign:"center", padding:60, color:T3 }}>
-                <div style={{ fontSize:32, marginBottom:8 }}>⏳</div>Loading menu…
+                <div style={{ fontSize:32, marginBottom:8 }}>⏳</div>{t("Loading menu…")}
               </div>
             ) : filtered.length===0 ? (
               <div style={{ textAlign:"center", padding:60, color:T3 }}>
-                <div style={{ fontSize:32, marginBottom:8 }}>📭</div>No items found
+                <div style={{ fontSize:32, marginBottom:8 }}>📭</div>{t("No items found")}
               </div>
             ) : (
               <div style={{ display:"grid",
@@ -1327,13 +1335,13 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
                         <div style={{ position:"absolute", top:8, right:8,
                           background:PINK, color:"#fff", borderRadius:"50%",
                           width:24, height:24, display:"flex", alignItems:"center",
-                          justifyContent:"center", fontSize:12, fontWeight:700 }}>{qty}</div>
+                          justifyContent:"center", fontSize:12, fontWeight:700 }}>{fmtNum(qty)}</div>
                       )}
                       <div style={{ padding:"10px 10px 6px", flex:1 }}>
                         <div style={{ fontWeight:600, fontSize:13, color:T1,
-                          lineHeight:1.3, marginBottom:3 }}>{m.name}</div>
-                        <div style={{ fontSize:11, color:T3 }}>{m.category}</div>
-                        <div style={{ fontWeight:700, fontSize:15, color:PINK, marginTop:4 }}>₹{m.price}</div>
+                          lineHeight:1.3, marginBottom:3 }}>{localName(m)}</div>
+                        <div style={{ fontSize:11, color:T3 }}>{(catBn[m.category] && localName({ name: m.category, nameBn: catBn[m.category] })) || m.category}</div>
+                        <div style={{ fontWeight:700, fontSize:15, color:PINK, marginTop:4 }}>₹{fmtNum(m.price)}</div>
                       </div>
                       <div style={{ padding:"0 8px 10px", display:"flex", alignItems:"center", gap:6 }}>
                         {qty===0 ? (
@@ -1342,7 +1350,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
                             background:"var(--grad-btn)",
                             color:"#fff", border:"none", cursor:"pointer",
                             fontWeight:700, fontSize:13,
-                          }}>+ Add</button>
+                          }}>+ {t("Add")}</button>
                         ) : (
                           <>
                             <button onClick={()=>removeItem(m._id)} style={{
@@ -1352,7 +1360,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
                               fontSize:18, display:"flex", alignItems:"center",
                               justifyContent:"center" }}>−</button>
                             <span style={{ flex:1, textAlign:"center",
-                              fontWeight:700, fontSize:16, color:T1 }}>{qty}</span>
+                              fontWeight:700, fontSize:16, color:T1 }}>{fmtNum(qty)}</span>
                             <button onClick={()=>addItem(m)} style={{
                               width:32, height:32, borderRadius:"50%",
                               background:PINK, color:"#fff", border:"none",
@@ -1377,24 +1385,24 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
             <div style={{ padding:"14px 14px 10px",
               borderBottom:`1px solid ${BDR}`, flexShrink:0 }}>
               <div style={{ fontSize:10, fontWeight:600, color:T3, letterSpacing:1,
-                textTransform:"uppercase", marginBottom:8 }}>Current Order</div>
+                textTransform:"uppercase", marginBottom:8 }}>{t("Current Order")}</div>
               <div style={{ background:CARD2, borderRadius:8, padding:10,
                 border:`1px solid ${isPaid?"var(--ready-line)":"var(--wait-line)"}` }}>
                 <div style={{ display:"flex", justifyContent:"space-between", fontSize:12 }}>
-                  <span style={{ color:T3 }}>Items</span>
-                  <span style={{ color:T1, fontWeight:500 }}>{order.items?.length||0}</span>
+                  <span style={{ color:T3 }}>{t("Items")}</span>
+                  <span style={{ color:T1, fontWeight:500 }}>{fmtNum(order.items?.length||0)}</span>
                 </div>
                 <div style={{ display:"flex", justifyContent:"space-between", fontSize:13,
                   fontWeight:700, marginTop:4 }}>
-                  <span style={{ color:T1 }}>Total</span>
-                  <span style={{ color:PINK }}>₹{Math.round(order.total)}</span>
+                  <span style={{ color:T1 }}>{t("Total")}</span>
+                  <span style={{ color:PINK }}>₹{fmtNum(Math.round(order.total))}</span>
                 </div>
                 <div style={{ marginTop:6, display:"flex", gap:6 }}>
                   <span style={{ fontSize:11, fontWeight:700, padding:"2px 8px",
                     borderRadius:20,
                     background:isPaid?"var(--ready-fill)":"var(--wait-fill)",
                     color:isPaid?"var(--ready-ink)":"var(--wait-ink)" }}>
-                    {isPaid?"✓ PAID":"⏳ DUE"}
+                    {isPaid?`✓ ${t("PAID")}`:`⏳ ${t("DUE")}`}
                   </span>
                 </div>
               </div>
@@ -1403,17 +1411,17 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
             <div style={{ padding:"10px 14px 6px", flexShrink:0 }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                 <span style={{ fontSize:13, fontWeight:700, color:T1 }}>
-                  New Items
+                  {t("New Items")}
                   {totalQty>0 && <span style={{ marginLeft:8, background:PINK,
                     color:"#fff", borderRadius:"50%", width:20, height:20,
                     display:"inline-flex", alignItems:"center",
                     justifyContent:"center", fontSize:11, fontWeight:700,
-                  }}>{totalQty}</span>}
+                  }}>{fmtNum(totalQty)}</span>}
                 </span>
                 {cart.length>0 && (
                   <button onClick={clearCart} style={{ background:"none",
                     border:"none", color:"var(--stop-ink)", cursor:"pointer",
-                    fontSize:12, fontWeight:600 }}>Clear</button>
+                    fontSize:12, fontWeight:600 }}>{t("Clear")}</button>
                 )}
               </div>
             </div>
@@ -1422,7 +1430,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
               {cart.length===0 ? (
                 <div style={{ textAlign:"center", padding:"30px 0", color:T3 }}>
                   <div style={{ fontSize:32, marginBottom:6 }}>➕</div>
-                  <div style={{ fontSize:12 }}>Select items to add</div>
+                  <div style={{ fontSize:12 }}>{t("Select items to add")}</div>
                 </div>
               ) : (
                 <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
@@ -1435,11 +1443,11 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ fontSize:13, fontWeight:600, color:T1,
                           overflow:"hidden", textOverflow:"ellipsis",
-                          whiteSpace:"nowrap" }}>{c.item.name}</div>
-                        <div style={{ fontSize:11, color:T3 }}>₹{c.item.price} × {c.qty}</div>
+                          whiteSpace:"nowrap" }}>{localName(c.item)}</div>
+                        <div style={{ fontSize:11, color:T3 }}>₹{fmtNum(c.item.price)} × {fmtNum(c.qty)}</div>
                       </div>
                       <div style={{ fontWeight:700, color:PINK, fontSize:13, minWidth:44, textAlign:"right" }}>
-                        ₹{c.item.price*c.qty}
+                        ₹{fmtNum(c.item.price*c.qty)}
                       </div>
                       <div style={{ display:"flex", alignItems:"center", gap:4 }}>
                         <button onClick={()=>removeItem(c.item._id)} style={{
@@ -1464,19 +1472,19 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
                 borderTop:`1px solid ${BDR}`, flexShrink:0 }}>
                 <div style={{ display:"flex", flexDirection:"column", gap:4, marginBottom:10 }}>
                   <div style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:T2 }}>
-                    <span>New subtotal</span><span>₹{subtotal}</span>
+                    <span>{t("New subtotal")}</span><span>₹{fmtNum(subtotal)}</span>
                   </div>
                   {tax>0 && <div style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:T2 }}>
-                    <span>GST ({gstRate}%)</span><span>₹{tax}</span>
+                    <span>{t("GST")} ({fmtNum(gstRate)}%)</span><span>₹{fmtNum(tax)}</span>
                   </div>}
                   <div style={{ display:"flex", justifyContent:"space-between",
                     fontWeight:700, fontSize:14, paddingTop:6,
                     borderTop:`1px solid ${BDR}`, marginTop:2 }}>
-                    <span style={{ color:T1 }}>New Total</span>
-                    <span style={{ color:PINK }}>₹{total}</span>
+                    <span style={{ color:T1 }}>{t("New Total")}</span>
+                    <span style={{ color:PINK }}>₹{fmtNum(total)}</span>
                   </div>
                   <div style={{ fontSize:11, color:T3, textAlign:"center", marginTop:4 }}>
-                    Order total: ₹{Math.round(order.total)} → ₹{Math.round(Number(order.total||0)+total)}
+                    {t("Order total:")} ₹{fmtNum(Math.round(order.total))} → ₹{fmtNum(Math.round(Number(order.total||0)+total))}
                   </div>
                 </div>
 
@@ -1487,7 +1495,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
                   cursor:loading?"not-allowed":"pointer",
                   boxShadow:loading?"none":`0 6px 20px var(--violet-line)`,
                 }}>
-                  {loading?`Adding…`:`Add Items · ₹${total}`}
+                  {loading?t("Adding…"):t("Add Items · ₹{amount}", { amount: fmtNum(total) })}
                 </button>
               </div>
             )}
@@ -1506,21 +1514,21 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
 // the heading reads "Takeaway #…" and the bill goes by order id, not tableNo.
 const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPaymentChange, onCombinedBill, onAddItems, onNewOrder, label, billTarget }) => {
   const [expandedOrder, setExpandedOrder] = useState(null);
-  const heading = label || `Table ${tableNo}`;
+  const heading = label || t("Table {n}", { n: tableNo });
   const bill = billTarget || { mode: "table", value: tableNo };
 
   if (orders.length === 0) {
     return (
       <div style={{ marginTop:14, textAlign:"center", padding:24, color:T3,
         fontSize:12, border:`1px dashed ${BDR}`, borderRadius:RADIUS }}>
-        <div style={{ marginBottom:12 }}>Table {tableNo} is free</div>
+        <div style={{ marginBottom:12 }}>{t("Table {n} is free", { n: tableNo })}</div>
         <button
           type="button"
           onClick={() => onNewOrder?.(tableNo)}
           className="zc-btn pri"
           style={{ justifyContent:"center" }}
         >
-          ＋ New order for Table {tableNo}
+          ＋ {t("New order for Table {n}", { n: tableNo })}
         </button>
       </div>
     );
@@ -1543,16 +1551,16 @@ const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPayme
 
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10, flexWrap:"wrap", gap:6 }}>
         <span style={{ fontSize:11, fontWeight:600, color:T2, letterSpacing:1, textTransform:"uppercase" }}>
-          {heading} · {orders.length} order{orders.length!==1?"s":""}
+          {heading} · {tn(orders.length, "{n} order", "{n} orders")}
         </span>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
           <span className="zc-tag" style={{
             background:KIND_FILL[placedKind], color:KIND_INK[placedKind], border:`1px solid ${KIND_LINE[placedKind]}`,
           }}>
-            ⏱ {formatDuration(placedMs)} since placed
+            ⏱ {t("{time} since placed", { time: formatDuration(placedMs) })}
           </span>
           <span style={{ fontSize:10, color:T3 }}>
-            {paidOrders.length} paid · {unpaidOrders.length} pending
+            {t("{paid} paid · {pending} pending", { paid: paidOrders.length, pending: unpaidOrders.length })}
           </span>
         </div>
       </div>
@@ -1562,7 +1570,7 @@ const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPayme
           <div style={{ fontSize:10, fontWeight:700, color:"var(--stop-ink)", letterSpacing:1,
             textTransform:"uppercase", marginBottom:6, display:"flex", alignItems:"center", gap:6 }}>
             <div style={{ width:6, height:6, borderRadius:"50%", background:"var(--stop-ink)" }}/>
-            Pending Payment ({unpaidOrders.length})
+            {t("Pending Payment")} ({fmtNum(unpaidOrders.length)})
           </div>
           {unpaidOrders.map((order, idx) => (
             <OrderCard
@@ -1586,7 +1594,7 @@ const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPayme
           <div style={{ fontSize:10, fontWeight:700, color:"var(--ready-ink)", letterSpacing:1,
             textTransform:"uppercase", marginBottom:6, display:"flex", alignItems:"center", gap:6 }}>
             <div style={{ width:6, height:6, borderRadius:"50%", background:"var(--ready-ink)" }}/>
-            Paid ({paidOrders.length})
+            {t("Paid")} ({fmtNum(paidOrders.length)})
           </div>
           {paidOrders.map((order, idx) => (
             <OrderCard
@@ -1608,7 +1616,7 @@ const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPayme
       <div style={{ padding:14, background:`var(--violet-faint)`, borderRadius:RADIUS,
         border:`1px solid var(--violet-mid)`, marginTop:8 }}>
         <div style={{ fontSize:11, fontWeight:600, color:T2, textTransform:"uppercase",
-          letterSpacing:1, marginBottom:10 }}>{label ? "Bill Summary" : "Table Bill Summary"}</div>
+          letterSpacing:1, marginBottom:10 }}>{label ? t("Bill Summary") : t("Table Bill Summary")}</div>
 
         {orders.map((o,i) => {
           const paid = o.paymentStatus==="PAID";
@@ -1620,17 +1628,17 @@ const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPayme
                 <div style={{ width:6, height:6, borderRadius:"50%",
                   background:paid?"var(--ready-ink)":"var(--stop-ink)", flexShrink:0 }}/>
                 <span style={{ color:T2 }}>
-                  {o.user?.name||o.guestName||`Order ${i+1}`}
+                  {o.user?.name||o.guestName||t("Order {n}", { n: i+1 })}
                 </span>
-                <span style={{ fontSize:10, color:T3 }}>({o.items?.length||0} items)</span>
+                <span style={{ fontSize:10, color:T3 }}>({tn(o.items?.length||0, "{n} item", "{n} items")})</span>
               </div>
               <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                 <span style={{ fontSize:11,
                   color:paid?"var(--ready-ink)":"var(--wait-ink)",
                   fontWeight:600 }}>
-                  {paid?"✓ Paid":"⏳ Due"}
+                  {paid?`✓ ${t("Paid")}`:`⏳ ${t("Due")}`}
                 </span>
-                <span style={{ fontWeight:700, color:T1 }}>₹{Math.round(o.total)}</span>
+                <span style={{ fontWeight:700, color:T1 }}>₹{fmtNum(Math.round(o.total))}</span>
               </div>
             </div>
           );
@@ -1639,19 +1647,19 @@ const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPayme
         <div style={{ marginTop:10, paddingTop:10, borderTop:`1px solid ${BDR}` }}>
           {paidTotal > 0 && (
             <div style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:"var(--ready-ink)", marginBottom:4 }}>
-              <span>✓ Paid</span><span>₹{Math.round(paidTotal)}</span>
+              <span>✓ {t("Paid")}</span><span>₹{fmtNum(Math.round(paidTotal))}</span>
             </div>
           )}
           {dueTotal > 0 && (
             <div style={{ display:"flex", justifyContent:"space-between", fontSize:13,
               fontWeight:700, color:"var(--stop-ink)", marginBottom:4 }}>
-              <span>⏳ Due</span><span>₹{Math.round(dueTotal)}</span>
+              <span>⏳ {t("Due")}</span><span>₹{fmtNum(Math.round(dueTotal))}</span>
             </div>
           )}
           <div style={{ display:"flex", justifyContent:"space-between",
             fontSize:15, fontWeight:700, marginTop:6, paddingTop:6, borderTop:`1px solid ${BDR}` }}>
-            <span style={{ color:T1 }}>Grand Total</span>
-            <span style={{ color:PINK }}>₹{Math.round(grandTotal)}</span>
+            <span style={{ color:T1 }}>{t("Grand Total")}</span>
+            <span style={{ color:PINK }}>₹{fmtNum(Math.round(grandTotal))}</span>
           </div>
         </div>
       </div>
@@ -1661,7 +1669,7 @@ const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPayme
           style={{ width:"100%", marginTop:10, padding:"10px", borderRadius:10,
             border:`1px solid var(--violet-mid)`, background:`var(--violet-faint)`,
             color:PINK, cursor:"pointer", fontSize:13, fontWeight:600 }}>
-          🧾 {label ? `Generate Bill for ${heading}` : `Generate Combined Bill for Table ${tableNo}`}
+          🧾 {label ? t("Generate Bill for {name}", { name: heading }) : t("Generate Combined Bill for Table {n}", { n: tableNo })}
         </button>
       )}
     </div>
@@ -1670,7 +1678,7 @@ const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPayme
 
 // ── OrderCard — individual order row inside table view ─────────────────────────
 const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPaymentChange, onCombinedBill, onAddItems, nowTick }) => {
-  const displayName  = order.user?.name || order.guestName || `Order ${idx+1}`;
+  const displayName  = order.user?.name || order.guestName || t("Order {n}", { n: idx+1 });
   const displayPhone = order.guestPhone||order.user?.phone ||  null;
   const av           = avc(displayName);
   const canAddItems  = order.status === "CONFIRMED" && !order.stockDeducted; // only while Placed
@@ -1702,12 +1710,12 @@ const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPayment
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontSize:13, fontWeight:600, color:T1 }}>{displayName}</div>
           <div style={{ fontSize:11, color:T3, marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-            {order.items?.map(i=>`${i.name} ×${i.qty}`).join(", ")||"—"}
+            {order.items?.map(i=>`${localName(i)} ×${fmtNum(i.qty)}`).join(", ")||"—"}
           </div>
         </div>
 
         <div style={{ textAlign:"right", flexShrink:0 }}>
-          <div style={{ fontSize:14, fontWeight:700, color:PINK }}>₹{Math.round(order.total)}</div>
+          <div style={{ fontSize:14, fontWeight:700, color:PINK }}>₹{fmtNum(Math.round(order.total))}</div>
           <div style={{ display:"flex", gap:4, justifyContent:"flex-end", marginTop:3, flexWrap:"wrap" }}>
             {placedMs != null && (
               <span className="zc-tag" style={{
@@ -1734,33 +1742,33 @@ const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPayment
                 <div style={{ display:"flex", gap:8, alignItems:"center" }}>
                   <div style={{ width:20, height:20, borderRadius:5, background:`var(--violet-weak)`,
                     display:"flex", alignItems:"center", justifyContent:"center",
-                    fontSize:10, fontWeight:600, color:PINK }}>{item.qty}</div>
-                  <span style={{ color:T1 }}>{item.name}</span>
+                    fontSize:10, fontWeight:600, color:PINK }}>{fmtNum(item.qty)}</div>
+                  <span style={{ color:T1 }}>{localName(item)}</span>
                 </div>
-                <span style={{ color:T1, fontWeight:500 }}>₹{item.price*item.qty}</span>
+                <span style={{ color:T1, fontWeight:500 }}>₹{fmtNum(item.price*item.qty)}</span>
               </div>
             ))}
             <div style={{ display:"flex", justifyContent:"space-between",
               fontWeight:700, fontSize:14, marginTop:8, color:T1 }}>
-              <span>Total</span>
-              <span style={{ color:PINK }}>₹{Math.round(order.total)}</span>
+              <span>{t("Total")}</span>
+              <span style={{ color:PINK }}>₹{fmtNum(Math.round(order.total))}</span>
             </div>
           </div>
 
           <div style={{ fontSize:11, color:T3, marginBottom:10 }}>
-            {order.orderId} · {displayPhone ? `+91 ${displayPhone}` : "No phone"} · {order.paymentMethod||"Cash"}
+            {order.orderId} · {displayPhone ? `+91 ${displayPhone}` : t("No phone")} · {t(order.paymentMethod||"Cash")}
           </div>
 
           {/* Order Status buttons */}
           <div style={{ marginBottom:8 }}>
             <div style={{ fontSize:10, color:T3, fontWeight:600, letterSpacing:1,
-              textTransform:"uppercase", marginBottom:6 }}>Order Status</div>
+              textTransform:"uppercase", marginBottom:6 }}>{t("Order Status")}</div>
             <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
               {ALL_STATUSES.filter(s => s !== order.status).map(s => {
                   const st = STATUS_STYLE[s] || DEFAULT_STATUS_STYLE;
                   const blocked = needsPaidFirst(order, s);
                   return (
-                    <button key={s} className="op-chip" disabled={blocked} title={blocked ? PAID_FIRST_HINT : undefined}
+                    <button key={s} className="op-chip" disabled={blocked} title={blocked ? t(PAID_FIRST_HINT) : undefined}
                       onClick={()=>{ if (!blocked) onStatusChange(order._id,s); }}
                       style={{ padding:"4px 10px", borderRadius:20, border:`1px solid ${st.line}`,
                         background:st.bg, color:st.color, cursor:blocked?"not-allowed":"pointer", opacity:blocked?0.45:1, fontSize:11, fontWeight:500 }}>
@@ -1774,7 +1782,7 @@ const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPayment
           {/* Payment Status buttons */}
           <div style={{ marginBottom:8 }}>
             <div style={{ fontSize:10, color:T3, fontWeight:600, letterSpacing:1,
-              textTransform:"uppercase", marginBottom:6 }}>Payment Status</div>
+              textTransform:"uppercase", marginBottom:6 }}>{t("Payment Status")}</div>
             <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
               {MANUAL_PAYMENT_STATUSES.map(s => {
                 const st = PAY_STYLE[s] || DEFAULT_STATUS_STYLE;
@@ -1796,7 +1804,7 @@ const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPayment
           {/* Payment Method buttons */}
           <div style={{ marginBottom:10 }}>
             <div style={{ fontSize:10, color:T3, fontWeight:600, letterSpacing:1,
-              textTransform:"uppercase", marginBottom:6 }}>Payment Method</div>
+              textTransform:"uppercase", marginBottom:6 }}>{t("Payment Method")}</div>
             <div style={{ display:"flex", gap:5 }}>
               {["Cash","Online"].map(m => {
                 const active = (order.paymentMethod||"Cash")===m;
@@ -1807,7 +1815,7 @@ const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPayment
                       border:`2px solid ${active?PINK:BDR}`,
                       background:active?`var(--violet-weak)`:CARD2,
                       color:active?PINK:T2 }}>
-                    {m==="Cash"?"💵":"📱"} {m}
+                    {m==="Cash"?"💵":"📱"} {t(m)}
                   </button>
                 );
               })}
@@ -1820,7 +1828,7 @@ const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPayment
               <button className="op-btn" onClick={()=>onAddItems(order)}
                 style={{ padding:"6px 14px", borderRadius:20, fontSize:12, fontWeight:600,
                   border:`1px solid var(--violet-mid)`, background:`var(--violet-faint)`, color:PINK, cursor:"pointer" }}>
-                + Add items
+                + {t("Add items")}
               </button>
             )}
             {displayPhone && onCombinedBill && (
@@ -1828,18 +1836,18 @@ const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPayment
                 style={{ padding:"6px 14px", borderRadius:20, fontSize:12, fontWeight:600,
                   border:"1px solid var(--violet-glow)", background:"var(--violet-faint)",
                   color:"var(--accent-ink)", cursor:"pointer" }}>
-                🧾 Customer Bill
+                🧾 {t("Customer Bill")}
               </button>
             )}
             <button className="op-btn" onClick={async()=>{
               try{
                 await printOrderBill(order._id);
-                toast.success("Bill sent to printer ✓");
-              }catch{ toast.error("Printer not running"); }
+                toast.success(t("Bill sent to printer ✓"));
+              }catch{ toast.error(t("Printer not running")); }
             }} style={{ padding:"5px 12px", borderRadius:8, fontSize:12, cursor:"pointer",
               border:"1px solid var(--ready-line)", background:"var(--ready-fill)",
               color:"var(--ready-ink)", whiteSpace:"nowrap" }}>
-              🖨️ Bill
+              🖨️ {t("Bill")}
             </button>
           </div>
         </div>
@@ -1866,23 +1874,23 @@ const PendingOrdersModal = ({ orders, busy, onConfirm, onReject, onClose }) => {
       <div className="zc-modal" style={{ width: 640, maxHeight: "84vh", display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
         <div className="mh">
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="t">Awaiting confirmation</div>
-            <div className="s">{orders.length} customer order{orders.length === 1 ? "" : "s"} waiting to be accepted</div>
+            <div className="t">{t("Awaiting confirmation")}</div>
+            <div className="s">{tn(orders.length, "{n} customer order waiting to be accepted", "{n} customer orders waiting to be accepted")}</div>
           </div>
-          <button type="button" className="zc-x" onClick={onClose} aria-label="Close">✕</button>
+          <button type="button" className="zc-x" onClick={onClose} aria-label={t("Close")}>✕</button>
         </div>
 
         <div className="mb" style={{ overflowY: "auto", flex: 1 }}>
           {sorted.length === 0 ? (
             <EmptyState
               icon={<span style={{ fontSize: 26 }}>✅</span>}
-              title="Queue clear"
-              sub="No orders are waiting on a confirmation right now."
+              title={t("Queue clear")}
+              sub={t("No orders are waiting on a confirmation right now.")}
             />
           ) : (
             <div style={{ display: "grid", gap: 10 }}>
               {sorted.map((o) => {
-                const name = o.guestName || o.user?.name || "Guest";
+                const name = o.guestName || o.user?.name || t("Guest");
                 const phone = o.guestPhone || o.user?.phone || null;
                 const waitMin = Math.max(0, Math.round((new Date().getTime() - new Date(o.createdAt).getTime()) / 60000));
                 const overdue = waitMin >= 10;
@@ -1898,19 +1906,19 @@ const PendingOrdersModal = ({ orders, busy, onConfirm, onReject, onClose }) => {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                           <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)" }}>{name}</div>
-                          <div className="tnum" style={{ fontSize: 14, fontWeight: 700, color: "var(--text-1)", flexShrink: 0 }}>₹{Math.round(o.total)}</div>
+                          <div className="tnum" style={{ fontSize: 14, fontWeight: 700, color: "var(--text-1)", flexShrink: 0 }}>₹{fmtNum(Math.round(o.total))}</div>
                         </div>
                         <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 1 }}>
-                          {o.orderId} · {phone ? `+91 ${phone}` : "No phone"}
+                          {o.orderId} · {phone ? `+91 ${phone}` : t("No phone")}
                         </div>
                         <div style={{ fontSize: 11.5, color: "var(--text-2)", marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {o.items?.map((i) => `${i.name} ×${i.qty}`).join(", ") || "—"}
+                          {o.items?.map((i) => `${localName(i)} ×${fmtNum(i.qty)}`).join(", ") || "—"}
                         </div>
                         <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
                           {o.tableNo
-                            ? <span className="zc-tag vio sq">T{o.tableNo}</span>
-                            : <span className="zc-tag done sq">{formatStatus(o.orderType) || "Takeaway"}</span>}
-                          <span className={`zc-tag ${overdue ? "stop" : "wait"}`}><i />Waiting {waitMin} min</span>
+                            ? <span className="zc-tag vio sq">{t("T{n}", { n: o.tableNo })}</span>
+                            : <span className="zc-tag done sq">{formatStatus(o.orderType) || t("Takeaway")}</span>}
+                          <span className={`zc-tag ${overdue ? "stop" : "wait"}`}><i />{t("Waiting {n} min", { n: waitMin })}</span>
                         </div>
                       </div>
                     </div>
@@ -1918,11 +1926,11 @@ const PendingOrdersModal = ({ orders, busy, onConfirm, onReject, onClose }) => {
                     <div style={{ display: "flex", gap: 8, marginTop: 11 }}>
                       <button type="button" className="zc-btn pri sm" style={{ flex: 1, justifyContent: "center" }}
                         disabled={busy} onClick={() => onConfirm(o)}>
-                        ✓ Accept
+                        ✓ {t("Accept")}
                       </button>
                       <button type="button" className="zc-btn danger sm" style={{ flex: 1, justifyContent: "center" }}
                         disabled={busy} onClick={() => onReject(o)}>
-                        ✕ Cancel
+                        ✕ {t("Cancel")}
                       </button>
                     </div>
                   </div>
@@ -2026,7 +2034,7 @@ export default function OrdersPage() {
     const onAttention  = (p)=>{
       if (!p?.order) return;
       upsertOrder(p.order);
-      toast.error(`Order ${p.order.orderId} couldn't start preparing — ${p.reason || "please check it"}`, { duration: 8000 });
+      toast.error(t("Order {id} couldn't start preparing — {reason}", { id: p.order.orderId, reason: p.reason || t("please check it") }), { duration: 8000 });
     };
     socket.on("order:needs_attention", onAttention);
 
@@ -2111,7 +2119,7 @@ export default function OrdersPage() {
 
   const handleStatusChange=async(id,newStatus)=>{
     try{ await updateOrderStatus(id,newStatus); setOrders(prev=>prev.map(o=>o._id===id?{...o,status:newStatus}:o)); toast.success(`→ ${formatStatus(newStatus)}`); }
-    catch(e){ toast.error(e?.response?.data?.message || "Update failed"); }
+    catch(e){ toast.error(e?.response?.data?.message || t("Update failed")); }
   };
 
   // ── Confirm / Reject a PENDING_CONFIRMATION order ─────────────────────────
@@ -2128,24 +2136,24 @@ export default function OrdersPage() {
       const { data } = await confirmOrder(order._id);
       const updated = data?.order || data;
       if (updated?._id) upsertOrder(updated);
-      toast.success(`Order ${order.orderId} accepted — it starts preparing shortly`);
+      toast.success(t("Order {id} accepted — it starts preparing shortly", { id: order.orderId }));
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Couldn't accept this order");
+      toast.error(e?.response?.data?.message || t("Couldn't accept this order"));
     } finally { setActionBusy(false); }
   };
 
   const handleReject = async (order) => {
     if (actionBusy) return;
-    if (!window.confirm(`Cancel order ${order.orderId}? This cannot be undone. The order stays in history as cancelled.`)) return;
-    const reason = (window.prompt("Reason for cancelling (optional):", "") || "").trim();
+    if (!window.confirm(t("Cancel order {id}? This cannot be undone. The order stays in history as cancelled.", { id: order.orderId }))) return;
+    const reason = (window.prompt(t("Reason for cancelling (optional):"), "") || "").trim();
     setActionBusy(true);
     try {
       const { data } = await rejectOrder(order._id, reason || undefined);
       const updated = data?.order || data;
       if (updated?._id) upsertOrder(updated);
-      toast.success(`Order ${order.orderId} cancelled`);
+      toast.success(t("Order {id} cancelled", { id: order.orderId }));
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Couldn't cancel this order");
+      toast.error(e?.response?.data?.message || t("Couldn't cancel this order"));
     } finally { setActionBusy(false); }
   };
 
@@ -2157,8 +2165,8 @@ export default function OrdersPage() {
         body:JSON.stringify(data),
       });
       setOrders(prev=>prev.map(o=>o._id===id?{...o,...data}:o));
-      toast.success("Payment updated ✓");
-    }catch{ toast.error("Payment update failed"); }
+      toast.success(t("Payment updated ✓"));
+    }catch{ toast.error(t("Payment update failed")); }
   };
 
   const tableOrderMap = {};
@@ -2214,7 +2222,7 @@ export default function OrdersPage() {
   const floorTotalToday = todayDineIn.reduce((s, o) => s + Number(o.total || 0), 0);
   const readyLabelsToday = todayActiveOrders
     .filter((o) => o.status === "READY")
-    .map((o) => (o.tableNo ? `T${o.tableNo}` : "Takeaway"));
+    .map((o) => (o.tableNo ? t("T{n}", { n: o.tableNo }) : t("Takeaway")));
   const oldestAwaitingMin = (() => {
     const pending = todayOrders.filter((o) => o.status === "PENDING_CONFIRMATION");
     if (!pending.length) return null;
@@ -2225,36 +2233,36 @@ export default function OrdersPage() {
   // Row 1 — today's operational snapshot.
   const STAT_ROW = [
     {
-      label: "Payment due",
-      value: dueOrdersToday.length,
-      caption: `of ${todayOrders.length} today · ₹${fmt(dueTotalToday)} outstanding`,
+      label: t("Payment due"),
+      value: fmtNum(dueOrdersToday.length),
+      caption: t("of {n} today · ₹{amount} outstanding", { n: todayOrders.length, amount: fmt(dueTotalToday) }),
       tone: "var(--stop-ink)",
     },
     {
-      label: "Active orders",
-      value: todayActiveOrders.length,
-      caption: `of ${todayOrders.length} today · ₹${fmt(todayActiveValue)} in progress`,
+      label: t("Active orders"),
+      value: fmtNum(todayActiveOrders.length),
+      caption: t("of {n} today · ₹{amount} in progress", { n: todayOrders.length, amount: fmt(todayActiveValue) }),
       grad: true,
     },
     {
-      label: "Awaiting confirmation",
-      value: countStatus("PENDING_CONFIRMATION", true),
-      caption: oldestAwaitingMin ? `Oldest waiting ${oldestAwaitingMin} min` : "Queue clear",
+      label: t("Awaiting confirmation"),
+      value: fmtNum(countStatus("PENDING_CONFIRMATION", true)),
+      caption: oldestAwaitingMin ? t("Oldest waiting {n} min", { n: oldestAwaitingMin }) : t("Queue clear"),
       tone: "var(--wait-ink)",
       onClick: () => setShowPending(true),
     },
     {
-      label: "Total orders",
-      value: todayOrders.length,
-      caption: `₹${fmt(todayOrdersValue)} today · ₹${fmt(collectedToday)} collected`,
+      label: t("Total orders"),
+      value: fmtNum(todayOrders.length),
+      caption: t("₹{today} today · ₹{collected} collected", { today: fmt(todayOrdersValue), collected: fmt(collectedToday) }),
       grad: true,
     },
     {
-      label: "Open tables",
-      value: occupiedTablesToday,
+      label: t("Open tables"),
+      value: fmtNum(occupiedTablesToday),
       caption: tables.length
-        ? `of ${tables.length} · ₹${fmt(floorTotalToday)} on the floor`
-        : `₹${fmt(floorTotalToday)} on the floor`,
+        ? t("of {n} · ₹{amount} on the floor", { n: tables.length, amount: fmt(floorTotalToday) })
+        : t("₹{amount} on the floor", { amount: fmt(floorTotalToday) }),
       grad: true,
     },
   ];
@@ -2262,33 +2270,33 @@ export default function OrdersPage() {
   // Row 2 — today's order-status funnel.
   const STAGE_ROW = [
     {
-      label: "Preparing",
-      value: countStatus("PREPARING", true),
-      caption: `₹${fmt(valueOfStatus("PREPARING", true))} in the kitchen`,
+      label: t("Preparing"),
+      value: fmtNum(countStatus("PREPARING", true)),
+      caption: t("₹{amount} in the kitchen", { amount: fmt(valueOfStatus("PREPARING", true)) }),
       tone: KIND_INK[statusKind("PREPARING")],
     },
     {
-      label: "Ready to serve",
-      value: countStatus("READY", true),
-      caption: readyLabelsToday.length ? readyLabelsToday.slice(0, 4).join(", ") : "None waiting",
+      label: t("Ready to serve"),
+      value: fmtNum(countStatus("READY", true)),
+      caption: readyLabelsToday.length ? readyLabelsToday.slice(0, 4).join(", ") : t("None waiting"),
       tone: KIND_INK[statusKind("READY")],
     },
     {
-      label: "Delivered",
-      value: countStatus("DELIVERED", true),
-      caption: `₹${fmt(valueOfStatus("DELIVERED", true))} out with waiter`,
+      label: t("Delivered"),
+      value: fmtNum(countStatus("DELIVERED", true)),
+      caption: t("₹{amount} out with waiter", { amount: fmt(valueOfStatus("DELIVERED", true)) }),
       tone: KIND_INK[statusKind("DELIVERED")],
     },
     {
-      label: "Completed today",
-      value: countStatus("COMPLETED", true),
-      caption: `₹${fmt(valueOfStatus("COMPLETED", true))} billed today`,
+      label: t("Completed today"),
+      value: fmtNum(countStatus("COMPLETED", true)),
+      caption: t("₹{amount} billed today", { amount: fmt(valueOfStatus("COMPLETED", true)) }),
       tone: KIND_INK[statusKind("COMPLETED")],
     },
     {
-      label: "Cancelled",
-      value: countStatus("CANCELLED", true),
-      caption: `of ${todayOrders.length} today · ₹${fmt(valueOfStatus("CANCELLED", true))} lost`,
+      label: t("Cancelled"),
+      value: fmtNum(countStatus("CANCELLED", true)),
+      caption: t("of {n} today · ₹{amount} lost", { n: todayOrders.length, amount: fmt(valueOfStatus("CANCELLED", true)) }),
       tone: KIND_INK[statusKind("CANCELLED")],
     },
   ];
@@ -2303,9 +2311,9 @@ export default function OrdersPage() {
   const handlePrint = async (o) => {
     try {
       await printOrderBill(o._id);
-      toast.success("Bill sent to printer ✓");
+      toast.success(t("Bill sent to printer ✓"));
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Printer not running");
+      toast.error(err?.response?.data?.message || t("Printer not running"));
     }
   };
 
@@ -2326,13 +2334,13 @@ export default function OrdersPage() {
       <div style={{ display: "flex", gap: 5, justifyContent: "flex-end" }} onClick={(e) => e.stopPropagation()}>
         {o.status === "PENDING_CONFIRMATION" && (
           <>
-            <button type="button" className="op-btn" title="Accept order" disabled={actionBusy}
+            <button type="button" className="op-btn" title={t("Accept order")} disabled={actionBusy}
               onClick={() => handleConfirm(o)}
               style={{ padding: "5px 10px", borderRadius: 8, border: "none", background: "var(--grad-btn)",
                 color: "#fff", fontWeight: 800, fontSize: 12, cursor: actionBusy ? "wait" : "pointer" }}>
-              ✓ Accept
+              ✓ {t("Accept")}
             </button>
-            <button type="button" className="op-btn" title="Cancel order" disabled={actionBusy}
+            <button type="button" className="op-btn" title={t("Cancel order")} disabled={actionBusy}
               onClick={() => handleReject(o)}
               style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid var(--stop-line)",
                 background: "var(--stop-fill)", color: "var(--stop-ink)", fontWeight: 700, fontSize: 12,
@@ -2342,14 +2350,14 @@ export default function OrdersPage() {
           </>
         )}
         {isPlaced && (
-          <button type="button" className="zc-btn sm" title="Edit items" disabled={actionBusy}
+          <button type="button" className="zc-btn sm" title={t("Edit items")} disabled={actionBusy}
             onClick={() => setShowEditItems(o._id)} style={{ padding: "5px 8px" }}>✎</button>
         )}
         {canAddItems && (
-          <button type="button" className="zc-btn sm" title="Add items"
+          <button type="button" className="zc-btn sm" title={t("Add items")}
             onClick={() => setShowAddItems(o._id)} style={{ padding: "5px 8px" }}>＋</button>
         )}
-        <button type="button" className="zc-btn sm" title="Print bill"
+        <button type="button" className="zc-btn sm" title={t("Print bill")}
           onClick={() => handlePrint(o)} style={{ padding: "5px 8px" }}>🖨️</button>
       </div>
     );
@@ -2363,28 +2371,28 @@ export default function OrdersPage() {
       <div style={{ display: "flex", alignItems: "flex-start", gap: 13, marginBottom: 18, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 180 }}>
           <h1 style={{ fontSize: 21, fontWeight: 700, letterSpacing: "-.025em", color: "var(--text-1)", margin: 0 }}>
-            My Billing
+            {t("My Billing")}
           </h1>
           <div style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 3 }}>
-            {now.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}
+            {fmtDate(now, { weekday: "long", day: "numeric", month: "long" })}
             {" · "}
-            {activeOrders.length} order{activeOrders.length !== 1 ? "s" : ""} on the floor
+            {tn(activeOrders.length, "{n} order on the floor", "{n} orders on the floor")}
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "nowrap" }}>
           <span className="zc-live-dot" style={{ flexShrink: 0, ...(online ? undefined : { color: "var(--stop-ink)" }) }}>
             <i style={online ? undefined : { background: "var(--stop)", boxShadow: "0 0 9px var(--stop)" }} />
-            {online ? "Live" : "Offline"}
+            {online ? t("Live") : t("Offline")}
           </span>
           <input
             className="zc-input"
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Search order, customer or phone"
+            placeholder={t("Search order, customer or phone")}
             style={{ flex: 1, minWidth: 120, maxWidth: 260 }}
           />
           <button type="button" className="zc-btn pri" onClick={() => openNewOrder()} style={{ flexShrink: 0, whiteSpace: "nowrap" }}>
-            ＋ New order
+            ＋ {t("New order")}
             <span style={{ fontSize: 10, fontWeight: 700, background: "var(--edge-hi)", padding: "1px 5px", borderRadius: 5 }}>N</span>
           </button>
         </div>
@@ -2402,13 +2410,13 @@ export default function OrdersPage() {
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
         <div className="zc-seg">
           <button type="button" className={viewMode === "recent" ? "on" : ""}
-            onClick={() => { setViewMode("recent"); setPage(1); }}>Recent · Today</button>
+            onClick={() => { setViewMode("recent"); setPage(1); }}>{t("Recent · Today")}</button>
           <button type="button" className={viewMode === "all" ? "on" : ""}
-            onClick={() => { setViewMode("all"); setPage(1); }}>All Orders</button>
+            onClick={() => { setViewMode("all"); setPage(1); }}>{t("All Orders")}</button>
         </div>
         <button
           type="button"
-          onClick={() => setShowTables((t) => !t)}
+          onClick={() => setShowTables((v) => !v)}
           style={{
             display: "flex", alignItems: "center", gap: 9,
             padding: "6px 13px 6px 15px", borderRadius: "var(--r-ctl)", cursor: "pointer", font: "inherit",
@@ -2416,7 +2424,7 @@ export default function OrdersPage() {
             background: "var(--card-2)", color: showTables ? "var(--text-1)" : "var(--text-2)",
           }}
         >
-          <span style={{ fontSize: 12, fontWeight: 500 }}>Table map</span>
+          <span style={{ fontSize: 12, fontWeight: 500 }}>{t("Table map")}</span>
           <span style={{
             width: 32, height: 18, borderRadius: 20, position: "relative", flex: "none",
             background: showTables ? "var(--grad-btn)" : "var(--edge-hi)", transition: "background .15s",
@@ -2429,7 +2437,7 @@ export default function OrdersPage() {
         </button>
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 12, color: "var(--text-3)" }}>
-          {viewMode === "all" ? `${orders.length} orders total` : `${recentFiltered.length} active today`}
+          {viewMode === "all" ? t("{n} orders total", { n: orders.length }) : t("{n} active today", { n: recentFiltered.length })}
         </span>
       </div>
 
@@ -2437,26 +2445,26 @@ export default function OrdersPage() {
       {viewMode === "all" && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
           <select className="zc-select" value={filter} onChange={(e) => { setFilter(e.target.value); setPage(1); }} style={{ width: "auto" }}>
-            {STATUSES.map((o) => <option key={o} value={o}>{o === "All" ? "All statuses" : formatStatus(o)}</option>)}
+            {STATUSES.map((o) => <option key={o} value={o}>{o === "All" ? t("All statuses") : formatStatus(o)}</option>)}
           </select>
           <select className="zc-select" value={typeF} onChange={(e) => { setTypeF(e.target.value); setPage(1); }} style={{ width: "auto" }}>
-            {ORDER_TYPES.map((o) => <option key={o} value={o}>{o === "All" ? "All types" : formatOrderType(o)}</option>)}
+            {ORDER_TYPES.map((o) => <option key={o} value={o}>{o === "All" ? t("All types") : formatOrderType(o)}</option>)}
           </select>
           <select className="zc-select" value={payF} onChange={(e) => { setPayF(e.target.value); setPage(1); }} style={{ width: "auto" }}>
-            {PAYMENT_STATUSES.map((o) => <option key={o} value={o}>{o === "All" ? "All payments" : formatPayment(o)}</option>)}
+            {PAYMENT_STATUSES.map((o) => <option key={o} value={o}>{o === "All" ? t("All payments") : formatPayment(o)}</option>)}
           </select>
           <input type="date" className="zc-input" value={startDate}
             onChange={(e) => { setStartDate(e.target.value); setPage(1); }} style={{ width: "auto", color: startDate ? "var(--text-1)" : "var(--text-3)" }} />
-          <span style={{ fontSize: 12, color: "var(--text-3)" }}>to</span>
+          <span style={{ fontSize: 12, color: "var(--text-3)" }}>{t("to")}</span>
           <input type="date" className="zc-input" value={endDate} min={startDate || undefined}
             onChange={(e) => { setEndDate(e.target.value); setPage(1); }} style={{ width: "auto", color: endDate ? "var(--text-1)" : "var(--text-3)" }} />
           {(startDate || endDate) && (
             <span style={{ fontSize: 12, color: "var(--text-2)" }}>
-              {rangeStats.count} billed · <b className="tnum" style={{ color: "var(--accent-ink)" }}>₹{fmt(rangeStats.amount)}</b>
+              {t("{n} billed", { n: rangeStats.count })} · <b className="tnum" style={{ color: "var(--accent-ink)" }}>₹{fmt(rangeStats.amount)}</b>
             </span>
           )}
           {hasFilters && (
-            <button type="button" className="zc-btn sm" onClick={clearFilters}>Clear ✕</button>
+            <button type="button" className="zc-btn sm" onClick={clearFilters}>{t("Clear")} ✕</button>
           )}
         </div>
       )}
@@ -2466,19 +2474,19 @@ export default function OrdersPage() {
         <div className="op-floor">
           <div className="zc-card">
             <div className="zc-card-h">
-              <span className="t">{mapMode === "takeaway" ? "Takeaway orders" : "Table map"}</span>
+              <span className="t">{mapMode === "takeaway" ? t("Takeaway orders") : t("Table map")}</span>
               <span className="s">
                 {mapMode === "takeaway"
-                  ? `${takeawayOrders.length} active`
-                  : `${tables.length} tables · ${occupiedTables} seated`}
+                  ? t("{n} active", { n: takeawayOrders.length })
+                  : t("{n} tables · {seated} seated", { n: tables.length, seated: occupiedTables })}
               </span>
               <div style={{ flex: 1 }} />
               <div className="zc-seg">
                 <button type="button" className={mapMode === "tables" ? "on" : ""}
-                  onClick={() => setMapMode("tables")}>Tables</button>
+                  onClick={() => setMapMode("tables")}>{t("Tables")}</button>
                 <button type="button" className={mapMode === "takeaway" ? "on" : ""}
                   onClick={() => setMapMode("takeaway")}>
-                  Takeaway{takeawayOrders.length > 0 ? ` · ${takeawayOrders.length}` : ""}
+                  {t("Takeaway")}{takeawayOrders.length > 0 ? ` · ${fmtNum(takeawayOrders.length)}` : ""}
                 </button>
               </div>
             </div>
@@ -2492,7 +2500,7 @@ export default function OrdersPage() {
                   </div>
                 ) : takeawayOrders.length === 0 ? (
                   <div style={{ textAlign: "center", padding: 28, color: "var(--text-3)", fontSize: 13 }}>
-                    No active takeaway orders
+                    {t("No active takeaway orders")}
                   </div>
                 ) : (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(94px, 1fr))", gap: 10 }}>
@@ -2527,8 +2535,8 @@ export default function OrdersPage() {
                             ⏱ {formatDuration(placedMs)}
                           </div>
                           <div className="ft">
-                            <span className="amt tnum" style={{ color: hasDue ? "var(--stop-ink)" : KIND_INK[kind] }}>₹{Math.round(Number(o.total || 0))}</span>
-                            <span style={{ fontSize: 10, color: hasDue ? "var(--stop-ink)" : KIND_INK[kind] }}>{hasDue ? "Due" : o.paymentStatus === "PAID" ? "Paid" : "Open"}</span>
+                            <span className="amt tnum" style={{ color: hasDue ? "var(--stop-ink)" : KIND_INK[kind] }}>₹{fmtNum(Math.round(Number(o.total || 0)))}</span>
+                            <span style={{ fontSize: 10, color: hasDue ? "var(--stop-ink)" : KIND_INK[kind] }}>{hasDue ? t("Due") : o.paymentStatus === "PAID" ? t("Paid") : t("Open")}</span>
                           </div>
                         </button>
                       );
@@ -2542,13 +2550,13 @@ export default function OrdersPage() {
                   ))}
                 </div>
               ) : tables.length === 0 ? (
-                <div style={{ textAlign: "center", padding: 28, color: "var(--text-3)", fontSize: 13 }}>No tables configured yet</div>
+                <div style={{ textAlign: "center", padding: 28, color: "var(--text-3)", fontSize: 13 }}>{t("No tables configured yet")}</div>
               ) : (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(94px, 1fr))", gap: 10 }}>
-                  {tables.slice().sort((a, b) => a.tableNo - b.tableNo).map((t) => {
-                    const tOrders = tableOrderMap[t.tableNo] || [];
+                  {tables.slice().sort((a, b) => a.tableNo - b.tableNo).map((tb) => {
+                    const tOrders = tableOrderMap[tb.tableNo] || [];
                     const occupied = tOrders.length > 0;
-                    const isSel = tableSelected === t.tableNo;
+                    const isSel = tableSelected === tb.tableNo;
                     const tTotal = tOrders.reduce((s, o) => s + Number(o.total || 0), 0);
                     const hasDue = tOrders.some((o) => o.paymentStatus === "PENDING_VERIFICATION");
                     const allPaid = occupied && tOrders.every((o) => o.paymentStatus === "PAID");
@@ -2574,16 +2582,16 @@ export default function OrdersPage() {
                     return (
                       <button
                         type="button"
-                        key={t.tableNo}
+                        key={tb.tableNo}
                         className={`zc-tbl${cls}`}
                         style={tileStyle}
-                        onClick={() => setTableSelected(isSel ? null : t.tableNo)}
+                        onClick={() => setTableSelected(isSel ? null : tb.tableNo)}
                       >
                         {occupied && (
                           <span className="dot" style={{ background: hasDue ? "var(--stop)" : KIND_HUE[kind], boxShadow: `0 0 8px ${hasDue ? "var(--stop)" : KIND_HUE[kind]}` }} />
                         )}
-                        <div className="no">T{t.tableNo}</div>
-                        <div className="st">{occupied ? `${tOrders.length} order${tOrders.length !== 1 ? "s" : ""}` : `${t.seats || 4} seats`}</div>
+                        <div className="no">{t("T{n}", { n: tb.tableNo })}</div>
+                        <div className="st">{occupied ? tn(tOrders.length, "{n} order", "{n} orders") : t("{n} seats", { n: tb.seats || 4 })}</div>
                         {occupied && (
                           <div style={{ fontSize: 9.5, fontWeight: 700, color: KIND_INK[placedKind], marginTop: 1 }}>
                             ⏱ {formatDuration(placedMs)}
@@ -2591,8 +2599,8 @@ export default function OrdersPage() {
                         )}
                         <div className="ft">
                           {occupied
-                            ? <><span className="amt tnum" style={{ color: hasDue ? "var(--stop-ink)" : KIND_INK[kind] }}>₹{Math.round(tTotal)}</span><span style={{ fontSize: 10, color: hasDue ? "var(--stop-ink)" : KIND_INK[kind] }}>{hasDue ? "Due" : allPaid ? "Paid" : "Open"}</span></>
-                            : <span style={{ fontSize: 11, color: "var(--text-3)" }}>Free</span>}
+                            ? <><span className="amt tnum" style={{ color: hasDue ? "var(--stop-ink)" : KIND_INK[kind] }}>₹{fmtNum(Math.round(tTotal))}</span><span style={{ fontSize: 10, color: hasDue ? "var(--stop-ink)" : KIND_INK[kind] }}>{hasDue ? t("Due") : allPaid ? t("Paid") : t("Open")}</span></>
+                            : <span style={{ fontSize: 11, color: "var(--text-3)" }}>{t("Free")}</span>}
                         </div>
                       </button>
                     );
@@ -2608,7 +2616,7 @@ export default function OrdersPage() {
                 <MultiOrderTableView
                   key={selectedTakeaway._id}
                   orders={[selectedTakeaway]}
-                  label={`Takeaway ${selectedTakeaway.orderId}`}
+                  label={t("Takeaway {id}", { id: selectedTakeaway.orderId })}
                   billTarget={{ mode: "orders", value: selectedTakeaway._id }}
                   nowTick={nowTick}
                   onStatusChange={(id, s) => { handleStatusChange(id, s); }}
@@ -2619,9 +2627,9 @@ export default function OrdersPage() {
                 />
               ) : (
                 <div className="zc-empty" style={{ padding: "44px 16px" }}>
-                  <h4>Pick a takeaway order</h4>
-                  <p>Tap an order to see its items, update status, or take payment.</p>
-                  <button type="button" className="zc-btn pri" style={{ marginTop: 16 }} onClick={openNewTakeaway}>＋ New takeaway order</button>
+                  <h4>{t("Pick a takeaway order")}</h4>
+                  <p>{t("Tap an order to see its items, update status, or take payment.")}</p>
+                  <button type="button" className="zc-btn pri" style={{ marginTop: 16 }} onClick={openNewTakeaway}>＋ {t("New takeaway order")}</button>
                 </div>
               )
             ) : tableSelected ? (
@@ -2642,9 +2650,9 @@ export default function OrdersPage() {
                     <circle cx="12" cy="12" r="8" /><path d="M12 4v16M4 12h16" />
                   </svg>
                 </div>
-                <h4>Pick a table</h4>
-                <p>Tap a table to see its orders, split the bill, or start a new one.</p>
-                <button type="button" className="zc-btn pri" style={{ marginTop: 16 }} onClick={() => openNewOrder()}>＋ New order</button>
+                <h4>{t("Pick a table")}</h4>
+                <p>{t("Tap a table to see its orders, split the bill, or start a new one.")}</p>
+                <button type="button" className="zc-btn pri" style={{ marginTop: 16 }} onClick={() => openNewOrder()}>＋ {t("New order")}</button>
               </div>
             )}
           </div>
@@ -2654,9 +2662,9 @@ export default function OrdersPage() {
       {/* ── Order list ── */}
       <div className="zc-card">
         <div className="zc-card-h">
-          <span className="t">{viewMode === "recent" ? "Active orders" : "All orders"}</span>
+          <span className="t">{viewMode === "recent" ? t("Active orders") : t("All orders")}</span>
           <span className="s">
-            {loading ? "loading…" : error ? "unavailable" : `${displayedOrders.length} ${viewMode === "recent" ? "on the floor" : "matching"}`}
+            {loading ? t("loading…") : error ? t("unavailable") : viewMode === "recent" ? t("{n} on the floor", { n: displayedOrders.length }) : t("{n} matching", { n: displayedOrders.length })}
           </span>
         </div>
 
@@ -2666,8 +2674,8 @@ export default function OrdersPage() {
           </div>
         ) : error ? (
           <ErrorState
-            title="Could not load orders"
-            sub="The server did not respond. Check your connection, then try again."
+            title={t("Could not load orders")}
+            sub={t("The server did not respond. Check your connection, then try again.")}
             onRetry={fetchOrders}
           />
         ) : displayedOrders.length === 0 ? (
@@ -2677,13 +2685,13 @@ export default function OrdersPage() {
                 <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18" />
               </svg>
             </div>
-            <h4>{viewMode === "recent" ? "Floor is clear" : "No orders match"}</h4>
+            <h4>{viewMode === "recent" ? t("Floor is clear") : t("No orders match")}</h4>
             <p>{viewMode === "recent"
-              ? "No active orders right now. Start one from New order."
-              : "Nothing matches these filters. Try clearing them."}</p>
+              ? t("No active orders right now. Start one from New order.")
+              : t("Nothing matches these filters. Try clearing them.")}</p>
             <button type="button" className="zc-btn pri" style={{ marginTop: 16 }}
               onClick={() => (viewMode === "recent" ? openNewOrder() : clearFilters())}>
-              {viewMode === "recent" ? "＋ New order" : "Clear filters"}
+              {viewMode === "recent" ? `＋ ${t("New order")}` : t("Clear filters")}
             </button>
           </div>
         ) : (
@@ -2693,20 +2701,20 @@ export default function OrdersPage() {
               <table className="zc-ledger" style={{ minWidth: 720 }}>
                 <thead>
                   <tr>
-                    <th style={{ width: 108 }}>Order</th>
-                    <th>Customer</th>
-                    <th style={{ width: 92 }}>Table / Type</th>
-                    <th>Items</th>
-                    <th style={{ width: 148 }}>Status</th>
-                    <th style={{ width: 130 }}>Payment</th>
-                    <th className="num" style={{ width: 92 }}>Amount</th>
-                    <th className="num" style={{ width: 78 }}>Placed</th>
+                    <th style={{ width: 108 }}>{t("Order")}</th>
+                    <th>{t("Customer")}</th>
+                    <th style={{ width: 92 }}>{t("Table / Type")}</th>
+                    <th>{t("Items")}</th>
+                    <th style={{ width: 148 }}>{t("Status")}</th>
+                    <th style={{ width: 130 }}>{t("Payment")}</th>
+                    <th className="num" style={{ width: 92 }}>{t("Amount")}</th>
+                    <th className="num" style={{ width: 78 }}>{t("Placed")}</th>
                     <th style={{ width: 92 }} />
                   </tr>
                 </thead>
                 <tbody>
                   {paginated.map((o) => {
-                    const name = o.guestName || o.user?.name || "Guest";
+                    const name = o.guestName || o.user?.name || t("Guest");
                     const phone = o.guestPhone || o.user?.phone || null;
                     return (
                       <tr key={o._id} onClick={() => setExpanded(o._id)} style={{ cursor: "pointer" }}>
@@ -2722,20 +2730,20 @@ export default function OrdersPage() {
                         </td>
                         <td>
                           {o.tableNo
-                            ? <span className="zc-tag vio sq">T{o.tableNo}</span>
+                            ? <span className="zc-tag vio sq">{t("T{n}", { n: o.tableNo })}</span>
                             : <span style={{ color: "var(--text-3)", fontSize: 12 }}>{formatOrderType(o.orderType)}</span>}
                         </td>
                         <td style={{ maxWidth: 190, color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {o.items?.map((i) => `${i.name} ×${i.qty}`).join(", ") || "—"}
+                          {o.items?.map((i) => `${localName(i)} ×${fmtNum(i.qty)}`).join(", ") || "—"}
                         </td>
                         <td><span className={`zc-tag ${statusKind(o.status)}`}><i />{formatStatus(o.status)}</span></td>
                         <td>
                           <span className={`zc-tag ${statusKind(o.paymentStatus)}`}><i />{formatPayment(o.paymentStatus)}</span>
-                          <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 3 }}>{o.paymentMethod || "Cash"}</div>
+                          <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 3 }}>{t(o.paymentMethod || "Cash")}</div>
                         </td>
-                        <td className="money">₹{Math.round(o.total)}</td>
+                        <td className="money">₹{fmtNum(Math.round(o.total))}</td>
                         <td className="num" style={{ color: "var(--text-3)" }}>
-                          {new Date(o.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          {fmtTime(o.createdAt)}
                         </td>
                         <td>{rowActions(o)}</td>
                       </tr>
@@ -2748,7 +2756,7 @@ export default function OrdersPage() {
             {/* mobile cards */}
             <div className="op-only-narrow" style={{ padding: "10px 12px 4px" }}>
               {paginated.map((o) => {
-                const name = o.guestName || o.user?.name || "Guest";
+                const name = o.guestName || o.user?.name || t("Guest");
                 return (
                   <div key={o._id} className="op-ocard" onClick={() => setExpanded(o._id)}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
@@ -2756,18 +2764,18 @@ export default function OrdersPage() {
                         <div className="tnum" style={{ fontWeight: 700, color: "var(--accent-ink)", fontSize: 12.5 }}>{o.orderId}</div>
                         <div style={{ fontSize: 12.5, color: "var(--text-1)", marginTop: 2, fontWeight: 500 }}>{name}</div>
                         <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {o.items?.map((i) => `${i.name} ×${i.qty}`).join(", ") || "—"}
+                          {o.items?.map((i) => `${localName(i)} ×${fmtNum(i.qty)}`).join(", ") || "—"}
                         </div>
                       </div>
                       <div style={{ textAlign: "right", flex: "none" }}>
-                        <div className="tnum" style={{ fontWeight: 700, fontSize: 14, color: "var(--text-1)" }}>₹{Math.round(o.total)}</div>
+                        <div className="tnum" style={{ fontWeight: 700, fontSize: 14, color: "var(--text-1)" }}>₹{fmtNum(Math.round(o.total))}</div>
                         <div style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 2 }}>
-                          {new Date(o.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          {fmtTime(o.createdAt)}
                         </div>
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 9, alignItems: "center" }}>
-                      {o.tableNo && <span className="zc-tag vio sq">T{o.tableNo}</span>}
+                      {o.tableNo && <span className="zc-tag vio sq">{t("T{n}", { n: o.tableNo })}</span>}
                       <span className={`zc-tag ${statusKind(o.status)}`}><i />{formatStatus(o.status)}</span>
                       <span className={`zc-tag ${statusKind(o.paymentStatus)}`}><i />{formatPayment(o.paymentStatus)}</span>
                       <div style={{ marginLeft: "auto" }}>{rowActions(o)}</div>
@@ -2780,14 +2788,14 @@ export default function OrdersPage() {
             {totalPages > 1 && (
               <div className="zc-tfoot" style={{ padding: "14px 18px 6px" }}>
                 <span>
-                  Showing {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, displayedOrders.length)} of {displayedOrders.length}
+                  {t("Showing {from}–{to} of {total}", { from: (page - 1) * PER_PAGE + 1, to: Math.min(page * PER_PAGE, displayedOrders.length), total: displayedOrders.length })}
                 </span>
                 <div className="zc-pager">
                   <button type="button" disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>‹</button>
                   {pageList.map((p, i) =>
                     p === "…"
                       ? <span key={`g${i}`} className="gap">…</span>
-                      : <button type="button" key={p} className={page === p ? "on" : ""} onClick={() => setPage(p)}>{p}</button>,
+                      : <button type="button" key={p} className={page === p ? "on" : ""} onClick={() => setPage(p)}>{fmtNum(p)}</button>,
                   )}
                   <button type="button" disabled={page === totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>›</button>
                 </div>

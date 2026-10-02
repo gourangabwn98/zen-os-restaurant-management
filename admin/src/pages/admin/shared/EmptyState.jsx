@@ -1,7 +1,9 @@
 // src/pages/admin/shared/EmptyState.jsx
 // "An empty screen is an invitation to act" — icon, one line of what goes here,
 // and (optionally) the action that creates the first record.
-export default function EmptyState({ icon, title = "Nothing here yet", sub, action }) {
+import { t } from "../../../i18n/core.js";
+
+export default function EmptyState({ icon, title = t("Nothing here yet"), sub, action }) {
   return (
     <div className="zc-empty">
       <div className="ic">

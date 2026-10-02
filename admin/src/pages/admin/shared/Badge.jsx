@@ -7,10 +7,12 @@
 // lookup) and `format` (label -> display string); when `map` matches it wins,
 // so screens not yet migrated render exactly as before.
 import { statusKind } from "./statusKind.js";
+import { t } from "../../../i18n/core.js";
 
 export default function Badge({ label, type, kind, map, format, dot = true }) {
   const raw = label ?? type ?? "";
-  const text = format ? format(raw) : raw;
+  const shown = format ? format(raw) : raw;
+  const text = typeof shown === "string" ? t(shown) : shown;
 
   // legacy inline-map path — keep old screens pixel-identical
   const legacy = map && (map[raw] || map[type]);

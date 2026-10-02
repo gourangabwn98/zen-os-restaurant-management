@@ -5,6 +5,8 @@ import {
   Modal, TableShell, Toolbar, Search, Spacer, Loading, ErrorBox, StatChip, StatRow,
 } from "./invUI.jsx";
 import { inp, label, money, num, fmtDate } from "./invKit.js";
+import { t, tn, N_, fmtNum, localName } from "../../../i18n/core.js";
+import { unitLabel } from "../../../utils/units.js";
 
 const emptyLine = () => ({ inventoryItem: "", quantity: "", costPrice: "", batchNo: "", expiryDate: "" });
 
@@ -43,7 +45,7 @@ export default function PurchasesTab() {
 
   const handleSave = async () => {
     const validLines = lines.filter((l) => l.inventoryItem && Number(l.quantity) > 0 && Number(l.costPrice) >= 0);
-    if (!validLines.length) return toast.error("Add at least one valid line item");
+    if (!validLines.length) return toast.error(t("Add at least one valid line item"));
     setSaving(true);
     try {
       await createPurchase({
@@ -54,11 +56,11 @@ export default function PurchasesTab() {
           batchNo: l.batchNo || "", expiryDate: l.expiryDate || null,
         })),
       });
-      toast.success("Purchase recorded — stock updated");
+      toast.success(t("Purchase recorded — stock updated"));
       setShowForm(false);
       resetForm();
       load();
-    } catch (err) { toast.error(err.response?.data?.message || "Failed to record purchase"); }
+    } catch (err) { toast.error(err.response?.data?.message || t("Failed to record purchase")); }
     finally { setSaving(false); }
   };
 
@@ -68,43 +70,43 @@ export default function PurchasesTab() {
     return purchases.filter((p) =>
       (p.supplier?.name || "").toLowerCase().includes(q) ||
       (p.invoiceNumber || "").toLowerCase().includes(q) ||
-      p.items?.some((it) => (it.inventoryItem?.name || "").toLowerCase().includes(q)),
+      p.items?.some((it) => [it.inventoryItem?.name, it.inventoryItem?.nameBn].some((v) => (v || "").toLowerCase().includes(q))),
     );
   }, [purchases, search]);
 
   const totalValue = purchases.reduce((s, p) => s + Number(p.totalCost || 0), 0);
 
   if (loading) return <Loading />;
-  if (error) return <ErrorBox onRetry={load} what="purchases" />;
+  if (error) return <ErrorBox onRetry={load} what={N_("purchases")} />;
 
   return (
     <div>
       {purchases.length > 0 && (
         <StatRow>
-          <StatChip tone="brand" label="Recorded value" value={money(totalValue)} sub={`${purchases.length} purchase${purchases.length === 1 ? "" : "s"}`} />
-          <StatChip tone="muted" label="Purchases" value={purchases.length} sub={`from ${new Set(purchases.map((p) => p.supplier?._id).filter(Boolean)).size} supplier(s)`} />
+          <StatChip tone="brand" label={t("Recorded value")} value={money(totalValue)} sub={tn(purchases.length, "{n} purchase", "{n} purchases")} />
+          <StatChip tone="muted" label={t("Purchases")} value={fmtNum(purchases.length)} sub={t("from {n} supplier(s)", { n: new Set(purchases.map((p) => p.supplier?._id).filter(Boolean)).size })} />
         </StatRow>
       )}
 
       <Toolbar>
-        <Search value={search} onChange={setSearch} placeholder="Search by supplier, invoice or item" />
+        <Search value={search} onChange={setSearch} placeholder={t("Search by supplier, invoice or item")} />
         <Spacer />
-        <button type="button" className="zc-btn pri" onClick={() => setShowForm(true)}>＋ Record purchase</button>
+        <button type="button" className="zc-btn pri" onClick={() => setShowForm(true)}>＋ {t("Record purchase")}</button>
       </Toolbar>
 
       <TableShell
-        headers={["Date", "Supplier", "Items", "Invoice #", "Total cost", "Recorded by"]}
+        headers={[N_("Date"), N_("Supplier"), N_("Items"), N_("Invoice #"), N_("Total cost"), N_("Recorded by")]}
         minWidth={760}
         isEmpty={filtered.length === 0}
         emptyIcon="🧾"
-        emptyText={purchases.length === 0 ? "No purchases recorded yet" : "No purchases match this search"}
+        emptyText={purchases.length === 0 ? t("No purchases recorded yet") : t("No purchases match this search")}
       >
         {filtered.map((p) => (
           <tr key={p._id}>
             <td className="num" style={{ color: "var(--text-2)" }}>{fmtDate(p.purchaseDate || p.createdAt)}</td>
             <td style={{ color: "var(--text-1)", fontWeight: 600 }}>{p.supplier?.name || "—"}</td>
             <td style={{ color: "var(--text-2)", fontSize: 11.5 }}>
-              {p.items.map((it) => `${it.inventoryItem?.name || "?"} (${num(it.quantity)}${it.inventoryItem?.unit || ""})`).join(", ")}
+              {p.items.map((it) => `${localName(it.inventoryItem) || "?"} (${num(it.quantity)} ${unitLabel(it.inventoryItem?.unit)})`).join(", ")}
             </td>
             <td style={{ color: "var(--text-2)" }}>{p.invoiceNumber || "—"}</td>
             <td className="money">{money(p.totalCost)}</td>
@@ -115,61 +117,61 @@ export default function PurchasesTab() {
 
       {showForm && (
         <Modal
-          title="Record purchase"
-          sub="Adds stock and writes a movement for every line"
+          title={t("Record purchase")}
+          sub={t("Adds stock and writes a movement for every line")}
           onClose={() => setShowForm(false)}
           width={680}
           footer={
             <>
               <span style={{ marginRight: "auto", fontSize: 13, color: "var(--text-2)" }}>
-                Total <b className="tnum" style={{ color: "var(--accent-ink)", fontSize: 16, marginLeft: 6 }}>{money(total)}</b>
+                {t("Total")} <b className="tnum" style={{ color: "var(--accent-ink)", fontSize: 16, marginLeft: 6 }}>{money(total)}</b>
               </span>
-              <button type="button" className="zc-btn" onClick={() => setShowForm(false)}>Cancel</button>
+              <button type="button" className="zc-btn" onClick={() => setShowForm(false)}>{t("Cancel")}</button>
               <button type="button" className="zc-btn pri" disabled={saving} onClick={handleSave}>
-                {saving ? "Saving…" : "Save purchase"}
+                {saving ? t("Saving…") : t("Save purchase")}
               </button>
             </>
           }
         >
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
             <div>
-              <label style={label}>Supplier</label>
+              <label style={label}>{t("Supplier")}</label>
               <select style={inp} value={supplier} onChange={(e) => setSupplier(e.target.value)}>
-                <option value="">— none —</option>
+                <option value="">— {t("none")} —</option>
                 {suppliers.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
               </select>
             </div>
             <div>
-              <label style={label}>Invoice / bill number</label>
+              <label style={label}>{t("Invoice / bill number")}</label>
               <input style={inp} value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
             </div>
           </div>
 
-          <label style={label}>Items</label>
+          <label style={label}>{t("Items")}</label>
           <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>
             {lines.map((l, idx) => {
               const it = itemById(l.inventoryItem);
               return (
                 <div key={idx} className="invp-pline">
                   <select style={inp} value={l.inventoryItem} onChange={(e) => updateLine(idx, { inventoryItem: e.target.value })}>
-                    <option value="">Select item…</option>
-                    {items.map((i) => <option key={i._id} value={i._id}>{i.name}</option>)}
+                    <option value="">{t("Select item…")}</option>
+                    {items.map((i) => <option key={i._id} value={i._id}>{localName(i)}</option>)}
                   </select>
-                  <input type="number" placeholder={`Qty${it ? ` (${it.unit})` : ""}`} style={inp} value={l.quantity} onChange={(e) => updateLine(idx, { quantity: e.target.value })} />
-                  <input type="number" placeholder="Cost/unit ₹" style={inp} value={l.costPrice} onChange={(e) => updateLine(idx, { costPrice: e.target.value })} />
+                  <input type="number" placeholder={`${t("Qty")}${it ? ` (${unitLabel(it.unit)})` : ""}`} style={inp} value={l.quantity} onChange={(e) => updateLine(idx, { quantity: e.target.value })} />
+                  <input type="number" placeholder={t("Cost/unit ₹")} style={inp} value={l.costPrice} onChange={(e) => updateLine(idx, { costPrice: e.target.value })} />
                   {it?.isBatchTracked
-                    ? <input type="date" style={inp} value={l.expiryDate} onChange={(e) => updateLine(idx, { expiryDate: e.target.value })} title="Expiry date" />
+                    ? <input type="date" style={inp} value={l.expiryDate} onChange={(e) => updateLine(idx, { expiryDate: e.target.value })} title={t("Expiry date")} />
                     : <div />}
-                  <button type="button" onClick={() => removeLine(idx)} aria-label="Remove line"
+                  <button type="button" onClick={() => removeLine(idx)} aria-label={t("Remove line")}
                     style={{ background: "none", border: "none", color: "var(--stop-ink)", cursor: "pointer", fontSize: 15 }}>✕</button>
                 </div>
               );
             })}
           </div>
-          <button type="button" className="zc-btn ghost sm" onClick={() => setLines((p) => [...p, emptyLine()])}>＋ Add line</button>
+          <button type="button" className="zc-btn ghost sm" onClick={() => setLines((p) => [...p, emptyLine()])}>＋ {t("Add line")}</button>
 
           <div style={{ marginTop: 14 }}>
-            <label style={label}>Notes</label>
+            <label style={label}>{t("Notes")}</label>
             <input style={inp} value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
         </Modal>

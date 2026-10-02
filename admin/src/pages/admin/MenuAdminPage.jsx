@@ -28,11 +28,13 @@ import StatCard from "./shared/StatCard.jsx";
 import Loader from "./shared/Loader.jsx";
 import EmptyState from "./shared/EmptyState.jsx";
 import ErrorState from "./shared/ErrorState.jsx";
+import { t, tn, N_, fmtNum, localName } from "../../i18n/core.js";
 
+// Stored values; labels go through t().
 const TAGS = ["Veg", "Non Veg"];
-const AVAIL_SEG = ["All", "Available", "Hidden"];
+const AVAIL_SEG = [N_("All"), N_("Available"), N_("Hidden")];
 const EMPTY_FORM = {
-  name: "", price: "", originalPrice: "", description: "",
+  name: "", nameBn: "", price: "", originalPrice: "", description: "",
   category: "", tag: "Veg", isAvailable: true, rating: 4.0,
 };
 const normalizeCats = (data) => (data?.data || data || []).filter(Boolean);
@@ -43,13 +45,15 @@ const fmt12 = (hhmm) => {
   const m = /^(\d{2}):(\d{2})$/.exec(hhmm || "");
   if (!m) return hhmm || "";
   const h = Number(m[1]);
-  return `${((h + 11) % 12) + 1}:${m[2]} ${h < 12 ? "AM" : "PM"}`;
+  return `${fmtNum(((h + 11) % 12) + 1)}:${fmtNum(Number(m[2]), { minimumIntegerDigits: 2 })} ${h < 12 ? t("AM") : t("PM")}`;
 };
 const hasSchedule = (x) => x?.schedule?.enabled === true;
-const schedLabel = (sc) => `${fmt12(sc.startTime)} – ${fmt12(sc.endTime)}${sc.endTime < sc.startTime ? " (overnight)" : ""}`;
+// Categories are referenced by their (English) name; show the Bengali one when set.
+const catLabel = (cats, name) => localName(cats.find((c) => c.name === name) || name);
+const schedLabel = (sc) => `${fmt12(sc.startTime)} – ${fmt12(sc.endTime)}${sc.endTime < sc.startTime ? ` (${t("overnight")})` : ""}`;
 const schedError = (start, end) => {
-  if (!start || !end) return "Choose both a start and an end time";
-  if (start === end) return "Start and end time cannot be the same";
+  if (!start || !end) return t("Choose both a start and an end time");
+  if (start === end) return t("Start and end time cannot be the same");
   return null;
 };
 
@@ -114,7 +118,7 @@ if (typeof document !== "undefined" && !document.getElementById("menu-styles")) 
 const VegDot = ({ tag }) => {
   const veg = tag === "Veg";
   return (
-    <span className="menu-veg" style={{ border: `1.5px solid ${veg ? "var(--ready)" : "var(--stop)"}` }} aria-label={veg ? "Vegetarian" : "Non-vegetarian"}>
+    <span className="menu-veg" style={{ border: `1.5px solid ${veg ? "var(--ready)" : "var(--stop)"}` }} aria-label={veg ? t("Vegetarian") : t("Non-vegetarian")}>
       <i style={{ background: veg ? "var(--ready)" : "var(--stop)" }} />
     </span>
   );
@@ -130,8 +134,8 @@ const Switch = ({ on, onClick, label }) => (
 // 🕒 5:00 PM – 11:00 PM  (dimmed with "off now" when outside its window)
 const ScheduleBadge = ({ schedule, off }) => (
   <span className={`menu-sched-badge${off ? " off" : ""}`}
-    title={off ? "Outside its schedule — hidden from customers right now" : "Visible to customers only in this window"}>
-    🕒 {schedLabel(schedule)}{off ? " · off now" : ""}
+    title={off ? t("Outside its schedule — hidden from customers right now") : t("Visible to customers only in this window")}>
+    🕒 {schedLabel(schedule)}{off ? ` · ${t("off now")}` : ""}
   </span>
 );
 
@@ -160,7 +164,7 @@ function ImageUploadBox({ currentUrl, file, onFileChange }) {
     <div>
       <div
         onClick={() => ref.current?.click()}
-        role="button" tabIndex={0} aria-label="Add photo"
+        role="button" tabIndex={0} aria-label={t("Add photo")}
         onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), ref.current?.click())}
         style={{
           width: 142, height: 142, borderRadius: 16, flex: "none", display: "grid", placeItems: "center",
@@ -171,14 +175,14 @@ function ImageUploadBox({ currentUrl, file, onFileChange }) {
       >
         {preview ? (
           <>
-            <img src={preview} alt="preview" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-            <span style={{ position: "absolute", bottom: 6, right: 6, background: "var(--scrim)", color: "#fff", fontSize: 10, padding: "2px 7px", borderRadius: 6 }}>Change</span>
+            <img src={preview} alt={t("preview")} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            <span style={{ position: "absolute", bottom: 6, right: 6, background: "var(--scrim)", color: "#fff", fontSize: 10, padding: "2px 7px", borderRadius: 6 }}>{t("Change")}</span>
           </>
         ) : (
           <div>
             <div style={{ color: "var(--accent-ink)", fontSize: 20, marginBottom: 4 }}>＋</div>
-            <div style={{ fontSize: 11, color: "var(--text-2)", fontWeight: 500 }}>Add photo</div>
-            <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 2 }}>JPG or PNG, 1:1</div>
+            <div style={{ fontSize: 11, color: "var(--text-2)", fontWeight: 500 }}>{t("Add photo")}</div>
+            <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 2 }}>{t("JPG or PNG, 1:1")}</div>
           </div>
         )}
       </div>
@@ -187,7 +191,7 @@ function ImageUploadBox({ currentUrl, file, onFileChange }) {
       {file && (
         <button type="button" onClick={() => onFileChange(null)}
           style={{ marginTop: 6, fontSize: 11, color: "var(--stop-ink)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-          Remove new image
+          {t("Remove new image")}
         </button>
       )}
     </div>
@@ -202,9 +206,9 @@ function CategoryPicker({ value, categories, onChange, onOpenCreate, onDeleteCat
   const doDelete = async () => {
     try {
       await onDeleteCategory(confirm);
-      toast.success(`"${confirm.name}" deleted`);
+      toast.success(t("\"{name}\" deleted", { name: localName(confirm) }));
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Failed to delete category");
+      toast.error(e?.response?.data?.message || t("Failed to delete category"));
     } finally {
       setConfirm(null);
     }
@@ -213,23 +217,23 @@ function CategoryPicker({ value, categories, onChange, onOpenCreate, onDeleteCat
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <label style={{ fontSize: 11.5, color: "var(--text-2)", fontWeight: 500 }}>Category *</label>
-        <button type="button" onClick={onOpenCreate} className="zc-btn ghost sm" style={{ padding: "3px 10px" }}>＋ New</button>
+        <label style={{ fontSize: 11.5, color: "var(--text-2)", fontWeight: 500 }}>{t("Category")} *</label>
+        <button type="button" onClick={onOpenCreate} className="zc-btn ghost sm" style={{ padding: "3px 10px" }}>＋ {t("New")}</button>
       </div>
       <div style={{ display: "flex", gap: 8 }}>
         <select className="zc-select" style={{ flex: 1 }} value={value || ""} disabled={categories.length === 0}
           onChange={(e) => onChange(e.target.value)}>
           {categories.length === 0 ? (
-            <option value="">No categories — create one first</option>
+            <option value="">{t("No categories — create one first")}</option>
           ) : (
             <>
-              {!value && <option value="" disabled>Select a category…</option>}
-              {categories.map((c) => <option key={c._id} value={c.name}>{c.name}</option>)}
+              {!value && <option value="" disabled>{t("Select a category…")}</option>}
+              {categories.map((c) => <option key={c._id} value={c.name}>{localName(c)}</option>)}
             </>
           )}
         </select>
         {selected && (
-          <button type="button" className="zc-btn ghost sm" title={`Delete "${selected.name}"`}
+          <button type="button" className="zc-btn ghost sm" title={t("Delete \"{name}\"", { name: localName(selected) })}
             onClick={() => setConfirm(selected)}>✕</button>
         )}
       </div>
@@ -237,14 +241,13 @@ function CategoryPicker({ value, categories, onChange, onOpenCreate, onDeleteCat
       {confirm && (
         <div className="zc-scrim" onClick={() => setConfirm(null)} style={{ zIndex: 1200 }}>
           <div className="zc-modal" style={{ width: 380 }} onClick={(e) => e.stopPropagation()}>
-            <div className="mh"><div className="t">Delete category?</div></div>
+            <div className="mh"><div className="t">{t("Delete category?")}</div></div>
             <div className="mb" style={{ fontSize: 13, color: "var(--text-2)" }}>
-              Delete <strong style={{ color: "var(--text-1)" }}>&ldquo;{confirm.name}&rdquo;</strong>? Only possible once no
-              menu item uses it.
+              {t("Delete “{name}”? Only possible once no menu item uses it.", { name: localName(confirm) })}
             </div>
             <div className="mf">
-              <button type="button" className="zc-btn" onClick={() => setConfirm(null)}>Cancel</button>
-              <button type="button" className="zc-btn danger" onClick={doDelete}>Delete</button>
+              <button type="button" className="zc-btn" onClick={() => setConfirm(null)}>{t("Cancel")}</button>
+              <button type="button" className="zc-btn danger" onClick={doDelete}>{t("Delete")}</button>
             </div>
           </div>
         </div>
@@ -276,6 +279,7 @@ const CatThumb = ({ image, size = 38 }) => {
 function CategoryModal({ category = null, onClose, onSaved }) {
   const isEdit = !!category?._id;
   const [name, setName] = useState(category?.name || "");
+  const [nameBn, setNameBn] = useState(category?.nameBn || "");
   const [file, setFile] = useState(null);
   const [removeImage, setRemoveImage] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -290,27 +294,28 @@ function CategoryModal({ category = null, onClose, onSaved }) {
   }, [onClose, loading]);
 
   const submit = async () => {
-    if (!name.trim()) return toast.error("Category name is required");
+    if (!name.trim()) return toast.error(t("Category name is required"));
     setLoading(true);
     try {
       const fd = new FormData();
       fd.append("name", name.trim());
+      fd.append("nameBn", nameBn.trim());
       if (file) fd.append("image", file);
       else if (isEdit && removeImage) fd.append("removeImage", "true");
       if (isEdit) {
         const { data } = await updateCategory(category._id, fd);
         toast.success(data.renamedFrom
-          ? `Renamed to "${data.category.name}"${data.itemsMoved ? ` · ${data.itemsMoved} item${data.itemsMoved === 1 ? "" : "s"} moved` : ""}`
-          : "Category updated");
+          ? `${t("Renamed to \"{name}\"", { name: data.category.name })}${data.itemsMoved ? ` · ${tn(data.itemsMoved, "{n} item moved", "{n} items moved")}` : ""}`
+          : t("Category updated"));
         onSaved(data.category, { renamedFrom: data.renamedFrom });
       } else {
         const { data } = await createCategory(fd);
-        toast.success(`"${name.trim()}" created`);
+        toast.success(t("\"{name}\" created", { name: name.trim() }));
         onSaved(data?.data || data, { created: true });
       }
       onClose();
     } catch (e) {
-      toast.error(e?.response?.data?.message || (isEdit ? "Failed to update category" : "Failed to create category"));
+      toast.error(e?.response?.data?.message || (isEdit ? t("Failed to update category") : t("Failed to create category")));
     } finally {
       setLoading(false);
     }
@@ -322,37 +327,43 @@ function CategoryModal({ category = null, onClose, onSaved }) {
         onClick={(e) => e.stopPropagation()}>
         <div className="mh">
           <div style={{ flex: 1 }}>
-            <div className="t" id="cat-form-title">{isEdit ? "Edit category" : "New category"}</div>
-            <div className="s">Groups items on the customer menu</div>
+            <div className="t" id="cat-form-title">{isEdit ? t("Edit category") : t("New category")}</div>
+            <div className="s">{t("Groups items on the customer menu")}</div>
           </div>
-          <button type="button" className="zc-x" onClick={onClose} disabled={loading} aria-label="Close">✕</button>
+          <button type="button" className="zc-x" onClick={onClose} disabled={loading} aria-label={t("Close")}>✕</button>
         </div>
         <div className="mb" style={{ display: "grid", gap: 14 }}>
           <div className="menu-field">
-            <label htmlFor="cat-name">Category name *</label>
+            <label htmlFor="cat-name">{t("Category name")} *</label>
             <input id="cat-name" className="zc-input" value={name} autoFocus maxLength={40}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && submit()}
-              placeholder="e.g. Biryani, Desserts…" />
+              placeholder={t("e.g. Biryani, Desserts…")} />
             {renaming && itemCount > 0 && (
               <div className="hint">
-                The {itemCount} item{itemCount === 1 ? "" : "s"} in &ldquo;{category.name}&rdquo; will move to the new name.
+                {tn(itemCount, "The {n} item in “{name}” will move to the new name.", "The {n} items in “{name}” will move to the new name.", { name: category.name })}
               </div>
             )}
           </div>
           <div className="menu-field">
-            <label>Category image <span style={{ color: "var(--text-3)", fontWeight: 400 }}>(optional)</span></label>
+            <label htmlFor="cat-name-bn">{t("Bengali name")} <span style={{ color: "var(--text-3)", fontWeight: 400 }}>({t("optional")})</span></label>
+            <input id="cat-name-bn" lang="bn" className="zc-input" value={nameBn} maxLength={40}
+              onChange={(e) => setNameBn(e.target.value)} placeholder={t("e.g. বিরিয়ানি, মিষ্টি…")} />
+            <div className="hint">{t("Shown when the admin panel is in Bengali. Customers and the kitchen still see the English name.")}</div>
+          </div>
+          <div className="menu-field">
+            <label>{t("Category image")} <span style={{ color: "var(--text-3)", fontWeight: 400 }}>({t("optional")})</span></label>
             <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
               <ImageUploadBox currentUrl={isUrl(currentImage) ? currentImage : null} file={file} onFileChange={setFile} />
               {isEdit && !file && category.image && (
                 <div style={{ display: "grid", gap: 6, fontSize: 11.5, color: "var(--text-3)" }}>
                   {!isUrl(category.image) && !removeImage && (
                     <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      Current: <CatThumb image={category.image} size={30} />
+                      {t("Current:")} <CatThumb image={category.image} size={30} />
                     </span>
                   )}
                   <button type="button" className="zc-btn ghost sm" onClick={() => setRemoveImage((v) => !v)}>
-                    {removeImage ? "Keep current image" : "Remove image"}
+                    {removeImage ? t("Keep current image") : t("Remove image")}
                   </button>
                 </div>
               )}
@@ -360,9 +371,9 @@ function CategoryModal({ category = null, onClose, onSaved }) {
           </div>
         </div>
         <div className="mf">
-          <button type="button" className="zc-btn" onClick={onClose} disabled={loading}>Cancel</button>
+          <button type="button" className="zc-btn" onClick={onClose} disabled={loading}>{t("Cancel")}</button>
           <button type="button" className="zc-btn pri" disabled={loading} onClick={submit}>
-            {loading ? "Saving…" : isEdit ? "Save changes" : "Create category"}
+            {loading ? t("Saving…") : isEdit ? t("Save changes") : t("Create category")}
           </button>
         </div>
       </div>
@@ -397,18 +408,18 @@ function CategoriesModal({ cats, items, onClose, onChanged, onView }) {
 
   const shown = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return s ? cats.filter((c) => c.name.toLowerCase().includes(s)) : cats;
+    return s ? cats.filter((c) => c.name.toLowerCase().includes(s) || (c.nameBn || "").toLowerCase().includes(s)) : cats;
   }, [cats, q]);
 
   const doDelete = async () => {
     setDeleting(true);
     try {
       await deleteCategory(confirmDel._id);
-      toast.success(`"${confirmDel.name}" deleted`);
+      toast.success(t("\"{name}\" deleted", { name: localName(confirmDel) }));
       onChanged({ deleted: confirmDel.name, deletedId: confirmDel._id });
       setConfirmDel(null);
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Failed to delete category");
+      toast.error(e?.response?.data?.message || t("Failed to delete category"));
     } finally {
       setDeleting(false);
     }
@@ -421,25 +432,25 @@ function CategoriesModal({ cats, items, onClose, onChanged, onView }) {
           onClick={(e) => e.stopPropagation()}>
           <div className="mh">
             <div style={{ flex: 1 }}>
-              <div className="t" id="cats-title">🗂️ Categories</div>
-              <div className="s">{cats.length} categor{cats.length === 1 ? "y" : "ies"} · add, rename, change images, or remove empty ones</div>
+              <div className="t" id="cats-title">🗂️ {t("Categories")}</div>
+              <div className="s">{tn(cats.length, "{n} category", "{n} categories")} · {t("add, rename, change images, or remove empty ones")}</div>
             </div>
-            <button type="button" className="zc-x" onClick={onClose} aria-label="Close">✕</button>
+            <button type="button" className="zc-x" onClick={onClose} aria-label={t("Close")}>✕</button>
           </div>
 
           <div className="mb" style={{ display: "grid", gap: 12 }}>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <input className="zc-input" value={q} onChange={(e) => setQ(e.target.value)}
-                placeholder="Search categories" aria-label="Search categories" style={{ flex: "1 1 200px" }} />
-              <button type="button" className="zc-btn pri" onClick={() => setForm("create")}>＋ Add category</button>
+                placeholder={t("Search categories")} aria-label={t("Search categories")} style={{ flex: "1 1 200px" }} />
+              <button type="button" className="zc-btn pri" onClick={() => setForm("create")}>＋ {t("Add category")}</button>
             </div>
 
             {cats.length === 0 ? (
               <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: "var(--text-3)" }}>
-                No categories yet — add one to start building the menu.
+                {t("No categories yet — add one to start building the menu.")}
               </div>
             ) : shown.length === 0 ? (
-              <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: "var(--text-3)" }}>No categories match.</div>
+              <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: "var(--text-3)" }}>{t("No categories match.")}</div>
             ) : (
               <div style={{ border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
                 {shown.map((c) => {
@@ -451,20 +462,20 @@ function CategoriesModal({ cats, items, onClose, onChanged, onView }) {
                     }}>
                       <CatThumb image={c.image} />
                       <div style={{ flex: "1 1 160px", minWidth: 0 }}>
-                        <div style={{ fontWeight: 600, fontSize: 13.5, color: "var(--text-1)", overflowWrap: "anywhere" }}>{c.name}</div>
+                        <div style={{ fontWeight: 600, fontSize: 13.5, color: "var(--text-1)", overflowWrap: "anywhere" }}>{localName(c)}{c.nameBn && <span style={{ fontWeight: 400, fontSize: 11.5, color: "var(--text-3)" }}> · {c.nameBn === localName(c) ? c.name : c.nameBn}</span>}</div>
                         <div style={{ fontSize: 11.5, color: "var(--text-3)", marginTop: 2, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                          <span>{n} item{n === 1 ? "" : "s"}</span>
+                          <span>{tn(n, "{n} item", "{n} items")}</span>
                           {hasSchedule(c) && <ScheduleBadge schedule={c.schedule} />}
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                         <button type="button" className="zc-btn ghost sm" disabled={n === 0}
-                          title={n === 0 ? "No items in this category" : `Show only ${c.name} items`}
-                          onClick={() => onView(c.name)}>View items</button>
-                        <button type="button" className="zc-btn sm" onClick={() => setForm({ ...c, itemCount: n })}>Edit</button>
+                          title={n === 0 ? t("No items in this category") : t("Show only {name} items", { name: localName(c) })}
+                          onClick={() => onView(c.name)}>{t("View items")}</button>
+                        <button type="button" className="zc-btn sm" onClick={() => setForm({ ...c, itemCount: n })}>{t("Edit")}</button>
                         <button type="button" className="zc-btn danger sm" disabled={n > 0}
-                          title={n > 0 ? `Move or delete its ${n} item${n === 1 ? "" : "s"} first` : `Delete ${c.name}`}
-                          onClick={() => setConfirmDel(c)}>Delete</button>
+                          title={n > 0 ? tn(n, "Move or delete its {n} item first", "Move or delete its {n} items first") : t("Delete {name}", { name: localName(c) })}
+                          onClick={() => setConfirmDel(c)}>{t("Delete")}</button>
                       </div>
                     </div>
                   );
@@ -472,8 +483,7 @@ function CategoriesModal({ cats, items, onClose, onChanged, onView }) {
               </div>
             )}
             <div style={{ fontSize: 11, color: "var(--text-3)" }}>
-              Renaming moves the category&rsquo;s items with it. A category can only be deleted once it has no items.
-              Time windows are set under 🕒 Scheduled visibility.
+              {t("Renaming moves the category’s items with it. A category can only be deleted once it has no items. Time windows are set under 🕒 Scheduled visibility.")}
             </div>
           </div>
         </div>
@@ -490,14 +500,14 @@ function CategoriesModal({ cats, items, onClose, onChanged, onView }) {
       {confirmDel && (
         <div className="zc-scrim" onClick={() => !deleting && setConfirmDel(null)} style={{ zIndex: 1200 }}>
           <div className="zc-modal" style={{ width: 380 }} onClick={(e) => e.stopPropagation()}>
-            <div className="mh"><div className="t">Delete category?</div></div>
+            <div className="mh"><div className="t">{t("Delete category?")}</div></div>
             <div className="mb" style={{ fontSize: 13, color: "var(--text-2)" }}>
-              Delete <strong style={{ color: "var(--text-1)" }}>&ldquo;{confirmDel.name}&rdquo;</strong>? This can&rsquo;t be undone.
+              {t("Delete “{name}”? This can’t be undone.", { name: localName(confirmDel) })}
             </div>
             <div className="mf">
-              <button type="button" className="zc-btn" disabled={deleting} onClick={() => setConfirmDel(null)}>Cancel</button>
+              <button type="button" className="zc-btn" disabled={deleting} onClick={() => setConfirmDel(null)}>{t("Cancel")}</button>
               <button type="button" className="zc-btn danger" disabled={deleting} onClick={doDelete}>
-                {deleting ? "Deleting…" : "Delete"}
+                {deleting ? t("Deleting…") : t("Delete")}
               </button>
             </div>
           </div>
@@ -547,9 +557,9 @@ function ItemModal({ item, categories, onClose, onSaved, onCategoryCreated }) {
   };
 
   const submit = async () => {
-    if (!form.name.trim()) return toast.error("Item name is required");
-    if (form.price === "" || isNaN(Number(form.price))) return toast.error("Price must be a number");
-    if (!form.category) return toast.error("Category is required");
+    if (!form.name.trim()) return toast.error(t("Item name is required"));
+    if (form.price === "" || isNaN(Number(form.price))) return toast.error(t("Price must be a number"));
+    if (!form.category) return toast.error(t("Category is required"));
     if (sched.enabled) {
       const err = schedError(sched.startTime, sched.endTime);
       if (err) return toast.error(err);
@@ -559,6 +569,7 @@ function ItemModal({ item, categories, onClose, onSaved, onCategoryCreated }) {
     try {
       const fd = new FormData();
       fd.append("name", form.name.trim());
+      fd.append("nameBn", (form.nameBn || "").trim());
       fd.append("price", form.price);
       fd.append("category", form.category);
       fd.append("tag", form.tag);
@@ -585,14 +596,14 @@ function ItemModal({ item, categories, onClose, onSaved, onCategoryCreated }) {
           data = { ...data, schedule: r.schedule };
           scheduleChanged = true;
         } catch (e) {
-          toast.error(`Item saved, but the schedule was not: ${e?.response?.data?.message || "request failed"}`);
+          toast.error(t("Item saved, but the schedule was not: {reason}", { reason: e?.response?.data?.message || t("request failed") }));
         }
       }
-      toast.success(isEdit ? "Item updated" : "Item created");
+      toast.success(isEdit ? t("Item updated") : t("Item created"));
       onSaved(data, isEdit ? "edit" : "create", { scheduleChanged });
       onClose();
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Failed to save item");
+      toast.error(e?.response?.data?.message || t("Failed to save item"));
     } finally {
       setLoading(false);
     }
@@ -604,10 +615,10 @@ function ItemModal({ item, categories, onClose, onSaved, onCategoryCreated }) {
         <div className="zc-modal" style={{ width: 640 }} onClick={(e) => e.stopPropagation()}>
           <div className="mh">
             <div style={{ flex: 1 }}>
-              <div className="t">{isEdit ? "Edit menu item" : "New menu item"}</div>
-              <div className="s">Appears on the customer site as soon as it is available</div>
+              <div className="t">{isEdit ? t("Edit menu item") : t("New menu item")}</div>
+              <div className="s">{t("Appears on the customer site as soon as it is available")}</div>
             </div>
-            <button type="button" className="zc-x" onClick={onClose} aria-label="Close">✕</button>
+            <button type="button" className="zc-x" onClick={onClose} aria-label={t("Close")}>✕</button>
           </div>
 
           <div className="mb">
@@ -615,9 +626,15 @@ function ItemModal({ item, categories, onClose, onSaved, onCategoryCreated }) {
               <ImageUploadBox currentUrl={form.image} file={imgFile} onFileChange={setImgFile} />
               <div className="menu-fgrid" style={{ flex: 1, minWidth: 240, alignContent: "start" }}>
                 <div className="menu-field full">
-                  <label htmlFor="mi-name">Item name *</label>
+                  <label htmlFor="mi-name">{t("Item name")} *</label>
                   <input id="mi-name" className="zc-input" value={form.name}
-                    onChange={(e) => set("name", e.target.value)} placeholder="e.g. Hyderabadi Dum Biryani" />
+                    onChange={(e) => set("name", e.target.value)} placeholder={t("e.g. Hyderabadi Dum Biryani")} />
+                </div>
+                <div className="menu-field full">
+                  <label htmlFor="mi-name-bn">{t("Bengali name")} <span style={{ color: "var(--text-3)", fontWeight: 400 }}>({t("optional")})</span></label>
+                  <input id="mi-name-bn" lang="bn" className="zc-input" value={form.nameBn || ""}
+                    onChange={(e) => set("nameBn", e.target.value)} placeholder={t("e.g. হায়দ্রাবাদি দম বিরিয়ানি")} />
+                  <div className="hint">{t("Shown in the admin panel’s Bengali mode. Customers, bills and the kitchen ticket still use the English name.")}</div>
                 </div>
                 <div className="menu-field full">
                   <CategoryPicker
@@ -629,13 +646,13 @@ function ItemModal({ item, categories, onClose, onSaved, onCategoryCreated }) {
                   />
                 </div>
                 <div className="menu-field full">
-                  <label>Food type *</label>
+                  <label>{t("Food type")} *</label>
                   <div style={{ display: "flex", gap: 8 }}>
-                    {TAGS.map((t) => (
-                      <button key={t} type="button" onClick={() => set("tag", t)}
-                        className={`zc-btn${form.tag === t ? (t === "Veg" ? " good" : " danger") : ""}`}
+                    {TAGS.map((tg) => (
+                      <button key={tg} type="button" onClick={() => set("tag", tg)}
+                        className={`zc-btn${form.tag === tg ? (tg === "Veg" ? " good" : " danger") : ""}`}
                         style={{ flex: 1, justifyContent: "center" }}>
-                        <VegDot tag={t} />{t === "Veg" ? "Veg" : "Non-veg"}
+                        <VegDot tag={tg} />{tg === "Veg" ? t("Veg") : t("Non-veg")}
                       </button>
                     ))}
                   </div>
@@ -645,78 +662,77 @@ function ItemModal({ item, categories, onClose, onSaved, onCategoryCreated }) {
 
             <div className="menu-fgrid">
               <div className="menu-field">
-                <label htmlFor="mi-price">Price (₹) *</label>
+                <label htmlFor="mi-price">{t("Price (₹)")} *</label>
                 <input id="mi-price" type="number" min="0" className="zc-input" value={form.price}
                   onChange={(e) => set("price", e.target.value)} placeholder="420" />
-                <div className="hint">Shown as the item price</div>
+                <div className="hint">{t("Shown as the item price")}</div>
               </div>
               <div className="menu-field">
-                <label htmlFor="mi-oprice">Original price (₹)</label>
+                <label htmlFor="mi-oprice">{t("Original price (₹)")}</label>
                 <input id="mi-oprice" type="number" min="0" className="zc-input" value={form.originalPrice}
-                  onChange={(e) => set("originalPrice", e.target.value)} placeholder="Optional" />
-                <div className="hint">Struck-through &ldquo;was&rdquo; price — leave empty if none</div>
+                  onChange={(e) => set("originalPrice", e.target.value)} placeholder={t("Optional")} />
+                <div className="hint">{t("Struck-through “was” price — leave empty if none")}</div>
               </div>
               <div className="menu-field">
-                <label htmlFor="mi-rating">Rating (1–5)</label>
+                <label htmlFor="mi-rating">{t("Rating (1–5)")}</label>
                 <input id="mi-rating" type="number" min="1" max="5" step="0.1" className="zc-input"
                   value={form.rating} onChange={(e) => set("rating", e.target.value)} />
               </div>
               <div className="menu-field full">
-                <label htmlFor="mi-desc">Description</label>
+                <label htmlFor="mi-desc">{t("Description")}</label>
                 <textarea id="mi-desc" rows={3} className="zc-textarea" value={form.description}
                   onChange={(e) => set("description", e.target.value)}
-                  placeholder="Short description shown to customers…" />
+                  placeholder={t("Short description shown to customers…")} />
               </div>
               <div className="menu-field full">
-                <label>Availability</label>
+                <label>{t("Availability")}</label>
                 <div className={`menu-toggle-row${form.isAvailable ? " on" : ""}`}>
                   <Switch on={form.isAvailable} onClick={() => set("isAvailable", !form.isAvailable)}
-                    label="Toggle availability" />
+                    label={t("Toggle availability")} />
                   <span style={{ fontSize: 12.5, fontWeight: 500, color: "var(--text-1)" }}>
-                    {form.isAvailable ? "Available now" : "Hidden"}
+                    {form.isAvailable ? t("Available now") : t("Hidden")}
                   </span>
                   <span style={{ fontSize: 11, color: "var(--text-3)", marginLeft: "auto" }}>
-                    {form.isAvailable ? "Customers can order this item" : "Stays in history, hidden from the menu"}
+                    {form.isAvailable ? t("Customers can order this item") : t("Stays in history, hidden from the menu")}
                   </span>
                 </div>
               </div>
               <div className="menu-field full">
-                <label>Schedule</label>
+                <label>{t("Schedule")}</label>
                 <div className={`menu-toggle-row${sched.enabled ? " on" : ""}`} style={{ flexWrap: "wrap" }}>
-                  <Switch on={sched.enabled} label="Toggle schedule"
+                  <Switch on={sched.enabled} label={t("Toggle schedule")}
                     onClick={() => setSched((p) => ({ ...p, enabled: !p.enabled }))} />
                   <span style={{ fontSize: 12.5, fontWeight: 500, color: "var(--text-1)" }}>
-                    {sched.enabled ? "Only during" : "All day"}
+                    {sched.enabled ? t("Only during") : t("All day")}
                   </span>
                   {sched.enabled ? (
                     <span style={{ display: "flex", gap: 6, alignItems: "center", marginLeft: "auto" }}>
-                      <input type="time" className="zc-input" aria-label="Schedule start time" style={{ width: 130 }}
+                      <input type="time" className="zc-input" aria-label={t("Schedule start time")} style={{ width: 130 }}
                         value={sched.startTime} onChange={(e) => setSched((p) => ({ ...p, startTime: e.target.value }))} />
                       <span style={{ color: "var(--text-3)" }}>→</span>
-                      <input type="time" className="zc-input" aria-label="Schedule end time" style={{ width: 130 }}
+                      <input type="time" className="zc-input" aria-label={t("Schedule end time")} style={{ width: 130 }}
                         value={sched.endTime} onChange={(e) => setSched((p) => ({ ...p, endTime: e.target.value }))} />
                     </span>
                   ) : (
-                    <span style={{ fontSize: 11, color: "var(--text-3)", marginLeft: "auto" }}>No time restriction</span>
+                    <span style={{ fontSize: 11, color: "var(--text-3)", marginLeft: "auto" }}>{t("No time restriction")}</span>
                   )}
                 </div>
                 <div className="hint">
-                  Customers see this item only inside the window (restaurant time; start included, end excluded — an end
-                  earlier than the start runs past midnight). Availability above still applies.
-                  {catSched && <> The <b>{form.category}</b> category is itself limited to {schedLabel(catSched)} — the item must satisfy both.</>}
+                  {t("Customers see this item only inside the window (restaurant time; start included, end excluded — an end earlier than the start runs past midnight). Availability above still applies.")}
+                  {catSched && <> {t("The {category} category is itself limited to {window} — the item must satisfy both.", { category: catLabel(categories, form.category), window: schedLabel(catSched) })}</>}
                 </div>
               </div>
             </div>
 
             <div style={{ marginTop: 14, padding: "10px 13px", background: "var(--card-2)", border: "1px solid var(--edge)", borderRadius: "var(--r-ctl)", fontSize: 11.5, color: "var(--text-3)" }}>
-              📷 Images upload to Cloudinary automatically. Max 5 MB · square images recommended.
+              📷 {t("Images upload to Cloudinary automatically. Max 5 MB · square images recommended.")}
             </div>
           </div>
 
           <div className="mf">
-            <button type="button" className="zc-btn" onClick={onClose}>Cancel</button>
+            <button type="button" className="zc-btn" onClick={onClose}>{t("Cancel")}</button>
             <button type="button" className="zc-btn pri" disabled={loading} onClick={submit}>
-              {loading ? (isEdit ? "Updating…" : "Creating…") : isEdit ? "Update item" : "Save item"}
+              {loading ? (isEdit ? t("Updating…") : t("Creating…")) : isEdit ? t("Update item") : t("Save item")}
             </button>
           </div>
         </div>
@@ -746,9 +762,8 @@ function ScheduleModal({ cats, items, selCats, selItems, setSelCats, setSelItems
   }, [onClose, busy, confirm]);
 
   const nCats = selCats.size, nItems = selItems.size, total = nCats + nItems;
-  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-  const whatText = [nCats && plural(nCats, "category", "categories"), nItems && plural(nItems, "item", "items")]
-    .filter(Boolean).join(" and ");
+  const whatText = [nCats && tn(nCats, "{n} category", "{n} categories"), nItems && tn(nItems, "{n} item", "{n} items")]
+    .filter(Boolean).join(` ${t("and")} `);
 
   const toggle = (setter) => (id) => setter((p) => {
     const n = new Set(p);
@@ -760,7 +775,7 @@ function ScheduleModal({ cats, items, selCats, selItems, setSelCats, setSelItems
 
   const shownItems = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return s ? items.filter((i) => i.name?.toLowerCase().includes(s) || i.category?.toLowerCase().includes(s)) : items;
+    return s ? items.filter((i) => i.name?.toLowerCase().includes(s) || (i.nameBn || "").toLowerCase().includes(s) || i.category?.toLowerCase().includes(s)) : items;
   }, [items, q]);
   const shownIds = shownItems.map((i) => i._id);
   const allShownSelected = shownIds.length > 0 && shownIds.every((id) => selItems.has(id));
@@ -770,14 +785,14 @@ function ScheduleModal({ cats, items, selCats, selItems, setSelCats, setSelItems
     try {
       const { data } = await updateMenuSchedule({ itemIds: [...selItems], categoryIds: [...selCats], schedule });
       toast.success(schedule
-        ? `Scheduled ${whatText}: ${schedLabel(data.schedule)}`
-        : `Schedule cleared on ${whatText}`);
+        ? t("Scheduled {what}: {window}", { what: whatText, window: schedLabel(data.schedule) })
+        : t("Schedule cleared on {what}", { what: whatText }));
       setSelCats(new Set());
       setSelItems(new Set());
       onApplied();
       onClose();
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Failed to update schedule");
+      toast.error(e?.response?.data?.message || t("Failed to update schedule"));
     } finally {
       setBusy(false);
       setConfirm(null);
@@ -785,17 +800,17 @@ function ScheduleModal({ cats, items, selCats, selItems, setSelCats, setSelItems
   };
 
   const apply = () => {
-    if (!total) return toast.error("Select at least one category or item");
+    if (!total) return toast.error(t("Select at least one category or item"));
     const err = schedError(start, end);
     if (err) return toast.error(err);
     const schedule = { startTime: start, endTime: end };
     if (total >= BULK_CONFIRM_AT) {
-      setConfirm({ schedule, text: `Apply ${schedLabel(schedule)} to ${whatText}?` });
+      setConfirm({ schedule, text: t("Apply {window} to {what}?", { window: schedLabel(schedule), what: whatText }) });
     } else run(schedule);
   };
   const clear = () => {
-    if (!total) return toast.error("Select at least one category or item");
-    setConfirm({ schedule: null, text: `Remove the schedule from ${whatText}? They go back to showing all day (availability still applies).` });
+    if (!total) return toast.error(t("Select at least one category or item"));
+    setConfirm({ schedule: null, text: t("Remove the schedule from {what}? They go back to showing all day (availability still applies).", { what: whatText }) });
   };
 
   const sectionLabel = { fontSize: 11.5, color: "var(--text-2)", fontWeight: 600 };
@@ -807,29 +822,29 @@ function ScheduleModal({ cats, items, selCats, selItems, setSelCats, setSelItems
           onClick={(e) => e.stopPropagation()}>
           <div className="mh">
             <div style={{ flex: 1 }}>
-              <div className="t" id="sched-modal-title">🕒 Scheduled visibility</div>
-              <div className="s">Show categories / items to customers only during a daily time window (restaurant time)</div>
+              <div className="t" id="sched-modal-title">🕒 {t("Scheduled visibility")}</div>
+              <div className="s">{t("Show categories / items to customers only during a daily time window (restaurant time)")}</div>
             </div>
-            <button type="button" className="zc-x" onClick={onClose} disabled={busy} aria-label="Close">✕</button>
+            <button type="button" className="zc-x" onClick={onClose} disabled={busy} aria-label={t("Close")}>✕</button>
           </div>
 
           <div className="mb" style={{ display: "grid", gap: 18 }}>
             {/* 1 — categories */}
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-                <span style={sectionLabel}>Categories</span>
+                <span style={sectionLabel}>{t("Categories")}</span>
                 <button type="button" className="zc-btn ghost sm" disabled={!cats.length}
-                  onClick={() => setSelCats(new Set(cats.map((c) => c._id)))}>Select all</button>
-                {nCats > 0 && <button type="button" className="zc-btn ghost sm" onClick={() => setSelCats(new Set())}>Clear</button>}
+                  onClick={() => setSelCats(new Set(cats.map((c) => c._id)))}>{t("Select all")}</button>
+                {nCats > 0 && <button type="button" className="zc-btn ghost sm" onClick={() => setSelCats(new Set())}>{t("Clear")}</button>}
               </div>
               {cats.length === 0 ? (
-                <div style={{ fontSize: 12, color: "var(--text-3)" }}>No categories yet.</div>
+                <div style={{ fontSize: 12, color: "var(--text-3)" }}>{t("No categories yet.")}</div>
               ) : (
                 <div className="menu-catpick">
                   {cats.map((c) => (
                     <label key={c._id} className={`menu-catchip${selCats.has(c._id) ? " on" : ""}`}>
                       <input type="checkbox" className="menu-cb" checked={selCats.has(c._id)} onChange={() => toggleCat(c._id)} />
-                      {c.name}
+                      {localName(c)}
                       {hasSchedule(c) && <ScheduleBadge schedule={c.schedule} />}
                     </label>
                   ))}
@@ -840,18 +855,18 @@ function ScheduleModal({ cats, items, selCats, selItems, setSelCats, setSelItems
             {/* 2 — items */}
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-                <span style={sectionLabel}>Items</span>
+                <span style={sectionLabel}>{t("Items")}</span>
                 <input className="zc-input" value={q} onChange={(e) => setQ(e.target.value)}
-                  placeholder="Search items or category" aria-label="Search items to schedule"
+                  placeholder={t("Search items or category")} aria-label={t("Search items to schedule")}
                   style={{ flex: "1 1 200px", maxWidth: 280, padding: "6px 10px", fontSize: 12.5 }} />
                 <button type="button" className="zc-btn ghost sm" disabled={!shownIds.length || allShownSelected}
-                  onClick={() => setSelItems((p) => new Set([...p, ...shownIds]))}>Select all {shownIds.length}</button>
-                {nItems > 0 && <button type="button" className="zc-btn ghost sm" onClick={() => setSelItems(new Set())}>Clear</button>}
+                  onClick={() => setSelItems((p) => new Set([...p, ...shownIds]))}>{t("Select all {n}", { n: shownIds.length })}</button>
+                {nItems > 0 && <button type="button" className="zc-btn ghost sm" onClick={() => setSelItems(new Set())}>{t("Clear")}</button>}
               </div>
               <div style={{ maxHeight: 240, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 12 }}>
                 {shownItems.length === 0 ? (
                   <div style={{ padding: 14, fontSize: 12, color: "var(--text-3)", textAlign: "center" }}>
-                    {items.length === 0 ? "No items yet." : "No items match."}
+                    {items.length === 0 ? t("No items yet.") : t("No items match.")}
                   </div>
                 ) : shownItems.map((i) => (
                   <label key={i._id} style={{
@@ -861,8 +876,8 @@ function ScheduleModal({ cats, items, selCats, selItems, setSelCats, setSelItems
                   }}>
                     <input type="checkbox" className="menu-cb" checked={selItems.has(i._id)} onChange={() => toggleItem(i._id)} />
                     <VegDot tag={i.tag} />
-                    <span style={{ fontWeight: 500, color: "var(--text-1)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{i.name}</span>
-                    <span style={{ fontSize: 11.5, color: "var(--text-3)", whiteSpace: "nowrap" }}>{i.category}</span>
+                    <span style={{ fontWeight: 500, color: "var(--text-1)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{localName(i)}</span>
+                    <span style={{ fontSize: 11.5, color: "var(--text-3)", whiteSpace: "nowrap" }}>{catLabel(cats, i.category)}</span>
                     <span style={{ marginLeft: "auto", flexShrink: 0 }}>
                       {hasSchedule(i) && <ScheduleBadge schedule={i.schedule} off={i.scheduledNow === false && i.isAvailable} />}
                     </span>
@@ -874,28 +889,26 @@ function ScheduleModal({ cats, items, selCats, selItems, setSelCats, setSelItems
             {/* 3 — window */}
             <div className="menu-sched-bar">
               <div className="menu-field">
-                <label htmlFor="sch-start">Start (visible from)</label>
+                <label htmlFor="sch-start">{t("Start (visible from)")}</label>
                 <input id="sch-start" type="time" className="zc-input" value={start} onChange={(e) => setStart(e.target.value)} />
               </div>
               <div className="menu-field">
-                <label htmlFor="sch-end">End (hidden from)</label>
+                <label htmlFor="sch-end">{t("End (hidden from)")}</label>
                 <input id="sch-end" type="time" className="zc-input" value={end} onChange={(e) => setEnd(e.target.value)} />
               </div>
             </div>
             <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: -8 }}>
-              Start time is included, end time is not (10:00 → 12:00 shows at 11:59, hides at 12:00). An end earlier than the
-              start runs past midnight (22:00 → 02:00). A category&rsquo;s window hides all of its items; an item with its own
-              window must satisfy both. Hidden (unavailable) items stay hidden regardless of schedule.
+              {t("Start time is included, end time is not (10:00 → 12:00 shows at 11:59, hides at 12:00). An end earlier than the start runs past midnight (22:00 → 02:00). A category’s window hides all of its items; an item with its own window must satisfy both. Hidden (unavailable) items stay hidden regardless of schedule.")}
             </div>
           </div>
 
           <div className="mf" style={{ alignItems: "center" }}>
             <span style={{ fontSize: 12, color: total ? "var(--text-1)" : "var(--text-3)", marginRight: "auto" }}>
-              Selected: <b style={{ color: "var(--accent-ink)" }}>{total}</b>{total ? ` (${whatText})` : ""}
+              {t("Selected:")} <b style={{ color: "var(--accent-ink)" }}>{fmtNum(total)}</b>{total ? ` (${whatText})` : ""}
             </span>
-            <button type="button" className="zc-btn" disabled={busy || !total} onClick={clear}>Clear schedule</button>
+            <button type="button" className="zc-btn" disabled={busy || !total} onClick={clear}>{t("Clear schedule")}</button>
             <button type="button" className="zc-btn pri" disabled={busy || !total} onClick={apply}>
-              {busy ? "Saving…" : "Apply schedule"}
+              {busy ? t("Saving…") : t("Apply schedule")}
             </button>
           </div>
         </div>
@@ -904,12 +917,12 @@ function ScheduleModal({ cats, items, selCats, selItems, setSelCats, setSelItems
       {confirm && (
         <div className="zc-scrim" onClick={() => !busy && setConfirm(null)} style={{ zIndex: 1200 }}>
           <div className="zc-modal" style={{ width: 420 }} onClick={(e) => e.stopPropagation()}>
-            <div className="mh"><div className="t">{confirm.schedule ? "Apply schedule?" : "Clear schedule?"}</div></div>
+            <div className="mh"><div className="t">{confirm.schedule ? t("Apply schedule?") : t("Clear schedule?")}</div></div>
             <div className="mb" style={{ fontSize: 13, color: "var(--text-2)" }}>{confirm.text}</div>
             <div className="mf">
-              <button type="button" className="zc-btn" disabled={busy} onClick={() => setConfirm(null)}>Cancel</button>
+              <button type="button" className="zc-btn" disabled={busy} onClick={() => setConfirm(null)}>{t("Cancel")}</button>
               <button type="button" className={`zc-btn ${confirm.schedule ? "pri" : "danger"}`} disabled={busy}
-                onClick={() => run(confirm.schedule)}>{busy ? "Saving…" : confirm.schedule ? "Apply" : "Clear schedule"}</button>
+                onClick={() => run(confirm.schedule)}>{busy ? t("Saving…") : confirm.schedule ? t("Apply") : t("Clear schedule")}</button>
             </div>
           </div>
         </div>
@@ -990,14 +1003,14 @@ export default function MenuAdminPage() {
   };
 
   const handleDelete = async (item) => {
-    if (!window.confirm(`Delete "${item.name}"? This cannot be undone.`)) return;
+    if (!window.confirm(t("Delete \"{name}\"? This cannot be undone.", { name: localName(item) }))) return;
     try {
       await deleteMenuItem(item._id);
       setItems((p) => p.filter((i) => i._id !== item._id));
       setSelItems((p) => { const n = new Set(p); n.delete(item._id); return n; });
-      toast.success("Item deleted");
+      toast.success(t("Item deleted"));
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Delete failed");
+      toast.error(e?.response?.data?.message || t("Delete failed"));
     }
   };
 
@@ -1005,9 +1018,9 @@ export default function MenuAdminPage() {
     try {
       const { data } = await updateMenuItem(item._id, { isAvailable: !item.isAvailable });
       setItems((p) => p.map((i) => (i._id === data._id ? { ...data, scheduledNow: i.scheduledNow } : i)));
-      toast.success(`${data.name} → ${data.isAvailable ? "Available" : "Hidden"}`);
+      toast.success(`${localName(data)} → ${data.isAvailable ? t("Available") : t("Hidden")}`);
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Update failed");
+      toast.error(e?.response?.data?.message || t("Update failed"));
     }
   };
 
@@ -1018,7 +1031,7 @@ export default function MenuAdminPage() {
       if (avail === "Available" && !i.isAvailable) return false;
       if (avail === "Hidden" && i.isAvailable) return false;
       if (vegOnly && i.tag !== "Veg") return false;
-      if (q && !i.name?.toLowerCase().includes(q)) return false;
+      if (q && !i.name?.toLowerCase().includes(q) && !(i.nameBn || "").toLowerCase().includes(q)) return false;
       return true;
     });
   }, [items, search, selCat, avail, vegOnly]);
@@ -1041,26 +1054,26 @@ export default function MenuAdminPage() {
   const clearFilters = () => { setSearch(""); setSelCat("All"); setAvail("All"); setVegOnly(false); };
 
   const STATS = [
-    { label: "Total items", value: items.length, grad: true, sub: `${cats.length} categor${cats.length === 1 ? "y" : "ies"}` },
-    { label: "Available", value: availableCount, color: "var(--ready-ink)", sub: "Live on the menu" },
-    { label: "Hidden", value: hiddenCount, color: "var(--text-2)", sub: hiddenCount ? "Off the menu" : "None hidden" },
-    { label: "Scheduled", value: scheduledCount, color: "var(--accent-ink)", sub: scheduledCount ? "Time-limited items" : "None scheduled" },
-    { label: "Vegetarian", value: vegCount, color: "var(--ready-ink)", sub: items.length ? `${Math.round((vegCount / items.length) * 100)}% of menu` : "—" },
-    { label: "Non-vegetarian", value: nonVegCount, color: "var(--stop-ink)", sub: items.length ? `${Math.round((nonVegCount / items.length) * 100)}% of menu` : "—" },
+    { label: t("Total items"), value: fmtNum(items.length), grad: true, sub: tn(cats.length, "{n} category", "{n} categories") },
+    { label: t("Available"), value: fmtNum(availableCount), color: "var(--ready-ink)", sub: t("Live on the menu") },
+    { label: t("Hidden"), value: fmtNum(hiddenCount), color: "var(--text-2)", sub: hiddenCount ? t("Off the menu") : t("None hidden") },
+    { label: t("Scheduled"), value: fmtNum(scheduledCount), color: "var(--accent-ink)", sub: scheduledCount ? t("Time-limited items") : t("None scheduled") },
+    { label: t("Vegetarian"), value: fmtNum(vegCount), color: "var(--ready-ink)", sub: items.length ? t("{pct}% of menu", { pct: Math.round((vegCount / items.length) * 100) }) : "—" },
+    { label: t("Non-vegetarian"), value: fmtNum(nonVegCount), color: "var(--stop-ink)", sub: items.length ? t("{pct}% of menu", { pct: Math.round((nonVegCount / items.length) * 100) }) : "—" },
   ];
 
   return (
     <div>
       <PageHeader
-        title="Menu items"
-        sub={`${items.length} item${items.length === 1 ? "" : "s"} across ${cats.length} categor${cats.length === 1 ? "y" : "ies"}`}
+        title={t("Menu items")}
+        sub={`${tn(items.length, "{n} item", "{n} items")} · ${tn(cats.length, "{n} category", "{n} categories")}`}
         right={
           <>
             <button type="button" className="zc-btn" disabled={loading || error} onClick={() => setShowSched(true)}>
-              🕒 Scheduled visibility{selItems.size + selCats.size > 0 ? ` (${selItems.size + selCats.size})` : ""}
+              🕒 {t("Scheduled visibility")}{selItems.size + selCats.size > 0 ? ` (${fmtNum(selItems.size + selCats.size)})` : ""}
             </button>
-            <button type="button" className="zc-btn" disabled={loading || error} onClick={() => setShowCats(true)}>🗂️ Categories</button>
-            <button type="button" className="zc-btn pri" onClick={() => setModal("create")}>＋ New item</button>
+            <button type="button" className="zc-btn" disabled={loading || error} onClick={() => setShowCats(true)}>🗂️ {t("Categories")}</button>
+            <button type="button" className="zc-btn pri" onClick={() => setModal("create")}>＋ {t("New item")}</button>
           </>
         }
       />
@@ -1074,49 +1087,49 @@ export default function MenuAdminPage() {
           className="zc-input"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by item name"
-          aria-label="Search menu items"
+          placeholder={t("Search by item name")}
+          aria-label={t("Search menu items")}
           style={{ flex: 1, minWidth: 220 }}
         />
-        <div className="zc-seg" role="tablist" aria-label="Availability filter">
+        <div className="zc-seg" role="tablist" aria-label={t("Availability filter")}>
           {AVAIL_SEG.map((a) => (
             <button key={a} type="button" role="tab" aria-selected={avail === a}
-              className={avail === a ? "on" : ""} onClick={() => setAvail(a)}>{a}</button>
+              className={avail === a ? "on" : ""} onClick={() => setAvail(a)}>{t(a)}</button>
           ))}
         </div>
         <select className="zc-select" value={selCat} onChange={(e) => setSelCat(e.target.value)}
-          aria-label="Category filter" style={{ width: "auto" }}>
-          <option value="All">Category: All</option>
-          {cats.map((c) => <option key={c._id} value={c.name}>{c.name}</option>)}
+          aria-label={t("Category filter")} style={{ width: "auto" }}>
+          <option value="All">{t("Category: All")}</option>
+          {cats.map((c) => <option key={c._id} value={c.name}>{localName(c)}</option>)}
         </select>
         <button type="button" onClick={() => setVegOnly((v) => !v)}
           className={`zc-btn${vegOnly ? " good" : " ghost"}`} aria-pressed={vegOnly}>
-          <VegDot tag="Veg" />Veg only
+          <VegDot tag="Veg" />{t("Veg only")}
         </button>
         <div style={{ flex: 1 }} />
         {hasFilters ? (
           <>
             <span style={{ fontSize: 12, color: "var(--text-2)" }}>
-              <b style={{ color: "var(--accent-ink)" }}>{filtered.length}</b> of {items.length}
+              <b style={{ color: "var(--accent-ink)" }}>{fmtNum(filtered.length)}</b> {t("of {n}", { n: items.length })}
             </span>
-            <button type="button" className="zc-btn sm" onClick={clearFilters}>Clear ✕</button>
+            <button type="button" className="zc-btn sm" onClick={clearFilters}>{t("Clear")} ✕</button>
           </>
         ) : (
-          <span style={{ fontSize: 12, color: "var(--text-3)" }}>{items.length} item{items.length === 1 ? "" : "s"}</span>
+          <span style={{ fontSize: 12, color: "var(--text-3)" }}>{tn(items.length, "{n} item", "{n} items")}</span>
         )}
       </div>
 
       <div className="zc-card">
         <div className="zc-card-h">
-          <span className="t">Items</span>
-          <span className="s">{loading ? "loading…" : error ? "unavailable" : `${filtered.length} shown`}</span>
+          <span className="t">{t("Items")}</span>
+          <span className="s">{loading ? t("loading…") : error ? t("unavailable") : t("{n} shown", { n: filtered.length })}</span>
         </div>
 
         {loading ? (
           <div style={{ padding: "16px 18px" }}><Loader rows={8} /></div>
         ) : error ? (
-          <ErrorState title="Could not load the menu"
-            sub="The server did not respond. Check that the backend is running, then try again."
+          <ErrorState title={t("Could not load the menu")}
+            sub={t("The server did not respond. Check that the backend is running, then try again.")}
             onRetry={load} />
         ) : filtered.length === 0 ? (
           <EmptyState
@@ -1125,14 +1138,14 @@ export default function MenuAdminPage() {
                 <path d="M4 5h16M4 12h16M4 19h10" />
               </svg>
             }
-            title={items.length === 0 ? "No menu items yet" : "No items match"}
+            title={items.length === 0 ? t("No menu items yet") : t("No items match")}
             sub={items.length === 0
-              ? "Add your first dish or drink — it shows on the customer site as soon as it is available."
-              : "Nothing matches these filters. Try clearing them."}
+              ? t("Add your first dish or drink — it shows on the customer site as soon as it is available.")
+              : t("Nothing matches these filters. Try clearing them.")}
             action={
               items.length === 0
-                ? <button type="button" className="zc-btn pri" onClick={() => setModal("create")}>＋ New item</button>
-                : hasFilters ? <button type="button" className="zc-btn" onClick={clearFilters}>Clear filters</button> : null
+                ? <button type="button" className="zc-btn pri" onClick={() => setModal("create")}>＋ {t("New item")}</button>
+                : hasFilters ? <button type="button" className="zc-btn" onClick={clearFilters}>{t("Clear filters")}</button> : null
             }
           />
         ) : (
@@ -1143,16 +1156,16 @@ export default function MenuAdminPage() {
                 <thead>
                   <tr>
                     <th style={{ width: 34 }}>
-                      <input type="checkbox" className="menu-cb" aria-label="Select all shown items"
+                      <input type="checkbox" className="menu-cb" aria-label={t("Select all shown items")}
                         checked={allFilteredSelected}
                         ref={(el) => { if (el) el.indeterminate = !allFilteredSelected && someFilteredSelected; }}
                         onChange={toggleAllFiltered} />
                     </th>
-                    <th>Item</th>
-                    <th style={{ width: 130 }}>Category</th>
-                    <th className="num" style={{ width: 110 }}>Price</th>
-                    <th className="num" style={{ width: 84 }}>Rating</th>
-                    <th style={{ width: 132 }}>Availability</th>
+                    <th>{t("Item")}</th>
+                    <th style={{ width: 130 }}>{t("Category")}</th>
+                    <th className="num" style={{ width: 110 }}>{t("Price")}</th>
+                    <th className="num" style={{ width: 84 }}>{t("Rating")}</th>
+                    <th style={{ width: 132 }}>{t("Availability")}</th>
                     <th style={{ width: 96 }} />
                   </tr>
                 </thead>
@@ -1160,7 +1173,7 @@ export default function MenuAdminPage() {
                   {filtered.map((item) => (
                     <tr key={item._id} className="menu-click" onClick={() => setModal(item)}>
                       <td onClick={(e) => e.stopPropagation()}>
-                        <input type="checkbox" className="menu-cb" aria-label={`Select ${item.name}`}
+                        <input type="checkbox" className="menu-cb" aria-label={t("Select {name}", { name: localName(item) })}
                           checked={selItems.has(item._id)} onChange={() => toggleItemSel(item._id)} />
                       </td>
                       <td>
@@ -1168,7 +1181,7 @@ export default function MenuAdminPage() {
                           <Thumb src={item.image} />
                           <VegDot tag={item.tag} />
                           <div style={{ minWidth: 0 }}>
-                            <div style={{ fontWeight: 600, color: "var(--text-1)" }}>{item.name}</div>
+                            <div style={{ fontWeight: 600, color: "var(--text-1)" }}>{localName(item)}</div>
                             {item.description && (
                               <div style={{ fontSize: 11, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 320 }}>
                                 {item.description}
@@ -1183,34 +1196,34 @@ export default function MenuAdminPage() {
                         </div>
                       </td>
                       <td>
-                        <span className="zc-tag done sq">{item.category || "—"}</span>
+                        <span className="zc-tag done sq">{item.category ? localName(catByName.get(item.category) || item.category) : "—"}</span>
                         {hasSchedule(catByName.get(item.category)) && (
                           <div style={{ marginTop: 3 }}><ScheduleBadge schedule={catByName.get(item.category).schedule} /></div>
                         )}
                       </td>
                       <td className="num">
-                        <span style={{ fontWeight: 600, color: "var(--text-1)" }}>₹{item.price}</span>
+                        <span style={{ fontWeight: 600, color: "var(--text-1)" }}>₹{fmtNum(item.price)}</span>
                         {item.originalPrice ? (
-                          <div style={{ fontSize: 11, color: "var(--text-3)", textDecoration: "line-through" }}>₹{item.originalPrice}</div>
+                          <div style={{ fontSize: 11, color: "var(--text-3)", textDecoration: "line-through" }}>₹{fmtNum(item.originalPrice)}</div>
                         ) : null}
                       </td>
                       <td className="num" style={{ color: "var(--wait-ink)", fontWeight: 600 }}>
-                        ★ {Number(item.rating || 0).toFixed(1)}
+                        ★ {fmtNum(Number(item.rating || 0), { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
                         <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
                           <Switch on={item.isAvailable} onClick={() => toggleAvail(item)}
-                            label={`Toggle ${item.name} availability`} />
+                            label={t("Toggle {name} availability", { name: localName(item) })} />
                           <span className={`zc-tag ${item.isAvailable ? "ready" : "done"}`}>
-                            <i />{item.isAvailable ? "Available" : "Hidden"}
+                            <i />{item.isAvailable ? t("Available") : t("Hidden")}
                           </span>
                         </div>
                       </td>
                       <td style={{ textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
                         <div style={{ display: "flex", gap: 5, justifyContent: "flex-end" }}>
-                          <button type="button" className="zc-btn ghost sm" title="Edit" onClick={() => setModal(item)}
+                          <button type="button" className="zc-btn ghost sm" title={t("Edit")} onClick={() => setModal(item)}
                             style={{ padding: "5px 8px" }}>✏️</button>
-                          <button type="button" className="zc-btn danger sm" title="Delete" onClick={() => handleDelete(item)}
+                          <button type="button" className="zc-btn danger sm" title={t("Delete")} onClick={() => handleDelete(item)}
                             style={{ padding: "5px 8px" }}>🗑️</button>
                         </div>
                       </td>
@@ -1224,17 +1237,17 @@ export default function MenuAdminPage() {
             <div className="menu-cards" style={{ padding: "10px 12px 4px" }}>
               {filtered.map((item) => (
                 <div key={item._id} className="menu-mcard" onClick={() => setModal(item)}>
-                  <input type="checkbox" className="menu-cb" aria-label={`Select ${item.name}`} style={{ marginTop: 3 }}
+                  <input type="checkbox" className="menu-cb" aria-label={t("Select {name}", { name: localName(item) })} style={{ marginTop: 3 }}
                     checked={selItems.has(item._id)} onClick={(e) => e.stopPropagation()}
                     onChange={() => toggleItemSel(item._id)} />
                   <Thumb src={item.image} size={48} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                       <VegDot tag={item.tag} />
-                      <span style={{ fontWeight: 600, color: "var(--text-1)", fontSize: 13 }}>{item.name}</span>
+                      <span style={{ fontWeight: 600, color: "var(--text-1)", fontSize: 13 }}>{localName(item)}</span>
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 3 }}>
-                      {item.category} · ★ {Number(item.rating || 0).toFixed(1)}
+                      {localName(catByName.get(item.category) || item.category)} · ★ {fmtNum(Number(item.rating || 0), { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
                     </div>
                     {hasSchedule(item) && (
                       <div style={{ marginTop: 4 }}>
@@ -1242,13 +1255,13 @@ export default function MenuAdminPage() {
                       </div>
                     )}
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-                      <span className="tnum" style={{ fontWeight: 700, color: "var(--text-1)" }}>₹{item.price}</span>
+                      <span className="tnum" style={{ fontWeight: 700, color: "var(--text-1)" }}>₹{fmtNum(item.price)}</span>
                       {item.originalPrice ? (
-                        <span className="tnum" style={{ fontSize: 11, color: "var(--text-3)", textDecoration: "line-through" }}>₹{item.originalPrice}</span>
+                        <span className="tnum" style={{ fontSize: 11, color: "var(--text-3)", textDecoration: "line-through" }}>₹{fmtNum(item.originalPrice)}</span>
                       ) : null}
-                      <span className={`zc-tag ${item.isAvailable ? "ready" : "done"}`}><i />{item.isAvailable ? "Available" : "Hidden"}</span>
+                      <span className={`zc-tag ${item.isAvailable ? "ready" : "done"}`}><i />{item.isAvailable ? t("Available") : t("Hidden")}</span>
                       <div style={{ marginLeft: "auto", display: "flex", gap: 5 }} onClick={(e) => e.stopPropagation()}>
-                        <Switch on={item.isAvailable} onClick={() => toggleAvail(item)} label={`Toggle ${item.name}`} />
+                        <Switch on={item.isAvailable} onClick={() => toggleAvail(item)} label={t("Toggle {name}", { name: localName(item) })} />
                         <button type="button" className="zc-btn danger sm" style={{ padding: "4px 8px" }} onClick={() => handleDelete(item)}>🗑️</button>
                       </div>
                     </div>

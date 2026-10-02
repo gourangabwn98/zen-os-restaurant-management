@@ -27,16 +27,19 @@ import PageHeader from "./shared/PageHeader.jsx";
 import StatCard from "./shared/StatCard.jsx";
 import Loader from "./shared/Loader.jsx";
 import ErrorState from "./shared/ErrorState.jsx";
+import { t, tn, N_, fmtNum, fmtDate, localName } from "../../i18n/core.js";
 
-const RANGES = ["Today", "Week", "Month", "Year"];
+// Keys stay English (they index the maps below); labels go through t().
+const RANGES = [N_("Today"), N_("Week"), N_("Month"), N_("Year")];
 const RANGE_DAYS = { Today: 1, Week: 7, Month: 30, Year: 365 };
-const RANGE_LABEL = { Today: "today", Week: "last 7 days", Month: "last 30 days", Year: "last 12 months" };
-const TYPE_LABEL = { DINE_IN: "Dine-in", TAKEAWAY: "Takeaway", ONLINE: "Online" };
+const RANGE_LABEL = { Today: N_("today"), Week: N_("last 7 days"), Month: N_("last 30 days"), Year: N_("last 12 months") };
+const REVENUE_LABEL = { Today: N_("Revenue today"), Week: N_("Revenue this week"), Month: N_("Revenue this month"), Year: N_("Revenue this year") };
+const TYPE_LABEL = { DINE_IN: N_("Dine-in"), TAKEAWAY: N_("Takeaway"), ONLINE: N_("Online") };
 const TYPE_COLOR = { DINE_IN: "var(--violet)", TAKEAWAY: "var(--cyan)", ONLINE: "var(--wait)" };
 const CAT_COLORS = ["var(--violet)", "var(--cyan)", "var(--wait)", "var(--ready)", "var(--stop)", "var(--indigo)"];
-const DAY_LABEL = (d) => d.toLocaleDateString("en-IN", { weekday: "short" });
+const DAY_LABEL = (d) => fmtDate(d, { weekday: "short" });
 
-const fmt = (n) => Math.round(n || 0).toLocaleString("en-IN");
+const fmt = (n) => fmtNum(Math.round(n || 0));
 
 // ── page-scoped styles (tokens only — light / dark safe) ─────────────────────
 if (typeof document !== "undefined" && !document.getElementById("ins-styles")) {
@@ -88,8 +91,9 @@ function csvExport(rows, filename) {
 }
 
 // ── revenue by category / item (server-aggregated, see insightsService.js) ──
-const money2 = (n) => `₹${Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
-const BREAKDOWN_VIEWS = [["category", "Category"], ["item", "Item"]];
+const money2 = (n) => `₹${fmtNum(n)}`;
+const BREAKDOWN_VIEWS = [["category", N_("Category")], ["item", N_("Item")]];
+const catName = (c) => localName({ name: c.category, nameBn: c.categoryBn });
 
 function RevenueBreakdown({ sales, state, rangeLabel, onRetry }) {
   const [view, setView] = useState("category");
@@ -101,12 +105,12 @@ function RevenueBreakdown({ sales, state, rangeLabel, onRetry }) {
   return (
     <div className="zc-card" style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
       <div className="zc-card-h" style={{ flexWrap: "wrap", rowGap: 8 }}>
-        <span className="t">Revenue by {view === "category" ? "category" : "item"}</span>
-        <span className="s">{rangeLabel}</span>
+        <span className="t">{view === "category" ? t("Revenue by category") : t("Revenue by item")}</span>
+        <span className="s">{t(rangeLabel)}</span>
         <div style={{ flex: 1 }} />
-        <div className="zc-seg" role="tablist" aria-label="Group revenue by">
+        <div className="zc-seg" role="tablist" aria-label={t("Group revenue by")}>
           {BREAKDOWN_VIEWS.map(([v, text]) => (
-            <button key={v} type="button" role="tab" aria-selected={view === v} className={view === v ? "on" : ""} onClick={() => setView(v)}>{text}</button>
+            <button key={v} type="button" role="tab" aria-selected={view === v} className={view === v ? "on" : ""} onClick={() => setView(v)}>{t(text)}</button>
           ))}
         </div>
       </div>
@@ -114,9 +118,9 @@ function RevenueBreakdown({ sales, state, rangeLabel, onRetry }) {
       {state === "loading" && !sales ? (
         <div style={{ padding: 20 }}><Loader rows={5} /></div>
       ) : state === "error" ? (
-        <ErrorState title="Could not load sales breakdown" onRetry={onRetry} />
+        <ErrorState title={t("Could not load sales breakdown")} onRetry={onRetry} />
       ) : items.length === 0 ? (
-        <div className="ins-empty">No paid sales in this range yet</div>
+        <div className="ins-empty">{t("No paid sales in this range yet")}</div>
       ) : view === "category" ? (
         <div className="ins-scroll" style={{ padding: "16px 20px", opacity: state === "loading" ? 0.6 : 1 }}>
           {categories.map((c, i) => {
@@ -128,16 +132,16 @@ function RevenueBreakdown({ sales, state, rangeLabel, onRetry }) {
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 6 }}>
                   <span style={{ fontSize: 12.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 7, color: "var(--text-1)", minWidth: 0 }}>
                     <i style={{ width: 8, height: 8, borderRadius: 2, background: color, display: "inline-block", flex: "none" }} />
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.category}</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{catName(c)}</span>
                   </span>
                   <span className="tnum" style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text-1)", whiteSpace: "nowrap" }}>
-                    {money2(c.revenue)} <span style={{ fontWeight: 400, color: "var(--text-3)" }}>· {share}%</span>
+                    {money2(c.revenue)} <span style={{ fontWeight: 400, color: "var(--text-3)" }}>· {fmtNum(share)}%</span>
                   </span>
                 </div>
                 <div className="zc-bar"><i style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${color}, transparent)` }} /></div>
                 <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 5 }}>
-                  {c.qty} sold · {c.items} item{c.items === 1 ? "" : "s"}
-                  {c.grossProfit != null && <> · gross profit {money2(c.grossProfit)}</>}
+                  {t("{n} sold", { n: c.qty })} · {tn(c.items, "{n} item", "{n} items")}
+                  {c.grossProfit != null && <> · {t("gross profit {amount}", { amount: money2(c.grossProfit) })}</>}
                 </div>
               </div>
             );
@@ -147,19 +151,19 @@ function RevenueBreakdown({ sales, state, rangeLabel, onRetry }) {
         <div className="ins-scroll" style={{ padding: "0 10px 8px", opacity: state === "loading" ? 0.6 : 1 }}>
           <table className="zc-ledger ins-items">
             <thead>
-              <tr><th>Item</th><th className="r">Sold</th><th className="r">Revenue</th><th className="r ins-hide-sm">Cost</th><th className="r ins-hide-sm">Profit</th></tr>
+              <tr><th>{t("Item")}</th><th className="r">{t("Sold")}</th><th className="r">{t("Revenue")}</th><th className="r ins-hide-sm">{t("Cost")}</th><th className="r ins-hide-sm">{t("Profit")}</th></tr>
             </thead>
             <tbody>
               {items.map((it) => (
                 <tr key={it.menuItem || it.name}>
                   <td>
-                    <div style={{ fontWeight: 600, color: "var(--text-1)" }}>{it.name}</div>
-                    <div style={{ fontSize: 10.5, color: "var(--text-3)" }}>{it.category}</div>
+                    <div style={{ fontWeight: 600, color: "var(--text-1)" }}>{localName(it)}</div>
+                    <div style={{ fontSize: 10.5, color: "var(--text-3)" }}>{catName(sales.categories.find((c) => c.category === it.category) || { category: it.category })}</div>
                   </td>
-                  <td className="r tnum">{it.qty}</td>
+                  <td className="r tnum">{fmtNum(it.qty)}</td>
                   <td className="r tnum" style={{ fontWeight: 700, color: "var(--text-1)" }}>{money2(it.revenue)}</td>
-                  <td className="r tnum ins-hide-sm" title={it.costEstimated ? "Older sales costed at today's recipe cost" : undefined}>
-                    {it.makingCost == null ? <span style={{ color: "var(--text-3)" }}>no recipe</span> : <>{money2(it.makingCost)}{it.costEstimated && <span style={{ color: "var(--wait-ink)" }}> ~</span>}</>}
+                  <td className="r tnum ins-hide-sm" title={it.costEstimated ? t("Older sales costed at today's recipe cost") : undefined}>
+                    {it.makingCost == null ? <span style={{ color: "var(--text-3)" }}>{t("no recipe")}</span> : <>{money2(it.makingCost)}{it.costEstimated && <span style={{ color: "var(--wait-ink)" }}> ~</span>}</>}
                   </td>
                   <td className="r tnum ins-hide-sm" style={{ color: it.grossProfit == null ? "var(--text-3)" : it.grossProfit < 0 ? "var(--stop-ink)" : "var(--ready-ink)" }}>
                     {it.grossProfit == null ? "—" : money2(it.grossProfit)}
@@ -173,7 +177,7 @@ function RevenueBreakdown({ sales, state, rangeLabel, onRetry }) {
 
       {items.length > 0 && state !== "error" && (
         <div style={{ padding: "10px 20px 14px", borderTop: "1px solid var(--edge)", display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-2)" }}>
-          <span>{view === "category" ? `${categories.length} categories` : `${items.length} items`} · item sales before tax &amp; discounts</span>
+          <span>{view === "category" ? tn(categories.length, "{n} category", "{n} categories") : tn(items.length, "{n} item", "{n} items")} · {t("item sales before tax & discounts")}</span>
           <span className="tnum" style={{ fontWeight: 700, color: "var(--text-1)" }}>{money2(total)}</span>
         </div>
       )}
@@ -182,21 +186,21 @@ function RevenueBreakdown({ sales, state, rangeLabel, onRetry }) {
 }
 
 function Profitability({ sales, state, rangeLabel }) {
-  const t = sales?.totals;
+  const tot = sales?.totals;
   const o = sales?.orders;
-  const rows = t ? [
-    { k: "Item sales", v: money2(t.revenue), sub: `${t.qty} items sold` },
-    { k: "Making cost (COGS)", v: money2(t.makingCost), sub: "from recipe costs at time of sale" },
-    { k: "Gross profit", v: money2(t.grossProfit), tone: t.grossProfit < 0 ? "var(--stop-ink)" : "var(--ready-ink)",
-      sub: t.grossMarginPct != null ? `${t.grossMarginPct}% margin on costed sales` : "no costed sales yet" },
+  const rows = tot ? [
+    { k: t("Item sales"), v: money2(tot.revenue), sub: tn(tot.qty, "{n} item sold", "{n} items sold") },
+    { k: t("Making cost (COGS)"), v: money2(tot.makingCost), sub: t("from recipe costs at time of sale") },
+    { k: t("Gross profit"), v: money2(tot.grossProfit), tone: tot.grossProfit < 0 ? "var(--stop-ink)" : "var(--ready-ink)",
+      sub: tot.grossMarginPct != null ? t("{pct}% margin on costed sales", { pct: tot.grossMarginPct }) : t("no costed sales yet") },
   ] : [];
 
   return (
     <div className="zc-card">
-      <div className="zc-card-h"><span className="t">Profitability</span><span className="s">{rangeLabel}</span></div>
+      <div className="zc-card-h"><span className="t">{t("Profitability")}</span><span className="s">{t(rangeLabel)}</span></div>
       <div style={{ padding: 20 }}>
-        {state === "loading" && !sales ? <Loader rows={4} /> : !t || t.qty === 0 ? (
-          <div className="ins-empty">{state === "error" ? "Unavailable" : "No paid sales in this range yet"}</div>
+        {state === "loading" && !sales ? <Loader rows={4} /> : !tot || tot.qty === 0 ? (
+          <div className="ins-empty">{state === "error" ? t("Unavailable") : t("No paid sales in this range yet")}</div>
         ) : (
           <>
             {rows.map((r) => (
@@ -208,17 +212,17 @@ function Profitability({ sales, state, rangeLabel }) {
                 <div className="tnum" style={{ fontSize: 17, fontWeight: 700, color: r.tone || "var(--text-1)" }}>{r.v}</div>
               </div>
             ))}
-            {t.itemsWithoutCost > 0 && (
+            {tot.itemsWithoutCost > 0 && (
               <div style={{ fontSize: 11.5, color: "var(--wait-ink)", marginTop: 12 }}>
-                {t.itemsWithoutCost} sold item{t.itemsWithoutCost === 1 ? " has" : "s have"} no recipe — {money2(t.revenue - t.costedRevenue)} of sales is left out of cost &amp; profit.
-                Add recipes under Inventory → Recipes.
+                {tn(tot.itemsWithoutCost, "{n} sold item has no recipe — {amount} of sales is left out of cost & profit.", "{n} sold items have no recipe — {amount} of sales is left out of cost & profit.", { amount: money2(tot.revenue - tot.costedRevenue) })}
+                {" "}{t("Add recipes under Inventory → Recipes.")}
               </div>
             )}
             {o && (
               <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 12, lineHeight: 1.6 }}>
-                {o.count} paid order{o.count === 1 ? "" : "s"} collected <b className="tnum" style={{ color: "var(--text-2)" }}>{money2(o.collected)}</b>
-                {" "}= item sales {money2(o.subtotal)}{o.discount ? ` − discounts ${money2(o.discount)}` : ""}
-                {o.tax ? ` + tax ${money2(o.tax)}` : ""}{o.serviceCharge ? ` + service ${money2(o.serviceCharge)}` : ""}.
+                {tn(o.count, "{n} paid order collected", "{n} paid orders collected")} <b className="tnum" style={{ color: "var(--text-2)" }}>{money2(o.collected)}</b>
+                {" "}= {t("item sales {amount}", { amount: money2(o.subtotal) })}{o.discount ? ` − ${t("discounts {amount}", { amount: money2(o.discount) })}` : ""}
+                {o.tax ? ` + ${t("tax {amount}", { amount: money2(o.tax) })}` : ""}{o.serviceCharge ? ` + ${t("service {amount}", { amount: money2(o.serviceCharge) })}` : ""}.
               </div>
             )}
           </>
@@ -258,7 +262,7 @@ export default function AnalyticsPage() {
     return { start, end: now, prevStart: new Date(start.getTime() - durationMs), prevEnd: new Date(start.getTime() - 1) };
   }, [range]);
 
-  const inWindow = (o, from, to) => { const t = new Date(o.createdAt); return t >= from && t <= to; };
+  const inWindow = (o, from, to) => { const at = new Date(o.createdAt); return at >= from && at <= to; };
 
   // non-cancelled orders in the selected range / the equal-length prior range
   const rangeOrders = useMemo(
@@ -290,7 +294,7 @@ export default function AnalyticsPage() {
     const hour = byHour.indexOf(Math.max(...byHour));
     return { hour, count: byHour[hour], pct: Math.round((byHour[hour] / rangeOrders.length) * 100) };
   }, [rangeOrders]);
-  const hourLabel = (h) => { const ampm = h < 12 ? "am" : "pm"; const h12 = h % 12 === 0 ? 12 : h % 12; return `${h12}`; };
+  const hourLabel = (h) => { const h12 = h % 12 === 0 ? 12 : h % 12; return fmtNum(h12); };
 
   // trailing 7 calendar days — always 7, independent of the range selector
   const dayBars = useMemo(() => {
@@ -311,9 +315,9 @@ export default function AnalyticsPage() {
   const typeBreakdown = useMemo(() => {
     const map = {};
     rangeOrders.forEach((o) => {
-      const t = o.orderType || "DINE_IN";
-      if (!map[t]) map[t] = { type: t, count: 0, revenue: 0 };
-      map[t].count++; map[t].revenue += Number(o.total || 0);
+      const ty = o.orderType || "DINE_IN";
+      if (!map[ty]) map[ty] = { type: ty, count: 0, revenue: 0 };
+      map[ty].count++; map[ty].revenue += Number(o.total || 0);
     });
     return Object.values(map).sort((a, b) => b.count - a.count);
   }, [rangeOrders]);
@@ -357,7 +361,7 @@ export default function AnalyticsPage() {
   if (loading) {
     return (
       <div>
-        <PageHeader title="Insights" sub="Loading…" />
+        <PageHeader title={t("Insights")} sub={t("Loading…")} />
         <Loader rows={6} />
       </div>
     );
@@ -365,38 +369,38 @@ export default function AnalyticsPage() {
   if (error) {
     return (
       <div>
-        <PageHeader title="Insights" />
-        <div className="zc-card"><ErrorState title="Could not load insights" onRetry={load} /></div>
+        <PageHeader title={t("Insights")} />
+        <div className="zc-card"><ErrorState title={t("Could not load insights")} onRetry={load} /></div>
       </div>
     );
   }
 
   const STATS = [
-    { label: `Revenue this ${range.toLowerCase()}`, value: `₹${fmt(revenue)}`, grad: true,
-      sub: `${revenueTrendPct >= 0 ? "+" : ""}${revenueTrendPct}% vs previous ${RANGE_LABEL[range]}`,
+    { label: t(REVENUE_LABEL[range]), value: `₹${fmt(revenue)}`, grad: true,
+      sub: t("{pct}% vs previous {range}", { pct: `${revenueTrendPct >= 0 ? "+" : ""}${fmtNum(revenueTrendPct)}`, range: t(RANGE_LABEL[range]) }),
       spark: <Sparkline values={sparkRevenue} color="var(--violet)" /> },
-    { label: "Orders", value: fmt(orderCount), color: "var(--live-ink)",
-      sub: `${(orderCount / RANGE_DAYS[range]).toFixed(orderCount / RANGE_DAYS[range] < 10 ? 1 : 0)} per day average`,
+    { label: t("Orders"), value: fmt(orderCount), color: "var(--live-ink)",
+      sub: t("{n} per day average", { n: fmtNum(orderCount / RANGE_DAYS[range], { maximumFractionDigits: orderCount / RANGE_DAYS[range] < 10 ? 1 : 0 }) }),
       spark: <Sparkline values={sparkOrders} color="var(--cyan)" /> },
-    { label: "Average order value", value: `₹${fmt(aov)}`, color: "var(--text-1)",
-      sub: prevRangeOrders.length ? `${aovDelta >= 0 ? "Up" : "Down"} ₹${Math.abs(aovDelta)} vs previous ${RANGE_LABEL[range]}` : "No prior period to compare" },
-    { label: "Busiest hour", value: busiest ? <>{hourLabel(busiest.hour)}–{hourLabel(busiest.hour + 1)}<span style={{ fontSize: 14, color: "var(--text-3)", fontWeight: 500 }}> {busiest.hour < 12 ? "am" : "pm"}</span></> : "—",
-      sub: busiest ? `${busiest.pct}% of orders in this range` : "No orders yet" },
+    { label: t("Average order value"), value: `₹${fmt(aov)}`, color: "var(--text-1)",
+      sub: prevRangeOrders.length ? t(aovDelta >= 0 ? "Up ₹{amount} vs previous {range}" : "Down ₹{amount} vs previous {range}", { amount: fmt(Math.abs(aovDelta)), range: t(RANGE_LABEL[range]) }) : t("No prior period to compare") },
+    { label: t("Busiest hour"), value: busiest ? <>{hourLabel(busiest.hour)}–{hourLabel(busiest.hour + 1)}<span style={{ fontSize: 14, color: "var(--text-3)", fontWeight: 500 }}> {busiest.hour < 12 ? t("am") : t("pm")}</span></> : "—",
+      sub: busiest ? t("{pct}% of orders in this range", { pct: busiest.pct }) : t("No orders yet") },
   ];
 
   return (
     <div>
       <PageHeader
-        title="Insights"
-        sub={`${orderCount} order${orderCount === 1 ? "" : "s"} · ${RANGE_LABEL[range]}`}
+        title={t("Insights")}
+        sub={`${tn(orderCount, "{n} order", "{n} orders")} · ${t(RANGE_LABEL[range])}`}
         right={
           <>
-            <div className="zc-seg" role="tablist" aria-label="Date range">
+            <div className="zc-seg" role="tablist" aria-label={t("Date range")}>
               {RANGES.map((r) => (
-                <button key={r} type="button" role="tab" aria-selected={range === r} className={range === r ? "on" : ""} onClick={() => setRange(r)}>{r}</button>
+                <button key={r} type="button" role="tab" aria-selected={range === r} className={range === r ? "on" : ""} onClick={() => setRange(r)}>{t(r)}</button>
               ))}
             </div>
-            <button type="button" className="zc-btn" onClick={handleExport} disabled={!rangeOrders.length}>Export</button>
+            <button type="button" className="zc-btn" onClick={handleExport} disabled={!rangeOrders.length}>{t("Export")}</button>
           </>
         }
       />
@@ -410,20 +414,20 @@ export default function AnalyticsPage() {
       <div className="ins-row">
         <div className="zc-card">
           <div className="zc-card-h">
-            <span className="t">Revenue by day</span><span className="s">last 7 days</span>
+            <span className="t">{t("Revenue by day")}</span><span className="s">{t("last 7 days")}</span>
             <div style={{ flex: 1 }} />
-            <span style={{ fontSize: 11, color: "var(--text-3)" }}>Bars show revenue · number shows order count</span>
+            <span style={{ fontSize: 11, color: "var(--text-3)" }}>{t("Bars show revenue · number shows order count")}</span>
           </div>
           <div style={{ padding: "22px 20px 16px", display: "flex", alignItems: "flex-end", gap: 14, height: 220 }}>
             {dayBars.every((d) => d.revenue === 0) ? (
-              <div className="ins-empty" style={{ width: "100%" }}>No revenue data yet</div>
+              <div className="ins-empty" style={{ width: "100%" }}>{t("No revenue data yet")}</div>
             ) : dayBars.map((d, i) => {
               const h = Math.round((d.revenue / maxDayRevenue) * 150);
               const best = d.revenue === maxDayRevenue && d.revenue > 0;
               return (
                 <div key={i} className="ins-daybar">
                   <div style={{ fontSize: 11.5, fontWeight: 700, color: best ? "var(--accent-ink)" : "var(--text-2)" }}>
-                    {d.revenue >= 1000 ? `₹${(d.revenue / 1000).toFixed(1)}k` : `₹${fmt(d.revenue)}`}
+                    {d.revenue >= 1000 ? `₹${fmtNum(d.revenue / 1000, { maximumFractionDigits: 1 })}${t("k")}` : `₹${fmt(d.revenue)}`}
                   </div>
                   <div className="col">
                     <div style={{
@@ -433,7 +437,7 @@ export default function AnalyticsPage() {
                     }} />
                   </div>
                   <div style={{ fontSize: 11, color: best ? "var(--text-1)" : "var(--text-3)", fontWeight: best ? 600 : 400 }}>{d.label}</div>
-                  <div style={{ fontSize: 10, color: "var(--text-3)" }}>{d.count}</div>
+                  <div style={{ fontSize: 10, color: "var(--text-3)" }}>{fmtNum(d.count)}</div>
                 </div>
               );
             })}
@@ -441,36 +445,36 @@ export default function AnalyticsPage() {
         </div>
 
         <div className="zc-card">
-          <div className="zc-card-h"><span className="t">Order type</span><span className="s">grouped from orders</span></div>
+          <div className="zc-card-h"><span className="t">{t("Order type")}</span><span className="s">{t("grouped from orders")}</span></div>
           <div style={{ padding: 20 }}>
-            {typeBreakdown.length === 0 ? <div className="ins-empty">No orders yet</div> : typeBreakdown.map((t) => {
-              const pct = Math.round((t.count / orderCount) * 100);
-              const c = TYPE_COLOR[t.type] || "var(--violet)";
+            {typeBreakdown.length === 0 ? <div className="ins-empty">{t("No orders yet")}</div> : typeBreakdown.map((ty) => {
+              const pct = Math.round((ty.count / orderCount) * 100);
+              const c = TYPE_COLOR[ty.type] || "var(--violet)";
               return (
-                <div key={t.type} style={{ marginBottom: 17 }}>
+                <div key={ty.type} style={{ marginBottom: 17 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 7 }}>
                     <span style={{ fontSize: 12.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 7 }}>
                       <i style={{ width: 8, height: 8, borderRadius: 2, background: c, boxShadow: `0 0 8px ${c}`, display: "inline-block" }} />
-                      {TYPE_LABEL[t.type] || t.type}
+                      {t(TYPE_LABEL[ty.type] || ty.type)}
                     </span>
-                    <span style={{ fontSize: 12, color: "var(--text-2)" }}>{t.count} · {pct}%</span>
+                    <span style={{ fontSize: 12, color: "var(--text-2)" }}>{fmtNum(ty.count)} · {fmtNum(pct)}%</span>
                   </div>
                   <div className="zc-bar"><i style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${c}, transparent)` }} /></div>
-                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 5 }}>₹{fmt(t.revenue)}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 5 }}>₹{fmt(ty.revenue)}</div>
                 </div>
               );
             })}
 
             <div style={{ marginTop: 22, paddingTop: 16, borderTop: "1px solid var(--edge)" }}>
-              <div style={{ fontSize: 11.5, color: "var(--text-2)", marginBottom: 11, fontWeight: 600 }}>Payment method</div>
-              {paymentBreakdown.length === 0 ? <div className="ins-empty" style={{ padding: "12px 0" }}>No orders yet</div> : paymentBreakdown.map(({ method, count }) => {
+              <div style={{ fontSize: 11.5, color: "var(--text-2)", marginBottom: 11, fontWeight: 600 }}>{t("Payment method")}</div>
+              {paymentBreakdown.length === 0 ? <div className="ins-empty" style={{ padding: "12px 0" }}>{t("No orders yet")}</div> : paymentBreakdown.map(({ method, count }) => {
                 const pct = Math.round((count / orderCount) * 100);
                 const c = method === "Cash" ? "var(--ready)" : "var(--live)";
                 return (
                   <div key={method} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 9 }}>
-                    <span style={{ fontSize: 11.5, color: "var(--text-2)", width: 44 }}>{method}</span>
+                    <span style={{ fontSize: 11.5, color: "var(--text-2)", width: 44 }}>{t(method)}</span>
                     <div className="zc-bar" style={{ flex: 1 }}><i style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${c}, transparent)` }} /></div>
-                    <span style={{ fontSize: 11.5, fontWeight: 600, width: 34, textAlign: "right" }}>{pct}%</span>
+                    <span style={{ fontSize: 11.5, fontWeight: 600, width: 34, textAlign: "right" }}>{fmtNum(pct)}%</span>
                   </div>
                 );
               })}
@@ -481,7 +485,7 @@ export default function AnalyticsPage() {
 
       {/* row 2: revenue by category / item + profitability */}
       <div className="ins-row">
-        <RevenueBreakdown sales={sales} state={salesState} rangeLabel={RANGE_LABEL[range]} onRetry={() => setSalesTick((t) => t + 1)} />
+        <RevenueBreakdown sales={sales} state={salesState} rangeLabel={RANGE_LABEL[range]} onRetry={() => setSalesTick((n) => n + 1)} />
         <Profitability sales={sales} state={salesState} rangeLabel={RANGE_LABEL[range]} />
       </div>
     </div>

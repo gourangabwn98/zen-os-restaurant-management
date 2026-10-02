@@ -23,6 +23,8 @@ import {
 import { Modal, Loading } from "./invUI.jsx";
 import { inp, label as labelStyle } from "./invKit.js";
 import EmptyState from "../shared/EmptyState.jsx";
+import { t, tn, fmtNum, localName } from "../../../i18n/core.js";
+import { unitLabel } from "../../../utils/units.js";
 
 const STOCK_UNITS = ["g", "kg", "ml", "l", "pcs", "dozen", "packet", "box"];
 const ACCEPTED_MIME = {
@@ -34,16 +36,16 @@ const ACCEPTED_MIME = {
 const ACCEPTED_EXT = ".pdf,.jpg,.jpeg,.png,.webp";
 const MAX_FILE_MB = 15;
 
-const fmtBytes = (n) => (n < 1024 * 1024 ? `${(n / 1024).toFixed(0)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`);
+const fmtBytes = (n) => (n < 1024 * 1024 ? `${fmtNum(n / 1024, { maximumFractionDigits: 0 })} KB` : `${fmtNum(n / (1024 * 1024), { maximumFractionDigits: 1 })} MB`);
 
 // One row's validity — recomputed live as the Admin edits, not just at
 // extraction time (fixing a missing field should clear "Needs review").
 function rowIssues(row) {
   const issues = [];
-  if (row.isNewItem && !row.name.trim()) issues.push("Item name is required");
-  if (!row.unit) issues.push("Unit is required");
-  if (!(Number(row.quantity) > 0)) issues.push("Quantity must be greater than 0");
-  if (row.costPrice === "" || row.costPrice == null || !(Number(row.costPrice) >= 0)) issues.push("Cost must be 0 or more");
+  if (row.isNewItem && !row.name.trim()) issues.push(t("Item name is required"));
+  if (!row.unit) issues.push(t("Unit is required"));
+  if (!(Number(row.quantity) > 0)) issues.push(t("Quantity must be greater than 0"));
+  if (row.costPrice === "" || row.costPrice == null || !(Number(row.costPrice) >= 0)) issues.push(t("Cost must be 0 or more"));
   return issues;
 }
 
@@ -69,10 +71,10 @@ export default function ImportPurchaseModal({ inventoryItems, onClose, onImporte
   const validateFile = (f) => {
     if (!f) return "";
     if (!ACCEPTED_MIME[f.type]) {
-      return "Unsupported file type — please upload a PDF, JPG, PNG or WEBP file";
+      return t("Unsupported file type — please upload a PDF, JPG, PNG or WEBP file");
     }
     if (f.size > MAX_FILE_MB * 1024 * 1024) {
-      return `File is too large — the maximum is ${MAX_FILE_MB}MB`;
+      return t("File is too large — the maximum is {n}MB", { n: MAX_FILE_MB });
     }
     return "";
   };
@@ -122,7 +124,7 @@ export default function ImportPurchaseModal({ inventoryItems, onClose, onImporte
       // Covers unreadable/corrupted files AND "no items found" (the backend
       // returns 422 for a document it could read but couldn't find any item
       // lines in) — both are errors, not an empty-but-valid review screen.
-      setExtractError(err.response?.data?.message || "Could not process this file. Please try again.");
+      setExtractError(err.response?.data?.message || t("Could not process this file. Please try again."));
       setStep("upload");
     }
   };
@@ -155,7 +157,7 @@ export default function ImportPurchaseModal({ inventoryItems, onClose, onImporte
 
   const handleDone = async () => {
     if (!canConfirm || saving) return;
-    if (!window.confirm(`Add ${readyCount} item${readyCount === 1 ? "" : "s"} to inventory?`)) return;
+    if (!window.confirm(tn(readyCount, "Add {n} item to inventory?", "Add {n} items to inventory?"))) return;
     setSaving(true);
     try {
       const { data } = await confirmPurchaseImport({
@@ -175,12 +177,12 @@ export default function ImportPurchaseModal({ inventoryItems, onClose, onImporte
           expiryDate: r.expiryDate || null,
         })),
       });
-      const createdNote = data.itemsCreated > 0 ? ` (${data.itemsCreated} new item${data.itemsCreated === 1 ? "" : "s"} created)` : "";
-      toast.success(`${data.itemsImported} item${data.itemsImported === 1 ? "" : "s"} imported successfully${createdNote}`);
+      const createdNote = data.itemsCreated > 0 ? ` (${tn(data.itemsCreated, "{n} new item created", "{n} new items created")})` : "";
+      toast.success(`${tn(data.itemsImported, "{n} item imported successfully", "{n} items imported successfully")}${createdNote}`);
       onImported();
       onClose();
     } catch (err) {
-      const msg = err.response?.data?.message || "Import failed — nothing was saved";
+      const msg = err.response?.data?.message || t("Import failed — nothing was saved");
       const rowErrors = err.response?.data?.rowErrors;
       if (rowErrors?.length) {
         toast.error(`${msg}: ${rowErrors.map((r) => `${r.name} — ${r.errors.join(", ")}`).join("; ")}`, { duration: 6000 });
@@ -198,27 +200,27 @@ export default function ImportPurchaseModal({ inventoryItems, onClose, onImporte
 
   return (
     <Modal
-      title={step === "review" ? "Review Purchase" : "Import Purchase List"}
+      title={step === "review" ? t("Review Purchase") : t("Import Purchase List")}
       sub={step === "review"
-        ? `${items.length} item${items.length === 1 ? "" : "s"} found`
-        : "Upload a purchase invoice or item list. We'll extract the items so you can review them before adding them to inventory."}
+        ? tn(items.length, "{n} item found", "{n} items found")
+        : t("Upload a purchase invoice or item list. We'll extract the items so you can review them before adding them to inventory.")}
       onClose={onClose}
       width={width}
       footer={step === "review" ? (
         <>
           <span style={{ marginRight: "auto", fontSize: 12.5, color: "var(--text-2)" }}>
-            <b className="tnum" style={{ color: hasBlockingIssues ? "var(--wait-ink)" : "var(--ready-ink)" }}>{readyCount}</b> of {items.length} item{items.length === 1 ? "" : "s"} ready to import
+            <b className="tnum" style={{ color: hasBlockingIssues ? "var(--wait-ink)" : "var(--ready-ink)" }}>{fmtNum(readyCount)}</b> {tn(items.length, "of {n} item ready to import", "of {n} items ready to import")}
           </span>
-          <button type="button" className="zc-btn" onClick={onClose}>Cancel</button>
-          <button type="button" className="zc-btn" onClick={() => { setStep("upload"); setItems([]); setFile(null); }}>Back</button>
+          <button type="button" className="zc-btn" onClick={onClose}>{t("Cancel")}</button>
+          <button type="button" className="zc-btn" onClick={() => { setStep("upload"); setItems([]); setFile(null); }}>{t("Back")}</button>
           <button type="button" className="zc-btn pri" disabled={!canConfirm || saving} onClick={handleDone}>
-            {saving ? "Importing…" : "Done — Add to Inventory"}
+            {saving ? t("Importing…") : t("Done — Add to Inventory")}
           </button>
         </>
       ) : step === "upload" ? (
         <>
-          <button type="button" className="zc-btn" onClick={onClose}>Cancel</button>
-          <button type="button" className="zc-btn pri" disabled={!file} onClick={handleContinue}>Continue</button>
+          <button type="button" className="zc-btn" onClick={onClose}>{t("Cancel")}</button>
+          <button type="button" className="zc-btn pri" disabled={!file} onClick={handleContinue}>{t("Continue")}</button>
         </>
       ) : null}
     >
@@ -240,9 +242,9 @@ export default function ImportPurchaseModal({ inventoryItems, onClose, onImporte
             >
               <div style={{ fontSize: 30, marginBottom: 10 }}>📄</div>
               <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--text-1)", marginBottom: 4 }}>
-                Drag & drop a file here, or click to browse
+                {t("Drag & drop a file here, or click to browse")}
               </div>
-              <div style={{ fontSize: 11.5, color: "var(--text-3)" }}>Accepted formats: PDF, JPG, JPEG, PNG, WEBP · up to {MAX_FILE_MB}MB</div>
+              <div style={{ fontSize: 11.5, color: "var(--text-3)" }}>{t("Accepted formats: PDF, JPG, JPEG, PNG, WEBP · up to {n}MB", { n: MAX_FILE_MB })}</div>
               <input
                 ref={fileInputRef} type="file" accept={ACCEPTED_EXT} style={{ display: "none" }}
                 onChange={(e) => pickFile(e.target.files?.[0])}
@@ -262,7 +264,7 @@ export default function ImportPurchaseModal({ inventoryItems, onClose, onImporte
                 <div style={{ fontSize: 11, color: "var(--text-3)" }}>{ACCEPTED_MIME[file.type]} · {fmtBytes(file.size)}</div>
               </div>
               <button type="button" className="zc-btn ghost sm" onClick={() => { setFile(null); setFileError(""); if (fileInputRef.current) fileInputRef.current.value = ""; }}>
-                Remove
+                {t("Remove")}
               </button>
             </div>
           )}
@@ -279,7 +281,7 @@ export default function ImportPurchaseModal({ inventoryItems, onClose, onImporte
         <div style={{ padding: "10px 0" }}>
           <Loading rows={5} />
           <div style={{ textAlign: "center", fontSize: 12.5, color: "var(--text-3)", marginTop: 4 }}>
-            Reading “{file?.name}”… this can take a little longer for scanned documents.
+            {t("Reading “{name}”… this can take a little longer for scanned documents.", { name: file?.name })}
           </div>
         </div>
       )}
@@ -292,33 +294,33 @@ export default function ImportPurchaseModal({ inventoryItems, onClose, onImporte
             </div>
           )}
           {sourceInfo?.sourceType === "SCANNED_PDF" || sourceInfo?.sourceType === "IMAGE" ? (
-            <div style={{ marginBottom: 12, fontSize: 11, color: "var(--text-3)" }}>Extracted via OCR — double-check quantities and costs below.</div>
+            <div style={{ marginBottom: 12, fontSize: 11, color: "var(--text-3)" }}>{t("Extracted via OCR — double-check quantities and costs below.")}</div>
           ) : null}
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
             <div>
-              <label style={labelStyle}>Supplier</label>
+              <label style={labelStyle}>{t("Supplier")}</label>
               <select style={inp} value={supplier} onChange={(e) => setSupplier(e.target.value)}>
-                <option value="">— none —</option>
+                <option value="">— {t("none")} —</option>
                 {(suppliers || []).map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
               </select>
             </div>
             <div>
-              <label style={labelStyle}>Invoice / bill number</label>
+              <label style={labelStyle}>{t("Invoice / bill number")}</label>
               <input style={inp} value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
             </div>
             <div>
-              <label style={labelStyle}>Purchase date</label>
+              <label style={labelStyle}>{t("Purchase date")}</label>
               <input type="date" style={inp} value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} />
             </div>
           </div>
 
           {items.length === 0 ? (
-            <EmptyState icon="📄" title="No items to import" sub="Every extracted row has been removed. Go back to upload a different file, or close this and use Add stock item instead." />
+            <EmptyState icon="📄" title={t("No items to import")} sub={t("Every extracted row has been removed. Go back to upload a different file, or close this and use Add stock item instead.")} />
           ) : (
             <div style={{ display: "grid", gap: 8 }}>
               <div className="impp-row-head">
-                <span>Item</span><span>Qty / Unit</span><span>Cost</span><span>Status</span><span />
+                <span>{t("Item")}</span><span>{t("Qty / Unit")}</span><span>{t("Cost")}</span><span>{t("Status")}</span><span />
               </div>
               {items.map((row) => (
                 <ImportRow
@@ -338,8 +340,8 @@ export default function ImportPurchaseModal({ inventoryItems, onClose, onImporte
           )}
 
           <div style={{ marginTop: 14 }}>
-            <label style={labelStyle}>Notes</label>
-            <input style={inp} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional" />
+            <label style={labelStyle}>{t("Notes")}</label>
+            <input style={inp} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t("Optional")} />
           </div>
         </div>
       )}
@@ -358,78 +360,78 @@ function ImportRow({ row, issues, editing, inventoryItems, onEdit, onDone, onRem
         <div className="impp-row">
           <div className="impp-name">
             <div style={{ fontWeight: 600, color: "var(--text-1)", fontSize: 12.5 }}>
-              {row.name || <span style={{ color: "var(--stop-ink)", fontStyle: "italic" }}>Unnamed item</span>}
+              {row.name || <span style={{ color: "var(--stop-ink)", fontStyle: "italic" }}>{t("Unnamed item")}</span>}
             </div>
             <div style={{ fontSize: 10.5, color: "var(--text-3)" }}>
-              {matched ? "Existing item" : "New item"}{row.category ? ` · ${row.category}` : ""}
+              {matched ? t("Existing item") : t("New item")}{row.category ? ` · ${row.category}` : ""}
             </div>
           </div>
           <div style={{ fontSize: 12, color: "var(--text-2)" }}>
-            {row.quantity !== "" ? row.quantity : "—"} {row.unit || ""}
+            {row.quantity !== "" ? fmtNum(row.quantity) : "—"} {unitLabel(row.unit)}
           </div>
           <div className="tnum" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-1)" }}>
-            {row.costPrice !== "" ? `₹${row.costPrice}` : "—"}
+            {row.costPrice !== "" ? `₹${fmtNum(row.costPrice)}` : "—"}
           </div>
           <div>
             {needsReview
-              ? <span className="zc-tag wait" title={issues.join("; ")}><i />Needs review</span>
-              : <span className="zc-tag ready"><i />Ready</span>}
+              ? <span className="zc-tag wait" title={issues.join("; ")}><i />{t("Needs review")}</span>
+              : <span className="zc-tag ready"><i />{t("Ready")}</span>}
           </div>
           <div style={{ display: "flex", gap: 5, justifyContent: "flex-end" }}>
-            <button type="button" className="zc-btn ghost sm" onClick={onEdit}>Edit</button>
-            <button type="button" className="zc-btn danger sm" onClick={onRemove}>Remove</button>
+            <button type="button" className="zc-btn ghost sm" onClick={onEdit}>{t("Edit")}</button>
+            <button type="button" className="zc-btn danger sm" onClick={onRemove}>{t("Remove")}</button>
           </div>
         </div>
       ) : (
         <div className="impp-edit">
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
             <div>
-              <label style={labelStyle}>Link to existing item</label>
+              <label style={labelStyle}>{t("Link to existing item")}</label>
               <select style={inp} value={row.isNewItem ? "" : row.matchedInventoryItemId || ""} onChange={(e) => onLink(e.target.value)}>
-                <option value="">— Create new item —</option>
-                {inventoryItems.map((i) => <option key={i._id} value={i._id}>{i.name} ({i.unit})</option>)}
+                <option value="">— {t("Create new item")} —</option>
+                {inventoryItems.map((i) => <option key={i._id} value={i._id}>{localName(i)} ({unitLabel(i.unit)})</option>)}
               </select>
             </div>
             {row.isNewItem ? (
               <div>
-                <label style={labelStyle}>Item name</label>
-                <input style={inp} value={row.name} onChange={(e) => onChange({ name: e.target.value })} placeholder="e.g. Basmati Rice" />
+                <label style={labelStyle}>{t("Item name")}</label>
+                <input style={inp} value={row.name} onChange={(e) => onChange({ name: e.target.value })} placeholder={t("e.g. Basmati Rice")} />
               </div>
             ) : (
               <div>
-                <label style={labelStyle}>Item name</label>
+                <label style={labelStyle}>{t("Item name")}</label>
                 <input style={{ ...inp, color: "var(--text-3)" }} value={row.name} disabled />
               </div>
             )}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
             <div>
-              <label style={labelStyle}>Quantity</label>
+              <label style={labelStyle}>{t("Quantity")}</label>
               <input type="number" style={inp} value={row.quantity} onChange={(e) => onChange({ quantity: e.target.value })} />
             </div>
             <div>
-              <label style={labelStyle}>Unit</label>
+              <label style={labelStyle}>{t("Unit")}</label>
               <select style={inp} value={row.unit || ""} disabled={!row.isNewItem} onChange={(e) => onChange({ unit: e.target.value })}>
-                <option value="">Select…</option>
-                {STOCK_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                <option value="">{t("Select…")}</option>
+                {STOCK_UNITS.map((u) => <option key={u} value={u}>{unitLabel(u)}</option>)}
               </select>
             </div>
             <div>
-              <label style={labelStyle}>Cost / unit (₹)</label>
+              <label style={labelStyle}>{t("Cost / unit (₹)")}</label>
               <input type="number" style={inp} value={row.costPrice} onChange={(e) => onChange({ costPrice: e.target.value })} />
             </div>
             <div>
-              <label style={labelStyle}>Category</label>
-              <input style={inp} value={row.category} disabled={!row.isNewItem} onChange={(e) => onChange({ category: e.target.value })} placeholder="e.g. Grains" />
+              <label style={labelStyle}>{t("Category")}</label>
+              <input style={inp} value={row.category} disabled={!row.isNewItem} onChange={(e) => onChange({ category: e.target.value })} placeholder={t("e.g. Grains")} />
             </div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
             <div>
-              <label style={labelStyle}>Batch number (optional)</label>
+              <label style={labelStyle}>{t("Batch number (optional)")}</label>
               <input style={inp} value={row.batchNo} onChange={(e) => onChange({ batchNo: e.target.value })} />
             </div>
             <div>
-              <label style={labelStyle}>Expiry date (optional)</label>
+              <label style={labelStyle}>{t("Expiry date (optional)")}</label>
               <input type="date" style={inp} value={row.expiryDate || ""} onChange={(e) => onChange({ expiryDate: e.target.value })} />
             </div>
           </div>
@@ -437,7 +439,7 @@ function ImportRow({ row, issues, editing, inventoryItems, onEdit, onDone, onRem
             <div style={{ fontSize: 11, color: "var(--wait-ink)", marginBottom: 8 }}>{issues.join(" · ")}</div>
           )}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
-            <button type="button" className="zc-btn pri sm" onClick={onDone}>Done</button>
+            <button type="button" className="zc-btn pri sm" onClick={onDone}>{t("Done")}</button>
           </div>
         </div>
       )}

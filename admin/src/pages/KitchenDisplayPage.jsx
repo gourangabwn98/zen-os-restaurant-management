@@ -27,6 +27,8 @@ import { getAllOrders } from "../services/adminService.js";
 import {
   playNewOrderAlert, playUrgentOrderAlert, unlockAudio, isAudioUnlocked,
 } from "../utils/kitchenAlertSound.js";
+import LanguageToggle from "../components/LanguageToggle.jsx";
+import { t, fmtNum, fmtTime, localName } from "../i18n/core.js";
 
 const SOUND_PREF_KEY = "kitchenSoundEnabled";
 const ACTIVE_STATUSES = ["CONFIRMED", "PREPARING"];
@@ -105,7 +107,7 @@ export default function KitchenDisplayPage() {
     const onStatusChanged = (payload) => {
       const order = payload?.order;
       if (!order || ACTIVE_STATUSES.includes(order.status)) return;
-      setTickets((prev) => prev.filter((t) => !t.orderId || t.orderId !== order.orderId));
+      setTickets((prev) => prev.filter((tk) => !tk.orderId || tk.orderId !== order.orderId));
     };
 
     socket.on("connect", onConnect);
@@ -137,60 +139,61 @@ export default function KitchenDisplayPage() {
     if (unlocked) playNewOrderAlert();
   };
 
-  const dismiss = (jobId) => setTickets((prev) => prev.filter((t) => t.jobId !== jobId));
+  const dismiss = (jobId) => setTickets((prev) => prev.filter((tk) => tk.jobId !== jobId));
 
   return (
     <div style={styles.page}>
       <header style={styles.header}>
         <div style={styles.headerLeft}>
-          <span style={styles.title}>🍳 Kitchen Display</span>
+          <span style={styles.title}>🍳 {t("Kitchen Display")}</span>
           <span style={{ ...styles.statusDot, background: connected ? "#22c55e" : "#ef4444" }} />
-          <span style={styles.statusLabel}>{connected ? "Live" : "Reconnecting…"}</span>
+          <span style={styles.statusLabel}>{connected ? t("Live") : t("Reconnecting…")}</span>
         </div>
         <div style={styles.headerRight}>
+          <div style={{ width: 110 }}><LanguageToggle compact /></div>
           <button onClick={toggleSound} style={{ ...styles.soundBtn, background: soundOn ? "#16a34a" : "#4b5563" }}>
-            {soundOn ? "🔊 Sound ON" : "🔇 Sound OFF"}
+            {soundOn ? `🔊 ${t("Sound ON")}` : `🔇 ${t("Sound OFF")}`}
           </button>
-          <button onClick={() => nav("/admin")} style={styles.backBtn}>← Admin</button>
+          <button onClick={() => nav("/admin")} style={styles.backBtn}>← {t("Admin")}</button>
         </div>
       </header>
 
       {needsUnlock && (
         <div style={styles.unlockBar}>
-          <span>Tap to enable kitchen alert sounds on this device</span>
-          <button onClick={handleEnableSound} style={styles.unlockBtn}>Enable Kitchen Sound</button>
+          <span>{t("Tap to enable kitchen alert sounds on this device")}</span>
+          <button onClick={handleEnableSound} style={styles.unlockBtn}>{t("Enable Kitchen Sound")}</button>
         </div>
       )}
 
       {tickets.length === 0 ? (
         <div style={styles.empty}>
           <div style={{ fontSize: 56 }}>🧾</div>
-          <div style={{ fontSize: 22, fontWeight: 700, marginTop: 12 }}>No active tickets</div>
-          <div style={{ fontSize: 14, color: "#9ca3af", marginTop: 4 }}>New confirmed orders will appear here automatically.</div>
+          <div style={{ fontSize: 22, fontWeight: 700, marginTop: 12 }}>{t("No active tickets")}</div>
+          <div style={{ fontSize: 14, color: "#9ca3af", marginTop: 4 }}>{t("New confirmed orders will appear here automatically.")}</div>
         </div>
       ) : (
         <div style={styles.grid}>
-          {tickets.map((t) => (
-            <div key={t.jobId} style={{ ...styles.card, ...(t.priority === "URGENT" ? styles.cardUrgent : {}) }}>
+          {tickets.map((tk) => (
+            <div key={tk.jobId} style={{ ...styles.card, ...(tk.priority === "URGENT" ? styles.cardUrgent : {}) }}>
               <div style={styles.cardHeader}>
-                <span style={styles.orderId}>{t.orderId}</span>
-                {t.priority === "URGENT" && <span style={styles.urgentBadge}>URGENT</span>}
+                <span style={styles.orderId}>{tk.orderId}</span>
+                {tk.priority === "URGENT" && <span style={styles.urgentBadge}>{t("URGENT")}</span>}
               </div>
               <div style={styles.cardMeta}>
-                {t.tableNo ? `Table ${t.tableNo}` : (t.orderType || "Takeaway")}
+                {tk.tableNo ? t("Table {n}", { n: tk.tableNo }) : t(tk.orderType || "Takeaway")}
                 {" · "}
-                {t.receivedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                {fmtTime(tk.receivedAt)}
               </div>
               <div style={styles.itemsList}>
-                {t.items.map((it, i) => (
+                {tk.items.map((it, i) => (
                   <div key={i} style={styles.itemRow}>
-                    <span style={styles.itemQty}>{it.qty}×</span>
-                    <span>{it.name}</span>
+                    <span style={styles.itemQty}>{fmtNum(it.qty)}×</span>
+                    <span>{localName(it)}</span>
                     {it.notes && <span style={styles.itemNote}>"{it.notes}"</span>}
                   </div>
                 ))}
               </div>
-              <button onClick={() => dismiss(t.jobId)} style={styles.dismissBtn}>✓ Done</button>
+              <button onClick={() => dismiss(tk.jobId)} style={styles.dismissBtn}>✓ {t("Done")}</button>
             </div>
           ))}
         </div>
@@ -200,7 +203,7 @@ export default function KitchenDisplayPage() {
 }
 
 const styles = {
-  page: { minHeight: "100vh", background: "#0b0d12", color: "#f3f4f6", fontFamily: "'DM Sans', sans-serif" },
+  page: { minHeight: "100vh", background: "#0b0d12", color: "#f3f4f6", fontFamily: "'DM Sans', 'Noto Sans Bengali', sans-serif" },
   header: {
     display: "flex", justifyContent: "space-between", alignItems: "center",
     padding: "16px 24px", borderBottom: "1px solid rgba(255,255,255,0.08)",

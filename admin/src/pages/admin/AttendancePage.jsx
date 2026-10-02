@@ -9,18 +9,20 @@ import { PageHeader, StatCard, Badge, Loader, EmptyState } from "./shared/index.
 import ErrorState from "./shared/ErrorState.jsx";
 import { Modal, TableShell } from "./inventory/invUI.jsx";
 import { statusKind } from "./shared/statusKind.js";
+import { t, N_, fmtNum, fmtTime as fmtTimeL, fmtDate as fmtDateL } from "../../i18n/core.js";
 
 const presenceKind = (status) => (status === "ONLINE" ? "ready" : statusKind(status));
-const presenceLabel = { ONLINE: "Online", BREAK: "On Break", OFFLINE: "Offline" };
+const presenceLabel = { ONLINE: N_("Online"), BREAK: N_("On Break"), OFFLINE: N_("Offline") };
+const ROLE_GROUP = { waiter: N_("Waiters"), chef: N_("Chefs"), admin: N_("Admins") };
 
 const fmtDuration = (totalSeconds) => {
   const s = Math.max(0, Math.round(totalSeconds || 0));
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
-  return `${h}h ${m}m`;
+  return t("{h}h {m}m", { h, m });
 };
-const fmtTime = (d) => (d ? new Date(d).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—");
-const fmtDate = (d) => (d ? new Date(d).toLocaleDateString([], { day: "2-digit", month: "short" }) : "—");
+const fmtTime = (d) => (d ? fmtTimeL(d) : "—");
+const fmtDate = (d) => (d ? fmtDateL(d, { day: "2-digit", month: "short" }) : "—");
 const toDateInput = (d) => new Date(d).toISOString().slice(0, 10);
 
 export default function AttendancePage() {
@@ -80,24 +82,24 @@ export default function AttendancePage() {
   return (
     <div>
       <PageHeader
-        title="Attendance"
-        sub="Live duty status, break time, and working hours for every employee."
+        title={t("Attendance")}
+        sub={t("Live duty status, break time, and working hours for every employee.")}
         right={
           <div style={{ display: "flex", gap: 8 }}>
-            <button className={`zc-btn sm${tab === "live" ? " pri" : ""}`} onClick={() => setTab("live")}>Live</button>
-            <button className={`zc-btn sm${tab === "history" ? " pri" : ""}`} onClick={() => setTab("history")}>History</button>
+            <button className={`zc-btn sm${tab === "live" ? " pri" : ""}`} onClick={() => setTab("live")}>{t("Live")}</button>
+            <button className={`zc-btn sm${tab === "history" ? " pri" : ""}`} onClick={() => setTab("history")}>{t("History")}</button>
           </div>
         }
       />
 
       {summary && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
-          <StatCard label="Total Employees" value={summary.totalEmployees} colorIdx={0} />
-          <StatCard label="Online" value={summary.online} colorIdx={1} />
-          <StatCard label="On Break" value={summary.onBreak} colorIdx={3} />
-          <StatCard label="Offline" value={summary.offline} colorIdx={2} />
-          <StatCard label="Working Today" value={summary.workingToday} colorIdx={0} />
-          <StatCard label="Today's Total Hours" value={fmtDuration(summary.totalWorkingSeconds)} colorIdx={1} />
+          <StatCard label={t("Total Employees")} value={fmtNum(summary.totalEmployees)} colorIdx={0} />
+          <StatCard label={t("Online")} value={fmtNum(summary.online)} colorIdx={1} />
+          <StatCard label={t("On Break")} value={fmtNum(summary.onBreak)} colorIdx={3} />
+          <StatCard label={t("Offline")} value={fmtNum(summary.offline)} colorIdx={2} />
+          <StatCard label={t("Working Today")} value={fmtNum(summary.workingToday)} colorIdx={0} />
+          <StatCard label={t("Today's Total Hours")} value={fmtDuration(summary.totalWorkingSeconds)} colorIdx={1} />
         </div>
       )}
 
@@ -131,26 +133,26 @@ function LiveBoard({ today, error, onRetry, search, setSearch, roleFilter, setRo
     <div>
       <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
         <input
-          className="zc-input" placeholder="Search employee…" value={search}
+          className="zc-input" placeholder={t("Search employee…")} value={search}
           onChange={(e) => setSearch(e.target.value)} style={{ maxWidth: 220 }}
         />
         <select className="zc-select" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} style={{ maxWidth: 160 }}>
-          <option value="">All Roles</option>
-          <option value="waiter">Waiter</option>
-          <option value="chef">Chef</option>
-          <option value="admin">Admin</option>
+          <option value="">{t("All Roles")}</option>
+          <option value="waiter">{t("Waiter")}</option>
+          <option value="chef">{t("Chef")}</option>
+          <option value="admin">{t("Admin")}</option>
         </select>
       </div>
 
       {today.length === 0 ? (
-        <EmptyState title="No employees found" />
+        <EmptyState title={t("No employees found")} />
       ) : (
         Object.entries(grouped).map(([role, rows]) => (
           <div key={role} style={{ marginBottom: 22 }}>
             <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text-2)", textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 8 }}>
-              {role}s
+              {ROLE_GROUP[role] ? t(ROLE_GROUP[role]) : `${role}s`}
             </div>
-            <TableShell headers={["Employee", "Status", "Login", "Break", "Working Time", ""]} isEmpty={false} minWidth={640}>
+            <TableShell headers={[N_("Employee"), N_("Status"), N_("Login"), N_("Break"), N_("Working Time"), ""]} isEmpty={false} minWidth={640}>
               {rows.map((row) => (
                 <tr key={row.employee._id} style={{ cursor: "pointer" }} onClick={() => onOpenEmployee(row.employee)}>
                   <td>{row.employee.name}</td>
@@ -158,7 +160,7 @@ function LiveBoard({ today, error, onRetry, search, setSearch, roleFilter, setRo
                   <td>{fmtTime(row.firstLogin)}</td>
                   <td>{fmtDuration(row.breakSeconds)}</td>
                   <td>{fmtDuration(row.workingSeconds)}</td>
-                  <td><button className="zc-btn sm ghost" onClick={(e) => { e.stopPropagation(); onOpenEmployee(row.employee); }}>Details</button></td>
+                  <td><button className="zc-btn sm ghost" onClick={(e) => { e.stopPropagation(); onOpenEmployee(row.employee); }}>{t("Details")}</button></td>
                 </tr>
               ))}
             </TableShell>
@@ -215,25 +217,25 @@ function HistoryView({ onOpenEmployee }) {
   return (
     <div>
       <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-        <button className="zc-btn sm" onClick={() => applyPreset("today")}>Today</button>
-        <button className="zc-btn sm" onClick={() => applyPreset("yesterday")}>Yesterday</button>
-        <button className="zc-btn sm" onClick={() => applyPreset("week")}>This Week</button>
-        <button className="zc-btn sm" onClick={() => applyPreset("month")}>This Month</button>
+        <button className="zc-btn sm" onClick={() => applyPreset("today")}>{t("Today")}</button>
+        <button className="zc-btn sm" onClick={() => applyPreset("yesterday")}>{t("Yesterday")}</button>
+        <button className="zc-btn sm" onClick={() => applyPreset("week")}>{t("This Week")}</button>
+        <button className="zc-btn sm" onClick={() => applyPreset("month")}>{t("This Month")}</button>
       </div>
       <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
         <input type="date" className="zc-input" value={from} max={to} onChange={(e) => setFrom(e.target.value)} />
-        <span style={{ color: "var(--text-3)" }}>to</span>
+        <span style={{ color: "var(--text-3)" }}>{t("to")}</span>
         <input type="date" className="zc-input" value={to} min={from} onChange={(e) => setTo(e.target.value)} />
         <select className="zc-select" value={role} onChange={(e) => setRole(e.target.value)}>
-          <option value="">All Roles</option>
-          <option value="waiter">Waiter</option>
-          <option value="chef">Chef</option>
-          <option value="admin">Admin</option>
+          <option value="">{t("All Roles")}</option>
+          <option value="waiter">{t("Waiter")}</option>
+          <option value="chef">{t("Chef")}</option>
+          <option value="admin">{t("Admin")}</option>
         </select>
         <select className="zc-select" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">Any Status</option>
-          <option value="OPEN">Currently Open</option>
-          <option value="CLOSED">Closed</option>
+          <option value="">{t("Any Status")}</option>
+          <option value="OPEN">{t("Currently Open")}</option>
+          <option value="CLOSED">{t("Closed")}</option>
         </select>
       </div>
 
@@ -241,15 +243,15 @@ function HistoryView({ onOpenEmployee }) {
         <Loader rows={5} />
       ) : (
         <TableShell
-          headers={["Employee", "Role", "Date", "Login", "Logout", "Break", "Working Time"]}
+          headers={[N_("Employee"), N_("Role"), N_("Date"), N_("Login"), N_("Logout"), N_("Break"), N_("Working Time")]}
           isEmpty={rows.length === 0}
-          emptyText="No attendance records in this range"
+          emptyText={t("No attendance records in this range")}
           minWidth={700}
         >
           {rows.map((s) => (
             <tr key={s._id} style={{ cursor: "pointer" }} onClick={() => onOpenEmployee({ _id: s.employee, name: s.employeeName, role: s.role })}>
               <td>{s.employeeName || "—"}</td>
-              <td style={{ textTransform: "capitalize" }}>{s.role}</td>
+              <td style={{ textTransform: "capitalize" }}>{t(s.role ? s.role[0].toUpperCase() + s.role.slice(1) : "")}</td>
               <td>{fmtDate(s.loginAt)}</td>
               <td>{fmtTime(s.loginAt)}</td>
               <td>{s.status === "OPEN" ? "—" : fmtTime(s.logoutAt)}</td>
@@ -277,7 +279,7 @@ function EmployeeDetailModal({ employee, onClose }) {
   }, [employee._id]);
 
   return (
-    <Modal title={employee.name} sub={employee.role ? employee.role[0].toUpperCase() + employee.role.slice(1) : ""} onClose={onClose} width={620}>
+    <Modal title={employee.name} sub={employee.role ? t(employee.role[0].toUpperCase() + employee.role.slice(1)) : ""} onClose={onClose} width={620}>
       {error ? (
         <ErrorState onRetry={() => setError(false)} />
       ) : !data ? (
@@ -285,20 +287,20 @@ function EmployeeDetailModal({ employee, onClose }) {
       ) : (
         <>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px,1fr))", gap: 10, marginBottom: 16 }}>
-            <StatCard label="Working Days" value={data.summary.workingDays} colorIdx={0} />
-            <StatCard label="Total Hours" value={fmtDuration(data.summary.totalWorkingSeconds)} colorIdx={1} />
-            <StatCard label="Break Hours" value={fmtDuration(data.summary.totalBreakSeconds)} colorIdx={3} />
+            <StatCard label={t("Working Days")} value={fmtNum(data.summary.workingDays)} colorIdx={0} />
+            <StatCard label={t("Total Hours")} value={fmtDuration(data.summary.totalWorkingSeconds)} colorIdx={1} />
+            <StatCard label={t("Break Hours")} value={fmtDuration(data.summary.totalBreakSeconds)} colorIdx={3} />
             <StatCard
-              label="Avg Hours/Day"
+              label={t("Avg Hours/Day")}
               value={data.summary.averageWorkingSeconds != null ? fmtDuration(data.summary.averageWorkingSeconds) : "—"}
-              sub={data.summary.averageWorkingSeconds == null ? "Not enough data yet" : undefined}
+              sub={data.summary.averageWorkingSeconds == null ? t("Not enough data yet") : undefined}
               colorIdx={2}
             />
           </div>
           <TableShell
-            headers={["Date", "Login", "Logout", "Break", "Working Time"]}
+            headers={[N_("Date"), N_("Login"), N_("Logout"), N_("Break"), N_("Working Time")]}
             isEmpty={data.days.length === 0}
-            emptyText="No attendance history yet"
+            emptyText={t("No attendance history yet")}
             minWidth={520}
           >
             {data.days.map((d) => (

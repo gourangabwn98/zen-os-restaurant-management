@@ -10,11 +10,12 @@ import Loader from "../shared/Loader.jsx";
 import ErrorState from "../shared/ErrorState.jsx";
 import EmptyState from "../shared/EmptyState.jsx";
 import { levelKind } from "./invKit.js";
+import { t, N_, fmtNum } from "../../../i18n/core.js";
 
 // ── status badge ────────────────────────────────────────────────────────────
-const LEVEL_TEXT = { OK: "Ok", LOW: "Low", CRITICAL: "Critical", OUT_OF_STOCK: "Out of stock" };
+const LEVEL_TEXT = { OK: N_("Ok"), LOW: N_("Low"), CRITICAL: N_("Critical"), OUT_OF_STOCK: N_("Out of stock") };
 export function LevelBadge({ level }) {
-  const text = LEVEL_TEXT[level] || level || "—";
+  const text = LEVEL_TEXT[level] ? t(LEVEL_TEXT[level]) : level || "—";
   return <span className={`zc-tag ${levelKind(level)}`}><i />{text}</span>;
 }
 
@@ -50,7 +51,7 @@ export function Toolbar({ children }) {
     </div>
   );
 }
-export function Search({ value, onChange, placeholder = "Search…", style }) {
+export function Search({ value, onChange, placeholder = t("Search…"), style }) {
   return (
     <input
       className="zc-input" value={value} placeholder={placeholder} aria-label={placeholder}
@@ -68,7 +69,7 @@ export function Seg({ options, value, onChange, ariaLabel }) {
         return (
           <button key={val} type="button" role="tab" aria-selected={value === val}
             className={value === val ? "on" : ""} onClick={() => onChange(val)}>
-            {text}
+            {typeof text === "string" ? t(text) : text}
           </button>
         );
       })}
@@ -84,12 +85,12 @@ export function Count({ children }) {
 export function Loading({ rows = 7 }) {
   return <div className="zc-card" style={{ padding: "16px 18px" }}><Loader rows={rows} /></div>;
 }
-export function ErrorBox({ onRetry, what = "this" }) {
+export function ErrorBox({ onRetry, what = N_("this") }) {
   return (
     <div className="zc-card">
       <ErrorState
-        title={`Could not load ${what}`}
-        sub="The server did not respond. Check your connection, then try again."
+        title={t("Could not load {what}", { what: t(what) })}
+        sub={t("The server did not respond. Check your connection, then try again.")}
         onRetry={onRetry}
       />
     </div>
@@ -112,7 +113,7 @@ export function Modal({ title, sub, onClose, width = 520, children, footer }) {
             <div className="t">{title}</div>
             {sub && <div className="s">{sub}</div>}
           </div>
-          <button type="button" className="zc-x" onClick={onClose} aria-label="Close">✕</button>
+          <button type="button" className="zc-x" onClick={onClose} aria-label={t("Close")}>✕</button>
         </div>
         <div className="mb">{children}</div>
         {footer && <div className="mf">{footer}</div>}
@@ -122,7 +123,7 @@ export function Modal({ title, sub, onClose, width = 520, children, footer }) {
 }
 
 // ── table shell (Zen OS ledger) ─────────────────────────────────────────────
-export function TableShell({ headers, children, emptyIcon, emptyText = "Nothing here yet", isEmpty, minWidth = 640, footer }) {
+export function TableShell({ headers, children, emptyIcon, emptyText = t("Nothing here yet"), isEmpty, minWidth = 640, footer }) {
   return (
     <div className="zc-card">
       {isEmpty ? (
@@ -130,7 +131,7 @@ export function TableShell({ headers, children, emptyIcon, emptyText = "Nothing 
       ) : (
         <div style={{ overflowX: "auto", padding: "6px 10px 8px" }}>
           <table className="zc-ledger" style={{ minWidth }}>
-            <thead><tr>{headers.map((h) => <th key={h}>{h}</th>)}</tr></thead>
+            <thead><tr>{headers.map((h) => <th key={h}>{h ? t(h) : h}</th>)}</tr></thead>
             <tbody>{children}</tbody>
           </table>
         </div>
@@ -141,7 +142,7 @@ export function TableShell({ headers, children, emptyIcon, emptyText = "Nothing 
 }
 
 // ── pager (matches the reference .tfoot + .pager) ──────────────────────────
-export function TableFooter({ page, pages, total, perPage, onPage, unit = "rows" }) {
+export function TableFooter({ page, pages, total, perPage, onPage, unit = N_("rows") }) {
   if (pages <= 1) return null;
   const list = Array.from({ length: pages }, (_, i) => i + 1)
     .filter((p) => p === 1 || p === pages || Math.abs(p - page) <= 1)
@@ -152,13 +153,13 @@ export function TableFooter({ page, pages, total, perPage, onPage, unit = "rows"
     }, []);
   return (
     <div className="zc-tfoot" style={{ padding: "14px 18px 6px" }}>
-      <span>Showing {(page - 1) * perPage + 1}–{Math.min(page * perPage, total)} of {total} {unit}</span>
+      <span>{t("Showing {from}–{to} of {total} {unit}", { from: (page - 1) * perPage + 1, to: Math.min(page * perPage, total), total, unit: t(unit) })}</span>
       <div className="zc-pager">
-        <button type="button" disabled={page === 1} onClick={() => onPage(page - 1)} aria-label="Previous page">‹</button>
+        <button type="button" disabled={page === 1} onClick={() => onPage(page - 1)} aria-label={t("Previous page")}>‹</button>
         {list.map((p, i) => p === "…"
           ? <span key={`g${i}`} className="gap">…</span>
-          : <button type="button" key={p} className={page === p ? "on" : ""} onClick={() => onPage(p)}>{p}</button>)}
-        <button type="button" disabled={page === pages} onClick={() => onPage(page + 1)} aria-label="Next page">›</button>
+          : <button type="button" key={p} className={page === p ? "on" : ""} onClick={() => onPage(p)}>{fmtNum(p)}</button>)}
+        <button type="button" disabled={page === pages} onClick={() => onPage(page + 1)} aria-label={t("Next page")}>›</button>
       </div>
     </div>
   );

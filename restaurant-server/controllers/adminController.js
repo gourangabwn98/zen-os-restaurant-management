@@ -372,7 +372,7 @@ export const getCombinedBill = async (req, res) => {
       (o.items||[]).forEach(item => {
         const ex = mergedItems.find(x => x.name === item.name && x.price === item.price);
         if (ex) ex.qty += item.qty;
-        else mergedItems.push({ name:item.name, price:item.price, qty:item.qty });
+        else mergedItems.push({ name:item.name, nameBn:item.nameBn || "", price:item.price, qty:item.qty });
       });
     });
 

@@ -6,6 +6,8 @@
 // a token from src/theme/tokens.css → Light / Dark / Auto all work.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { fmtNum, fmtDate as fmtDateL, fmtDateTime as fmtDateTimeL } from "../../../i18n/core.js";
+
 // token aliases kept for backward-compat with the tab files
 export const PINK   = "var(--violet)";
 export const CARD   = "var(--card)";
@@ -53,7 +55,8 @@ export const btnDanger = {
 };
 
 // ── formatting ──────────────────────────────────────────────────────────────
-export const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
-export const num = (n) => Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
-export const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
-export const fmtDateTime = (d) => d ? new Date(d).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
+// Locale-aware (Bengali digits / month names in bn) — see i18n/core.js.
+export const money = (n) => `₹${fmtNum(n)}`;
+export const num = (n) => fmtNum(n);
+export const fmtDate = (d) => fmtDateL(d);
+export const fmtDateTime = (d) => fmtDateTimeL(d);

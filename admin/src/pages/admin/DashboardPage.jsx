@@ -9,6 +9,7 @@ import StatCard from "./shared/StatCard.jsx";
 import Badge from "./shared/Badge.jsx";
 import { statusKind } from "./shared/statusKind.js";
 import { RankedBars, SegmentedBar, Meter, TrendChart, CAT_COLORS } from "./shared/charts.jsx";
+import { t, tn, N_, fmtNum, fmtTime, fmtDate, localName } from "../../i18n/core.js";
 
 // ── Canonical vocabulary (see restaurant-server/utils/orderStateMachine.js) ───
 const ALL_STATUSES = [
@@ -16,16 +17,16 @@ const ALL_STATUSES = [
   "DELIVERED", "COMPLETED", "CANCELLED",
 ];
 const STATUS_LABEL = {
-  AWAITING_PAYMENT: "Awaiting payment",
-  PENDING_CONFIRMATION: "Pending",
-  CONFIRMED: "Placed",
-  PREPARING: "Preparing",
-  READY: "Ready",
-  DELIVERED: "Delivered",
-  COMPLETED: "Completed",
-  CANCELLED: "Cancelled",
+  AWAITING_PAYMENT: N_("Awaiting payment"),
+  PENDING_CONFIRMATION: N_("Pending"),
+  CONFIRMED: N_("Placed"),
+  PREPARING: N_("Preparing"),
+  READY: N_("Ready"),
+  DELIVERED: N_("Delivered"),
+  COMPLETED: N_("Completed"),
+  CANCELLED: N_("Cancelled"),
 };
-const TYPE_LABEL = { DINE_IN: "Dine-in", TAKEAWAY: "Takeaway", ONLINE: "Online" };
+const TYPE_LABEL = { DINE_IN: N_("Dine-in"), TAKEAWAY: N_("Takeaway"), ONLINE: N_("Online") };
 // "not on the floor": finished, or a pay-first order nobody has paid for yet
 const ACTIVE_EXCLUDE = ["COMPLETED", "CANCELLED", "AWAITING_PAYMENT"];
 
@@ -45,8 +46,8 @@ const NEXT_STATUS = {
 const KIND_INK  = { wait: "var(--wait-ink)",  live: "var(--live-ink)",  ready: "var(--ready-ink)",  done: "var(--done-ink)",  stop: "var(--stop-ink)",  vio: "var(--accent-ink)" };
 const KIND_FILL = { wait: "var(--wait-fill)", live: "var(--live-fill)", ready: "var(--ready-fill)", done: "var(--done-fill)", stop: "var(--stop-fill)", vio: "var(--violet-weak)" };
 
-const statusLabel = (s) => STATUS_LABEL[s] || s;
-const typeLabel = (t) => TYPE_LABEL[t] || t || "—";
+const statusLabel = (s) => t(STATUS_LABEL[s] || s);
+const typeLabel = (ty) => (ty ? t(TYPE_LABEL[ty] || ty) : "—");
 
 const AVATAR_GRADS = [
   "linear-gradient(140deg,#8B5CF6,#6D28D9)",
@@ -84,7 +85,7 @@ const isToday = (d) => {
 const initials = (n) => !n || n === "Guest" ? "G"
   : n.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
 const avatarGrad = (s) => AVATAR_GRADS[(s?.charCodeAt(0) || 0) % AVATAR_GRADS.length];
-const fmt = (n) => Math.round(n || 0).toLocaleString("en-IN");
+const fmt = (n) => fmtNum(Math.round(n || 0));
 
 // ── real-data sparkline (area + stroke, no library — matches the reference) ──
 function Sparkline({ values, stroke = "var(--violet)" }) {
@@ -135,7 +136,7 @@ function StatusSummary({ orders }) {
       kind: statusKind(st),
       ...(counts[st] || { count: 0, revenue: 0 }),
     })),
-    { label: "Total", kind: "vio", ...total },
+    { label: t("Total"), kind: "vio", ...total },
   ];
 
   return (
@@ -153,7 +154,7 @@ function StatusSummary({ orders }) {
             {c.label}
           </div>
           <div className="tnum" style={{ fontSize: 21, fontWeight: 700, color: KIND_INK[c.kind] }}>
-            {c.count}
+            {fmtNum(c.count)}
           </div>
           <div className="tnum" style={{ fontSize: 10, color: KIND_INK[c.kind], opacity: 0.75, marginTop: 2 }}>
             ₹{fmt(c.revenue)}
@@ -186,22 +187,22 @@ function TableMap({ orders, invoiceMap, onStatusChange, onInvoiceStatusChange })
     <div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         {tables.length === 0 ? (
-          <div style={{ color: "var(--text-3)", fontSize: 12, padding: "16px 0" }}>Loading tables…</div>
+          <div style={{ color: "var(--text-3)", fontSize: 12, padding: "16px 0" }}>{t("Loading tables…")}</div>
         ) : (
           tables
-            .filter((t) => t.status === "Active" || !t.status)
+            .filter((tb) => tb.status === "Active" || !tb.status)
             .sort((a, b) => a.tableNo - b.tableNo)
-            .map((t) => {
-              const o = tableOrderMap[t.tableNo];
-              const inv = invoiceMap[t.tableNo];
+            .map((tb) => {
+              const o = tableOrderMap[tb.tableNo];
+              const inv = invoiceMap[tb.tableNo];
               const pend = inv?.invoiceStatus?.toLowerCase() === "pending";
               const kind = o ? (pend ? "stop" : statusKind(o.status)) : null;
-              const isActive = activeTable === t.tableNo;
+              const isActive = activeTable === tb.tableNo;
               return (
                 <div
-                  key={t.tableNo}
+                  key={tb.tableNo}
                   className={pend ? "dash-blink" : ""}
-                  onClick={() => setActiveTable(isActive ? null : t.tableNo)}
+                  onClick={() => setActiveTable(isActive ? null : tb.tableNo)}
                   style={{
                     borderRadius: "var(--r-row)", padding: "8px 14px", cursor: "pointer",
                     background: kind ? KIND_FILL[kind] : "var(--card-2)",
@@ -212,10 +213,10 @@ function TableMap({ orders, invoiceMap, onStatusChange, onInvoiceStatusChange })
                   }}
                 >
                   <div style={{ fontSize: 13, fontWeight: 700, color: kind ? KIND_INK[kind] : "var(--text-3)" }}>
-                    T{t.tableNo}
+                    {t("T{n}", { n: tb.tableNo })}
                   </div>
                   <div style={{ fontSize: 10, color: kind ? KIND_INK[kind] : "var(--text-3)", marginTop: 2 }}>
-                    {pend ? "Payment due" : o ? statusLabel(o.status) : "Free"}
+                    {pend ? t("Payment due") : o ? statusLabel(o.status) : t("Free")}
                   </div>
                 </div>
               );
@@ -230,27 +231,27 @@ function TableMap({ orders, invoiceMap, onStatusChange, onInvoiceStatusChange })
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <div>
-              <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text-1)" }}>Table {activeTable}</span>
+              <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text-1)" }}>{t("Table {n}", { n: activeTable })}</span>
               {selOrder && (
                 <span style={{ fontSize: 11, color: "var(--text-3)", marginLeft: 8 }}>
-                  {selOrder.orderId} · {selOrder.user?.name || selOrder.guestName || "Guest"}
+                  {selOrder.orderId} · {selOrder.user?.name || selOrder.guestName || t("Guest")}
                 </span>
               )}
               {isPending && (
-                <span className="zc-tag stop" style={{ marginLeft: 8 }}><i />Invoice pending</span>
+                <span className="zc-tag stop" style={{ marginLeft: 8 }}><i />{t("Invoice pending")}</span>
               )}
             </div>
-            <button type="button" onClick={() => setActiveTable(null)} className="zc-x" aria-label="Close">✕</button>
+            <button type="button" onClick={() => setActiveTable(null)} className="zc-x" aria-label={t("Close")}>✕</button>
           </div>
 
           {!selOrder ? (
             <div style={{ color: "var(--text-3)", fontSize: 13, textAlign: "center", padding: "16px 0" }}>
-              This table is free — no active order
+              {t("This table is free — no active order")}
             </div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               <div>
-                <div style={{ fontSize: 10, color: "var(--text-3)", fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>Items</div>
+                <div style={{ fontSize: 10, color: "var(--text-3)", fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>{t("Items")}</div>
                 {selOrder.items?.map((item, i) => (
                   <div key={i} style={{
                     display: "flex", justifyContent: "space-between",
@@ -262,22 +263,22 @@ function TableMap({ orders, invoiceMap, onStatusChange, onInvoiceStatusChange })
                         display: "flex", alignItems: "center", justifyContent: "center",
                         fontSize: 11, fontWeight: 700, color: "var(--accent-ink)",
                       }}>
-                        {item.qty}
+                        {fmtNum(item.qty)}
                       </div>
-                      <span style={{ color: "var(--text-1)" }}>{item.name}</span>
+                      <span style={{ color: "var(--text-1)" }}>{localName(item)}</span>
                     </div>
-                    <span className="tnum" style={{ color: "var(--text-1)", fontWeight: 500 }}>₹{item.price * item.qty}</span>
+                    <span className="tnum" style={{ color: "var(--text-1)", fontWeight: 500 }}>₹{fmtNum(item.price * item.qty)}</span>
                   </div>
                 ))}
                 <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--edge)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 15 }}>
-                    <span style={{ color: "var(--text-1)" }}>Total</span>
+                    <span style={{ color: "var(--text-1)" }}>{t("Total")}</span>
                     <span className="tnum" style={{ color: "var(--accent-ink)" }}>₹{fmt(selOrder.total)}</span>
                   </div>
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: 10, color: "var(--text-3)", fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>Update order</div>
+                <div style={{ fontSize: 10, color: "var(--text-3)", fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>{t("Update order")}</div>
                 <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 12 }}>
                   {(NEXT_STATUS[selOrder.status] || []).map((s) => {
                     const k = statusKind(s);
@@ -287,7 +288,7 @@ function TableMap({ orders, invoiceMap, onStatusChange, onInvoiceStatusChange })
                         type="button"
                         key={s}
                         disabled={blocked}
-                        title={blocked ? PAID_FIRST_HINT : undefined}
+                        title={blocked ? t(PAID_FIRST_HINT) : undefined}
                         onClick={() => { if (blocked) return; onStatusChange(selOrder._id, s); setActiveTable(null); }}
                         style={{
                           padding: "5px 10px", borderRadius: 20, fontSize: 11, cursor: blocked ? "not-allowed" : "pointer",
@@ -301,7 +302,7 @@ function TableMap({ orders, invoiceMap, onStatusChange, onInvoiceStatusChange })
                     );
                   })}
                   {(NEXT_STATUS[selOrder.status] || []).length === 0 && (
-                    <span style={{ fontSize: 11, color: "var(--text-3)" }}>No further changes</span>
+                    <span style={{ fontSize: 11, color: "var(--text-3)" }}>{t("No further changes")}</span>
                   )}
                 </div>
                 {selInv && isPending && (
@@ -311,14 +312,14 @@ function TableMap({ orders, invoiceMap, onStatusChange, onInvoiceStatusChange })
                       onClick={() => { onInvoiceStatusChange(selInv._id, "completed"); setActiveTable(null); }}
                       className="zc-btn good" style={{ flex: 1, justifyContent: "center" }}
                     >
-                      Mark paid
+                      {t("Mark paid")}
                     </button>
                     <button
                       type="button"
                       onClick={() => { onInvoiceStatusChange(selInv._id, "cancelled"); setActiveTable(null); }}
                       className="zc-btn danger" style={{ flex: 1, justifyContent: "center" }}
                     >
-                      Cancel
+                      {t("Cancel")}
                     </button>
                   </div>
                 )}
@@ -340,9 +341,9 @@ function OrderList({ orders, onStatusChange }) {
   const visible = type === "dining" ? dining : type === "takeaway" ? takeaway : active;
 
   const tabs = [
-    { key: "all", label: "All orders", count: active.length },
-    { key: "dining", label: "Dine-in", count: dining.length },
-    { key: "takeaway", label: "Takeaway", count: takeaway.length },
+    { key: "all", label: t("All orders"), count: active.length },
+    { key: "dining", label: t("Dine-in"), count: dining.length },
+    { key: "takeaway", label: t("Takeaway"), count: takeaway.length },
   ];
 
   return (
@@ -361,7 +362,7 @@ function OrderList({ orders, onStatusChange }) {
               transition: "border-color .15s",
             }}
           >
-            <div className="tnum" style={{ fontSize: 20, fontWeight: 700, color: "var(--text-1)" }}>{b.count}</div>
+            <div className="tnum" style={{ fontSize: 20, fontWeight: 700, color: "var(--text-1)" }}>{fmtNum(b.count)}</div>
             <div style={{ fontSize: 11, color: "var(--text-2)", marginTop: 3 }}>{b.label}</div>
           </button>
         ))}
@@ -369,7 +370,7 @@ function OrderList({ orders, onStatusChange }) {
 
       {visible.length === 0 ? (
         <div style={{ textAlign: "center", padding: "40px 16px", color: "var(--text-3)", fontSize: 13 }}>
-          No active orders
+          {t("No active orders")}
         </div>
       ) : visible.map((o) => (
         <div key={o._id} style={{
@@ -389,7 +390,7 @@ function OrderList({ orders, onStatusChange }) {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
               <div>
                 <span style={{ fontWeight: 700, fontSize: 13, color: "var(--text-1)" }}>
-                  {o.guestName || o.user?.name || "Admin"}
+                  {o.guestName || o.user?.name || t("Admin")}
                 </span>
                 <span style={{ fontSize: 11, color: "var(--text-3)", marginLeft: 6 }}>{o.orderId}</span>
               </div>
@@ -399,7 +400,7 @@ function OrderList({ orders, onStatusChange }) {
               fontSize: 12, color: "var(--text-2)", marginBottom: 6,
               whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
             }}>
-              {o.items?.map((i) => `${i.name} ×${i.qty}`).join(", ")}
+              {o.items?.map((i) => `${localName(i)} ×${fmtNum(i.qty)}`).join(", ")}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
               <Badge label={o.status} format={statusLabel} />
@@ -409,11 +410,11 @@ function OrderList({ orders, onStatusChange }) {
                   fontSize: 11, color: "var(--text-3)",
                   background: "var(--card-2)", borderRadius: 20, padding: "2px 8px",
                 }}>
-                  Table {o.tableNo}
+                  {t("Table {n}", { n: o.tableNo })}
                 </span>
               )}
               <span className="tnum" style={{ fontSize: 11, color: "var(--text-3)", marginLeft: "auto" }}>
-                {new Date(o.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                {fmtTime(o.createdAt)}
               </span>
             </div>
             {(NEXT_STATUS[o.status] || []).length > 0 && (
@@ -424,10 +425,10 @@ function OrderList({ orders, onStatusChange }) {
                   onChange={(e) => { if (e.target.value) onStatusChange(o._id, e.target.value); }}
                   style={{ width: "auto", fontSize: 11, padding: "5px 10px", cursor: "pointer" }}
                 >
-                  <option value="" disabled>Update status…</option>
+                  <option value="" disabled>{t("Update status…")}</option>
                   {NEXT_STATUS[o.status].map((s) => (
                     <option key={s} value={s} disabled={needsPaidFirst(o, s)}>
-                      {statusLabel(s)}{needsPaidFirst(o, s) ? " (mark Paid first)" : ""}
+                      {statusLabel(s)}{needsPaidFirst(o, s) ? ` (${t("mark Paid first")})` : ""}
                     </option>
                   ))}
                 </select>
@@ -477,7 +478,7 @@ export default function DashboardPage({ data }) {
       setAllTodayOrders(today);
       setInvoiceMap(iMap);
     } catch {
-      toast.error("Failed to load data");
+      toast.error(t("Failed to load data"));
     } finally {
       setLoading(false);
     }
@@ -492,21 +493,21 @@ export default function DashboardPage({ data }) {
   const handleStatusChange = async (id, st) => {
     try {
       await updateOrderStatus(id, st);
-      toast.success(`Order → ${statusLabel(st)}`);
+      toast.success(`${t("Order")} → ${statusLabel(st)}`);
       setAllOrders((p) => p.map((o) => (o._id === id ? { ...o, status: st } : o)));
       setAllTodayOrders((p) => p.map((o) => (o._id === id ? { ...o, status: st } : o)));
     } catch (err) {
-      toast.error(err.response?.data?.message || "Update failed");
+      toast.error(err.response?.data?.message || t("Update failed"));
     }
   };
 
   const handleInvoiceChange = async (id, st) => {
     try {
       await updateInvoiceStatus(id, st);
-      toast.success(`Invoice → ${st}`);
+      toast.success(`${t("Invoice")} → ${t(st)}`);
       await fetchData();
     } catch {
-      toast.error("Invoice update failed");
+      toast.error(t("Invoice update failed"));
     }
   };
 
@@ -534,7 +535,7 @@ export default function DashboardPage({ data }) {
 
   const weeklyRevenue = (data?.weeklyRevenue || []).map((d) => Number(d.revenue || 0));
   const weeklyRevenuePoints = (data?.weeklyRevenue || []).map((d) => ({
-    label: d._id ? new Date(d._id).toLocaleDateString("en-IN", { weekday: "short" }) : "",
+    label: d._id ? fmtDate(d._id, { weekday: "short" }) : "",
     value: Number(d.revenue || 0),
   }));
 
@@ -545,20 +546,20 @@ export default function DashboardPage({ data }) {
     color: KIND_INK[statusKind(st)],
   }));
 
-  const orderTypeSegments = ["DINE_IN", "TAKEAWAY", "ONLINE"].map((t, i) => ({
-    label: typeLabel(t),
-    value: allTodayOrders.filter((o) => o.orderType === t).length,
+  const orderTypeSegments = ["DINE_IN", "TAKEAWAY", "ONLINE"].map((ty, i) => ({
+    label: typeLabel(ty),
+    value: allTodayOrders.filter((o) => o.orderType === ty).length,
     color: CAT_COLORS[i],
   }));
 
   const cashPaidToday = allTodayOrders.filter((o) => o.paymentMethod === "Cash" && o.paymentStatus === "PAID");
   const onlinePaidToday = allTodayOrders.filter((o) => o.paymentMethod === "Online" && o.paymentStatus === "PAID");
   const paymentSegmentsToday = [
-    { label: "Cash", value: cashPaidToday.reduce((s2, o) => s2 + Number(o.total || 0), 0), color: CAT_COLORS[3] },
-    { label: "Online", value: onlinePaidToday.reduce((s2, o) => s2 + Number(o.total || 0), 0), color: CAT_COLORS[0] },
+    { label: t("Cash"), value: cashPaidToday.reduce((s2, o) => s2 + Number(o.total || 0), 0), color: CAT_COLORS[3] },
+    { label: t("Online"), value: onlinePaidToday.reduce((s2, o) => s2 + Number(o.total || 0), 0), color: CAT_COLORS[0] },
   ];
 
-  const today = new Date().toLocaleDateString("en-IN", {
+  const today = fmtDate(new Date(), {
     weekday: "long", day: "numeric", month: "long", year: "numeric",
   });
 
@@ -566,20 +567,20 @@ export default function DashboardPage({ data }) {
 
   const STAT_BOXES = [
     {
-      icon: "💰", label: "Total collected", value: `₹${fmt(totalRev)}`, grad: true,
-      sub: `${paidOrders.length} paid orders`,
+      icon: "💰", label: t("Total collected"), value: `₹${fmt(totalRev)}`, grad: true,
+      sub: tn(paidOrders.length, "{n} paid order", "{n} paid orders"),
       spark: <Sparkline values={weeklyRevenue} stroke="var(--violet)" />,
     },
-    { icon: "📦", label: "Total orders", value: fmt(allOrders.length), colorIdx: 1, sub: `${allTodayOrders.length} today` },
-    { icon: "🧾", label: "Collected today", value: `₹${fmt(todayRev)}`, colorIdx: 1, sub: `${paidToday.length} paid today` },
-    { icon: "🪑", label: "Active tables", value: fmt(activeFloorTables), colorIdx: 2, sub: "On the floor now" },
-    { icon: "✅", label: "Paid orders", value: fmt(paidOrders.length), colorIdx: 1, sub: `₹${fmt(totalRev)} collected` },
-    { icon: "🔴", label: "Payment due", value: fmt(dueOrders.length), color: "var(--stop-ink)", sub: `₹${fmt(totalDue)} outstanding` },
-    { icon: "💵", label: "Cash collected", value: `₹${fmt(totalCash)}`, colorIdx: 3, sub: `${cashPaid.length} orders` },
-    { icon: "📱", label: "Online collected", value: `₹${fmt(totalOnline)}`, colorIdx: 0, sub: `${onlinePaid.length} orders` },
-    { icon: "📊", label: "Average order", value: `₹${fmt(avgOrder)}`, colorIdx: 0, sub: "Across paid orders" },
-    { icon: "👥", label: "Registered users", value: fmt(s.totalUsers || 0), colorIdx: 2, sub: "Guests included" },
-    { icon: "🍽️", label: "Menu items", value: fmt(s.totalItems || 0), colorIdx: 3, sub: "Available" },
+    { icon: "📦", label: t("Total orders"), value: fmt(allOrders.length), colorIdx: 1, sub: t("{n} today", { n: allTodayOrders.length }) },
+    { icon: "🧾", label: t("Collected today"), value: `₹${fmt(todayRev)}`, colorIdx: 1, sub: t("{n} paid today", { n: paidToday.length }) },
+    { icon: "🪑", label: t("Active tables"), value: fmt(activeFloorTables), colorIdx: 2, sub: t("On the floor now") },
+    { icon: "✅", label: t("Paid orders"), value: fmt(paidOrders.length), colorIdx: 1, sub: t("₹{amount} collected", { amount: fmt(totalRev) }) },
+    { icon: "🔴", label: t("Payment due"), value: fmt(dueOrders.length), color: "var(--stop-ink)", sub: t("₹{amount} outstanding", { amount: fmt(totalDue) }) },
+    { icon: "💵", label: t("Cash collected"), value: `₹${fmt(totalCash)}`, colorIdx: 3, sub: tn(cashPaid.length, "{n} order", "{n} orders") },
+    { icon: "📱", label: t("Online collected"), value: `₹${fmt(totalOnline)}`, colorIdx: 0, sub: tn(onlinePaid.length, "{n} order", "{n} orders") },
+    { icon: "📊", label: t("Average order"), value: `₹${fmt(avgOrder)}`, colorIdx: 0, sub: t("Across paid orders") },
+    { icon: "👥", label: t("Registered users"), value: fmt(s.totalUsers || 0), colorIdx: 2, sub: t("Guests included") },
+    { icon: "🍽️", label: t("Menu items"), value: fmt(s.totalItems || 0), colorIdx: 3, sub: t("Available") },
   ];
 
   return (
@@ -588,14 +589,14 @@ export default function DashboardPage({ data }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 22, flexWrap: "wrap" }}>
         <div>
           <h1 style={{ fontSize: 21, fontWeight: 700, letterSpacing: "-.025em", color: "var(--text-1)", margin: 0 }}>
-            Dashboard
+            {t("Dashboard")}
           </h1>
           <div style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 3 }}>{today}</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           {pendingInv > 0 && (
             <span className="dash-blink zc-tag stop">
-              <i />{pendingInv} invoice{pendingInv > 1 ? "s" : ""} pending
+              <i />{tn(pendingInv, "{n} invoice pending", "{n} invoices pending")}
             </span>
           )}
           <div style={{
@@ -604,10 +605,10 @@ export default function DashboardPage({ data }) {
             borderRadius: 20, padding: "7px 14px",
           }}>
             <span style={{ fontSize: 15 }}>🏪</span>
-            <span style={{ fontSize: 13, color: "var(--text-2)" }}>Restaurant:</span>
+            <span style={{ fontSize: 13, color: "var(--text-2)" }}>{t("Restaurant:")}</span>
             <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)" }}>{restaurantName}</span>
           </div>
-          <span className="zc-live-dot"><i />Live</span>
+          <span className="zc-live-dot"><i />{t("Live")}</span>
         </div>
       </div>
 
@@ -622,30 +623,30 @@ export default function DashboardPage({ data }) {
       {loading ? (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: 60, color: "var(--text-3)" }}>
           <div className="zc-spin" />
-          Loading…
+          {t("Loading…")}
         </div>
       ) : (
         <>
         {/* Charts — each form picked for the job its data does */}
         <div className="zc-card" style={{ padding: 20, marginBottom: 16 }}>
-          <SectionLabel>Revenue trend — last 7 days</SectionLabel>
+          <SectionLabel>{t("Revenue trend — last 7 days")}</SectionLabel>
           <TrendChart points={weeklyRevenuePoints} color="var(--violet)" />
         </div>
 
         <div className="dash-charts-row" style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr", gap: 16, marginBottom: 16 }}>
           <div className="zc-card" style={{ padding: 20 }}>
-            <SectionLabel>Orders by status — today</SectionLabel>
+            <SectionLabel>{t("Orders by status — today")}</SectionLabel>
             <RankedBars rows={statusRows} />
           </div>
           <div className="zc-card" style={{ padding: 20 }}>
-            <SectionLabel>Order type — today</SectionLabel>
+            <SectionLabel>{t("Order type — today")}</SectionLabel>
             <SegmentedBar segments={orderTypeSegments} />
           </div>
           <div className="zc-card" style={{ padding: 20 }}>
-            <SectionLabel>Table occupancy</SectionLabel>
-            <Meter value={activeFloorTables} max={s.totalTables || activeFloorTables} label="Tables on the floor" sub="Active dine-in orders vs total tables" />
+            <SectionLabel>{t("Table occupancy")}</SectionLabel>
+            <Meter value={activeFloorTables} max={s.totalTables || activeFloorTables} label={t("Tables on the floor")} sub={t("Active dine-in orders vs total tables")} />
             <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid var(--edge)" }}>
-              <SectionLabel style={{ marginBottom: 10 }}>Payment method — today</SectionLabel>
+              <SectionLabel style={{ marginBottom: 10 }}>{t("Payment method — today")}</SectionLabel>
               <SegmentedBar segments={paymentSegmentsToday} />
             </div>
           </div>
@@ -654,9 +655,9 @@ export default function DashboardPage({ data }) {
         <div className="dash-cols">
           {/* LEFT */}
           <div className="zc-card" style={{ padding: 20 }}>
-            <SectionLabel>Orders by status — today (detail)</SectionLabel>
+            <SectionLabel>{t("Orders by status — today (detail)")}</SectionLabel>
             <StatusSummary orders={allTodayOrders} />
-            <SectionLabel>Live table map</SectionLabel>
+            <SectionLabel>{t("Live table map")}</SectionLabel>
             <TableMap
               orders={allTodayOrders}
               invoiceMap={invoiceMap}
@@ -667,7 +668,7 @@ export default function DashboardPage({ data }) {
 
           {/* RIGHT */}
           <div className="zc-card" style={{ padding: 20, maxHeight: "80vh", overflowY: "auto" }}>
-            <SectionLabel>Recent orders — today (active only)</SectionLabel>
+            <SectionLabel>{t("Recent orders — today (active only)")}</SectionLabel>
             <OrderList orders={allTodayOrders} onStatusChange={handleStatusChange} />
           </div>
         </div>

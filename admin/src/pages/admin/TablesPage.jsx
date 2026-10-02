@@ -9,6 +9,7 @@ import {
   getWaitlist, addWaitlistEntry, seatWaitlistEntry, cancelWaitlistEntry,
 } from "../../services/adminService.js";
 import { getSocket } from "../../services/socketService.js";
+import { t, tn, N_, fmtNum, fmtTime, localName } from "../../i18n/core.js";
 
 // ── Dark tokens ───────────────────────────────────────────────────────────────
 const PINK       = PRIMARY;
@@ -31,14 +32,14 @@ const T3         = "#4b5563";
 // missed this lookup entirely and silently fell back to the "Empty"/Free
 // style, so a table with a brand-new order looked free on the floor plan.
 const STATUS_STYLE = {
-  Empty:                { bg:"rgba(255,255,255,0.04)", border:"rgba(255,255,255,0.12)", tc:"#6b7280",  label:"Free"      },
-  PENDING_CONFIRMATION: { bg:"rgba(56,122,221,0.15)",  border:"#378ADD",               tc:"#60a5fa",  label:"Awaiting confirmation" },
-  CONFIRMED:            { bg:"rgba(56,122,221,0.15)",  border:"#378ADD",               tc:"#60a5fa",  label:"Placed"    },
-  PREPARING:            { bg:"rgba(186,117,23,0.15)",  border:"#BA7517",               tc:"#fbbf24",  label:"Preparing" },
-  READY:                { bg:"rgba(16,185,129,0.15)",  border:"#10b981",               tc:"#34d399",  label:"Ready"     },
-  DELIVERED:            { bg:"rgba(16,185,129,0.15)",  border:"#10b981",               tc:"#34d399",  label:"Delivered" },
-  COMPLETED:            { bg:"rgba(107,114,128,0.15)", border:"#4b5563",               tc:"#9ca3af",  label:"Completed" },
-  CANCELLED:            { bg:"rgba(239,68,68,0.15)",   border:"#ef4444",               tc:"#f87171",  label:"Cancelled" },
+  Empty:                { bg:"rgba(255,255,255,0.04)", border:"rgba(255,255,255,0.12)", tc:"#6b7280",  label:N_("Free")      },
+  PENDING_CONFIRMATION: { bg:"rgba(56,122,221,0.15)",  border:"#378ADD",               tc:"#60a5fa",  label:N_("Awaiting confirmation") },
+  CONFIRMED:            { bg:"rgba(56,122,221,0.15)",  border:"#378ADD",               tc:"#60a5fa",  label:N_("Placed")    },
+  PREPARING:            { bg:"rgba(186,117,23,0.15)",  border:"#BA7517",               tc:"#fbbf24",  label:N_("Preparing") },
+  READY:                { bg:"rgba(16,185,129,0.15)",  border:"#10b981",               tc:"#34d399",  label:N_("Ready")     },
+  DELIVERED:            { bg:"rgba(16,185,129,0.15)",  border:"#10b981",               tc:"#34d399",  label:N_("Delivered") },
+  COMPLETED:            { bg:"rgba(107,114,128,0.15)", border:"#4b5563",               tc:"#9ca3af",  label:N_("Completed") },
+  CANCELLED:            { bg:"rgba(239,68,68,0.15)",   border:"#ef4444",               tc:"#f87171",  label:N_("Cancelled") },
 };
 
 // Non-terminal statuses — a table with an order in any of these is occupied.
@@ -131,7 +132,7 @@ if (!document.getElementById("tables-page-styles")) {
 // carries no token, so there's nothing to rotate).
 function QRModal({ table, onClose, onRegenerate }) {
   const isTakeaway = !!table.takeaway;
-  const name = isTakeaway ? "Takeaway" : `Table ${table.tableNo}`;
+  const name = isTakeaway ? t("Takeaway") : t("Table {n}", { n: table.tableNo });
   const [regen, setRegen] = useState(false);
   const [qrData, setQrData] = useState({ code: table.qrCode, url: table.qrUrl });
 
@@ -140,8 +141,8 @@ function QRModal({ table, onClose, onRegenerate }) {
       setRegen(true);
       const { data } = await onRegenerate(table.tableNo);
       setQrData({ code: data.qrCode, url: data.qrUrl });
-      toast.success("QR regenerated!");
-    } catch { toast.error("Regenerate failed"); }
+      toast.success(t("QR regenerated!"));
+    } catch { toast.error(t("Regenerate failed")); }
     finally { setRegen(false); }
   };
 
@@ -163,28 +164,28 @@ function QRModal({ table, onClose, onRegenerate }) {
     window.print();
   };
 
-  const handleCopyUrl = () => { if (!qrData.url) return; navigator.clipboard.writeText(qrData.url); toast.success("Link copied!"); };
+  const handleCopyUrl = () => { if (!qrData.url) return; navigator.clipboard.writeText(qrData.url); toast.success(t("Link copied!")); };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-box" style={{ width:420 }} onClick={e=>e.stopPropagation()}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 }}>
           <div>
-            <div style={{ fontWeight:700, fontSize:17, color:T1 }}>QR Code — {name}</div>
+            <div style={{ fontWeight:700, fontSize:17, color:T1 }}>{t("QR Code — {name}", { name })}</div>
             <div style={{ fontSize:12, color:T2, marginTop:3 }}>
-              {isTakeaway ? "Place at the counter / entrance" : `${table.seats} seats · ${table.status||"Active"}`}
+              {isTakeaway ? t("Place at the counter / entrance") : `${t("{n} seats", { n: table.seats })} · ${t(table.status||"Active")}`}
             </div>
           </div>
           <button onClick={onClose} style={{ width:30, height:30, borderRadius:"50%",
             border:`1px solid ${BORDER}`, background:CARD, cursor:"pointer",
-            fontSize:14, color:T2, display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
+            fontSize:14, color:T2, display:"flex", alignItems:"center", justifyContent:"center" }} aria-label={t("Close")}>✕</button>
         </div>
 
         <div style={{ textAlign:"center", marginBottom:18 }}>
           {qrData.code ? (
             <div style={{ display:"inline-block", padding:14, borderRadius:16,
               border:`1px solid ${PINK}33`, background:CARD2 }}>
-              <img src={qrData.code} alt={`QR ${name}`}
+              <img src={qrData.code} alt={t("QR {name}", { name })}
                 style={{ width:200, height:200, display:"block", borderRadius:8 }} />
             </div>
           ) : (
@@ -192,12 +193,12 @@ function QRModal({ table, onClose, onRegenerate }) {
               background:CARD2, border:`2px dashed ${BORDER}`,
               display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", color:T3 }}>
               <div style={{ fontSize:36, marginBottom:8 }}>⬛</div>
-              <div style={{ fontSize:12 }}>No QR yet</div>
+              <div style={{ fontSize:12 }}>{t("No QR yet")}</div>
             </div>
           )}
           <div style={{ marginTop:12, fontSize:16, fontWeight:700, color:T1 }}>{name}</div>
           <div style={{ fontSize:12, color:T2, marginTop:2 }}>
-            {isTakeaway ? "Scan to order takeaway" : "Scan to order instantly"}
+            {isTakeaway ? t("Scan to order takeaway") : t("Scan to order instantly")}
           </div>
         </div>
 
@@ -206,27 +207,27 @@ function QRModal({ table, onClose, onRegenerate }) {
             padding:"10px 12px", background:CARD, borderRadius:10, border:`1px solid ${BORDER}` }}>
             <div style={{ flex:1, fontSize:11, color:T3, wordBreak:"break-all",
               fontFamily:"monospace", lineHeight:1.4 }}>{qrData.url}</div>
-            <button onClick={handleCopyUrl} className="btn-ghost-dark" style={{ flexShrink:0 }}>Copy</button>
+            <button onClick={handleCopyUrl} className="btn-ghost-dark" style={{ flexShrink:0 }}>{t("Copy")}</button>
           </div>
         )}
 
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:10 }}>
           <button onClick={handleDownload} disabled={!qrData.code} className="qr-btn"
             style={{ background:PINK_LIGHT, color:"#c4b5fd", borderColor:`${PINK}44`, opacity:!qrData.code?.5:1 }}>
-            ↓ Download PNG
+            ↓ {t("Download PNG")}
           </button>
           <button onClick={handlePrint} disabled={!qrData.code} className="qr-btn"
             style={{ background:"rgba(59,130,246,0.15)", color:"#93c5fd", borderColor:"rgba(59,130,246,0.3)", opacity:!qrData.code?.5:1 }}>
-            🖨 Print QR
+            🖨 {t("Print QR")}
           </button>
         </div>
         {!isTakeaway && <>
           <button onClick={handleRegenerate} disabled={regen} className="qr-btn"
             style={{ width:"100%", background:CARD2, color:T2, borderColor:BORDER, opacity:regen?.6:1 }}>
-            {regen ? <><span className="spinner" style={{ borderTopColor:T2 }} /> Regenerating…</> : "↻ Regenerate QR"}
+            {regen ? <><span className="spinner" style={{ borderTopColor:T2 }} /> {t("Regenerating…")}</> : `↻ ${t("Regenerate QR")}`}
           </button>
           <div style={{ marginTop:10, fontSize:11, color:T3, textAlign:"center" }}>
-            Regenerating changes the QR image but keeps the same URL
+            {t("Regenerating changes the QR image but keeps the same URL")}
           </div>
         </>}
       </div>
@@ -267,7 +268,7 @@ const TableCard = ({ config, order, invoice, onClick, isSelected, tableStatus, o
         color: isActive ? GREEN : T3,
         border:`1px solid ${isActive ? "rgba(16,185,129,0.3)" : "rgba(107,114,128,0.3)"}`,
       }}>
-        {isActive ? "Active" : "Inactive"}
+        {isActive ? t("Active") : t("Inactive")}
       </div>
 
       {/* Top chairs */}
@@ -293,16 +294,16 @@ const TableCard = ({ config, order, invoice, onClick, isSelected, tableStatus, o
           }}>
           <div style={{ fontSize:11, fontWeight:700, color:isPending?"#f87171":isSelected?"#c4b5fd":s.tc,
             fontFamily:"'DM Mono',monospace", letterSpacing:0.5 }}>
-            T{config.id}
+            {t("T{n}", { n: config.id })}
           </div>
           <div style={{ fontSize:9, fontWeight:600, letterSpacing:0.5, textTransform:"uppercase",
             color:isPending?"#f87171":isSelected?PINK:s.tc, marginTop:1 }}>
-            {isPending?"Pay Due":s.label}
+            {isPending?t("Pay Due"):t(s.label)}
           </div>
           {order && ACTIVE_STATUSES.includes(order.status) && (
             <div style={{ fontSize:11, fontWeight:700, color:isPending?"#f87171":PINK,
               marginTop:3, fontFamily:"'DM Mono',monospace" }}>
-              ₹{Math.round(order.total).toLocaleString()}
+              ₹{fmtNum(Math.round(order.total))}
             </div>
           )}
         </div>
@@ -321,13 +322,13 @@ const TableCard = ({ config, order, invoice, onClick, isSelected, tableStatus, o
         <button onClick={e=>{ e.stopPropagation(); onQR(config.id); }}
           className="btn-ghost-dark"
           style={{ color:"#c4b5fd", borderColor:`${PINK}44`, background:PINK_LIGHT }}>
-          QR
+          {t("QR")}
         </button>
         <button onClick={e=>{ e.stopPropagation(); onToggleStatus(config.id); }}
           className="btn-ghost-dark"
           style={{ color: isActive ? "#f87171" : GREEN,
             borderColor: isActive ? "rgba(239,68,68,0.3)" : "rgba(16,185,129,0.3)" }}>
-          {isActive ? "Off" : "On"}
+          {isActive ? t("Off") : t("On")}
         </button>
         <button onClick={e=>{ e.stopPropagation(); onDelete(config.id); }}
           className="btn-ghost-dark"
@@ -356,7 +357,7 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
 
   const handleInvStatus = async (ns) => {
     if (!invoice?._id) return;
-    if (!window.confirm(`Mark invoice as "${ns}"?`)) return;
+    if (!window.confirm(t("Mark invoice as \"{status}\"?", { status: t(ns) }))) return;
     try { setInvUpdating(true); await onInvoiceStatusChange(invoice._id, ns); }
     finally { setInvUpdating(false); }
   };
@@ -376,11 +377,11 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 }}>
         <div>
           <div style={{ fontWeight:700, fontSize:16, display:"flex", alignItems:"center", gap:10, color:T1 }}>
-            <span style={{ fontFamily:"'DM Mono',monospace", color:PINK }}>T{config.id}</span>
-            <span style={{ fontSize:13, color:T2, fontWeight:400 }}>· {config.seats} seats</span>
+            <span style={{ fontFamily:"'DM Mono',monospace", color:PINK }}>{t("T{n}", { n: config.id })}</span>
+            <span style={{ fontSize:13, color:T2, fontWeight:400 }}>· {t("{n} seats", { n: config.seats })}</span>
             {isPending && (
               <span className="tag" style={{ background:"rgba(239,68,68,0.15)", color:"#f87171",
-                border:"1px solid rgba(239,68,68,0.3)" }}>⚠ Invoice Pending</span>
+                border:"1px solid rgba(239,68,68,0.3)" }}>⚠ {t("Invoice Pending")}</span>
             )}
           </div>
           {order && (
@@ -392,7 +393,7 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
         </div>
         <button onClick={onClose} style={{ width:30, height:30, borderRadius:"50%",
           border:`1px solid ${BORDER}`, background:CARD2, cursor:"pointer",
-          fontSize:14, color:T2, display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
+          fontSize:14, color:T2, display:"flex", alignItems:"center", justifyContent:"center" }} aria-label={t("Close")}>✕</button>
       </div>
 
       {session && (
@@ -400,14 +401,14 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
           padding:"10px 14px", background:"rgba(16,185,129,0.08)", border:"1px solid rgba(16,185,129,0.25)",
           borderRadius:10, marginBottom:18, fontSize:12.5 }}>
           <span style={{ color:"#34d399" }}>
-            🟢 Occupied since {new Date(session.openedAt).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" })}
+            🟢 {t("Occupied since {time}", { time: fmtTime(session.openedAt) })}
           </span>
           <button onClick={handleClear} disabled={clearing} style={{
             padding:"6px 14px", borderRadius:8, border:"none", background:"#16a34a",
             color:"#fff", fontWeight:700, fontSize:11.5, cursor:clearing?"not-allowed":"pointer",
             opacity:clearing?0.6:1,
           }}>
-            {clearing ? "Clearing…" : "🧹 Clear Table"}
+            {clearing ? t("Clearing…") : `🧹 ${t("Clear Table")}`}
           </button>
         </div>
       )}
@@ -415,15 +416,15 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
       {!order ? (
         <div style={{ textAlign:"center", padding:"40px 0", color:T3 }}>
           <div style={{ fontSize:48, marginBottom:10 }}>○</div>
-          <div style={{ fontSize:14, color:T2 }}>Table is free</div>
-          <div style={{ fontSize:12, marginTop:4, color:T3 }}>{config.seats} seats available</div>
+          <div style={{ fontSize:14, color:T2 }}>{t("Table is free")}</div>
+          <div style={{ fontSize:12, marginTop:4, color:T3 }}>{t("{n} seats available", { n: config.seats })}</div>
         </div>
       ) : (
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:24 }}>
           {/* LEFT — items */}
           <div>
             <div style={{ fontSize:10, fontWeight:600, color:T3, letterSpacing:1.2,
-              textTransform:"uppercase", marginBottom:12 }}>Order Items</div>
+              textTransform:"uppercase", marginBottom:12 }}>{t("Order Items")}</div>
             {order.items?.map((item,i) => (
               <div key={i} style={{ display:"flex", justifyContent:"space-between",
                 alignItems:"center", padding:"9px 0", borderBottom:`1px solid ${BORDER}`, fontSize:13 }}>
@@ -431,21 +432,21 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
                   <div style={{ width:26, height:26, borderRadius:8, background:PINK_LIGHT,
                     display:"flex", alignItems:"center", justifyContent:"center",
                     fontSize:12, fontWeight:700, color:PINK, fontFamily:"'DM Mono',monospace" }}>
-                    {item.qty}
+                    {fmtNum(item.qty)}
                   </div>
-                  <span style={{ color:T1 }}>{item.name}</span>
+                  <span style={{ color:T1 }}>{localName(item)}</span>
                 </div>
                 <span style={{ fontWeight:500, color:T1, fontFamily:"'DM Mono',monospace" }}>
-                  ₹{(item.price*item.qty).toLocaleString()}
+                  ₹{fmtNum(item.price*item.qty)}
                 </span>
               </div>
             ))}
             <div style={{ marginTop:14, paddingTop:14, borderTop:`1px solid ${BORDER}` }}>
               {[
-                { l:"Subtotal", v:`₹${subtotal.toLocaleString()}` },
-                ...(order.serviceCharge>0 ? [{ l:"Service Charge", v:`₹${order.serviceCharge}` }] : []),
-                ...(order.tax>0           ? [{ l:"GST",            v:`₹${order.tax}`           }] : []),
-                ...(order.discount>0      ? [{ l:`Discount${order.coupon?.code ? ` (${order.coupon.code})` : ""}`, v:`−₹${order.discount}` }] : []),
+                { l:t("Subtotal"), v:`₹${fmtNum(subtotal)}` },
+                ...(order.serviceCharge>0 ? [{ l:t("Service Charge"), v:`₹${fmtNum(order.serviceCharge)}` }] : []),
+                ...(order.tax>0           ? [{ l:t("GST"),            v:`₹${fmtNum(order.tax)}`           }] : []),
+                ...(order.discount>0      ? [{ l:`${t("Discount")}${order.coupon?.code ? ` (${order.coupon.code})` : ""}`, v:`−₹${fmtNum(order.discount)}` }] : []),
               ].map(r => (
                 <div key={r.l} style={{ display:"flex", justifyContent:"space-between",
                   fontSize:12, color:T2, marginBottom:6 }}>
@@ -454,9 +455,9 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
                 </div>
               ))}
               <div style={{ display:"flex", justifyContent:"space-between", fontWeight:700, fontSize:16, marginTop:10 }}>
-                <span style={{ color:T1 }}>Total</span>
+                <span style={{ color:T1 }}>{t("Total")}</span>
                 <span style={{ color:isPending?"#f87171":PINK, fontFamily:"'DM Mono',monospace" }}>
-                  ₹{Math.round(order.total).toLocaleString()}
+                  ₹{fmtNum(Math.round(order.total))}
                 </span>
               </div>
             </div>
@@ -465,31 +466,31 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
           {/* RIGHT — status + invoice */}
           <div>
             <div style={{ fontSize:10, fontWeight:600, color:T3, letterSpacing:1.2,
-              textTransform:"uppercase", marginBottom:10 }}>Current Status</div>
+              textTransform:"uppercase", marginBottom:10 }}>{t("Current Status")}</div>
             <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:20 }}>
               <span className="tag" style={{ background:s.bg, color:s.tc, border:`1.5px solid ${s.border}` }}>
-                {s.label}
+                {t(s.label)}
               </span>
               <span className="tag" style={{ background:"rgba(139,92,246,0.15)", color:"#c4b5fd",
-                border:"1px solid rgba(139,92,246,0.3)" }}>Dining</span>
+                border:"1px solid rgba(139,92,246,0.3)" }}>{t("Dining")}</span>
               <span className="tag" style={{
                 background: order.paymentStatus==="Paid" ? GREEN_LIGHT : "rgba(245,158,11,0.15)",
                 color: order.paymentStatus==="Paid" ? "#34d399" : "#fbbf24",
                 border:`1px solid ${order.paymentStatus==="Paid" ? "rgba(16,185,129,0.3)" : "rgba(245,158,11,0.3)"}`,
-              }}>{order.paymentStatus}</span>
+              }}>{t(order.paymentStatus)}</span>
             </div>
 
             <div style={{ fontSize:10, fontWeight:600, color:T3, letterSpacing:1.2,
-              textTransform:"uppercase", marginBottom:10 }}>Update Order</div>
+              textTransform:"uppercase", marginBottom:10 }}>{t("Update Order")}</div>
             <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:22 }}>
               {ALL_STATUSES.filter(st=>st!==order.status).map(st => {
                 const stl = STATUS_STYLE[st]||{ bg:"rgba(107,114,128,0.15)", border:"#4b5563", tc:"#9ca3af", label:st };
                 return (
                   <button key={st} className="status-btn" onClick={()=>handleStatus(st)}
                     disabled={updating || needsPaidFirst(order, st)}
-                    title={needsPaidFirst(order, st) ? PAID_FIRST_HINT : undefined}
+                    title={needsPaidFirst(order, st) ? t(PAID_FIRST_HINT) : undefined}
                     style={{ background:stl.bg, borderColor:stl.border, color:stl.tc }}>
-                    {updating ? <span className="spinner" /> : stl.label}
+                    {updating ? <span className="spinner" /> : t(stl.label)}
                   </button>
                 );
               })}
@@ -498,15 +499,15 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
             {invoice ? (
               <>
                 <div style={{ fontSize:10, fontWeight:600, color:T3, letterSpacing:1.2,
-                  textTransform:"uppercase", marginBottom:10 }}>Invoice</div>
+                  textTransform:"uppercase", marginBottom:10 }}>{t("Invoice")}</div>
                 <div style={{
                   background: isPending ? "rgba(239,68,68,0.08)" : GREEN_LIGHT,
                   border:`1px solid ${isPending ? "rgba(239,68,68,0.3)" : "rgba(16,185,129,0.3)"}`,
                   borderRadius:12, padding:14, marginBottom:12,
                 }}>
                   {[
-                    { l:"Invoice ID", v:`…${invoice._id?.slice(-8)}`, mono:true },
-                    { l:"Amount",    v:`₹${Math.round(invoice.total||order.total).toLocaleString()}`, mono:true },
+                    { l:t("Invoice ID"), v:`…${invoice._id?.slice(-8)}`, mono:true },
+                    { l:t("Amount"),    v:`₹${fmtNum(Math.round(invoice.total||order.total))}`, mono:true },
                   ].map(r => (
                     <div key={r.l} style={{ display:"flex", justifyContent:"space-between",
                       fontSize:12, marginBottom:8 }}>
@@ -515,13 +516,13 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
                     </div>
                   ))}
                   <div style={{ display:"flex", justifyContent:"space-between", fontSize:12, alignItems:"center" }}>
-                    <span style={{ color:T2 }}>Status</span>
+                    <span style={{ color:T2 }}>{t("Status")}</span>
                     <span className="tag" style={{
                       background: isPending ? "rgba(239,68,68,0.15)" : GREEN_LIGHT,
                       color: isPending ? "#f87171" : "#34d399",
                       border:`1px solid ${isPending ? "rgba(239,68,68,0.3)" : "rgba(16,185,129,0.3)"}`,
                       textTransform:"capitalize",
-                    }}>{invoice.invoiceStatus}</span>
+                    }}>{t(invoice.invoiceStatus)}</span>
                   </div>
                 </div>
                 {isPending && (
@@ -530,13 +531,13 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
                       style={{ flex:1, padding:11, background:"rgba(16,185,129,0.2)", color:"#34d399",
                         border:"1px solid rgba(16,185,129,0.3)", borderRadius:10, fontWeight:700,
                         cursor:"pointer", fontSize:13, opacity:invUpdating?.5:1 }}>
-                      {invUpdating ? <span className="spinner" /> : "✓ Mark Paid"}
+                      {invUpdating ? <span className="spinner" /> : `✓ ${t("Mark Paid")}`}
                     </button>
                     <button onClick={()=>handleInvStatus("cancelled")} disabled={invUpdating}
                       style={{ flex:1, padding:11, background:"rgba(239,68,68,0.15)", color:"#f87171",
                         border:"1px solid rgba(239,68,68,0.3)", borderRadius:10, fontWeight:700,
                         cursor:"pointer", fontSize:13, opacity:invUpdating?.5:1 }}>
-                      {invUpdating ? <span className="spinner" /> : "✕ Cancel"}
+                      {invUpdating ? <span className="spinner" /> : `✕ ${t("Cancel")}`}
                     </button>
                   </div>
                 )}
@@ -544,7 +545,7 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
             ) : (
               <div style={{ background:CARD2, borderRadius:10, padding:14, fontSize:12,
                 color:T3, textAlign:"center", border:`1px dashed ${BORDER}` }}>
-                No invoice generated yet
+                {t("No invoice generated yet")}
               </div>
             )}
           </div>
@@ -556,21 +557,21 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
 
 // ── Waitlist / walk-in queue ────────────────────────────────────────────────
 const WAIT_STYLE = {
-  WAITING:  { bg:"rgba(245,158,11,0.15)", border:"#f59e0b", tc:"#fbbf24", label:"Waiting"  },
-  NOTIFIED: { bg:"rgba(59,130,246,0.15)", border:"#378ADD", tc:"#93c5fd", label:"Notified" },
+  WAITING:  { bg:"rgba(245,158,11,0.15)", border:"#f59e0b", tc:"#fbbf24", label:N_("Waiting")  },
+  NOTIFIED: { bg:"rgba(59,130,246,0.15)", border:"#378ADD", tc:"#93c5fd", label:N_("Notified") },
 };
 
 const timeAgo = (date) => {
   const mins = Math.max(0, Math.round((Date.now() - new Date(date).getTime()) / 60000));
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m wait`;
-  return `${Math.floor(mins / 60)}h ${mins % 60}m wait`;
+  if (mins < 1) return t("just now");
+  if (mins < 60) return t("{m}m wait", { m: mins });
+  return t("{h}h {m}m wait", { h: Math.floor(mins / 60), m: mins % 60 });
 };
 
 const WaitlistRow = ({ entry, freeTables, onSeat, onCancel, busy }) => {
   const [picking, setPicking] = useState(false);
   const s = WAIT_STYLE[entry.status] || WAIT_STYLE.WAITING;
-  const eligible = freeTables.filter(t => t.seats >= entry.partySize);
+  const eligible = freeTables.filter(tb => tb.seats >= entry.partySize);
 
   return (
     <div style={{ background:CARD2, border:`1px solid ${BORDER}`, borderRadius:12, padding:"12px 14px", marginBottom:8 }}>
@@ -579,9 +580,9 @@ const WaitlistRow = ({ entry, freeTables, onSeat, onCancel, busy }) => {
           <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
             <span style={{ fontWeight:700, fontSize:13.5, color:T1 }}>{entry.guestName}</span>
             <span className="tag" style={{ background:PINK_LIGHT, color:"#c4b5fd", border:`1px solid ${PINK}44` }}>
-              👥 {entry.partySize}
+              👥 {fmtNum(entry.partySize)}
             </span>
-            <span className="tag" style={{ background:s.bg, color:s.tc, border:`1.5px solid ${s.border}` }}>{s.label}</span>
+            <span className="tag" style={{ background:s.bg, color:s.tc, border:`1.5px solid ${s.border}` }}>{t(s.label)}</span>
           </div>
           <div style={{ fontSize:11.5, color:T3, marginTop:4 }}>
             {entry.guestPhone && <span>{entry.guestPhone} · </span>}
@@ -594,7 +595,7 @@ const WaitlistRow = ({ entry, freeTables, onSeat, onCancel, busy }) => {
             className="btn-ghost-dark" style={{ color: eligible.length ? GREEN : T3,
               borderColor: eligible.length ? "rgba(16,185,129,0.3)" : BORDER,
               opacity: busy || eligible.length === 0 ? 0.5 : 1 }}>
-            {busy ? <span className="spinner" /> : "Seat"}
+            {busy ? <span className="spinner" /> : t("Seat")}
           </button>
           <button onClick={() => onCancel(entry._id)} disabled={busy} className="btn-ghost-dark"
             style={{ color:"#f87171", borderColor:"rgba(239,68,68,0.3)" }}>✕</button>
@@ -604,11 +605,11 @@ const WaitlistRow = ({ entry, freeTables, onSeat, onCancel, busy }) => {
       {picking && (
         <div style={{ marginTop:10, paddingTop:10, borderTop:`1px dashed ${BORDER}`, display:"flex", gap:6, flexWrap:"wrap" }}>
           {eligible.length === 0 ? (
-            <span style={{ fontSize:12, color:T3 }}>No free table fits a party of {entry.partySize} yet.</span>
-          ) : eligible.map(t => (
-            <button key={t.tableNo} onClick={() => { onSeat(entry._id, t.tableNo); setPicking(false); }}
+            <span style={{ fontSize:12, color:T3 }}>{t("No free table fits a party of {n} yet.", { n: entry.partySize })}</span>
+          ) : eligible.map(tb => (
+            <button key={tb.tableNo} onClick={() => { onSeat(entry._id, tb.tableNo); setPicking(false); }}
               className="btn-ghost-dark" style={{ color:GREEN, borderColor:"rgba(16,185,129,0.3)" }}>
-              T{t.tableNo} · {t.seats} seats
+              {t("T{n}", { n: tb.tableNo })} · {t("{n} seats", { n: tb.seats })}
             </button>
           ))}
         </div>
@@ -629,7 +630,7 @@ function WaitlistPanel({ entries, freeTables, suggestion, onDismissSuggestion, o
   const reset = () => { setName(""); setPhone(""); setSize("2"); setNotes(""); };
 
   const handleAdd = async () => {
-    if (!name.trim()) return toast.error("Guest name required");
+    if (!name.trim()) return toast.error(t("Guest name required"));
     setSaving(true);
     try {
       await onAdd({ guestName:name.trim(), guestPhone:phone.trim(), partySize:parseInt(size,10), notes });
@@ -639,7 +640,7 @@ function WaitlistPanel({ entries, freeTables, suggestion, onDismissSuggestion, o
 
   const handleSeat = async (id, tableNo) => { setBusyId(id); try { await onSeat(id, tableNo); } finally { setBusyId(null); } };
   const handleCancel = async (id) => {
-    if (!window.confirm("Remove this party from the queue?")) return;
+    if (!window.confirm(t("Remove this party from the queue?"))) return;
     setBusyId(id); try { await onCancel(id); } finally { setBusyId(null); }
   };
 
@@ -647,16 +648,16 @@ function WaitlistPanel({ entries, freeTables, suggestion, onDismissSuggestion, o
     <div style={{ background:CARD, borderRadius:16, padding:20, marginBottom:20, border:`1px solid ${BORDER}` }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <div style={{ fontWeight:700, fontSize:15, color:T1 }}>🧍 Walk-in Queue</div>
+          <div style={{ fontWeight:700, fontSize:15, color:T1 }}>🧍 {t("Walk-in Queue")}</div>
           {entries.length > 0 && (
             <span className="tag" style={{ background:"rgba(245,158,11,0.15)", color:"#fbbf24", border:"1px solid rgba(245,158,11,0.3)" }}>
-              {entries.length} waiting
+              {t("{n} waiting", { n: entries.length })}
             </span>
           )}
         </div>
         <button onClick={() => setShowModal(true)} className="btn-ghost-dark"
           style={{ color:"#c4b5fd", borderColor:`${PINK}44`, background:PINK_LIGHT, padding:"7px 14px" }}>
-          + Add to Queue
+          + {t("Add to Queue")}
         </button>
       </div>
 
@@ -664,22 +665,21 @@ function WaitlistPanel({ entries, freeTables, suggestion, onDismissSuggestion, o
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, flexWrap:"wrap",
           padding:"10px 14px", background:GREEN_LIGHT, border:"1px solid rgba(16,185,129,0.3)", borderRadius:10, marginBottom:14 }}>
           <span style={{ fontSize:12.5, color:"#34d399" }}>
-            🟢 Table {suggestion.tableNo} just freed up ({suggestion.seats} seats) — seat{" "}
-            <strong>{suggestion.suggestedEntry.guestName}</strong> (party of {suggestion.suggestedEntry.partySize})?
+            🟢 {t("Table {n} just freed up ({seats} seats) — seat {name} (party of {size})?", { n: suggestion.tableNo, seats: suggestion.seats, name: suggestion.suggestedEntry.guestName, size: suggestion.suggestedEntry.partySize })}
           </span>
           <div style={{ display:"flex", gap:8 }}>
             <button onClick={() => { handleSeat(suggestion.suggestedEntry._id, suggestion.tableNo); onDismissSuggestion(); }}
               style={{ padding:"6px 14px", borderRadius:8, border:"none", background:"#16a34a", color:"#fff",
                 fontWeight:700, fontSize:11.5, cursor:"pointer" }}>
-              Seat now
+              {t("Seat now")}
             </button>
-            <button onClick={onDismissSuggestion} className="btn-ghost-dark">Dismiss</button>
+            <button onClick={onDismissSuggestion} className="btn-ghost-dark">{t("Dismiss")}</button>
           </div>
         </div>
       )}
 
       {entries.length === 0 ? (
-        <div style={{ textAlign:"center", padding:"20px 0", color:T3, fontSize:13 }}>No one's waiting right now.</div>
+        <div style={{ textAlign:"center", padding:"20px 0", color:T3, fontSize:13 }}>{t("No one's waiting right now.")}</div>
       ) : entries.map(e => (
         <WaitlistRow key={e._id} entry={e} freeTables={freeTables}
           onSeat={handleSeat} onCancel={handleCancel} busy={busyId === e._id} />
@@ -688,28 +688,28 @@ function WaitlistPanel({ entries, freeTables, suggestion, onDismissSuggestion, o
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal-box" style={{ width:380 }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontSize:18, fontWeight:700, color:T1, marginBottom:18 }}>Add Walk-in to Queue</div>
+            <div style={{ fontSize:18, fontWeight:700, color:T1, marginBottom:18 }}>{t("Add Walk-in to Queue")}</div>
 
-            <label style={{ fontSize:12, color:T2, fontWeight:600, display:"block", marginBottom:6 }}>Guest Name</label>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Rohan"
+            <label style={{ fontSize:12, color:T2, fontWeight:600, display:"block", marginBottom:6 }}>{t("Guest Name")}</label>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder={t("e.g. Rohan")}
               className="input-dark" style={{ marginBottom:14 }} />
 
-            <label style={{ fontSize:12, color:T2, fontWeight:600, display:"block", marginBottom:6 }}>Phone (optional)</label>
-            <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="e.g. 98765xxxxx"
+            <label style={{ fontSize:12, color:T2, fontWeight:600, display:"block", marginBottom:6 }}>{t("Phone (optional)")}</label>
+            <input value={phone} onChange={e => setPhone(e.target.value)} placeholder={t("e.g. 98765xxxxx")}
               className="input-dark" style={{ marginBottom:14 }} />
 
-            <label style={{ fontSize:12, color:T2, fontWeight:600, display:"block", marginBottom:6 }}>Party Size</label>
+            <label style={{ fontSize:12, color:T2, fontWeight:600, display:"block", marginBottom:6 }}>{t("Party Size")}</label>
             <input type="number" min="1" value={size} onChange={e => setSize(e.target.value)}
               className="input-dark" style={{ marginBottom:14 }} />
 
-            <label style={{ fontSize:12, color:T2, fontWeight:600, display:"block", marginBottom:6 }}>Notes (optional)</label>
-            <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g. wants a window table"
+            <label style={{ fontSize:12, color:T2, fontWeight:600, display:"block", marginBottom:6 }}>{t("Notes (optional)")}</label>
+            <input value={notes} onChange={e => setNotes(e.target.value)} placeholder={t("e.g. wants a window table")}
               className="input-dark" style={{ marginBottom:20 }} />
 
             <div style={{ display:"flex", gap:10 }}>
               <button onClick={() => setShowModal(false)} className="btn-ghost-dark"
                 style={{ flex:1, padding:12, borderRadius:10, justifyContent:"center", display:"flex" }}>
-                Cancel
+                {t("Cancel")}
               </button>
               <button onClick={handleAdd} disabled={saving} style={{
                 flex:1, padding:12, borderRadius:10,
@@ -717,7 +717,7 @@ function WaitlistPanel({ entries, freeTables, suggestion, onDismissSuggestion, o
                 color:"#fff", border:"none", fontWeight:700, cursor:"pointer", fontSize:14,
                 opacity:saving?.6:1, display:"flex", alignItems:"center", justifyContent:"center", gap:8,
               }}>
-                {saving ? <><span className="spinner" />Adding…</> : "Add to Queue"}
+                {saving ? <><span className="spinner" />{t("Adding…")}</> : t("Add to Queue")}
               </button>
             </div>
           </div>
@@ -792,7 +792,7 @@ export default function TablesPage() {
       sessions.forEach(s => { sMap[Number(s.tableNo)] = s; });
 
       setTables(dbTables); setTableMap(oMap); setInvoiceMap(iMap); setSessionMap(sMap);
-    } catch { setError("Failed to load table data"); toast.error("Could not load tables"); }
+    } catch { setError(t("Failed to load table data")); toast.error(t("Could not load tables")); }
     finally { setLoading(false); }
   }, []);
 
@@ -813,72 +813,72 @@ export default function TablesPage() {
     };
   }, [fetchData]);
 
-  const handleStatusChange  = async (id, ns) => { try { await updateOrderStatus(id,ns); toast.success(`→ ${ns}`); await fetchData(); setSelected(null); } catch { toast.error("Update failed"); } };
-  const handleInvChange     = async (id, ns) => { try { await updateInvoiceStatus(id,ns); toast.success(`Invoice → ${ns}`); await fetchData(); } catch { toast.error("Invoice update failed"); } };
-  const handleToggleStatus  = async (tableNo) => { const t=tables.find(t=>t.tableNo===tableNo); if(!t)return; const ns=t.status==="Active"?"Inactive":"Active"; try { await updateTable(tableNo,{status:ns}); toast.success(`Table ${tableNo} → ${ns}`); fetchData(); } catch { toast.error("Failed to update"); } };
-  const handleDelete        = async (tableNo) => { if(!window.confirm(`Delete Table ${tableNo}?`))return; try { await deleteTable(tableNo); toast.success(`Table ${tableNo} deleted`); fetchData(); if(selected===tableNo)setSelected(null); } catch(e){ toast.error(e.response?.data?.message||"Failed"); } };
+  const handleStatusChange  = async (id, ns) => { try { await updateOrderStatus(id,ns); toast.success(`→ ${t(ns)}`); await fetchData(); setSelected(null); } catch { toast.error(t("Update failed")); } };
+  const handleInvChange     = async (id, ns) => { try { await updateInvoiceStatus(id,ns); toast.success(`${t("Invoice")} → ${t(ns)}`); await fetchData(); } catch { toast.error(t("Invoice update failed")); } };
+  const handleToggleStatus  = async (tableNo) => { const tb=tables.find(x=>x.tableNo===tableNo); if(!tb)return; const ns=tb.status==="Active"?"Inactive":"Active"; try { await updateTable(tableNo,{status:ns}); toast.success(`${t("Table {n}", { n: tableNo })} → ${t(ns)}`); fetchData(); } catch { toast.error(t("Failed to update")); } };
+  const handleDelete        = async (tableNo) => { if(!window.confirm(t("Delete Table {n}?", { n: tableNo })))return; try { await deleteTable(tableNo); toast.success(t("Table {n} deleted", { n: tableNo })); fetchData(); if(selected===tableNo)setSelected(null); } catch(e){ toast.error(e.response?.data?.message||t("Failed")); } };
   const handleTakeawayQR = async () => {
     try {
       const { data } = await getTakeawayQR();
       setQrTable({ takeaway: true, qrCode: data.qrCode, qrUrl: data.qrUrl });
-    } catch { toast.error("Couldn't load takeaway QR"); }
+    } catch { toast.error(t("Couldn't load takeaway QR")); }
   };
-  const handleRegenerate    = async (tableNo) => { const { data }=await regenerateQR(tableNo); setTables(p=>p.map(t=>t.tableNo===tableNo?{...t,qrCode:data.qrCode,qrUrl:data.qrUrl}:t)); return { data }; };
+  const handleRegenerate    = async (tableNo) => { const { data }=await regenerateQR(tableNo); setTables(p=>p.map(tb=>tb.tableNo===tableNo?{...tb,qrCode:data.qrCode,qrUrl:data.qrUrl}:tb)); return { data }; };
   const handleClearTable    = async (session) => {
     if (!session?._id) return;
-    if (!window.confirm(`Clear Table ${session.tableNo}? This closes the table's session.`)) return;
+    if (!window.confirm(t("Clear Table {n}? This closes the table's session.", { n: session.tableNo }))) return;
     try {
       const { data } = await clearTableSession(session._id);
-      toast.success(`Table ${session.tableNo} cleared`);
+      toast.success(t("Table {n} cleared", { n: session.tableNo }));
       if (data?.suggestedEntry) {
         setFreedSuggestion({ tableNo: session.tableNo, seats: selectedConf?.seats, suggestedEntry: data.suggestedEntry });
       }
       await fetchData();
       setSelected(null);
     } catch (e) {
-      toast.error(e.response?.data?.message || "Cannot clear table — it may still have active orders");
+      toast.error(e.response?.data?.message || t("Cannot clear table — it may still have active orders"));
     }
   };
 
   const handleAddWaitlist = async (body) => {
-    try { await addWaitlistEntry(body); toast.success(`${body.guestName} added to queue`); await fetchData(); }
-    catch (e) { toast.error(e.response?.data?.message || "Failed to add to queue"); }
+    try { await addWaitlistEntry(body); toast.success(t("{name} added to queue", { name: body.guestName })); await fetchData(); }
+    catch (e) { toast.error(e.response?.data?.message || t("Failed to add to queue")); }
   };
   const handleSeatWaitlist = async (id, tableNo) => {
     try {
       await seatWaitlistEntry(id, tableNo);
-      toast.success(`Seated at Table ${tableNo}`);
+      toast.success(t("Seated at Table {n}", { n: tableNo }));
       setFreedSuggestion(null);
       await fetchData();
-    } catch (e) { toast.error(e.response?.data?.message || "Failed to seat — table may already be taken"); }
+    } catch (e) { toast.error(e.response?.data?.message || t("Failed to seat — table may already be taken")); }
   };
   const handleCancelWaitlist = async (id) => {
-    try { await cancelWaitlistEntry(id); toast.success("Removed from queue"); await fetchData(); }
-    catch (e) { toast.error(e.response?.data?.message || "Failed to remove"); }
+    try { await cancelWaitlistEntry(id); toast.success(t("Removed from queue")); await fetchData(); }
+    catch (e) { toast.error(e.response?.data?.message || t("Failed to remove")); }
   };
 
   const handleCreate = async () => {
-    if (!newTableNo) return toast.error("Table number required");
+    if (!newTableNo) return toast.error(t("Table number required"));
     setCreating(true);
     try {
       await createTable({ tableNo:parseInt(newTableNo), seats:parseInt(newSeats) });
-      toast.success(`Table ${newTableNo} created!`);
+      toast.success(t("Table {n} created!", { n: newTableNo }));
       setShowModal(false); setNewTableNo("");
       await fetchData();
       const res = await getAllTables();
-      const created = (res.data?.tables||[]).find(t=>t.tableNo===parseInt(newTableNo));
+      const created = (res.data?.tables||[]).find(tb=>tb.tableNo===parseInt(newTableNo));
       if (created) setQrTable(created);
-    } catch(e) { toast.error(e.response?.data?.message||"Failed to create"); }
+    } catch(e) { toast.error(e.response?.data?.message||t("Failed to create")); }
     finally { setCreating(false); }
   };
 
-  const activeTables  = tables.filter(t=>t.status==="Active"||!t.status);
-  const occupied      = activeTables.filter(t=>tableMap[t.tableNo]).length;
-  const freeTables    = activeTables.filter(t=>(t.occupancyStatus||"AVAILABLE")==="AVAILABLE")
-    .map(t=>({ tableNo:t.tableNo, seats:t.seats }));
+  const activeTables  = tables.filter(tb=>tb.status==="Active"||!tb.status);
+  const occupied      = activeTables.filter(tb=>tableMap[tb.tableNo]).length;
+  const freeTables    = activeTables.filter(tb=>(tb.occupancyStatus||"AVAILABLE")==="AVAILABLE")
+    .map(tb=>({ tableNo:tb.tableNo, seats:tb.seats }));
   const revenue       = Object.values(tableMap).reduce((s,o)=>s+Number(o.total||0),0);
   const pendingCount  = Object.values(invoiceMap).filter(i=>i.invoiceStatus?.toLowerCase()==="pending").length;
-  const selectedConf  = selected ? tables.find(t=>t.tableNo===selected) : null;
+  const selectedConf  = selected ? tables.find(tb=>tb.tableNo===selected) : null;
   const selectedOrder = selected ? tableMap[selected]||null : null;
   const selectedInv   = selected ? invoiceMap[selected]||null : null;
   const selectedSession = selected ? sessionMap[selected]||null : null;
@@ -887,14 +887,14 @@ export default function TablesPage() {
     <div className="tables-root" style={{ textAlign:"center", padding:100, color:T3 }}>
       <div className="spinner" style={{ width:32, height:32, borderWidth:3,
         borderColor:"rgba(124,58,237,.2)", borderTopColor:PINK, margin:"0 auto 16px" }} />
-      <div style={{ fontSize:14 }}>Loading floor plan…</div>
+      <div style={{ fontSize:14 }}>{t("Loading floor plan…")}</div>
     </div>
   );
   if (error) return (
     <div className="tables-root" style={{ textAlign:"center", padding:80, color:"#f87171" }}>
       <div style={{ fontSize:16, marginBottom:14 }}>{error}</div>
       <button onClick={fetchData} style={{ padding:"10px 28px", background:PINK, color:"#fff",
-        border:"none", borderRadius:25, fontWeight:600, cursor:"pointer" }}>Retry</button>
+        border:"none", borderRadius:25, fontWeight:600, cursor:"pointer" }}>{t("Retry")}</button>
     </div>
   );
 
@@ -904,19 +904,19 @@ export default function TablesPage() {
       {/* Header */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 }}>
         <div>
-          <h1 style={{ fontSize:22, fontWeight:700, color:T1, margin:0 }}>Table Management</h1>
+          <h1 style={{ fontSize:22, fontWeight:700, color:T1, margin:0 }}>{t("Table Management")}</h1>
           <div style={{ fontSize:13, color:T2, marginTop:4, display:"flex", alignItems:"center", gap:10 }}>
-            <span>Dining Floor</span>
+            <span>{t("Dining Floor")}</span>
             <span style={{ display:"flex", alignItems:"center", gap:5 }}>
               <span className="pulse-live" style={{ width:7, height:7, borderRadius:"50%",
                 background:GREEN, display:"inline-block" }} />
-              <span style={{ color:GREEN, fontWeight:500 }}>Live</span>
-              <span style={{ color:T3 }}>· every 30s</span>
+              <span style={{ color:GREEN, fontWeight:500 }}>{t("Live")}</span>
+              <span style={{ color:T3 }}>· {t("every 30s")}</span>
             </span>
             {pendingCount>0 && (
               <span className="tag blink-pending" style={{ background:"rgba(239,68,68,0.15)",
                 color:"#f87171", border:"1px solid rgba(239,68,68,0.3)", fontSize:11 }}>
-                {pendingCount} invoice{pendingCount>1?"s":""} pending
+                {tn(pendingCount, "{n} invoice pending", "{n} invoices pending")}
               </span>
             )}
           </div>
@@ -925,33 +925,33 @@ export default function TablesPage() {
           padding:"11px 22px", background:`linear-gradient(135deg,${PINK},#5b21b6)`,
           color:"#fff", border:"none", borderRadius:25, fontWeight:700,
           cursor:"pointer", fontSize:13, boxShadow:`0 4px 16px ${PINK}44`,
-        }}>+ New Table</button>
+        }}>+ {t("New Table")}</button>
       </div>
 
       {/* Stats */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:10, marginBottom:22 }}>
-        <StatCard label="Occupied"         val={occupied}                                        color={PINK}    />
-        <StatCard label="Free"             val={activeTables.length-occupied}                    color={GREEN}   />
-        <StatCard label="Active Revenue"   val={`₹${Math.round(revenue).toLocaleString()}`}                     />
-        <StatCard label="Total Tables"     val={tables.length}                                                   />
-        <StatCard label="Pending Invoices" val={pendingCount} color={pendingCount>0?"#f87171":GREEN}             />
+        <StatCard label={t("Occupied")}         val={fmtNum(occupied)}                                color={PINK}    />
+        <StatCard label={t("Free")}             val={fmtNum(activeTables.length-occupied)}            color={GREEN}   />
+        <StatCard label={t("Active Revenue")}   val={`₹${fmtNum(Math.round(revenue))}`}                              />
+        <StatCard label={t("Total Tables")}     val={fmtNum(tables.length)}                                           />
+        <StatCard label={t("Pending Invoices")} val={fmtNum(pendingCount)} color={pendingCount>0?"#f87171":GREEN}     />
       </div>
 
       {/* Legend */}
       <div style={{ display:"flex", gap:16, flexWrap:"wrap", marginBottom:16,
         padding:"10px 16px", background:CARD, borderRadius:10, border:`1px solid ${BORDER}` }}>
         {[
-          { label:"Free",             bg:"rgba(255,255,255,0.04)", border:"rgba(255,255,255,0.15)" },
-          { label:"Placed",           bg:"rgba(56,122,221,0.15)",  border:"#378ADD" },
-          { label:"Preparing",        bg:"rgba(186,117,23,0.15)",  border:"#BA7517" },
-          { label:"Ready",            bg:GREEN_LIGHT,              border:GREEN },
-          { label:"Invoice pending",  bg:"rgba(211,47,47,0.12)",   border:"#d32f2f", blink:true },
-          { label:"Occupied chair",   bg:PINK_LIGHT,               border:PINK },
+          { label:N_("Free"),             bg:"rgba(255,255,255,0.04)", border:"rgba(255,255,255,0.15)" },
+          { label:N_("Placed"),           bg:"rgba(56,122,221,0.15)",  border:"#378ADD" },
+          { label:N_("Preparing"),        bg:"rgba(186,117,23,0.15)",  border:"#BA7517" },
+          { label:N_("Ready"),            bg:GREEN_LIGHT,              border:GREEN },
+          { label:N_("Invoice pending"),  bg:"rgba(211,47,47,0.12)",   border:"#d32f2f", blink:true },
+          { label:N_("Occupied chair"),   bg:PINK_LIGHT,               border:PINK },
         ].map(l => (
           <div key={l.label} style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:T2 }}>
             <div className={l.blink?"blink-pending":""} style={{ width:10, height:10, borderRadius:3,
               background:l.bg, border:`1.5px solid ${l.border}` }} />
-            {l.label}
+            {t(l.label)}
           </div>
         ))}
       </div>
@@ -980,31 +980,31 @@ export default function TablesPage() {
           ))}
         </div>
         <div style={{ fontSize:10, color:T3, letterSpacing:2, textTransform:"uppercase",
-          textAlign:"center", padding:"10px 0 20px" }}>Window side</div>
+          textAlign:"center", padding:"10px 0 20px" }}>{t("Window side")}</div>
 
         {tables.length===0 ? (
           <div style={{ textAlign:"center", padding:"48px 20px", color:T3 }}>
             <div style={{ fontSize:36, marginBottom:10 }}>🪑</div>
-            <div style={{ fontSize:14, color:T2 }}>No tables yet</div>
+            <div style={{ fontSize:14, color:T2 }}>{t("No tables yet")}</div>
             <button onClick={()=>setShowModal(true)} style={{ marginTop:12, padding:"10px 24px",
               background:`linear-gradient(135deg,${PINK},#5b21b6)`, color:"#fff",
               border:"none", borderRadius:25, fontWeight:600, cursor:"pointer" }}>
-              + Add First Table
+              + {t("Add First Table")}
             </button>
           </div>
         ) : (
           <div style={{ display:"flex", flexWrap:"wrap", gap:40, justifyContent:"center", paddingBottom:28 }}>
-            {tables.sort((a,b)=>a.tableNo-b.tableNo).map(t => (
-              <TableCard key={t.tableNo}
-                config={{ id:t.tableNo, seats:t.seats }}
-                order={tableMap[t.tableNo]||null}
-                invoice={invoiceMap[t.tableNo]||null}
-                onClick={()=>setSelected(selected===t.tableNo?null:t.tableNo)}
-                isSelected={selected===t.tableNo}
-                tableStatus={t.status||"Active"}
+            {tables.sort((a,b)=>a.tableNo-b.tableNo).map(tb => (
+              <TableCard key={tb.tableNo}
+                config={{ id:tb.tableNo, seats:tb.seats }}
+                order={tableMap[tb.tableNo]||null}
+                invoice={invoiceMap[tb.tableNo]||null}
+                onClick={()=>setSelected(selected===tb.tableNo?null:tb.tableNo)}
+                isSelected={selected===tb.tableNo}
+                tableStatus={tb.status||"Active"}
                 onToggleStatus={handleToggleStatus}
                 onDelete={handleDelete}
-                onQR={()=>setQrTable(t)}
+                onQR={()=>setQrTable(tb)}
               />
             ))}
           </div>
@@ -1014,12 +1014,12 @@ export default function TablesPage() {
           background:`repeating-linear-gradient(90deg,${BORDER} 0,${BORDER} 8px,transparent 8px,transparent 16px)` }} />
         <div style={{ textAlign:"center" }}>
           <div style={{ fontSize:10, color:T3, letterSpacing:2, textTransform:"uppercase", marginBottom:8 }}>
-            Counter &amp; Entrance
+            {t("Counter & Entrance")}
           </div>
           <div style={{ width:40, height:6, background:"rgba(139,92,246,0.4)", borderRadius:3, margin:"0 auto" }} />
           <button onClick={handleTakeawayQR} className="qr-btn"
             style={{ margin:"14px auto 0", background:PINK_LIGHT, color:"#c4b5fd", borderColor:`${PINK}44` }}>
-            🛍️ Takeaway QR
+            🛍️ {t("Takeaway QR")}
           </button>
         </div>
       </div>
@@ -1040,34 +1040,34 @@ export default function TablesPage() {
       {showModal && (
         <div className="modal-overlay" onClick={()=>setShowModal(false)}>
           <div className="modal-box" style={{ width:380 }} onClick={e=>e.stopPropagation()}>
-            <div style={{ fontSize:18, fontWeight:700, color:T1, marginBottom:4 }}>Add New Table</div>
-            <div style={{ fontSize:13, color:T2, marginBottom:22 }}>A QR code will be generated automatically.</div>
+            <div style={{ fontSize:18, fontWeight:700, color:T1, marginBottom:4 }}>{t("Add New Table")}</div>
+            <div style={{ fontSize:13, color:T2, marginBottom:22 }}>{t("A QR code will be generated automatically.")}</div>
 
-            <label style={{ fontSize:12, color:T2, fontWeight:600, display:"block", marginBottom:6 }}>Table Number</label>
-            <input type="number" placeholder="e.g. 9" value={newTableNo}
+            <label style={{ fontSize:12, color:T2, fontWeight:600, display:"block", marginBottom:6 }}>{t("Table Number")}</label>
+            <input type="number" placeholder={t("e.g. 9")} value={newTableNo}
               onChange={e=>setNewTableNo(e.target.value)}
               className="input-dark" style={{ marginBottom:14 }} />
 
-            <label style={{ fontSize:12, color:T2, fontWeight:600, display:"block", marginBottom:6 }}>Seating Capacity</label>
+            <label style={{ fontSize:12, color:T2, fontWeight:600, display:"block", marginBottom:6 }}>{t("Seating Capacity")}</label>
             <select value={newSeats} onChange={e=>setNewSeats(e.target.value)}
               className="input-dark" style={{ marginBottom:20 }}>
-              <option value="2">2 Seats</option>
-              <option value="4">4 Seats</option>
-              <option value="6">6 Seats</option>
+              <option value="2">{t("{n} Seats", { n: 2 })}</option>
+              <option value="4">{t("{n} Seats", { n: 4 })}</option>
+              <option value="6">{t("{n} Seats", { n: 6 })}</option>
             </select>
 
             <div style={{ display:"flex", gap:10, alignItems:"flex-start", padding:"10px 14px",
               background:PINK_LIGHT, borderRadius:10, marginBottom:20, border:`1px solid ${PINK}22` }}>
               <span style={{ fontSize:20 }}>⬛</span>
               <div style={{ fontSize:12, color:"#c4b5fd", lineHeight:1.5 }}>
-                A unique QR code for <strong>Table {newTableNo||"?"}</strong> will be auto-generated.
+                {t("A unique QR code for Table {n} will be auto-generated.", { n: newTableNo || "?" })}
               </div>
             </div>
 
             <div style={{ display:"flex", gap:10 }}>
               <button onClick={()=>setShowModal(false)} className="btn-ghost-dark"
                 style={{ flex:1, padding:12, borderRadius:10, justifyContent:"center", display:"flex" }}>
-                Cancel
+                {t("Cancel")}
               </button>
               <button onClick={handleCreate} disabled={creating} style={{
                 flex:1, padding:12, borderRadius:10,
@@ -1075,7 +1075,7 @@ export default function TablesPage() {
                 color:"#fff", border:"none", fontWeight:700, cursor:"pointer", fontSize:14,
                 opacity:creating?.6:1, display:"flex", alignItems:"center", justifyContent:"center", gap:8,
               }}>
-                {creating ? <><span className="spinner" />Creating…</> : "Create + QR"}
+                {creating ? <><span className="spinner" />{t("Creating…")}</> : t("Create + QR")}
               </button>
             </div>
           </div>

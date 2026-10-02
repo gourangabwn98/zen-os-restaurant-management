@@ -136,6 +136,7 @@ const menuScheduleSchema = new mongoose.Schema({
 
 const categorySchema = new mongoose.Schema({
   name:     { type: String, required: true, unique: true, trim: true },
+  nameBn:   { type: String, default: "", trim: true, maxlength: 120 }, // optional Bengali name — display only
   image:    { type: String, default: "" },
   schedule: { type: menuScheduleSchema, default: () => ({}) },
 }, { timestamps: true });
@@ -149,6 +150,7 @@ const chefSchema = new mongoose.Schema({
 
 const menuItemSchema = new mongoose.Schema({
   name:          { type: String, required: true, trim: true },
+  nameBn:        { type: String, default: "", trim: true, maxlength: 120 }, // optional Bengali name (admin app bn mode)
   price:         { type: Number, required: true },
   originalPrice: { type: Number },
   description:   { type: String },
@@ -164,6 +166,7 @@ const menuItemSchema = new mongoose.Schema({
 const orderItemSchema = new mongoose.Schema({
   menuItem: { type: mongoose.Schema.Types.ObjectId, ref: "MenuItem", required: true },
   name:     { type: String, required: true },
+  nameBn:   { type: String, default: "" }, // snapshot of MenuItem.nameBn, like `name`
   price:    { type: Number, required: true },
   qty:      { type: Number, required: true, min: 1 },
   notes:    { type: String, default: "" },
@@ -396,7 +399,7 @@ const kotJobSchema = new mongoose.Schema({
   orderId:    { type: String },
   tableNo:    { type: Number, default: null },
   orderType:  { type: String, enum: ORDER_TYPES },
-  items:      [{ name: String, qty: Number, notes: String }],
+  items:      [{ name: String, nameBn: String, qty: Number, notes: String }],
   // Optional — lets a staff-placed order flag its KOT as urgent, so the
   // Kitchen Display can play a distinct, stronger alert tone for it.
   // Never settable by a customer/guest (see services/orderService.js).
@@ -463,6 +466,7 @@ const supplierSchema = new mongoose.Schema({
 
 const inventoryItemSchema = new mongoose.Schema({
   name:           { type: String, required: true, trim: true },
+  nameBn:         { type: String, default: "", trim: true, maxlength: 120 }, // optional Bengali name — display only
   unit:           { type: String, enum: STOCK_UNITS, required: true },
   category:       { type: String, default: "" },
   currentStock:   { type: Number, default: 0, min: 0 },

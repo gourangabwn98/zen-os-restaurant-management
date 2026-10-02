@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSpeechRecognition } from "../../../hooks/useSpeechRecognition.js";
 import { suggestFromTranscript } from "../../../utils/voiceOrder.js";
+import { t, tn, fmtNum, localName } from "../../../i18n/core.js";
 
 export default function VoiceOrder({ menu, onAdd, onSearch }) {
   const { supported, listening, transcript, interim, error, start, stop, reset } = useSpeechRecognition({ lang: "en-IN" });
@@ -42,7 +43,7 @@ export default function VoiceOrder({ menu, onAdd, onSearch }) {
   if (!supported) {
     return (
       <button type="button" className="zc-btn ghost sm" disabled
-        title="Voice ordering needs Chrome or Edge (and the site opened over https)">🎤</button>
+        title={t("Voice ordering needs Chrome or Edge (and the site opened over https)")}>🎤</button>
     );
   }
 
@@ -63,33 +64,33 @@ export default function VoiceOrder({ menu, onAdd, onSearch }) {
       <button type="button" onClick={listening ? stop : listen}
         className={`zc-btn sm${listening ? " danger" : ""}`}
         aria-pressed={listening}
-        aria-label={listening ? "Stop listening" : "Speak the order"}
-        title={listening ? "Stop listening" : "Speak the order — e.g. “2 chicken biryani and 1 cold coffee”"}
+        aria-label={listening ? t("Stop listening") : t("Speak the order")}
+        title={listening ? t("Stop listening") : t("Speak the order — e.g. “2 chicken biryani and 1 cold coffee”")}
         style={{ minWidth: 38, justifyContent: "center", ...(listening ? { boxShadow: "0 0 0 4px var(--stop-fill)" } : null) }}>
         {listening ? "■" : "🎤"}
       </button>
 
       {open && (
-        <div role="dialog" aria-label="Voice order" style={{
+        <div role="dialog" aria-label={t("Voice order")} style={{
           position: "absolute", right: 0, top: "calc(100% + 8px)", zIndex: 1300, width: 420, maxWidth: "88vw",
           background: "var(--surface)", border: "1px solid var(--edge-hi)", borderRadius: 14,
           boxShadow: "var(--shadow-pop)", padding: 14,
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-            <b style={{ fontSize: 13, color: "var(--text-1)", flex: 1 }}>🎤 Voice order</b>
-            <button type="button" className="zc-x" onClick={close} aria-label="Close">✕</button>
+            <b style={{ fontSize: 13, color: "var(--text-1)", flex: 1 }}>🎤 {t("Voice order")}</b>
+            <button type="button" className="zc-x" onClick={close} aria-label={t("Close")}>✕</button>
           </div>
 
           {listening && (
             <div aria-live="polite" style={{ fontSize: 12.5, color: "var(--text-2)", marginBottom: 8 }}>
-              <span style={{ color: "var(--stop-ink)", fontWeight: 700 }}>● Listening…</span>{" "}
-              {interim || transcript || "say e.g. “2 chicken biryani and 1 cold coffee”"}
+              <span style={{ color: "var(--stop-ink)", fontWeight: 700 }}>● {t("Listening…")}</span>{" "}
+              {interim || transcript || t("say e.g. “2 chicken biryani and 1 cold coffee”")}
             </div>
           )}
           {error && <div role="alert" style={{ fontSize: 12, color: "var(--stop-ink)", marginBottom: 8 }}>{error}</div>}
 
           {!listening && transcript && (
-            <div style={{ fontSize: 11.5, color: "var(--text-3)", marginBottom: 10 }}>Heard: “{transcript}”</div>
+            <div style={{ fontSize: 11.5, color: "var(--text-3)", marginBottom: 10 }}>{t("Heard:")} “{transcript}”</div>
           )}
 
           {!listening && rows.length > 0 && (
@@ -101,27 +102,27 @@ export default function VoiceOrder({ menu, onAdd, onSearch }) {
                 }}>
                   {r.matches.length ? (
                     <>
-                      <input type="checkbox" checked={r.include} aria-label={`Include ${r.phrase}`}
+                      <input type="checkbox" checked={r.include} aria-label={t("Include {phrase}", { phrase: r.phrase })}
                         onChange={(e) => update(r.key, { include: e.target.checked })} />
-                      <button type="button" className="zc-btn sm" aria-label="Less" disabled={r.qty <= 1}
+                      <button type="button" className="zc-btn sm" aria-label={t("Less")} disabled={r.qty <= 1}
                         onClick={() => update(r.key, { qty: r.qty - 1 })}>−</button>
-                      <span className="tnum" style={{ minWidth: 18, textAlign: "center", fontWeight: 700 }}>{r.qty}</span>
-                      <button type="button" className="zc-btn sm" aria-label="More" disabled={r.qty >= 99}
+                      <span className="tnum" style={{ minWidth: 18, textAlign: "center", fontWeight: 700 }}>{fmtNum(r.qty)}</span>
+                      <button type="button" className="zc-btn sm" aria-label={t("More")} disabled={r.qty >= 99}
                         onClick={() => update(r.key, { qty: r.qty + 1 })}>＋</button>
-                      <select className="zc-select" value={r.pick} aria-label={`Menu item for “${r.phrase}”`}
+                      <select className="zc-select" value={r.pick} aria-label={t("Menu item for “{phrase}”", { phrase: r.phrase })}
                         onChange={(e) => update(r.key, { pick: e.target.value, include: true })}
                         style={{ flex: 1, minWidth: 0, fontSize: 12.5 }}>
                         {r.matches.map((m) => (
-                          <option key={m.item._id} value={m.item._id}>{m.item.name} · ₹{m.item.price}</option>
+                          <option key={m.item._id} value={m.item._id}>{localName(m.item)} · ₹{fmtNum(m.item.price)}</option>
                         ))}
                       </select>
                     </>
                   ) : (
                     <>
                       <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: "var(--text-2)" }}>
-                        No menu match for “{r.phrase}”
+                        {t("No menu match for “{phrase}”", { phrase: r.phrase })}
                       </span>
-                      <button type="button" className="zc-btn ghost sm" onClick={() => { onSearch(r.phrase); close(); }}>Search</button>
+                      <button type="button" className="zc-btn ghost sm" onClick={() => { onSearch(r.phrase); close(); }}>{t("Search")}</button>
                     </>
                   )}
                 </div>
@@ -130,15 +131,15 @@ export default function VoiceOrder({ menu, onAdd, onSearch }) {
           )}
 
           {!listening && transcript && rows.length === 0 && (
-            <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>Couldn&rsquo;t pick out any items — try again.</div>
+            <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>{t("Couldn’t pick out any items — try again.")}</div>
           )}
 
           {!listening && (
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-              <button type="button" className="zc-btn" onClick={listen}>🎤 Speak again</button>
+              <button type="button" className="zc-btn" onClick={listen}>🎤 {t("Speak again")}</button>
               <button type="button" className="zc-btn pri" style={{ flex: 1, justifyContent: "center" }}
                 disabled={!toAdd.length} onClick={addAll}>
-                Add {toAdd.reduce((s, x) => s + x.qty, 0) || ""} item{toAdd.reduce((s, x) => s + x.qty, 0) === 1 ? "" : "s"}
+                {toAdd.length ? tn(toAdd.reduce((s, x) => s + x.qty, 0), "Add {n} item", "Add {n} items") : t("Add items")}
               </button>
             </div>
           )}

@@ -4,6 +4,7 @@
 // The eight tabs and every inventory API call are unchanged.
 import { useState } from "react";
 import PageHeader from "./shared/PageHeader.jsx";
+import { t, N_ } from "../../i18n/core.js";
 import InventoryOverview from "./inventory/InventoryOverview.jsx";
 import StockItemsTab from "./inventory/StockItemsTab.jsx";
 import PurchasesTab from "./inventory/PurchasesTab.jsx";
@@ -78,14 +79,14 @@ if (typeof document !== "undefined" && !document.getElementById("inventory-page-
 }
 
 const SECTIONS = [
-  { id: "overview",  label: "Overview",   icon: "📊" },
-  { id: "items",     label: "Stock items", icon: "📦" },
-  { id: "purchases", label: "Purchases",  icon: "🧾" },
-  { id: "movements", label: "Movements",  icon: "📒" },
-  { id: "lowstock",  label: "Low stock",  icon: "⚠️" },
-  { id: "wastage",   label: "Wastage",    icon: "🗑️" },
-  { id: "recipes",   label: "Recipes",    icon: "🍳" },
-  { id: "suppliers", label: "Suppliers",  icon: "🚚" },
+  { id: "overview",  label: N_("Overview"),   icon: "📊" },
+  { id: "items",     label: N_("Stock items"), icon: "📦" },
+  { id: "purchases", label: N_("Purchases"),  icon: "🧾" },
+  { id: "movements", label: N_("Movements"),  icon: "📒" },
+  { id: "lowstock",  label: N_("Low stock"),  icon: "⚠️" },
+  { id: "wastage",   label: N_("Wastage"),    icon: "🗑️" },
+  { id: "recipes",   label: N_("Recipes"),    icon: "🍳" },
+  { id: "suppliers", label: N_("Suppliers"),  icon: "🚚" },
 ];
 
 export default function InventoryPage() {
@@ -94,11 +95,11 @@ export default function InventoryPage() {
   return (
     <div>
       <PageHeader
-        title="Inventory"
-        sub="Stock items, purchases, recipes, wastage and the stock-movement ledger for this restaurant"
+        title={t("Inventory")}
+        sub={t("Stock items, purchases, recipes, wastage and the stock-movement ledger for this restaurant")}
       />
 
-      <div className="zc-subnav" role="tablist" aria-label="Inventory sections">
+      <div className="zc-subnav" role="tablist" aria-label={t("Inventory sections")}>
         {SECTIONS.map((s) => (
           <button
             key={s.id}
@@ -108,7 +109,7 @@ export default function InventoryPage() {
             className={section === s.id ? "on" : ""}
             onClick={() => setSection(s.id)}
           >
-            <span aria-hidden="true">{s.icon}</span> {s.label}
+            <span aria-hidden="true">{s.icon}</span> {t(s.label)}
           </button>
         ))}
       </div>

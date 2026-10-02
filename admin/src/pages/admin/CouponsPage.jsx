@@ -19,6 +19,7 @@ import PageHeader from "./shared/PageHeader.jsx";
 import {
   getAllCoupons, createCoupon, updateCoupon, deleteCoupon,
 } from "../../services/couponService.js";
+import { t, N_, fmtNum, fmtDate } from "../../i18n/core.js";
 
 // Mirrors the server rule (couponService.normalizeCouponCode).
 const COUPON_RE = /^[A-Z0-9_-]{3,20}$/;
@@ -30,7 +31,7 @@ const toDateInput = (d) => (d ? `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${p
  * that day — both in the admin's local time, sent to the server as ISO. */
 const startOfDay = (v) => (v ? new Date(`${v}T00:00:00`) : null);
 const endOfDay = (v) => (v ? new Date(`${v}T23:59:59.999`) : null);
-const fmtDay = (d) => new Date(d).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
+const fmtDay = (d) => fmtDate(d, { day: "numeric", month: "short", year: "numeric" });
 
 const EMPTY = {
   code: "", title: "", description: "", discountType: "PERCENT", discountValue: "",
@@ -39,31 +40,31 @@ const EMPTY = {
 };
 
 const AUDIENCE = {
-  ALL:        { label: "All customers",   hint: "Registered and guest customers both see it in the coupon list." },
-  REGISTERED: { label: "Registered users", hint: "Only logged-in customers see and can use it. Guests are told to log in." },
-  GUEST:      { label: "Guests only",     hint: "Only customers ordering without logging in see and can use it." },
+  ALL:        { label: N_("All customers"),   hint: N_("Registered and guest customers both see it in the coupon list.") },
+  REGISTERED: { label: N_("Registered users"), hint: N_("Only logged-in customers see and can use it. Guests are told to log in.") },
+  GUEST:      { label: N_("Guests only"),     hint: N_("Only customers ordering without logging in see and can use it.") },
 };
 
 const NOTIFY_TAG = {
-  SCHEDULED: { cls: "vio",   label: (n) => `🔔 Sends ${fmtDay(n.startsAt)}` },
-  SENDING:   { cls: "live",  label: () => "🔔 Sending" },
-  SENT:      { cls: "ready", label: (n) => `🔔 Sent ${fmtDay(n.sentAt || n.startsAt)}` },
-  FAILED:    { cls: "stop",  label: () => "🔔 Failed" },
-  CANCELLED: { cls: "done",  label: () => "🔔 Cancelled" },
+  SCHEDULED: { cls: "vio",   label: (n) => `🔔 ${t("Sends {date}", { date: fmtDay(n.startsAt) })}` },
+  SENDING:   { cls: "live",  label: () => `🔔 ${t("Sending")}` },
+  SENT:      { cls: "ready", label: (n) => `🔔 ${t("Sent {date}", { date: fmtDay(n.sentAt || n.startsAt) })}` },
+  FAILED:    { cls: "stop",  label: () => `🔔 ${t("Failed")}` },
+  CANCELLED: { cls: "done",  label: () => `🔔 ${t("Cancelled")}` },
 };
 
 /** Where a coupon is in its life right now. */
 const stateOf = (c, now) => {
-  if (!c.isActive) return { cls: "done", label: "Paused" };
-  if (now < new Date(c.startsAt).getTime()) return { cls: "vio", label: "Upcoming" };
-  if (now > new Date(c.endsAt).getTime()) return { cls: "stop", label: "Expired" };
-  return { cls: "ready", label: "Live" };
+  if (!c.isActive) return { cls: "done", label: N_("Paused") };
+  if (now < new Date(c.startsAt).getTime()) return { cls: "vio", label: N_("Upcoming") };
+  if (now > new Date(c.endsAt).getTime()) return { cls: "stop", label: N_("Expired") };
+  return { cls: "ready", label: N_("Live") };
 };
 
 const describeDiscount = (c) =>
   c.discountType === "PERCENT"
-    ? `${c.discountValue}% off${c.maxDiscount ? ` (up to ₹${c.maxDiscount})` : ""}`
-    : `₹${c.discountValue} off`;
+    ? `${t("{pct}% off", { pct: c.discountValue })}${c.maxDiscount ? ` (${t("up to ₹{amount}", { amount: fmtNum(c.maxDiscount) })})` : ""}`
+    : t("₹{amount} off", { amount: fmtNum(c.discountValue) });
 
 export default function CouponsPage() {
   const [coupons, setCoupons] = useState(null);
@@ -75,7 +76,7 @@ export default function CouponsPage() {
   const load = useCallback(() => {
     getAllCoupons()
       .then(({ data }) => setCoupons(data.coupons || []))
-      .catch(() => { setCoupons([]); toast.error("Couldn't load coupons"); });
+      .catch(() => { setCoupons([]); toast.error(t("Couldn't load coupons")); });
   }, []);
   useEffect(() => { load(); }, [load]);
   // Keep Live/Upcoming/Expired labels current while the page stays open.
@@ -96,11 +97,11 @@ export default function CouponsPage() {
   const isPercent = form.discountType === "PERCENT";
   const value = Number(form.discountValue);
   const errors = {
-    code: form.code && !COUPON_RE.test(form.code) ? "3–20 characters: letters, numbers, - or _" : "",
+    code: form.code && !COUPON_RE.test(form.code) ? t("3–20 characters: letters, numbers, - or _") : "",
     value: form.discountValue === "" ? ""
-      : isPercent && !(value >= 1 && value <= 100) ? "Enter a % from 1 to 100"
-      : !isPercent && !(value >= 1) ? "Enter an amount of at least ₹1" : "",
-    dates: form.start && form.end && form.end < form.start ? "End date must be on or after the start date" : "",
+      : isPercent && !(value >= 1 && value <= 100) ? t("Enter a % from 1 to 100")
+      : !isPercent && !(value >= 1) ? t("Enter an amount of at least ₹1") : "",
+    dates: form.start && form.end && form.end < form.start ? t("End date must be on or after the start date") : "",
   };
   const canSave = form.code && form.title.trim() && form.discountValue !== "" && form.start && form.end
     && !errors.code && !errors.value && !errors.dates && !saving;
@@ -135,14 +136,14 @@ export default function CouponsPage() {
       const { data } = editingId ? await updateCoupon(editingId, payload) : await createCoupon(payload);
       const n = data?.coupon?.notification;
       toast.success(
-        (editingId ? "Coupon updated" : "Coupon created")
-        + (n?.status === "SCHEDULED" ? ` — notification will be sent on ${fmtDay(n.startsAt)}` : n?.status === "SENT" && !alreadySent ? " — notification sent" : ""),
+        (editingId ? t("Coupon updated") : t("Coupon created"))
+        + (n?.status === "SCHEDULED" ? ` — ${t("notification will be sent on {date}", { date: fmtDay(n.startsAt) })}` : n?.status === "SENT" && !alreadySent ? ` — ${t("notification sent")}` : ""),
       );
       if (data?.warning) toast(data.warning, { icon: "⚠️", duration: 6000 });
       reset();
       load();
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Couldn't save the coupon");
+      toast.error(err?.response?.data?.message || t("Couldn't save the coupon"));
     } finally {
       setSaving(false);
     }
@@ -151,142 +152,142 @@ export default function CouponsPage() {
   const togglePause = async (c) => {
     try {
       await updateCoupon(c._id, { isActive: !c.isActive });
-      toast.success(c.isActive ? `${c.code} paused` : `${c.code} resumed`);
+      toast.success(c.isActive ? t("{code} paused", { code: c.code }) : t("{code} resumed", { code: c.code }));
       load();
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Couldn't update the coupon");
+      toast.error(err?.response?.data?.message || t("Couldn't update the coupon"));
     }
   };
 
   const handleDelete = async (c) => {
-    if (!window.confirm(`Delete coupon ${c.code}? Orders already placed with it keep their discount.`)) return;
+    if (!window.confirm(t("Delete coupon {code}? Orders already placed with it keep their discount.", { code: c.code }))) return;
     try {
       await deleteCoupon(c._id);
-      toast.success("Coupon deleted");
+      toast.success(t("Coupon deleted"));
       if (editingId === c._id) reset();
       load();
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Couldn't delete the coupon");
+      toast.error(err?.response?.data?.message || t("Couldn't delete the coupon"));
     }
   };
 
   const labelStyle = { display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-2)", marginBottom: 6 };
   const hintStyle = (bad) => ({ fontSize: 11.5, marginTop: 5, color: bad ? "var(--danger, #d33)" : "var(--text-3)" });
-  const opt = <span style={{ fontWeight: 400, color: "var(--text-3)" }}>(optional)</span>;
+  const opt = <span style={{ fontWeight: 400, color: "var(--text-3)" }}>({t("optional")})</span>;
   const field = { flex: "1 1 200px", maxWidth: 260 };
   const live = (coupons || []).filter((c) => stateOf(c, now).label === "Live").length;
 
   return (
     <div>
-      <PageHeader title="Coupons" sub="Discount codes customers apply in their cart — shown only between the start and end date, to all customers, registered users or guests" />
+      <PageHeader title={t("Coupons")} sub={t("Discount codes customers apply in their cart — shown only between the start and end date, to all customers, registered users or guests")} />
 
       <div className="zc-card" style={{ marginBottom: 20 }}>
         <div className="zc-card-h">
-          <span className="t">{editingId ? `Edit coupon ${form.code}` : "Create a coupon"}</span>
-          {editingId && <button type="button" className="zc-btn ghost sm" onClick={reset}>Cancel editing</button>}
+          <span className="t">{editingId ? t("Edit coupon {code}", { code: form.code }) : t("Create a coupon")}</span>
+          {editingId && <button type="button" className="zc-btn ghost sm" onClick={reset}>{t("Cancel editing")}</button>}
         </div>
         <div className="zc-card-b" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
             <div style={field}>
-              <label htmlFor="cp-code" style={labelStyle}>Coupon code</label>
+              <label htmlFor="cp-code" style={labelStyle}>{t("Coupon code")}</label>
               <input
-                id="cp-code" className="zc-input" placeholder="e.g. PUJA20" value={form.code} maxLength={20}
+                id="cp-code" className="zc-input" placeholder={t("e.g. PUJA20")} value={form.code} maxLength={20}
                 autoComplete="off" spellCheck={false} aria-invalid={!!errors.code}
                 style={{ textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600 }}
                 onChange={(e) => setForm((f) => ({ ...f, code: e.target.value.toUpperCase().replace(/\s/g, "") }))}
               />
-              <div style={hintStyle(!!errors.code)}>{errors.code || "What the customer types or taps to apply."}</div>
+              <div style={hintStyle(!!errors.code)}>{errors.code || t("What the customer types or taps to apply.")}</div>
             </div>
             <div style={{ flex: "2 1 280px" }}>
-              <label htmlFor="cp-title" style={labelStyle}>Title</label>
-              <input id="cp-title" className="zc-input" placeholder="e.g. Puja offer" value={form.title} maxLength={60} onChange={set("title")} />
+              <label htmlFor="cp-title" style={labelStyle}>{t("Title")}</label>
+              <input id="cp-title" className="zc-input" placeholder={t("e.g. Puja offer")} value={form.title} maxLength={60} onChange={set("title")} />
             </div>
           </div>
 
           <div>
-            <label htmlFor="cp-desc" style={labelStyle}>Description {opt}</label>
-            <input id="cp-desc" className="zc-input" placeholder="e.g. Celebrate Puja with 20% off your meal" value={form.description} maxLength={200} onChange={set("description")} />
+            <label htmlFor="cp-desc" style={labelStyle}>{t("Description")} {opt}</label>
+            <input id="cp-desc" className="zc-input" placeholder={t("e.g. Celebrate Puja with 20% off your meal")} value={form.description} maxLength={200} onChange={set("description")} />
           </div>
 
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
             <div style={field}>
-              <label htmlFor="cp-type" style={labelStyle}>Discount type</label>
+              <label htmlFor="cp-type" style={labelStyle}>{t("Discount type")}</label>
               <select id="cp-type" className="zc-select" value={form.discountType} onChange={set("discountType")} style={{ width: "100%" }}>
-                <option value="PERCENT">Percentage (%)</option>
-                <option value="FLAT">Flat amount (₹)</option>
+                <option value="PERCENT">{t("Percentage (%)")}</option>
+                <option value="FLAT">{t("Flat amount (₹)")}</option>
               </select>
             </div>
             <div style={field}>
-              <label htmlFor="cp-value" style={labelStyle}>{isPercent ? "Discount %" : "Discount ₹"}</label>
+              <label htmlFor="cp-value" style={labelStyle}>{isPercent ? t("Discount %") : t("Discount ₹")}</label>
               <input
                 id="cp-value" type="number" inputMode="numeric" min={1} max={isPercent ? 100 : undefined}
-                className="zc-input" placeholder={isPercent ? "e.g. 20" : "e.g. 50"} value={form.discountValue}
+                className="zc-input" placeholder={isPercent ? t("e.g. 20") : t("e.g. 50")} value={form.discountValue}
                 aria-invalid={!!errors.value} onChange={set("discountValue")}
               />
               {errors.value && <div style={hintStyle(true)}>{errors.value}</div>}
             </div>
             {isPercent && (
               <div style={field}>
-                <label htmlFor="cp-max" style={labelStyle}>Max discount ₹ {opt}</label>
-                <input id="cp-max" type="number" inputMode="numeric" min={1} className="zc-input" placeholder="No limit" value={form.maxDiscount} onChange={set("maxDiscount")} />
+                <label htmlFor="cp-max" style={labelStyle}>{t("Max discount ₹")} {opt}</label>
+                <input id="cp-max" type="number" inputMode="numeric" min={1} className="zc-input" placeholder={t("No limit")} value={form.maxDiscount} onChange={set("maxDiscount")} />
               </div>
             )}
             <div style={field}>
-              <label htmlFor="cp-min" style={labelStyle}>Minimum order ₹ {opt}</label>
-              <input id="cp-min" type="number" inputMode="numeric" min={0} className="zc-input" placeholder="No minimum" value={form.minOrderAmount} onChange={set("minOrderAmount")} />
-              <div style={hintStyle(false)}>On the item total, before GST.</div>
+              <label htmlFor="cp-min" style={labelStyle}>{t("Minimum order ₹")} {opt}</label>
+              <input id="cp-min" type="number" inputMode="numeric" min={0} className="zc-input" placeholder={t("No minimum")} value={form.minOrderAmount} onChange={set("minOrderAmount")} />
+              <div style={hintStyle(false)}>{t("On the item total, before GST.")}</div>
             </div>
           </div>
 
           <div>
-            <span style={labelStyle}>Who can use it</span>
-            <div role="radiogroup" aria-label="Who can use this coupon" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <span style={labelStyle}>{t("Who can use it")}</span>
+            <div role="radiogroup" aria-label={t("Who can use this coupon")} style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {Object.entries(AUDIENCE).map(([key, a]) => (
                 <button
                   key={key} type="button" role="radio" aria-checked={form.audience === key}
                   className={`zc-btn sm${form.audience === key ? " pri" : ""}`} onClick={() => setAudience(key)}
                 >
-                  {a.label}
+                  {t(a.label)}
                 </button>
               ))}
             </div>
-            <div style={hintStyle(false)}>{AUDIENCE[form.audience].hint}</div>
+            <div style={hintStyle(false)}>{t(AUDIENCE[form.audience].hint)}</div>
           </div>
 
           {form.audience !== "GUEST" && (
             <div>
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: alreadySent ? "default" : "pointer" }}>
                 <input type="checkbox" checked={alreadySent || form.notify} disabled={alreadySent} onChange={set("notify")} />
-                🔔 Send a notification to registered customers' phones
+                🔔 {t("Send a notification to registered customers' phones")}
               </label>
               <div style={hintStyle(false)}>
                 {alreadySent
-                  ? "Already sent — it can't be recalled or sent twice. Use Notifications to send another message."
-                  : "Goes out automatically on the start date to customers who turned on offer notifications, and appears in their Notifications list with an “Apply in cart” button."}
+                  ? t("Already sent — it can't be recalled or sent twice. Use Notifications to send another message.")
+                  : t("Goes out automatically on the start date to customers who turned on offer notifications, and appears in their Notifications list with an “Apply in cart” button.")}
               </div>
             </div>
           )}
 
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
             <div style={field}>
-              <label htmlFor="cp-start" style={labelStyle}>Start date</label>
+              <label htmlFor="cp-start" style={labelStyle}>{t("Start date")}</label>
               <input id="cp-start" type="date" className="zc-input" value={form.start} onChange={set("start")} />
-              <div style={hintStyle(false)}>Customers see it from 12:00 AM this day.</div>
+              <div style={hintStyle(false)}>{t("Customers see it from 12:00 AM this day.")}</div>
             </div>
             <div style={field}>
-              <label htmlFor="cp-end" style={labelStyle}>End date</label>
+              <label htmlFor="cp-end" style={labelStyle}>{t("End date")}</label>
               <input id="cp-end" type="date" className="zc-input" value={form.end} min={form.start || undefined} aria-invalid={!!errors.dates} onChange={set("end")} />
-              <div style={hintStyle(!!errors.dates)}>{errors.dates || "…until 11:59 PM this day."}</div>
+              <div style={hintStyle(!!errors.dates)}>{errors.dates || t("…until 11:59 PM this day.")}</div>
             </div>
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginTop: 28, cursor: "pointer" }}>
               <input type="checkbox" checked={form.isActive} onChange={set("isActive")} />
-              Active (untick to pause)
+              {t("Active (untick to pause)")}
             </label>
           </div>
 
           <div>
             <button type="button" className="zc-btn pri" disabled={!canSave} onClick={handleSave}>
-              {saving ? "Saving…" : editingId ? "Save changes" : "🎟️ Create coupon"}
+              {saving ? t("Saving…") : editingId ? t("Save changes") : `🎟️ ${t("Create coupon")}`}
             </button>
           </div>
         </div>
@@ -294,26 +295,26 @@ export default function CouponsPage() {
 
       <div className="zc-card">
         <div className="zc-card-h">
-          <span className="t">All coupons</span>
-          <span className="s">{live} live now</span>
+          <span className="t">{t("All coupons")}</span>
+          <span className="s">{t("{n} live now", { n: live })}</span>
         </div>
         <div className="zc-card-b" style={{ padding: 0 }}>
           {coupons === null ? (
-            <div style={{ padding: 20, textAlign: "center", color: "var(--text-3)", fontSize: 13 }}>Loading…</div>
+            <div style={{ padding: 20, textAlign: "center", color: "var(--text-3)", fontSize: 13 }}>{t("Loading…")}</div>
           ) : coupons.length === 0 ? (
-            <div style={{ padding: 20, textAlign: "center", color: "var(--text-3)", fontSize: 13 }}>No coupons yet</div>
+            <div style={{ padding: 20, textAlign: "center", color: "var(--text-3)", fontSize: 13 }}>{t("No coupons yet")}</div>
           ) : (
             <div style={{ overflowX: "auto" }}>
               <table className="zc-ledger" style={{ minWidth: 1050 }}>
                 <thead>
                   <tr>
-                    <th style={{ width: 100 }}>Status</th>
-                    <th style={{ width: 120 }}>Code</th>
-                    <th>Title</th>
-                    <th style={{ width: 150 }}>Who</th>
-                    <th style={{ width: 170 }}>Discount</th>
-                    <th style={{ width: 100 }}>Min order</th>
-                    <th style={{ width: 210 }}>Valid</th>
+                    <th style={{ width: 100 }}>{t("Status")}</th>
+                    <th style={{ width: 120 }}>{t("Code")}</th>
+                    <th>{t("Title")}</th>
+                    <th style={{ width: 150 }}>{t("Who")}</th>
+                    <th style={{ width: 170 }}>{t("Discount")}</th>
+                    <th style={{ width: 100 }}>{t("Min order")}</th>
+                    <th style={{ width: 210 }}>{t("Valid")}</th>
                     <th style={{ width: 200 }}></th>
                   </tr>
                 </thead>
@@ -322,14 +323,14 @@ export default function CouponsPage() {
                     const st = stateOf(c, now);
                     return (
                       <tr key={c._id}>
-                        <td><span className={`zc-tag ${st.cls}`}><i />{st.label}</span></td>
+                        <td><span className={`zc-tag ${st.cls}`}><i />{t(st.label)}</span></td>
                         <td style={{ fontWeight: 700, letterSpacing: ".04em" }}>{c.code}</td>
                         <td>
                           {c.title}
                           {c.description && <div style={{ fontSize: 11.5, color: "var(--text-3)", marginTop: 2 }}>{c.description}</div>}
                         </td>
                         <td>
-                          {AUDIENCE[c.audience || "ALL"].label}
+                          {t(AUDIENCE[c.audience || "ALL"].label)}
                           {c.notification && NOTIFY_TAG[c.notification.status] && (
                             <div style={{ marginTop: 4 }}>
                               <span className={`zc-tag ${NOTIFY_TAG[c.notification.status].cls}`} title={c.notification.error || undefined}>
@@ -339,13 +340,13 @@ export default function CouponsPage() {
                           )}
                         </td>
                         <td>{describeDiscount(c)}</td>
-                        <td>{c.minOrderAmount ? `₹${c.minOrderAmount}` : "—"}</td>
+                        <td>{c.minOrderAmount ? `₹${fmtNum(c.minOrderAmount)}` : "—"}</td>
                         <td>{fmtDay(c.startsAt)} – {fmtDay(c.endsAt)}</td>
                         <td>
                           <div style={{ display: "flex", gap: 6 }}>
-                            <button type="button" className="zc-btn sm" onClick={() => startEdit(c)}>Edit</button>
-                            <button type="button" className="zc-btn sm" onClick={() => togglePause(c)}>{c.isActive ? "Pause" : "Resume"}</button>
-                            <button type="button" className="zc-btn ghost sm" onClick={() => handleDelete(c)}>Delete</button>
+                            <button type="button" className="zc-btn sm" onClick={() => startEdit(c)}>{t("Edit")}</button>
+                            <button type="button" className="zc-btn sm" onClick={() => togglePause(c)}>{c.isActive ? t("Pause") : t("Resume")}</button>
+                            <button type="button" className="zc-btn ghost sm" onClick={() => handleDelete(c)}>{t("Delete")}</button>
                           </div>
                         </td>
                       </tr>

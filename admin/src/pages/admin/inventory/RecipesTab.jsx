@@ -7,10 +7,11 @@ import {
 } from "./invUI.jsx";
 import { inp, label } from "./invKit.js";
 import {
-  UNITS, compatibleUnits, preferredRecipeUnit, ingredientCost, formatMoney, formatUnitCost, formatQty,
+  UNITS, compatibleUnits, preferredRecipeUnit, ingredientCost, formatMoney, formatUnitCost, formatQty, unitLabel,
 } from "../../../utils/units.js";
+import { t, tn, N_, fmtNum, localName } from "../../../i18n/core.js";
 
-const SEG = [["All", "All"], ["tracked", "Tracked"], ["untracked", "Not tracked"]];
+const SEG = [["All", N_("All")], ["tracked", N_("Tracked")], ["untracked", N_("Not tracked")]];
 
 let uid = 0;
 const stockLine  = () => ({ key: ++uid, sourceType: "STOCK",  inventoryItem: "", name: "", quantity: "", unit: "", cost: "" });
@@ -58,21 +59,21 @@ const lineErrors = (lines, stockById) => {
     const e = [];
     const qty = Number(l.quantity);
     if (l.sourceType === "STOCK") {
-      if (!l.inventoryItem) e.push("Choose a stock item");
-      else if (seenStock.has(l.inventoryItem)) e.push("Already in this recipe — combine the lines");
+      if (!l.inventoryItem) e.push(t("Choose a stock item"));
+      else if (seenStock.has(l.inventoryItem)) e.push(t("Already in this recipe — combine the lines"));
       else seenStock.set(l.inventoryItem, l.key);
     } else {
       const name = l.name.trim().toLowerCase();
-      if (!name) e.push("Enter a name");
-      else if (seenCustom.has(name)) e.push("Already in this recipe — combine the lines");
+      if (!name) e.push(t("Enter a name"));
+      else if (seenCustom.has(name)) e.push(t("Already in this recipe — combine the lines"));
       else if ([...stockById.values()].some((s) => s.status === "Active" && s.name.trim().toLowerCase() === name)) {
-        e.push("This is a stock item — switch the type to Stock so it's deducted");
+        e.push(t("This is a stock item — switch the type to Stock so it's deducted"));
       } else seenCustom.set(name, l.key);
     }
-    if (l.quantity === "" || !Number.isFinite(qty)) e.push("Enter a quantity");
-    else if (qty <= 0) e.push("Quantity must be more than 0");
+    if (l.quantity === "" || !Number.isFinite(qty)) e.push(t("Enter a quantity"));
+    else if (qty <= 0) e.push(t("Quantity must be more than 0"));
     const c = ingredientCost(l, stockById.get(l.inventoryItem));
-    if (c.error && !/No cost price/.test(c.error)) e.push(c.error);
+    if (c.error && !c.costMissing) e.push(c.error);
     if (e.length) errs.set(l.key, e);
   });
   return errs;
@@ -171,9 +172,9 @@ export default function RecipesTab() {
 
   const handleSave = async () => {
     setShowErrors(true);
-    if (!menuItemId) return toast.error("Select a menu item");
-    if (!lines.length) return toast.error("Add at least one ingredient");
-    if (errors.size) return toast.error("Fix the highlighted ingredients first");
+    if (!menuItemId) return toast.error(t("Select a menu item"));
+    if (!lines.length) return toast.error(t("Add at least one ingredient"));
+    if (errors.size) return toast.error(t("Fix the highlighted ingredients first"));
     setSaving(true);
     try {
       await saveRecipe({
@@ -182,17 +183,17 @@ export default function RecipesTab() {
           ? { sourceType: "STOCK", inventoryItem: l.inventoryItem, quantity: Number(l.quantity), unit: l.unit }
           : { sourceType: "CUSTOM", name: l.name.trim(), quantity: Number(l.quantity), unit: l.unit, cost: Number(l.cost) })),
       });
-      toast.success(`Recipe saved · making cost ${formatMoney(summary.total)}`);
+      toast.success(t("Recipe saved · making cost {amount}", { amount: formatMoney(summary.total) }));
       setShowForm(false);
       load();
-    } catch (err) { toast.error(err.response?.data?.message || "Failed to save recipe"); }
+    } catch (err) { toast.error(err.response?.data?.message || t("Failed to save recipe")); }
     finally { setSaving(false); }
   };
 
   const handleDelete = async (recipe) => {
-    if (!window.confirm(`Remove the recipe for "${recipe.menuItem?.name}"? It will no longer be inventory-tracked.`)) return;
-    try { await deleteRecipeApi(recipe._id); toast.success("Recipe removed"); load(); }
-    catch { toast.error("Failed to remove recipe"); }
+    if (!window.confirm(t("Remove the recipe for \"{name}\"? It will no longer be inventory-tracked.", { name: localName(recipe.menuItem) }))) return;
+    try { await deleteRecipeApi(recipe._id); toast.success(t("Recipe removed")); load(); }
+    catch { toast.error(t("Failed to remove recipe")); }
   };
 
   const rows = useMemo(() => {
@@ -202,7 +203,7 @@ export default function RecipesTab() {
       .filter(({ mi, recipe }) => {
         if (seg === "tracked" && !recipe) return false;
         if (seg === "untracked" && recipe) return false;
-        if (q && !mi.name.toLowerCase().includes(q)) return false;
+        if (q && !mi.name.toLowerCase().includes(q) && !(mi.nameBn || "").toLowerCase().includes(q)) return false;
         return true;
       });
   }, [menuItems, recipeByMenuItem, search, seg]);
@@ -210,56 +211,54 @@ export default function RecipesTab() {
   const trackedCount = recipes.length;
 
   if (loading) return <Loading />;
-  if (error) return <ErrorBox onRetry={load} what="recipes" />;
+  if (error) return <ErrorBox onRetry={load} what={N_("recipes")} />;
 
   return (
     <div>
       <div style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 14 }}>
-        Menu item → recipe → ingredient → inventory stock. Selling a dish with a recipe deducts its stock ingredients
-        (recipe quantity × quantity sold) when the order goes to the kitchen. Making cost uses each stock item&rsquo;s
-        current cost price; custom ingredients add their own price but aren&rsquo;t stock-tracked.
+        {t("Menu item → recipe → ingredient → inventory stock. Selling a dish with a recipe deducts its stock ingredients (recipe quantity × quantity sold) when the order goes to the kitchen. Making cost uses each stock item’s current cost price; custom ingredients add their own price but aren’t stock-tracked.")}
       </div>
 
       <Toolbar>
-        <Search value={search} onChange={setSearch} placeholder="Search menu items" />
-        <Seg options={SEG} value={seg} onChange={setSeg} ariaLabel="Filter by tracking status" />
+        <Search value={search} onChange={setSearch} placeholder={t("Search menu items")} />
+        <Seg options={SEG} value={seg} onChange={setSeg} ariaLabel={t("Filter by tracking status")} />
         <Spacer />
-        <Count>{trackedCount} of {menuItems.length} menu item{menuItems.length === 1 ? "" : "s"} tracked</Count>
+        <Count>{tn(menuItems.length, "{tracked} of {n} menu item tracked", "{tracked} of {n} menu items tracked", { tracked: trackedCount })}</Count>
       </Toolbar>
 
       <TableShell
-        headers={["Menu item", "Ingredients", "Making cost", "Price", "Food cost", "Status", ""]}
+        headers={[N_("Menu item"), N_("Ingredients"), N_("Making cost"), N_("Price"), N_("Food cost"), N_("Status"), ""]}
         minWidth={820}
         isEmpty={rows.length === 0}
         emptyIcon="🍳"
-        emptyText={menuItems.length === 0 ? "No menu items found" : "No menu items match these filters"}
+        emptyText={menuItems.length === 0 ? t("No menu items found") : t("No menu items match these filters")}
       >
         {rows.map(({ mi, recipe }) => {
           const pct = recipe?.foodCostPct;
           return (
             <tr key={mi._id}>
-              <td style={{ fontWeight: 600, color: "var(--text-1)" }}>{mi.name}</td>
+              <td style={{ fontWeight: 600, color: "var(--text-1)" }}>{localName(mi)}</td>
               <td style={{ color: "var(--text-2)", fontSize: 11.5, maxWidth: 280 }}>
                 {recipe?.ingredients?.length
-                  ? recipe.ingredients.map((i) => `${i.name || i.inventoryItem?.name || "?"} ${formatQty(i.quantity, i.unit)}`).join(", ")
+                  ? recipe.ingredients.map((i) => `${localName(i) || i.inventoryItem?.name || "?"} ${formatQty(i.quantity, i.unit)}`).join(", ")
                   : "—"}
               </td>
-              <td className="money" title={recipe?.costIncomplete ? "Some ingredients have no cost price — total is incomplete" : undefined}>
+              <td className="money" title={recipe?.costIncomplete ? t("Some ingredients have no cost price — total is incomplete") : undefined}>
                 {recipe ? <>{formatMoney(recipe.makingCost)}{recipe.costIncomplete && <span style={{ color: "var(--wait-ink)" }}> *</span>}</> : "—"}
               </td>
               <td className="num" style={{ color: "var(--text-2)" }}>{mi.price != null ? formatMoney(mi.price) : "—"}</td>
               <td className="num" style={{ color: pct == null ? "var(--text-3)" : pct > 45 ? "var(--wait-ink)" : "var(--ready-ink)" }}>
-                {pct == null ? "—" : `${pct}%`}
+                {pct == null ? "—" : `${fmtNum(pct)}%`}
               </td>
               <td>
-                <span className={`zc-tag ${recipe ? "ready" : "done"}`}><i />{recipe ? "Tracked" : "Not tracked"}</span>
+                <span className={`zc-tag ${recipe ? "ready" : "done"}`}><i />{recipe ? t("Tracked") : t("Not tracked")}</span>
               </td>
               <td>
                 <div style={{ display: "flex", gap: 5, justifyContent: "flex-end" }}>
                   <button type="button" className="zc-btn ghost sm" onClick={() => openFor(mi)}>
-                    {recipe ? "Edit recipe" : "Add recipe"}
+                    {recipe ? t("Edit recipe") : t("Add recipe")}
                   </button>
-                  {recipe && <button type="button" className="zc-btn danger sm" onClick={() => handleDelete(recipe)}>Remove</button>}
+                  {recipe && <button type="button" className="zc-btn danger sm" onClick={() => handleDelete(recipe)}>{t("Remove")}</button>}
                 </div>
               </td>
             </tr>
@@ -268,30 +267,30 @@ export default function RecipesTab() {
       </TableShell>
       {recipes.some((r) => r.costIncomplete) && (
         <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>
-          <span style={{ color: "var(--wait-ink)" }}>*</span> Incomplete — an ingredient&rsquo;s stock item has no cost price yet. Set it under Stock Items or record a purchase.
+          <span style={{ color: "var(--wait-ink)" }}>*</span> {t("Incomplete — an ingredient’s stock item has no cost price yet. Set it under Stock Items or record a purchase.")}
         </div>
       )}
 
       {showForm && (
         <Modal
-          title="Recipe"
-          sub={editingMenu ? `${editingMenu.name}${editingMenu.price != null ? ` · sells at ${formatMoney(editingMenu.price)}` : ""}` : undefined}
+          title={t("Recipe")}
+          sub={editingMenu ? `${localName(editingMenu)}${editingMenu.price != null ? ` · ${t("sells at {price}", { price: formatMoney(editingMenu.price) })}` : ""}` : undefined}
           onClose={() => setShowForm(false)}
           width={880}
           footer={
             <>
-              <button type="button" className="zc-btn" onClick={() => setShowForm(false)}>Cancel</button>
+              <button type="button" className="zc-btn" onClick={() => setShowForm(false)}>{t("Cancel")}</button>
               <button type="button" className="zc-btn pri" disabled={saving} onClick={handleSave}>
-                {saving ? "Saving…" : "Save recipe"}
+                {saving ? t("Saving…") : t("Save recipe")}
               </button>
             </>
           }
         >
-          <label style={label}>Ingredients <span style={{ color: "var(--text-3)", fontWeight: 400 }}>— quantities are for ONE serving</span></label>
+          <label style={label}>{t("Ingredients")} <span style={{ color: "var(--text-3)", fontWeight: 400 }}>— {t("quantities are for ONE serving")}</span></label>
 
           <div className="rcp-line rcp-head">
-            <span>Type</span><span>Ingredient</span><span>Quantity</span><span>Unit</span>
-            <span style={{ textAlign: "right" }}>Unit cost / price</span><span style={{ textAlign: "right" }}>Cost</span><span />
+            <span>{t("Type")}</span><span>{t("Ingredient")}</span><span>{t("Quantity")}</span><span>{t("Unit")}</span>
+            <span style={{ textAlign: "right" }}>{t("Unit cost / price")}</span><span style={{ textAlign: "right" }}>{t("Cost")}</span><span />
           </div>
 
           <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>
@@ -305,91 +304,90 @@ export default function RecipesTab() {
               return (
                 <div key={l.key} className={`rcp-row${visibleErrs ? " err" : ""}`}>
                   <div className="rcp-line">
-                    <div className="rcp-type rcp-wide" role="tablist" aria-label="Ingredient type">
-                      <button type="button" role="tab" aria-selected={l.sourceType === "STOCK"} className={l.sourceType === "STOCK" ? "on" : ""} onClick={() => setType(l.key, "STOCK")}>Stock</button>
-                      <button type="button" role="tab" aria-selected={l.sourceType === "CUSTOM"} className={l.sourceType === "CUSTOM" ? "on" : ""} onClick={() => setType(l.key, "CUSTOM")}>Custom</button>
+                    <div className="rcp-type rcp-wide" role="tablist" aria-label={t("Ingredient type")}>
+                      <button type="button" role="tab" aria-selected={l.sourceType === "STOCK"} className={l.sourceType === "STOCK" ? "on" : ""} onClick={() => setType(l.key, "STOCK")}>{t("Stock")}</button>
+                      <button type="button" role="tab" aria-selected={l.sourceType === "CUSTOM"} className={l.sourceType === "CUSTOM" ? "on" : ""} onClick={() => setType(l.key, "CUSTOM")}>{t("Custom")}</button>
                     </div>
 
                     {l.sourceType === "STOCK" ? (
-                      <select className="rcp-wide" style={inp} value={l.inventoryItem} onChange={(e) => pickStock(l.key, e.target.value)} aria-label="Stock item">
-                        <option value="">Select stock item…</option>
+                      <select className="rcp-wide" style={inp} value={l.inventoryItem} onChange={(e) => pickStock(l.key, e.target.value)} aria-label={t("Stock item")}>
+                        <option value="">{t("Select stock item…")}</option>
                         {activeStock.map((s) => (
                           <option key={s._id} value={s._id} disabled={takenIds.has(s._id)}>
-                            {s.name} ({formatQty(s.currentStock, s.unit)} left)
+                            {localName(s)} ({t("{qty} left", { qty: formatQty(s.currentStock, s.unit) })})
                           </option>
                         ))}
-                        {stock && stock.status !== "Active" && <option value={stock._id}>{stock.name} (inactive)</option>}
+                        {stock && stock.status !== "Active" && <option value={stock._id}>{localName(stock)} ({t("inactive")})</option>}
                       </select>
                     ) : (
-                      <input className="rcp-wide" style={inp} placeholder="e.g. Cardamom" value={l.name} onChange={(e) => updateLine(l.key, { name: e.target.value })} aria-label="Ingredient name" />
+                      <input className="rcp-wide" style={inp} placeholder={t("e.g. Cardamom")} value={l.name} onChange={(e) => updateLine(l.key, { name: e.target.value })} aria-label={t("Ingredient name")} />
                     )}
 
-                    <input type="number" min="0" step="any" inputMode="decimal" placeholder="Qty" style={inp} value={l.quantity}
-                      onChange={(e) => updateLine(l.key, { quantity: e.target.value })} aria-label="Quantity" />
+                    <input type="number" min="0" step="any" inputMode="decimal" placeholder={t("Qty")} style={inp} value={l.quantity}
+                      onChange={(e) => updateLine(l.key, { quantity: e.target.value })} aria-label={t("Quantity")} />
 
-                    <select style={inp} value={l.unit} onChange={(e) => updateLine(l.key, { unit: e.target.value })} aria-label="Unit"
+                    <select style={inp} value={l.unit} onChange={(e) => updateLine(l.key, { unit: e.target.value })} aria-label={t("Unit")}
                       disabled={l.sourceType === "STOCK" && !stock}>
-                      {l.sourceType === "STOCK" && !stock && <option value="">unit</option>}
-                      {unitOptions.map((u) => <option key={u} value={u}>{u}</option>)}
+                      {l.sourceType === "STOCK" && !stock && <option value="">{t("unit")}</option>}
+                      {unitOptions.map((u) => <option key={u} value={u}>{unitLabel(u)}</option>)}
                     </select>
 
                     {l.sourceType === "STOCK" ? (
-                      <div className="rcp-cell" title={stock ? `${formatMoney(stock.costPrice)} per ${stock.unit}` : undefined}>
-                        <span className="rcp-lbl">Unit cost</span>
-                        {c?.unitCost != null ? `${formatUnitCost(c.unitCost)}/${l.unit}` : "—"}
+                      <div className="rcp-cell" title={stock ? t("{price} per {unit}", { price: formatMoney(stock.costPrice), unit: unitLabel(stock.unit) }) : undefined}>
+                        <span className="rcp-lbl">{t("Unit cost")}</span>
+                        {c?.unitCost != null ? `${formatUnitCost(c.unitCost)}/${unitLabel(l.unit)}` : "—"}
                       </div>
                     ) : (
-                      <input type="number" min="0" step="any" inputMode="decimal" placeholder="Price ₹" style={inp} value={l.cost}
-                        onChange={(e) => updateLine(l.key, { cost: e.target.value })} aria-label="Price for this quantity" />
+                      <input type="number" min="0" step="any" inputMode="decimal" placeholder={t("Price ₹")} style={inp} value={l.cost}
+                        onChange={(e) => updateLine(l.key, { cost: e.target.value })} aria-label={t("Price for this quantity")} />
                     )}
 
-                    <div className="rcp-cost"><span className="rcp-lbl">Cost</span>{c?.cost != null ? formatMoney(c.cost) : "—"}</div>
+                    <div className="rcp-cost"><span className="rcp-lbl">{t("Cost")}</span>{c?.cost != null ? formatMoney(c.cost) : "—"}</div>
 
-                    <button type="button" onClick={() => removeLine(l.key)} aria-label="Remove ingredient"
+                    <button type="button" onClick={() => removeLine(l.key)} aria-label={t("Remove ingredient")}
                       style={{ background: "none", border: "none", color: "var(--stop-ink)", cursor: "pointer", fontSize: 15 }}>✕</button>
                   </div>
                   {visibleErrs && <div className="rcp-msg" style={{ color: "var(--stop-ink)" }}>{visibleErrs.join(" · ")}</div>}
-                  {!visibleErrs && c?.error && <div className="rcp-msg" style={{ color: "var(--wait-ink)" }}>⚠ {c.error} — set it under Stock Items so the making cost is complete.</div>}
+                  {!visibleErrs && c?.error && <div className="rcp-msg" style={{ color: "var(--wait-ink)" }}>⚠ {c.error} — {t("set it under Stock Items so the making cost is complete.")}</div>}
                 </div>
               );
             })}
             {lines.length === 0 && (
               <div style={{ fontSize: 12, color: "var(--text-3)", textAlign: "center", padding: 16, border: "1px dashed var(--edge)", borderRadius: "var(--r-ctl)" }}>
-                No ingredients yet — add a stock item or a custom ingredient.
+                {t("No ingredients yet — add a stock item or a custom ingredient.")}
               </div>
             )}
           </div>
 
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            <button type="button" className="zc-btn ghost sm" onClick={() => setLines((p) => [...p, stockLine()])}>＋ Stock item</button>
-            <button type="button" className="zc-btn ghost sm" onClick={() => setLines((p) => [...p, customLine()])}>＋ Custom ingredient</button>
+            <button type="button" className="zc-btn ghost sm" onClick={() => setLines((p) => [...p, stockLine()])}>＋ {t("Stock item")}</button>
+            <button type="button" className="zc-btn ghost sm" onClick={() => setLines((p) => [...p, customLine()])}>＋ {t("Custom ingredient")}</button>
           </div>
 
           <div className="rcp-sum" aria-live="polite">
             <div>
-              <div className="k">Total making cost</div>
+              <div className="k">{t("Total making cost")}</div>
               <div className="v big tnum">{formatMoney(summary.total)}</div>
               {summary.missing > 0 && lines.length > 0 && (
                 <div className="k" style={{ color: "var(--wait-ink)", marginTop: 2 }}>
-                  {summary.missing} ingredient{summary.missing === 1 ? "" : "s"} not costed yet
+                  {tn(summary.missing, "{n} ingredient not costed yet", "{n} ingredients not costed yet")}
                 </div>
               )}
             </div>
-            <div><div className="k">Selling price</div><div className="v tnum">{summary.price ? formatMoney(summary.price) : "—"}</div></div>
+            <div><div className="k">{t("Selling price")}</div><div className="v tnum">{summary.price ? formatMoney(summary.price) : "—"}</div></div>
             <div>
-              <div className="k">Gross margin</div>
+              <div className="k">{t("Gross margin")}</div>
               <div className="v tnum" style={{ color: summary.margin != null && summary.margin < 0 ? "var(--stop-ink)" : undefined }}>
                 {summary.margin != null ? formatMoney(summary.margin) : "—"}
               </div>
             </div>
             <div>
-              <div className="k">Food cost</div>
-              <div className="v tnum">{summary.foodPct != null ? `${Math.round(summary.foodPct * 10) / 10}%` : "—"}</div>
+              <div className="k">{t("Food cost")}</div>
+              <div className="v tnum">{summary.foodPct != null ? `${fmtNum(Math.round(summary.foodPct * 10) / 10)}%` : "—"}</div>
             </div>
           </div>
           <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 10 }}>
-            Units convert automatically (Milk stocked in litres can be used in ml). Each sale snapshots this cost,
-            so later price changes don&rsquo;t rewrite past sales.
+            {t("Units convert automatically (Milk stocked in litres can be used in ml). Each sale snapshots this cost, so later price changes don’t rewrite past sales.")}
           </div>
         </Modal>
       )}

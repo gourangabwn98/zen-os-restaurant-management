@@ -49,7 +49,7 @@ export const revenueOrderMatch = ({ from, to } = {}) => {
  * { items, categories, totals }. Categories are summed from the exact same
  * item rows, so Category view and Item view always add up to the same total.
  */
-export const buildSalesBreakdown = ({ rows, menuById, liveCostByMenuItem }) => {
+export const buildSalesBreakdown = ({ rows, menuById, liveCostByMenuItem, categoryBnByName = new Map() }) => {
   const items = rows.map((r) => {
     const id = r._id ? String(r._id) : "";
     const menu = menuById.get(id);
@@ -71,6 +71,7 @@ export const buildSalesBreakdown = ({ rows, menuById, liveCostByMenuItem }) => {
     return {
       menuItem: id || null,
       name: menu?.name || r.name || "Unknown item",
+      nameBn: menu?.nameBn || "",
       category: menu?.category || UNCATEGORISED,
       qty,
       revenue,
@@ -99,6 +100,7 @@ export const buildSalesBreakdown = ({ rows, menuById, liveCostByMenuItem }) => {
 
   const categories = [...catMap.values()].map((c) => ({
     category: c.category,
+    categoryBn: categoryBnByName.get(c.category) || "",
     qty: c.qty,
     items: c.items,
     revenue: roundMoney(c.revenue),
@@ -154,13 +156,16 @@ export const computeSalesBreakdown = async ({ models, from, to }) => {
   ]);
 
   const menuIds = rows.map((r) => r._id).filter(Boolean);
-  const [menuDocs, recipes] = await Promise.all([
-    MenuItem.find({ _id: { $in: menuIds } }, { name: 1, category: 1 }).lean(),
+  const { Category } = models;
+  const [menuDocs, recipes, categories] = await Promise.all([
+    MenuItem.find({ _id: { $in: menuIds } }, { name: 1, nameBn: 1, category: 1 }).lean(),
     // Only needed for the fallback cost of lines without a snapshot.
     rows.some((r) => (r.costedQty || 0) < (r.qty || 0))
       ? Recipe.find({ menuItem: { $in: menuIds }, status: "Active" }).lean()
       : [],
+    Category ? Category.find({}, { name: 1, nameBn: 1 }).lean() : [],
   ]);
+  const categoryBnByName = new Map(categories.filter((c) => c.nameBn).map((c) => [c.name, c.nameBn]));
   const menuById = new Map(menuDocs.map((m) => [String(m._id), m]));
 
   const liveCostByMenuItem = new Map();
@@ -173,7 +178,7 @@ export const computeSalesBreakdown = async ({ models, from, to }) => {
     }
   }
 
-  const breakdown = buildSalesBreakdown({ rows, menuById, liveCostByMenuItem });
+  const breakdown = buildSalesBreakdown({ rows, menuById, liveCostByMenuItem, categoryBnByName });
   const o = orderAgg[0] || {};
   return {
     ...breakdown,

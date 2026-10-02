@@ -1,10 +1,12 @@
 // src/pages/admin/shared/ErrorState.jsx
 // "An error says what to do next rather than apologising." Pair with a retry.
+import { t } from "../../../i18n/core.js";
+
 export default function ErrorState({
-  title = "Could not load this",
-  sub = "The server did not respond. Check your connection, then try again.",
+  title = t("Could not load this"),
+  sub = t("The server did not respond. Check your connection, then try again."),
   onRetry,
-  retryLabel = "Try again",
+  retryLabel = t("Try again"),
 }) {
   return (
     <div className="zc-empty">

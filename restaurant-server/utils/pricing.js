@@ -62,6 +62,7 @@ export const priceItems = async (items, MenuItem, scheduleCtx = null) => {
       return {
         menuItem: m._id,
         name: m.name,
+        nameBn: m.nameBn || "",
         price: m.price,             // ← authoritative price, from DB, not client
         qty,
         notes: typeof i.notes === "string" ? i.notes.slice(0, 300) : "",

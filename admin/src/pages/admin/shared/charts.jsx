@@ -12,13 +12,15 @@
 
 // Fixed categorical order — reused wherever a chart needs "series N", matching
 // the order already established in AnalyticsPage's CAT_COLORS.
+import { t, fmtNum } from "../../../i18n/core.js";
+
 export const CAT_COLORS = ["var(--violet)", "var(--cyan)", "var(--wait)", "var(--ready)", "var(--stop)", "var(--indigo)"];
 
 const fmtCompact = (n) => {
   const v = Number(n) || 0;
-  if (Math.abs(v) >= 100000) return `${(v / 100000).toFixed(1)}L`;
-  if (Math.abs(v) >= 1000) return `${(v / 1000).toFixed(1)}k`;
-  return Math.round(v).toLocaleString("en-IN");
+  if (Math.abs(v) >= 100000) return `${fmtNum(v / 100000, { maximumFractionDigits: 1 })}${t("L")}`;
+  if (Math.abs(v) >= 1000) return `${fmtNum(v / 1000, { maximumFractionDigits: 1 })}${t("k")}`;
+  return fmtNum(Math.round(v));
 };
 
 // ══════════════════ Ranked horizontal bars — magnitude, low→high ═══════════
@@ -28,7 +30,7 @@ const fmtCompact = (n) => {
 // order status, where color = status meaning, not rank).
 export function RankedBars({ rows, valuePrefix = "", showValue = true, height = 22 }) {
   if (!rows || rows.length === 0) {
-    return <div style={{ textAlign: "center", padding: "24px 0", color: "var(--text-3)", fontSize: 12.5 }}>No data yet</div>;
+    return <div style={{ textAlign: "center", padding: "24px 0", color: "var(--text-3)", fontSize: 12.5 }}>{t("No data yet")}</div>;
   }
   const max = Math.max(...rows.map((r) => r.value), 1);
   return (
@@ -64,16 +66,16 @@ export function RankedBars({ rows, valuePrefix = "", showValue = true, height = 
 // surface-color gap separates segments instead of a border. Legend row below
 // carries the identity channel (never color alone).
 export function SegmentedBar({ segments, total }) {
-  const t = total ?? segments.reduce((s, x) => s + x.value, 0);
-  if (!t) {
-    return <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text-3)", fontSize: 12.5 }}>No data yet</div>;
+  const sum = total ?? segments.reduce((s, x) => s + x.value, 0);
+  if (!sum) {
+    return <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text-3)", fontSize: 12.5 }}>{t("No data yet")}</div>;
   }
   return (
     <div>
       <div style={{ display: "flex", height: 14, borderRadius: 7, overflow: "hidden", background: "var(--raise)", gap: 2 }}>
         {segments.filter((s) => s.value > 0).map((s) => (
-          <div key={s.label} title={`${s.label}: ${fmtCompact(s.value)} (${Math.round((s.value / t) * 100)}%)`}
-            style={{ width: `${(s.value / t) * 100}%`, background: s.color, minWidth: 3 }} />
+          <div key={s.label} title={`${s.label}: ${fmtCompact(s.value)} (${fmtNum(Math.round((s.value / sum) * 100))}%)`}
+            style={{ width: `${(s.value / sum) * 100}%`, background: s.color, minWidth: 3 }} />
         ))}
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 16px", marginTop: 12 }}>
@@ -81,7 +83,7 @@ export function SegmentedBar({ segments, total }) {
           <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
             <i style={{ width: 8, height: 8, borderRadius: 2, background: s.color, flex: "none" }} />
             <span style={{ color: "var(--text-2)" }}>{s.label}</span>
-            <span className="tnum" style={{ color: "var(--text-1)", fontWeight: 600 }}>{Math.round((s.value / t) * 100)}%</span>
+            <span className="tnum" style={{ color: "var(--text-1)", fontWeight: 600 }}>{fmtNum(Math.round((s.value / sum) * 100))}%</span>
           </div>
         ))}
       </div>
@@ -96,7 +98,7 @@ export function Meter({ value, max, label, sub, color = "var(--violet)" }) {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
         <span style={{ fontSize: 12.5, color: "var(--text-1)", fontWeight: 500 }}>{label}</span>
-        <span className="tnum" style={{ fontSize: 13, fontWeight: 700, color: "var(--text-1)" }}>{value} <span style={{ color: "var(--text-3)", fontWeight: 500 }}>/ {max}</span></span>
+        <span className="tnum" style={{ fontSize: 13, fontWeight: 700, color: "var(--text-1)" }}>{fmtNum(value)} <span style={{ color: "var(--text-3)", fontWeight: 500 }}>/ {fmtNum(max)}</span></span>
       </div>
       <div style={{ height: 10, borderRadius: 5, background: "var(--violet-faint)", overflow: "hidden" }}>
         <div style={{ width: `${pct}%`, height: "100%", borderRadius: 5, background: color, transition: "width .4s ease" }} />
@@ -110,7 +112,7 @@ export function Meter({ value, max, label, sub, color = "var(--violet)" }) {
 // Single series: sequential use of one hue. `points` = [{label, value}].
 export function TrendChart({ points, color = "var(--violet)", valuePrefix = "₹", height = 160 }) {
   if (!points || points.length < 2) {
-    return <div style={{ textAlign: "center", padding: "40px 0", color: "var(--text-3)", fontSize: 12.5 }}>Not enough data yet</div>;
+    return <div style={{ textAlign: "center", padding: "40px 0", color: "var(--text-3)", fontSize: 12.5 }}>{t("Not enough data yet")}</div>;
   }
   const W = 100, H = height;
   const values = points.map((p) => p.value);

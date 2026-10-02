@@ -6,14 +6,15 @@ import { getSocket, disconnectSocket } from "../services/socketService.js";
 import { requestOrderFocus } from "../services/orderFocus.js";
 import { playNotificationSound } from "../utils/notificationSound.js";
 import { PRIMARY, BG_CARD, BORDER, TEXT_PRIMARY, TEXT_MUTED } from "../theme.js";
+import { t, fmtTime, fmtNum } from "../i18n/core.js";
 
 const EVENT_META = {
-  "order:new":             { icon: "🔔", label: (p) => `New order ${p.order?.orderId || ""} — awaiting confirmation`, sound: true },
-  "order:confirmed":       { icon: "✅", label: (p) => `Order ${p.order?.orderId || ""} confirmed` },
-  "order:status_changed":  { icon: "🍳", label: (p) => `Order ${p.order?.orderId || ""} → ${p.order?.status || ""}` },
-  "order:cancelled":       { icon: "❌", label: (p) => `Order ${p.order?.orderId || ""} cancelled` },
-  "order:payment_changed": { icon: "💳", label: (p) => `Payment for ${p.order?.orderId || ""} → ${p.order?.paymentStatus || ""}` },
-  "table:cleared":         { icon: "🧹", label: (p) => `Table ${p.session?.tableNo ?? ""} cleared` },
+  "order:new":             { icon: "🔔", label: (p) => t("New order {id} — awaiting confirmation", { id: p.order?.orderId || "" }), sound: true },
+  "order:confirmed":       { icon: "✅", label: (p) => t("Order {id} confirmed", { id: p.order?.orderId || "" }) },
+  "order:status_changed":  { icon: "🍳", label: (p) => `${t("Order {id}", { id: p.order?.orderId || "" })} → ${t(p.order?.status || "")}` },
+  "order:cancelled":       { icon: "❌", label: (p) => t("Order {id} cancelled", { id: p.order?.orderId || "" }) },
+  "order:payment_changed": { icon: "💳", label: (p) => `${t("Payment for {id}", { id: p.order?.orderId || "" })} → ${t(p.order?.paymentStatus || "")}` },
+  "table:cleared":         { icon: "🧹", label: (p) => t("Table {n} cleared", { n: p.session?.tableNo ?? "" }) },
 };
 
 export default function NotificationBell({ user, onNavigate, inline = false }) {
@@ -43,9 +44,9 @@ export default function NotificationBell({ user, onNavigate, inline = false }) {
 
       if (meta.sound) playNotificationSound();
       toast(
-        (t) => (
+        (tst) => (
           <span
-            onClick={() => { toast.dismiss(t.id); if (order) { onNavigate?.(); requestOrderFocus(order); } }}
+            onClick={() => { toast.dismiss(tst.id); if (order) { onNavigate?.(); requestOrderFocus(order); } }}
             style={{ cursor: order ? "pointer" : "default" }}
           >
             {message}{order ? "  ›" : ""}
@@ -145,11 +146,11 @@ export default function NotificationBell({ user, onNavigate, inline = false }) {
   const panel = open && (
     <div ref={panelRef} style={panelStyle}>
       <div style={{ padding: "8px 10px", fontSize: 12, fontWeight: 700, color: TEXT_MUTED, textTransform: "uppercase", letterSpacing: 0.5 }}>
-        Notifications
+        {t("Notifications")}
       </div>
       {items.length === 0 ? (
         <div style={{ padding: "26px 10px", textAlign: "center", fontSize: 12.5, color: TEXT_MUTED }}>
-          Nothing yet — new orders will show up here.
+          {t("Nothing yet — new orders will show up here.")}
         </div>
       ) : (
         items.map((n) => (
@@ -174,7 +175,7 @@ export default function NotificationBell({ user, onNavigate, inline = false }) {
                 {n.message}{n.order ? "  ›" : ""}
               </div>
               <div style={{ fontSize: 10.5, color: TEXT_MUTED, marginTop: 2 }}>
-                {n.at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                {fmtTime(n.at)}
               </div>
             </div>
           </div>
@@ -189,7 +190,7 @@ export default function NotificationBell({ user, onNavigate, inline = false }) {
         ref={btnRef}
         onClick={() => { setOpen((v) => !v); if (!open) setUnread(0); }}
         style={buttonStyle}
-        title="Notifications"
+        title={t("Notifications")}
       >
         🔔
         {unread > 0 && (
@@ -198,7 +199,7 @@ export default function NotificationBell({ user, onNavigate, inline = false }) {
             background: "#ef4444", color: "#fff", fontSize: 9.5, fontWeight: 800,
             display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px",
           }}>
-            {unread > 9 ? "9+" : unread}
+            {unread > 9 ? `${fmtNum(9)}+` : fmtNum(unread)}
           </span>
         )}
       </button>

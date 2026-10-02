@@ -26,6 +26,7 @@ import { useState } from "react";
 import toast from "react-hot-toast";
 import { createSupportTicket } from "../../services/adminService.js";
 import PageHeader from "./shared/PageHeader.jsx";
+import { t, N_, fmtNum } from "../../i18n/core.js";
 
 const COMPANY = "CharubalaInc LLP";
 const PHONE = "7318749498";
@@ -35,81 +36,81 @@ const WA_LINK = "https://wa.me/917318749498";
 
 const GUIDES = [
   {
-    icon: "🍽️", label: "Adding menu items", desc: "Photos, half and full pricing, veg marks",
+    icon: "🍽️", label: N_("Adding menu items"), desc: N_("Photos, half and full pricing, veg marks"),
     steps: [
-      "Go to Menu Items from the sidebar.",
-      "Click the “＋ New item” button in the top right.",
-      "Fill in the item name, category, and price(s).",
-      "Upload an image for the item (optional but recommended).",
-      "Save — the item is live on the customer site immediately.",
+      N_("Go to Menu Items from the sidebar."),
+      N_("Click the “＋ New item” button in the top right."),
+      N_("Fill in the item name, category, and price(s)."),
+      N_("Upload an image for the item (optional but recommended)."),
+      N_("Save — the item is live on the customer site immediately."),
     ],
   },
   {
-    icon: "🪑", label: "Managing tables", desc: "Seats, QR codes, freeing a table",
+    icon: "🪑", label: N_("Managing tables"), desc: N_("Seats, QR codes, freeing a table"),
     steps: [
-      "Go to Table Map from the sidebar.",
-      "Click “+ New Table” to create one — enter its number and seat count.",
-      "Each tile shows its live status: free, occupied, or payment due.",
-      "Click a table to see its active order and confirmed items.",
-      "A table clears automatically once its bill is settled.",
+      N_("Go to Table Map from the sidebar."),
+      N_("Click “+ New Table” to create one — enter its number and seat count."),
+      N_("Each tile shows its live status: free, occupied, or payment due."),
+      N_("Click a table to see its active order and confirmed items."),
+      N_("A table clears automatically once its bill is settled."),
     ],
   },
   {
-    icon: "📦", label: "Handling orders", desc: "Place, prepare, deliver, complete",
+    icon: "📦", label: N_("Handling orders"), desc: N_("Place, prepare, deliver, complete"),
     steps: [
-      "Go to Billing — it shows the floor and active orders.",
-      "Click “＋ New order” to place one for a walk-in or phone-in customer.",
-      "Orders move through the same states the Kitchen app tracks: confirmed → preparing → ready → delivered → completed.",
-      "You can add items to an already-placed order before it's ready.",
-      "Payment status and method are set from the order panel once the guest pays.",
+      N_("Go to Billing — it shows the floor and active orders."),
+      N_("Click “＋ New order” to place one for a walk-in or phone-in customer."),
+      N_("Orders move through the same states the Kitchen app tracks: confirmed → preparing → ready → delivered → completed."),
+      N_("You can add items to an already-placed order before it's ready."),
+      N_("Payment status and method are set from the order panel once the guest pays."),
     ],
   },
   {
-    icon: "👨‍🍳", label: "Creating staff accounts", desc: "Waiters and chefs sign in by phone",
+    icon: "👨‍🍳", label: N_("Creating staff accounts"), desc: N_("Waiters and chefs sign in by phone"),
     steps: [
-      "Go to Employees from the sidebar.",
-      "Click “+ Add Employee”.",
-      "Enter their name, phone number, and role — Waiter or Chef.",
-      "Save — they can now sign in to their app with that phone number and an OTP.",
-      "There's no public staff signup anywhere; every account is created here.",
+      N_("Go to Employees from the sidebar."),
+      N_("Click “+ Add Employee”."),
+      N_("Enter their name, phone number, and role — Waiter or Chef."),
+      N_("Save — they can now sign in to their app with that phone number and an OTP."),
+      N_("There's no public staff signup anywhere; every account is created here."),
     ],
   },
   {
-    icon: "🧾", label: "Generating invoices", desc: "Single and combined bills",
+    icon: "🧾", label: N_("Generating invoices"), desc: N_("Single and combined bills"),
     steps: [
-      "Invoices appear once an order is marked Completed, or its payment is confirmed Paid.",
-      "Go to Invoices to see all of them.",
-      "Search by order ID, customer name, or phone.",
-      "Click a row to see the itemised receipt.",
-      "Use “Mark paid” once you've confirmed the payment against the bank/UPI receipt — opening the customer's UPI app is never treated as proof by itself.",
+      N_("Invoices appear once an order is marked Completed, or its payment is confirmed Paid."),
+      N_("Go to Invoices to see all of them."),
+      N_("Search by order ID, customer name, or phone."),
+      N_("Click a row to see the itemised receipt."),
+      N_("Use “Mark paid” once you've confirmed the payment against the bank/UPI receipt — opening the customer's UPI app is never treated as proof by itself."),
     ],
   },
   {
-    icon: "📱", label: "Sending bills on WhatsApp", desc: "What the customer receives",
+    icon: "📱", label: N_("Sending bills on WhatsApp"), desc: N_("What the customer receives"),
     steps: [
-      "The backend has a WhatsApp-bill sender ready (restaurant-server/utils/sendWhatsAppBill.js).",
-      "It isn't connected to the order flow yet, so bills aren't sent automatically when an order is placed.",
-      "Contact support if you'd like this turned on for your number.",
+      N_("The backend has a WhatsApp-bill sender ready (restaurant-server/utils/sendWhatsAppBill.js)."),
+      N_("It isn't connected to the order flow yet, so bills aren't sent automatically when an order is placed."),
+      N_("Contact support if you'd like this turned on for your number."),
     ],
   },
   {
-    icon: "📊", label: "Reading insights", desc: "What each figure is measuring",
+    icon: "📊", label: N_("Reading insights"), desc: N_("What each figure is measuring"),
     steps: [
-      "Go to Insights from the sidebar.",
-      "The top row shows real revenue, order volume, average order value, and your busiest hour — for the date range you pick.",
-      "Switch Today / Week / Month / Year to re-aggregate every panel below.",
-      "Order type, payment method, top items, and revenue by category are all grouped straight from real orders.",
-      "Export downloads the orders behind the current range as CSV.",
+      N_("Go to Insights from the sidebar."),
+      N_("The top row shows real revenue, order volume, average order value, and your busiest hour — for the date range you pick."),
+      N_("Switch Today / Week / Month / Year to re-aggregate every panel below."),
+      N_("Order type, payment method, top items, and revenue by category are all grouped straight from real orders."),
+      N_("Export downloads the orders behind the current range as CSV."),
     ],
   },
   {
-    icon: "🖨️", label: "Setting up printers", desc: "Connecting the local print service",
+    icon: "🖨️", label: N_("Setting up printers"), desc: N_("Connecting the local print service"),
     steps: [
-      "Go to Profile → Printers.",
-      "Enter the printer's IP address (e.g. 192.168.1.100) and a name like “Kitchen”.",
-      "Click “Add printer”, then toggle it Active.",
-      "The print service runs on the restaurant's own network, not in the cloud — it needs to be on the same LAN as (or attached to) the printer.",
-      "Contact support if KOT or bill printing isn't reaching a printer that shows Active.",
+      N_("Go to Profile → Printers."),
+      N_("Enter the printer's IP address (e.g. 192.168.1.100) and a name like “Kitchen”."),
+      N_("Click “Add printer”, then toggle it Active."),
+      N_("The print service runs on the restaurant's own network, not in the cloud — it needs to be on the same LAN as (or attached to) the printer."),
+      N_("Contact support if KOT or bill printing isn't reaching a printer that shows Active."),
     ],
   },
 ];
@@ -150,12 +151,12 @@ function GuideTile({ icon, label, desc, steps, open, onToggle }) {
   return (
     <button type="button" className={`help-tile${open ? " on" : ""}`} onClick={onToggle} aria-expanded={open}>
       <div className="help-ic">{icon}</div>
-      <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 3, color: "var(--text-1)" }}>{label}</div>
-      <div style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.4 }}>{desc}</div>
+      <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 3, color: "var(--text-1)" }}>{t(label)}</div>
+      <div style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.4 }}>{t(desc)}</div>
       {open && (
         <div className="help-steps">
           {steps.map((step, i) => (
-            <div key={i} className="help-step"><span className="n">{i + 1}</span><span>{step}</span></div>
+            <div key={i} className="help-step"><span className="n">{fmtNum(i + 1)}</span><span>{t(step)}</span></div>
           ))}
         </div>
       )}
@@ -171,7 +172,7 @@ export default function HelpPage() {
 
   const handleSend = async () => {
     if (!form.name.trim() || !form.message.trim()) {
-      return toast.error("Please fill in your name and message");
+      return toast.error(t("Please fill in your name and message"));
     }
     setSending(true);
     try {
@@ -181,10 +182,10 @@ export default function HelpPage() {
         subject: form.topic || "General",
         message: form.message.trim(),
       });
-      toast.success("Query sent! We'll get back to you within 24 hours.");
+      toast.success(t("Query sent! We'll get back to you within 24 hours."));
       setForm({ name: "", phone: "", topic: "", message: "" });
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Failed to send. Please try again.");
+      toast.error(e?.response?.data?.message || t("Failed to send. Please try again."));
     } finally {
       setSending(false);
     }
@@ -192,12 +193,12 @@ export default function HelpPage() {
 
   return (
     <div>
-      <PageHeader title="Help and support" sub={`${COMPANY} · support details come from the build config`} />
+      <PageHeader title={t("Help and support")} sub={`${COMPANY} · ${t("support details come from the build config")}`} />
 
       <div className="help-grid">
         {/* Guides */}
         <div className="zc-card">
-          <div className="zc-card-h"><span className="t">Guides</span><span className="s">the eight things people ask about</span></div>
+          <div className="zc-card-h"><span className="t">{t("Guides")}</span><span className="s">{t("the eight things people ask about")}</span></div>
           <div className="help-tiles">
             {GUIDES.map((g) => (
               <GuideTile key={g.label} {...g} open={openGuide === g.label} onToggle={() => setOpenGuide((o) => (o === g.label ? null : g.label))} />
@@ -208,18 +209,18 @@ export default function HelpPage() {
         <div>
           {/* Contact support */}
           <div className="zc-card" style={{ marginBottom: 16 }}>
-            <div className="zc-card-h"><span className="t">Contact support</span></div>
+            <div className="zc-card-h"><span className="t">{t("Contact support")}</span></div>
             <div style={{ padding: 18 }}>
               {[
-                { icon: "📞", label: "Phone", val: PHONE_D, href: `tel:${PHONE}` },
-                { icon: "✉️", label: "Email", val: EMAIL, href: `mailto:${EMAIL}` },
-                { icon: "💬", label: "WhatsApp", val: PHONE_D, href: WA_LINK },
-                { icon: "🏢", label: "Company", val: COMPANY, href: null },
+                { icon: "📞", label: N_("Phone"), val: PHONE_D, href: `tel:${PHONE}` },
+                { icon: "✉️", label: N_("Email"), val: EMAIL, href: `mailto:${EMAIL}` },
+                { icon: "💬", label: N_("WhatsApp"), val: PHONE_D, href: WA_LINK },
+                { icon: "🏢", label: N_("Company"), val: COMPANY, href: null },
               ].map(({ icon, label, val, href }) => (
                 <div key={label} className="help-contact-row">
                   <div className="help-ic" style={{ marginBottom: 0 }}>{icon}</div>
                   <div>
-                    <div style={{ fontSize: 10, color: "var(--text-3)", marginBottom: 2 }}>{label}</div>
+                    <div style={{ fontSize: 10, color: "var(--text-3)", marginBottom: 2 }}>{t(label)}</div>
                     {href ? (
                       <a href={href} target={href.startsWith("http") ? "_blank" : undefined} rel="noreferrer"
                         style={{ fontSize: 12.5, color: "var(--accent-ink)", fontWeight: 600, textDecoration: "none" }}>
@@ -236,32 +237,33 @@ export default function HelpPage() {
 
           {/* Raise a ticket */}
           <div className="zc-card">
-            <div className="zc-card-h"><span className="t">Raise a ticket</span><span className="s">we reply within a day</span></div>
+            <div className="zc-card-h"><span className="t">{t("Raise a ticket")}</span><span className="s">{t("we reply within a day")}</span></div>
             <div style={{ padding: 18, display: "grid", gap: 12 }}>
               <div>
-                <label style={{ fontSize: 11.5, color: "var(--text-2)", fontWeight: 500, display: "block", marginBottom: 6 }}>Your name *</label>
-                <input className="zc-input" placeholder="e.g. Rahul Sharma" value={form.name} onChange={(e) => set("name", e.target.value)} />
+                <label style={{ fontSize: 11.5, color: "var(--text-2)", fontWeight: 500, display: "block", marginBottom: 6 }}>{t("Your name")} *</label>
+                <input className="zc-input" placeholder={t("e.g. Rahul Sharma")} value={form.name} onChange={(e) => set("name", e.target.value)} />
               </div>
               <div>
-                <label style={{ fontSize: 11.5, color: "var(--text-2)", fontWeight: 500, display: "block", marginBottom: 6 }}>Phone number</label>
-                <input className="zc-input" placeholder="10-digit mobile number" value={form.phone}
+                <label style={{ fontSize: 11.5, color: "var(--text-2)", fontWeight: 500, display: "block", marginBottom: 6 }}>{t("Phone number")}</label>
+                <input className="zc-input" placeholder={t("10-digit mobile number")} value={form.phone}
                   onChange={(e) => set("phone", e.target.value.replace(/\D/g, ""))} maxLength={10} />
               </div>
               <div>
-                <label style={{ fontSize: 11.5, color: "var(--text-2)", fontWeight: 500, display: "block", marginBottom: 6 }}>What is happening</label>
+                <label style={{ fontSize: 11.5, color: "var(--text-2)", fontWeight: 500, display: "block", marginBottom: 6 }}>{t("What is happening")}</label>
                 <select className="zc-select" value={form.topic} onChange={(e) => set("topic", e.target.value)}>
-                  <option value="">Select a topic…</option>
-                  {["Order management issue", "Table / floor plan issue", "Menu management", "Invoice / billing", "Staff accounts", "Technical / app issue", "Other"]
-                    .map((t) => <option key={t} value={t}>{t}</option>)}
+                  <option value="">{t("Select a topic…")}</option>
+                  {/* value stays English (it is the ticket subject support reads) */}
+                  {[N_("Order management issue"), N_("Table / floor plan issue"), N_("Menu management"), N_("Invoice / billing"), N_("Staff accounts"), N_("Technical / app issue"), N_("Other")]
+                    .map((topic) => <option key={topic} value={topic}>{t(topic)}</option>)}
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: 11.5, color: "var(--text-2)", fontWeight: 500, display: "block", marginBottom: 6 }}>Message *</label>
-                <textarea className="zc-textarea" rows={4} placeholder="Describe the problem, and what you were doing when it happened."
+                <label style={{ fontSize: 11.5, color: "var(--text-2)", fontWeight: 500, display: "block", marginBottom: 6 }}>{t("Message")} *</label>
+                <textarea className="zc-textarea" rows={4} placeholder={t("Describe the problem, and what you were doing when it happened.")}
                   value={form.message} onChange={(e) => set("message", e.target.value)} />
               </div>
               <button type="button" className="zc-btn pri block" disabled={sending} onClick={handleSend}>
-                {sending ? "Sending…" : "Send to support"}
+                {sending ? t("Sending…") : t("Send to support")}
               </button>
             </div>
           </div>

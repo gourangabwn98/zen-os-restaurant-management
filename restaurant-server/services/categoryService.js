@@ -51,12 +51,14 @@ export const listCategoriesWithCounts = async ({ models }) => {
   return cats.map((c) => ({ ...c, itemCount: byName.get(c.name) || 0 }));
 };
 
-export const createCategory = async ({ models, name, image = "" }) => {
+const cleanNameBn = (v) => String(v ?? "").trim().replace(/\s+/g, " ").slice(0, MAX_NAME);
+
+export const createCategory = async ({ models, name, nameBn = "", image = "" }) => {
   const { Category } = models;
   const clean = normalizeCategoryName(name);
   await assertNameFree(Category, clean);
   try {
-    return await Category.create({ name: clean, image: image || "" });
+    return await Category.create({ name: clean, nameBn: cleanNameBn(nameBn), image: image || "" });
   } catch (err) {
     if (err?.code === 11000) throw httpError(`A category named "${clean}" already exists`, 409);
     throw err;
@@ -64,12 +66,12 @@ export const createCategory = async ({ models, name, image = "" }) => {
 };
 
 /**
- * Updates name and/or image (nothing else is writable). A rename moves every
+ * Updates name, Bengali name and/or image (nothing else is writable). A rename moves every
  * item in the category along with it, atomically.
  * @param image  new image URL, "" to remove it, undefined to keep it.
  * @returns {{ category, renamedFrom: string|null, itemsMoved: number }}
  */
-export const updateCategory = async ({ models, db, id, name, image }) => {
+export const updateCategory = async ({ models, db, id, name, nameBn, image }) => {
   const { Category, MenuItem } = models;
   const current = await Category.findById(id);
   if (!current) throw httpError("Category not found", 404);
@@ -80,6 +82,7 @@ export const updateCategory = async ({ models, db, id, name, image }) => {
 
   const set = {};
   if (renaming) set.name = newName;
+  if (nameBn !== undefined && cleanNameBn(nameBn) !== (current.nameBn || "")) set.nameBn = cleanNameBn(nameBn);
   if (image !== undefined) set.image = image || "";
   if (!Object.keys(set).length) return { category: current, renamedFrom: null, itemsMoved: 0 };
 

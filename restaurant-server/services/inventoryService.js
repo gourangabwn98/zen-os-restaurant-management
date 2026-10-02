@@ -607,11 +607,11 @@ export const listRecipesWithCost = async ({ models, menuItemId }) => {
   const { Recipe, InventoryItem } = models;
   const filter = menuItemId ? { menuItem: menuItemId } : {};
   const recipes = await Recipe.find(filter)
-    .populate("menuItem", "name category image isAvailable price")
+    .populate("menuItem", "name nameBn category image isAvailable price")
     .lean();
 
   const items = await InventoryItem.find({ _id: { $in: stockIngredientIds(recipes) } })
-    .select("name unit currentStock costPrice status reorderLevel criticalLevel").lean();
+    .select("name nameBn unit currentStock costPrice status reorderLevel criticalLevel").lean();
   const byId = new Map(items.map((i) => [String(i._id), i]));
 
   return recipes.map((r) => {
@@ -623,6 +623,7 @@ export const listRecipesWithCost = async ({ models, menuItemId }) => {
         ...ing,
         sourceType: ingredientSource(ing),
         name: stockItem?.name || ing.name || "",
+        nameBn: stockItem?.nameBn || "",
         // Populated-shape kept for existing UI consumers ({ _id, name, unit, … }).
         inventoryItem: stockItem || ing.inventoryItem || null,
         liveUnitCost: lines[i].unitCost,
@@ -663,7 +664,7 @@ export const computeInventoryOverview = async ({ models, expiringWithinDays = 7 
   const expiringSoon = await InventoryBatch.find({
     quantity: { $gt: 0 },
     expiryDate: { $ne: null, $lte: expiryCutoff },
-  }).populate("inventoryItem", "name unit").lean();
+  }).populate("inventoryItem", "name nameBn unit").lean();
 
   const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
   const [consumptionAgg, purchaseAgg, wastageAgg] = await Promise.all([

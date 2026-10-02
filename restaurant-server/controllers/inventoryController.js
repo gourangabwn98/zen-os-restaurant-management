@@ -99,11 +99,11 @@ export const getItemById = async (req, res) => {
 export const createItem = async (req, res) => {
   try {
     const { InventoryItem } = req.models;
-    const { name, unit, category, reorderLevel, criticalLevel, costPrice, supplier, isBatchTracked, notes } = req.body;
+    const { name, nameBn, unit, category, reorderLevel, criticalLevel, costPrice, supplier, isBatchTracked, notes } = req.body;
     if (!name || !unit) return res.status(400).json({ message: "name and unit are required" });
 
     const item = await InventoryItem.create({
-      name, unit, category: category || "",
+      name, nameBn: String(nameBn || "").trim(), unit, category: category || "",
       reorderLevel: Number(reorderLevel) || 0,
       criticalLevel: Number(criticalLevel) || 0,
       costPrice: Number(costPrice) || 0,
@@ -164,7 +164,7 @@ export const getPurchases = async (req, res) => {
     const purchases = await StockPurchase.find()
       .sort({ createdAt: -1 })
       .populate("supplier", "name")
-      .populate("items.inventoryItem", "name unit");
+      .populate("items.inventoryItem", "name nameBn unit");
     res.json({ purchases });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
@@ -174,7 +174,7 @@ export const getPurchaseById = async (req, res) => {
     const { StockPurchase } = req.models;
     const purchase = await StockPurchase.findById(req.params.id)
       .populate("supplier", "name")
-      .populate("items.inventoryItem", "name unit");
+      .populate("items.inventoryItem", "name nameBn unit");
     if (!purchase) return res.status(404).json({ message: "Purchase not found" });
     res.json({ purchase });
   } catch (err) { res.status(500).json({ message: err.message }); }
@@ -213,7 +213,7 @@ export const getMovements = async (req, res) => {
     const [movements, total] = await Promise.all([
       StockLedger.find(filter).sort({ createdAt: -1 })
         .skip((page - 1) * limit).limit(Number(limit))
-        .populate("inventoryItem", "name unit"),
+        .populate("inventoryItem", "name nameBn unit"),
       StockLedger.countDocuments(filter),
     ]);
     res.json({ movements, total, page: Number(page), pages: Math.ceil(total / limit) });
@@ -244,7 +244,7 @@ export const getWastage = async (req, res) => {
       if (from) filter.wastageDate.$gte = new Date(from);
       if (to)   filter.wastageDate.$lte = new Date(to);
     }
-    const logs = await WastageLog.find(filter).sort({ wastageDate: -1 }).populate("inventoryItem", "name unit");
+    const logs = await WastageLog.find(filter).sort({ wastageDate: -1 }).populate("inventoryItem", "name nameBn unit");
     res.json({ logs });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };

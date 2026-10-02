@@ -3,6 +3,7 @@
 // Light · Dark · Auto (follow OS). "Auto" must stay reachable so a user who
 // once picked light/dark can go back to OS-following.
 import { useTheme } from "../hooks/useTheme.js";
+import { t, N_ } from "../i18n/core.js";
 
 const SUN = (
   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
@@ -26,9 +27,9 @@ const AUTO = (
 );
 
 const OPTIONS = [
-  { value: "light", label: "Light", icon: SUN },
-  { value: "dark", label: "Dark", icon: MOON },
-  { value: "system", label: "Auto", icon: AUTO },
+  { value: "light", label: N_("Light"), icon: SUN },
+  { value: "dark", label: N_("Dark"), icon: MOON },
+  { value: "system", label: N_("Auto"), icon: AUTO },
 ];
 
 export default function ThemeToggle({ compact = false }) {
@@ -38,7 +39,7 @@ export default function ThemeToggle({ compact = false }) {
     <div
       className="zc-seg"
       role="radiogroup"
-      aria-label="Colour theme"
+      aria-label={t("Colour theme")}
       style={{ width: "100%", justifyContent: "space-between" }}
     >
       {OPTIONS.map((o) => (
@@ -47,13 +48,13 @@ export default function ThemeToggle({ compact = false }) {
           type="button"
           role="radio"
           aria-checked={mode === o.value}
-          title={o.value === "system" ? "Follow device setting" : `${o.label} theme`}
+          title={o.value === "system" ? t("Follow device setting") : t(`${o.label} theme`)}
           className={mode === o.value ? "on" : ""}
           onClick={() => setMode(o.value)}
           style={{ flex: 1, justifyContent: "center", padding: compact ? "6px 8px" : "6px 10px" }}
         >
           {o.icon}
-          {!compact && <span>{o.label}</span>}
+          {!compact && <span>{t(o.label)}</span>}
         </button>
       ))}
     </div>

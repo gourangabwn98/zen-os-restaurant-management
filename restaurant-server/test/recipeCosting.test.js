@@ -391,8 +391,17 @@ const run = async () => {
       { revenue: b.items[0].revenue, makingCost: b.items[0].makingCost, grossProfit: b.items[0].grossProfit, category: b.items[0].category },
       { revenue: 150, makingCost: 85, grossProfit: 65, category: "Beverages" },
     );
-    assert.deepEqual(b.categories, [{ category: "Beverages", qty: 10, items: 1, revenue: 150, makingCost: 85, grossProfit: 65 }]);
+    assert.deepEqual(b.categories, [{ category: "Beverages", categoryBn: "", qty: 10, items: 1, revenue: 150, makingCost: 85, grossProfit: 65 }]);
     assert.equal(b.totals.grossMarginPct, 43.3);
+  });
+  await test("Bengali names pass through for the admin's bn mode (display only)", () => {
+    const rows = [{ _id: "tea", qty: 1, revenue: 15, costedQty: 0, snapshotCost: 0 }];
+    const bnMenu = new Map([["tea", { name: "Tea", nameBn: "চা", category: "Beverages" }]]);
+    const b = buildSalesBreakdown({ rows, menuById: bnMenu, liveCostByMenuItem: new Map(), categoryBnByName: new Map([["Beverages", "পানীয়"]]) });
+    assert.equal(b.items[0].nameBn, "চা");
+    assert.equal(b.items[0].name, "Tea");
+    assert.equal(b.categories[0].categoryBn, "পানীয়");
+    assert.equal(b.categories[0].category, "Beverages"); // grouping key stays English
   });
   await test("category totals equal item totals across multiple categories", () => {
     const rows = [

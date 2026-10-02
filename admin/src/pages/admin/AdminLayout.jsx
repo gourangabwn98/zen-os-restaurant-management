@@ -22,6 +22,8 @@ import HelpPage       from "./HelpPage.jsx";
 import NotificationBell from "../../components/NotificationBell.jsx";
 import OpsAlertsPanel from "../../components/OpsAlertsPanel.jsx";
 import ThemeToggle from "../../components/ThemeToggle.jsx";
+import LanguageToggle from "../../components/LanguageToggle.jsx";
+import { t, N_ } from "../../i18n/core.js";
 
 import {
   BG_MAIN, TEXT_MUTED,
@@ -61,28 +63,28 @@ const Icon = ({ id }) => (
 // invoices, inventory), Management (staff/customers/menu config), Finance
 // (Insights), then Settings pinned to the bottom.
 const OPERATIONS_NAV_A = [
-  { id: "orders", label: "Orders", icon: "billing", badgeKey: "active" },
-  { id: "tables", label: "Table Map", icon: "tables", badgeKey: "tables" },
+  { id: "orders", label: N_("Orders"), icon: "billing", badgeKey: "active" },
+  { id: "tables", label: N_("Table Map"), icon: "tables", badgeKey: "tables" },
 ];
 const OPERATIONS_NAV_B = [
-  { id: "dashboard", label: "Dashboard", icon: "dash" },
-  { id: "invoices", label: "Invoices", icon: "invoices" },
-  { id: "inventory", label: "Inventory", icon: "inventory" },
+  { id: "dashboard", label: N_("Dashboard"), icon: "dash" },
+  { id: "invoices", label: N_("Invoices"), icon: "invoices" },
+  { id: "inventory", label: N_("Inventory"), icon: "inventory" },
 ];
 const MANAGEMENT_NAV = [
-  { id: "employees", label: "Employees", icon: "employees" },
-  { id: "attendance", label: "Attendance", icon: "attendance" },
-  { id: "users", label: "Users", icon: "users" },
-  { id: "menu", label: "Menu Items", icon: "menu" },
-  { id: "notifications", label: "Notifications", icon: "bell" },
-  { id: "coupons", label: "Coupons", icon: "coupon" },
+  { id: "employees", label: N_("Employees"), icon: "employees" },
+  { id: "attendance", label: N_("Attendance"), icon: "attendance" },
+  { id: "users", label: N_("Users"), icon: "users" },
+  { id: "menu", label: N_("Menu Items"), icon: "menu" },
+  { id: "notifications", label: N_("Notifications"), icon: "bell" },
+  { id: "coupons", label: N_("Coupons"), icon: "coupon" },
 ];
 const FINANCE_NAV = [
-  { id: "analytics", label: "Insights", icon: "insights" },
+  { id: "analytics", label: N_("Insights"), icon: "insights" },
 ];
 const SETTINGS_NAV = [
-  { id: "profile", label: "Profile", icon: "profile" },
-  { id: "help", label: "Help & Support", icon: "help" },
+  { id: "profile", label: N_("Profile"), icon: "profile" },
+  { id: "help", label: N_("Help & Support"), icon: "help" },
 ];
 
 if (!document.getElementById("admin-layout-styles")) {
@@ -141,7 +143,7 @@ if (!document.getElementById("admin-layout-styles")) {
 function NavItem({ label, icon, active, count, onClick }) {
   return (
     <div className={`zc-nav${active ? " on" : ""}`} onClick={onClick}>
-      <Icon id={icon} />{label}
+      <Icon id={icon} />{t(label)}
       {count > 0 && <span className="ct">{count}</span>}
     </div>
   );
@@ -151,7 +153,12 @@ export default function AdminLayout() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
 
-  const [page, setPage]               = useState("orders");
+  // Open page survives a refresh and a language switch (which remounts the
+  // app — see i18n/LanguageProvider.jsx). Per tab, so two tabs stay independent.
+  const [page, setPage]               = useState(() => {
+    try { return sessionStorage.getItem("adminPage") || "orders"; } catch { return "orders"; }
+  });
+  useEffect(() => { try { sessionStorage.setItem("adminPage", page); } catch { /* storage disabled */ } }, [page]);
   const [dashboardData, setDashboardData] = useState(null);
   const [loading, setLoading]         = useState(true);
   const [restaurant, setRestaurant]   = useState(null);
@@ -167,12 +174,12 @@ export default function AdminLayout() {
         const p = profileRes?.data?.data || profileRes?.data;
         setRestaurant(p || null);
       })
-      .catch(() => toast.error("Failed to load dashboard"))
+      .catch(() => toast.error(t("Failed to load dashboard")))
       .finally(() => setLoading(false));
   }, [user, navigate]);
 
   const handleLogout = () => {
-    if (!window.confirm("Are you sure you want to sign out?")) return;
+    if (!window.confirm(t("Are you sure you want to sign out?"))) return;
     logout?.();
     navigate("/login");
   };
@@ -193,7 +200,7 @@ export default function AdminLayout() {
     <div style={{ display: "flex", minHeight: "100vh", background: BG_MAIN }}>
       {!sidebarOpen && (
         <div className="side-mini">
-          <button type="button" className="side-toggle-btn" onClick={() => setSidebarOpen(true)} title="Show sidebar">
+          <button type="button" className="side-toggle-btn" onClick={() => setSidebarOpen(true)} title={t("Show sidebar")}>
             <Icon id="sidebarOpen" />
           </button>
         </div>
@@ -209,41 +216,44 @@ export default function AdminLayout() {
             </div>
             <div style={{ minWidth: 0, flex: 1 }}>
               <div className="side-nm">{rName}</div>
-              <div className="side-sb">Admin panel</div>
+              <div className="side-sb">{t("Admin panel")}</div>
             </div>
             <NotificationBell inline user={user} onNavigate={() => setPage("orders")} />
           </div>
 
           <div className="side-toolbar">
             <div style={{ flex: 1, minWidth: 0 }}><ThemeToggle compact /></div>
-            <button type="button" className="side-toggle-btn" onClick={() => setSidebarOpen(false)} title="Hide sidebar">
+            <button type="button" className="side-toggle-btn" onClick={() => setSidebarOpen(false)} title={t("Hide sidebar")}>
               <Icon id="sidebarClose" />
             </button>
           </div>
+          <div className="side-toolbar" style={{ marginTop: -6 }}>
+            <LanguageToggle compact />
+          </div>
 
-          <div className="zc-navgrp">Operations</div>
+          <div className="zc-navgrp">{t("Operations")}</div>
           {OPERATIONS_NAV_A.map((n) => (
             <NavItem key={n.id} {...n} active={page === n.id} count={badgeFor(n.badgeKey)} onClick={() => setPage(n.id)} />
           ))}
           <a href="/kitchen" target="_blank" rel="noopener noreferrer" className="zc-nav" style={{ textDecoration: "none" }}>
-            <Icon id="chef" />Kitchen Display
+            <Icon id="chef" />{t("Kitchen Display")}
           </a>
           {OPERATIONS_NAV_B.map((n) => (
             <NavItem key={n.id} {...n} active={page === n.id} onClick={() => setPage(n.id)} />
           ))}
 
-          <div className="zc-navgrp">Management</div>
+          <div className="zc-navgrp">{t("Management")}</div>
           {MANAGEMENT_NAV.map((n) => (
             <NavItem key={n.id} {...n} active={page === n.id} onClick={() => setPage(n.id)} />
           ))}
 
-          <div className="zc-navgrp">Finance</div>
+          <div className="zc-navgrp">{t("Finance")}</div>
           {FINANCE_NAV.map((n) => (
             <NavItem key={n.id} {...n} active={page === n.id} onClick={() => setPage(n.id)} />
           ))}
 
           <div className="side-sp" />
-          <div className="zc-navgrp">Settings</div>
+          <div className="zc-navgrp">{t("Settings")}</div>
           {SETTINGS_NAV.map((n) => (
             <NavItem key={n.id} {...n} active={page === n.id} onClick={() => setPage(n.id)} />
           ))}
@@ -252,7 +262,7 @@ export default function AdminLayout() {
             <div className="side-who">
               <div className="av">{(user.name || user.email || "A").charAt(0).toUpperCase()}</div>
               <div style={{ minWidth: 0 }}>
-                <div className="n">{user.name || "Admin"}</div>
+                <div className="n">{user.name || t("Admin")}</div>
                 <div className="r">{user.email || user.phone || ""}</div>
               </div>
             </div>
@@ -260,7 +270,7 @@ export default function AdminLayout() {
 
           <div className="side-foot">
             <button type="button" className="side-foot-btn danger" onClick={handleLogout}>
-              <span style={{ fontSize: 14 }}>⎋</span> Sign out
+              <span style={{ fontSize: 14 }}>⎋</span> {t("Sign out")}
             </button>
             <div className="side-version">{BRAND_NAME} · {BRAND_VERSION}</div>
           </div>
@@ -277,7 +287,7 @@ export default function AdminLayout() {
         {loading ? (
           <div style={{ textAlign: "center", padding: "100px 0", color: TEXT_MUTED }}>
             <div className="zc-spin" style={{ margin: "0 auto 16px" }} />
-            <div style={{ fontSize: 14 }}>Loading…</div>
+            <div style={{ fontSize: 14 }}>{t("Loading…")}</div>
           </div>
         ) : (
           <>

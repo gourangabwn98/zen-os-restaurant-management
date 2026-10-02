@@ -3,7 +3,8 @@ import { getLowStock } from "../../../services/inventoryService.js";
 import { Loading, ErrorBox, LevelBadge } from "./invUI.jsx";
 import { levelInk, money } from "./invKit.js";
 import EmptyState from "../shared/EmptyState.jsx";
-import { formatQty } from "../../../utils/units.js";
+import { formatQty, unitLabel } from "../../../utils/units.js";
+import { t, N_, localName } from "../../../i18n/core.js";
 
 export default function LowStockTab({ onNavigate }) {
   const [items, setItems] = useState([]);
@@ -18,12 +19,12 @@ export default function LowStockTab({ onNavigate }) {
   useEffect(() => { load(); }, [load]);
 
   if (loading) return <Loading rows={4} />;
-  if (error) return <ErrorBox onRetry={load} what="low-stock items" />;
+  if (error) return <ErrorBox onRetry={load} what={N_("low-stock items")} />;
 
   if (items.length === 0) {
     return (
       <div className="zc-card">
-        <EmptyState icon="✅" title="Everything is well-stocked" sub="No item is at or below its reorder level right now." />
+        <EmptyState icon="✅" title={t("Everything is well-stocked")} sub={t("No item is at or below its reorder level right now.")} />
       </div>
     );
   }
@@ -37,24 +38,24 @@ export default function LowStockTab({ onNavigate }) {
             <span className="invp-queue-ic" aria-hidden="true">⚠</span>
             <div style={{ flex: 1, minWidth: 180 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-1)" }}>{it.name}</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-1)" }}>{localName(it)}</span>
                 <LevelBadge level={it.stockLevel} />
               </div>
               <div style={{ fontSize: 11.5, color: "var(--text-3)" }}>
-                {it.category || "Uncategorised"}
+                {it.category || t("Uncategorised")}
                 {it.supplier?.name ? ` · ${it.supplier.name}` : ""}
-                {it.costPrice ? ` · last paid ${money(it.costPrice)}/${it.unit}` : ""}
+                {it.costPrice ? ` · ${t("last paid {price}", { price: `${money(it.costPrice)}/${unitLabel(it.unit)}` })}` : ""}
               </div>
             </div>
             <div style={{ textAlign: "right", flex: "none" }}>
               <div className="tnum" style={{ fontSize: 19, fontWeight: 700, letterSpacing: "-.03em", color: levelInk(it.stockLevel) }}>
                 {formatQty(it.currentStock, it.unit)}
               </div>
-              <div style={{ fontSize: 10.5, color: "var(--text-3)" }}>reorder at {formatQty(it.reorderLevel, it.unit)}</div>
+              <div style={{ fontSize: 10.5, color: "var(--text-3)" }}>{t("reorder at {qty}", { qty: formatQty(it.reorderLevel, it.unit) })}</div>
             </div>
             {onNavigate && (
               <button type="button" className="zc-btn pri" style={{ flex: "none" }} onClick={() => onNavigate("purchases")}>
-                Record purchase
+                {t("Record purchase")}
               </button>
             )}
           </div>

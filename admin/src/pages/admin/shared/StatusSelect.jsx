@@ -1,16 +1,18 @@
 // src/pages/admin/shared/StatusSelect.jsx
 // Canonical order-status filter. Values are the real enum from
 // restaurant-server/utils/orderStateMachine.js — never the pre-rename strings.
+import { t, N_ } from "../../../i18n/core.js";
+
 const OPTIONS = [
-  ["All", "All"],
-  ["AWAITING_PAYMENT", "Awaiting payment"],
-  ["PENDING_CONFIRMATION", "Pending confirmation"],
-  ["CONFIRMED", "Placed"],
-  ["PREPARING", "Preparing"],
-  ["READY", "Ready"],
-  ["DELIVERED", "Delivered"],
-  ["COMPLETED", "Completed"],
-  ["CANCELLED", "Cancelled"],
+  ["All", N_("All")],
+  ["AWAITING_PAYMENT", N_("Awaiting payment")],
+  ["PENDING_CONFIRMATION", N_("Pending confirmation")],
+  ["CONFIRMED", N_("Placed")],
+  ["PREPARING", N_("Preparing")],
+  ["READY", N_("Ready")],
+  ["DELIVERED", N_("Delivered")],
+  ["COMPLETED", N_("Completed")],
+  ["CANCELLED", N_("Cancelled")],
 ];
 
 export default function StatusSelect({ value, onChange }) {
@@ -22,7 +24,7 @@ export default function StatusSelect({ value, onChange }) {
       style={{ width: "auto", cursor: "pointer" }}
     >
       {OPTIONS.map(([v, label]) => (
-        <option key={v} value={v}>{label}</option>
+        <option key={v} value={v}>{t(label)}</option>
       ))}
     </select>
   );

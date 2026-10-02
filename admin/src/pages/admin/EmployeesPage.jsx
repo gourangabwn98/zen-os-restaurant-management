@@ -6,9 +6,10 @@ import {
 import {
   PRIMARY, BG_CARD, BG_INPUT, BORDER, TEXT_PRIMARY, TEXT_MUTED, GREEN, GREEN_LIGHT,
 } from "../../theme.js";
+import { t, N_, fmtNum, fmtDate } from "../../i18n/core.js";
 
 const RED = "#ef4444";
-const CATEGORY_LABEL = { waiter: "Waiter", chef: "Chef" };
+const CATEGORY_LABEL = { waiter: N_("Waiter"), chef: N_("Chef") };
 const CATEGORY_ICON  = { waiter: "🧑‍🍽️", chef: "🧑‍🍳" };
 
 export default function EmployeesPage() {
@@ -27,7 +28,7 @@ export default function EmployeesPage() {
       });
       setEmployees(data.employees || []);
     } catch {
-      toast.error("Couldn't load employees");
+      toast.error(t("Couldn't load employees"));
     }
   }, [search, roleFilter, statusFilter]);
 
@@ -38,13 +39,13 @@ export default function EmployeesPage() {
 
   const handleToggleStatus = async (emp) => {
     const next = emp.status === "Active" ? "Inactive" : "Active";
-    if (!window.confirm(`${next === "Inactive" ? "Deactivate" : "Activate"} ${emp.name}?`)) return;
+    if (!window.confirm(t(next === "Inactive" ? "Deactivate {name}?" : "Activate {name}?", { name: emp.name }))) return;
     try {
       await setEmployeeStatus(emp._id, next);
-      toast.success(`${emp.name} is now ${next}`);
+      toast.success(t("{name} is now {status}", { name: emp.name, status: t(next) }));
       load();
     } catch (err) {
-      toast.error(err.response?.data?.message || "Couldn't update status");
+      toast.error(err.response?.data?.message || t("Couldn't update status"));
     }
   };
 
@@ -52,34 +53,34 @@ export default function EmployeesPage() {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
         <div>
-          <div style={{ fontSize: 20, fontWeight: 800, color: TEXT_PRIMARY }}>Employees</div>
-          <div style={{ fontSize: 12.5, color: TEXT_MUTED, marginTop: 2 }}>Waiters and kitchen staff — created here, log in with their own phone + OTP</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: TEXT_PRIMARY }}>{t("Employees")}</div>
+          <div style={{ fontSize: 12.5, color: TEXT_MUTED, marginTop: 2 }}>{t("Waiters and kitchen staff — created here, log in with their own phone + OTP")}</div>
         </div>
-        <button onClick={() => setShowAdd(true)} style={primaryBtnStyle}>+ Add Employee</button>
+        <button onClick={() => setShowAdd(true)} style={primaryBtnStyle}>+ {t("Add Employee")}</button>
       </div>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
         <input
           value={search} onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search name or phone…" style={{ ...inputStyle, flex: "1 1 220px" }}
+          placeholder={t("Search name or phone…")} style={{ ...inputStyle, flex: "1 1 220px" }}
         />
         <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} style={inputStyle}>
-          <option value="">All categories</option>
-          <option value="waiter">Waiter</option>
-          <option value="chef">Chef</option>
+          <option value="">{t("All categories")}</option>
+          <option value="waiter">{t("Waiter")}</option>
+          <option value="chef">{t("Chef")}</option>
         </select>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={inputStyle}>
-          <option value="">All statuses</option>
-          <option value="Active">Active</option>
-          <option value="Inactive">Inactive</option>
+          <option value="">{t("All statuses")}</option>
+          <option value="Active">{t("Active")}</option>
+          <option value="Inactive">{t("Inactive")}</option>
         </select>
       </div>
 
       {employees === null ? (
-        <div style={{ padding: 40, textAlign: "center", color: TEXT_MUTED }}>Loading…</div>
+        <div style={{ padding: 40, textAlign: "center", color: TEXT_MUTED }}>{t("Loading…")}</div>
       ) : employees.length === 0 ? (
         <div style={{ padding: 40, textAlign: "center", color: TEXT_MUTED, background: BG_CARD, borderRadius: 14, border: `1px solid ${BORDER}` }}>
-          No employees found
+          {t("No employees found")}
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>
@@ -90,7 +91,7 @@ export default function EmployeesPage() {
                   <span style={{ fontSize: 22 }}>{CATEGORY_ICON[emp.role] || "👤"}</span>
                   <div>
                     <div style={{ fontWeight: 700, color: TEXT_PRIMARY, fontSize: 14.5 }}>{emp.name}</div>
-                    <div style={{ fontSize: 11.5, color: PRIMARY, fontWeight: 700, textTransform: "uppercase" }}>{CATEGORY_LABEL[emp.role] || emp.role}</div>
+                    <div style={{ fontSize: 11.5, color: PRIMARY, fontWeight: 700, textTransform: "uppercase" }}>{t(CATEGORY_LABEL[emp.role] || emp.role)}</div>
                   </div>
                 </div>
                 <span style={{
@@ -98,7 +99,7 @@ export default function EmployeesPage() {
                   background: emp.status === "Active" ? GREEN_LIGHT : "rgba(239,68,68,0.15)",
                   color: emp.status === "Active" ? GREEN : RED,
                 }}>
-                  {emp.status}
+                  {t(emp.status)}
                 </span>
               </div>
 
@@ -108,13 +109,13 @@ export default function EmployeesPage() {
               </div>
 
               <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                <button onClick={() => setStatsFor(emp)} style={smallBtnStyle}>📊 Stats</button>
-                <button onClick={() => setEditing(emp)} style={smallBtnStyle}>✎ Edit</button>
+                <button onClick={() => setStatsFor(emp)} style={smallBtnStyle}>📊 {t("Stats")}</button>
+                <button onClick={() => setEditing(emp)} style={smallBtnStyle}>✎ {t("Edit")}</button>
                 <button
                   onClick={() => handleToggleStatus(emp)}
                   style={{ ...smallBtnStyle, color: emp.status === "Active" ? RED : GREEN, borderColor: emp.status === "Active" ? RED : GREEN }}
                 >
-                  {emp.status === "Active" ? "Deactivate" : "Activate"}
+                  {emp.status === "Active" ? t("Deactivate") : t("Activate")}
                 </button>
               </div>
             </div>
@@ -138,46 +139,46 @@ function EmployeeFormModal({ employee, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async () => {
-    if (!name.trim()) return toast.error("Enter employee name");
-    if (!isEdit && !/^[6-9]\d{9}$/.test(phone)) return toast.error("Enter a valid 10-digit phone number");
+    if (!name.trim()) return toast.error(t("Enter employee name"));
+    if (!isEdit && !/^[6-9]\d{9}$/.test(phone)) return toast.error(t("Enter a valid 10-digit phone number"));
     setSaving(true);
     try {
       if (isEdit) {
         await editEmployee(employee._id, { name, address, role });
-        toast.success("Employee updated");
+        toast.success(t("Employee updated"));
       } else {
         await addEmployee({ name, phone, address, role });
-        toast.success(`${name} added as ${CATEGORY_LABEL[role]}`);
+        toast.success(t("{name} added as {role}", { name, role: t(CATEGORY_LABEL[role]) }));
       }
       onSaved();
     } catch (err) {
-      toast.error(err.response?.data?.message || "Couldn't save employee");
+      toast.error(err.response?.data?.message || t("Couldn't save employee"));
     } finally { setSaving(false); }
   };
 
   return (
-    <Modal onClose={onClose} title={isEdit ? "Edit Employee" : "Add Employee"}>
-      <Field label="Employee Name">
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Rahul" style={inputStyle} />
+    <Modal onClose={onClose} title={isEdit ? t("Edit Employee") : t("Add Employee")}>
+      <Field label={t("Employee Name")}>
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("e.g. Rahul")} style={inputStyle} />
       </Field>
-      <Field label="Phone Number">
+      <Field label={t("Phone Number")}>
         <input
           value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
           placeholder="9876543210" disabled={isEdit} style={{ ...inputStyle, opacity: isEdit ? 0.6 : 1 }}
         />
-        {isEdit && <div style={{ fontSize: 11, color: TEXT_MUTED, marginTop: 4 }}>Phone number can't be changed after creation.</div>}
+        {isEdit && <div style={{ fontSize: 11, color: TEXT_MUTED, marginTop: 4 }}>{t("Phone number can't be changed after creation.")}</div>}
       </Field>
-      <Field label="Address">
-        <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="e.g. Kolkata, West Bengal" style={inputStyle} />
+      <Field label={t("Address")}>
+        <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder={t("e.g. Kolkata, West Bengal")} style={inputStyle} />
       </Field>
-      <Field label="Category">
+      <Field label={t("Category")}>
         <select value={role} onChange={(e) => setRole(e.target.value)} style={inputStyle}>
-          <option value="waiter">Waiter</option>
-          <option value="chef">Chef</option>
+          <option value="waiter">{t("Waiter")}</option>
+          <option value="chef">{t("Chef")}</option>
         </select>
       </Field>
       <button onClick={handleSubmit} disabled={saving} style={{ ...primaryBtnStyle, width: "100%", marginTop: 6, opacity: saving ? 0.6 : 1 }}>
-        {saving ? "Saving…" : isEdit ? "Save Changes" : "Add Employee"}
+        {saving ? t("Saving…") : isEdit ? t("Save Changes") : t("Add Employee")}
       </button>
     </Modal>
   );
@@ -192,10 +193,10 @@ const toDateInput = (d) => {
 const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d; };
 
 const RANGE_PRESETS = [
-  { key: "today",     label: "Today",       range: () => ({ from: toDateInput(new Date()), to: toDateInput(new Date()) }) },
-  { key: "yesterday", label: "Yesterday",   range: () => ({ from: toDateInput(daysAgo(1)), to: toDateInput(daysAgo(1)) }) },
-  { key: "week",      label: "Last 7 Days", range: () => ({ from: toDateInput(daysAgo(6)), to: toDateInput(new Date()) }) },
-  { key: "month",     label: "Last 30 Days", range: () => ({ from: toDateInput(daysAgo(29)), to: toDateInput(new Date()) }) },
+  { key: "today",     label: N_("Today"),       range: () => ({ from: toDateInput(new Date()), to: toDateInput(new Date()) }) },
+  { key: "yesterday", label: N_("Yesterday"),   range: () => ({ from: toDateInput(daysAgo(1)), to: toDateInput(daysAgo(1)) }) },
+  { key: "week",      label: N_("Last 7 Days"), range: () => ({ from: toDateInput(daysAgo(6)), to: toDateInput(new Date()) }) },
+  { key: "month",     label: N_("Last 30 Days"), range: () => ({ from: toDateInput(daysAgo(29)), to: toDateInput(new Date()) }) },
 ];
 
 function StatsModal({ employee, onClose }) {
@@ -208,7 +209,7 @@ function StatsModal({ employee, onClose }) {
     setStats(null);
     getEmployeeStats(employee._id, { from, to })
       .then(({ data }) => setStats(data.stats))
-      .catch(() => toast.error("Couldn't load stats"));
+      .catch(() => toast.error(t("Couldn't load stats")));
   }, [employee._id, from, to]);
 
   const applyPreset = (key) => {
@@ -221,13 +222,14 @@ function StatsModal({ employee, onClose }) {
   const handleTo = (v) => { setPreset(""); setTo(v); if (from > v) setFrom(v); };
 
   const isChef = employee.role === "chef";
-  const rangeLabel = RANGE_PRESETS.find((p) => p.key === preset)?.label
-    ?? (from === to ? from : `${from} → ${to}`);
+  const presetLabel = RANGE_PRESETS.find((p) => p.key === preset)?.label;
+  const rangeLabel = presetLabel ? t(presetLabel)
+    : (from === to ? fmtDate(from) : `${fmtDate(from)} → ${fmtDate(to)}`);
 
   return (
-    <Modal onClose={onClose} title={`${employee.name}'s Stats`}>
+    <Modal onClose={onClose} title={t("{name}'s Stats", { name: employee.name })}>
       <div style={{ fontSize: 12, color: TEXT_MUTED, marginBottom: 12, textTransform: "uppercase", fontWeight: 700 }}>
-        {CATEGORY_LABEL[employee.role]} · {rangeLabel}
+        {t(CATEGORY_LABEL[employee.role] || employee.role)} · {rangeLabel}
       </div>
 
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
@@ -242,33 +244,33 @@ function StatsModal({ employee, onClose }) {
               borderColor: preset === p.key ? PRIMARY : BORDER,
             }}
           >
-            {p.label}
+            {t(p.label)}
           </button>
         ))}
       </div>
 
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
         <input type="date" value={from} max={to} onChange={(e) => handleFrom(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
-        <span style={{ color: TEXT_MUTED, fontSize: 12 }}>to</span>
+        <span style={{ color: TEXT_MUTED, fontSize: 12 }}>{t("to")}</span>
         <input type="date" value={to} min={from} max={toDateInput(new Date())} onChange={(e) => handleTo(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
       </div>
 
       {!stats ? (
-        <div style={{ color: TEXT_MUTED, fontSize: 13 }}>Loading…</div>
+        <div style={{ color: TEXT_MUTED, fontSize: 13 }}>{t("Loading…")}</div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           {isChef ? (
             <>
-              <StatBox label="Prepared" value={stats.preparedToday} />
-              <StatBox label="Preparing (live)" value={stats.preparing} />
-              <StatBox label="Ready (live)" value={stats.ready} />
-              <StatBox label="Completed" value={stats.completedToday} />
+              <StatBox label={t("Prepared")} value={stats.preparedToday} />
+              <StatBox label={t("Preparing (live)")} value={stats.preparing} />
+              <StatBox label={t("Ready (live)")} value={stats.ready} />
+              <StatBox label={t("Completed")} value={stats.completedToday} />
             </>
           ) : (
             <>
-              <StatBox label="Orders" value={stats.ordersToday} />
-              <StatBox label="Active (live)" value={stats.pending} />
-              <StatBox label="Completed" value={stats.completed} />
+              <StatBox label={t("Orders")} value={stats.ordersToday} />
+              <StatBox label={t("Active (live)")} value={stats.pending} />
+              <StatBox label={t("Completed")} value={stats.completed} />
             </>
           )}
         </div>
@@ -279,7 +281,7 @@ function StatsModal({ employee, onClose }) {
 
 const StatBox = ({ label, value }) => (
   <div style={{ textAlign: "center", padding: "14px 8px", background: BG_INPUT, borderRadius: 12 }}>
-    <div style={{ fontSize: 24, fontWeight: 800, color: PRIMARY }}>{value ?? 0}</div>
+    <div style={{ fontSize: 24, fontWeight: 800, color: PRIMARY }}>{fmtNum(value ?? 0)}</div>
     <div style={{ fontSize: 11, color: TEXT_MUTED, marginTop: 4 }}>{label}</div>
   </div>
 );
@@ -297,7 +299,7 @@ function Modal({ title, onClose, children }) {
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, background: BG_CARD, border: `1px solid ${BORDER}`, borderRadius: 18, padding: 22 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div style={{ fontWeight: 800, fontSize: 16, color: TEXT_PRIMARY }}>{title}</div>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: TEXT_MUTED, fontSize: 18, cursor: "pointer" }}>✕</button>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: TEXT_MUTED, fontSize: 18, cursor: "pointer" }} aria-label={t("Close")}>✕</button>
         </div>
         {children}
       </div>

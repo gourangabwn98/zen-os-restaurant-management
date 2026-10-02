@@ -5,9 +5,12 @@ import {
   Modal, TableShell, Toolbar, Search, Seg, Spacer, Loading, ErrorBox, StatChip, StatRow,
 } from "./invUI.jsx";
 import { inp, label, money, num, fmtDateTime } from "./invKit.js";
+import { t, tn, N_, fmtNum, localName } from "../../../i18n/core.js";
+import { unitLabel } from "../../../utils/units.js";
 
 // WASTAGE_REASONS — restaurant-server/utils/inventoryConstants.js
-const REASONS = ["Spoilage", "Expired", "Damaged", "Accident", "Other"];
+// Values are the stored enum; t() shows them translated.
+const REASONS = [N_("Spoilage"), N_("Expired"), N_("Damaged"), N_("Accident"), N_("Other")];
 const REASON_KIND = { Spoilage: "stop", Expired: "stop", Damaged: "wait", Accident: "wait", Other: "done" };
 
 export default function WastageTab() {
@@ -37,15 +40,15 @@ export default function WastageTab() {
   const selectedItem = items.find((i) => i._id === form.inventoryItem);
 
   const handleSave = async () => {
-    if (!form.inventoryItem || !(Number(form.quantity) > 0)) return toast.error("Select an item and a quantity > 0");
+    if (!form.inventoryItem || !(Number(form.quantity) > 0)) return toast.error(t("Select an item and a quantity > 0"));
     setSaving(true);
     try {
       await createWastage({ ...form, quantity: Number(form.quantity) });
-      toast.success("Wastage recorded");
+      toast.success(t("Wastage recorded"));
       setShowForm(false);
       setForm({ inventoryItem: "", quantity: "", reason: "Spoilage", notes: "" });
       load();
-    } catch (err) { toast.error(err.response?.data?.message || "Failed to record wastage"); }
+    } catch (err) { toast.error(err.response?.data?.message || t("Failed to record wastage")); }
     finally { setSaving(false); }
   };
 
@@ -61,44 +64,44 @@ export default function WastageTab() {
     const q = search.trim().toLowerCase();
     return logs.filter((l) => {
       if (reason !== "All" && l.reason !== reason) return false;
-      if (q && !(l.inventoryItem?.name || "").toLowerCase().includes(q)) return false;
+      if (q && ![l.inventoryItem?.name, l.inventoryItem?.nameBn].some((v) => (v || "").toLowerCase().includes(q))) return false;
       return true;
     });
   }, [logs, search, reason]);
 
   if (loading) return <Loading />;
-  if (error) return <ErrorBox onRetry={load} what="wastage logs" />;
+  if (error) return <ErrorBox onRetry={load} what={N_("wastage logs")} />;
 
   return (
     <div>
       {logs.length > 0 && (
         <StatRow>
-          <StatChip tone="stop" label="Written off" value={money(stats.totalValue)} sub={`${stats.count} entr${stats.count === 1 ? "y" : "ies"}`} />
-          <StatChip tone="muted" label="Entries" value={stats.count} sub={`across ${new Set(logs.map((l) => l.inventoryItem?._id)).size} item(s)`} />
-          <StatChip tone="warn" label="Top reason" value={stats.topReason} sub="most-logged this list" />
+          <StatChip tone="stop" label={t("Written off")} value={money(stats.totalValue)} sub={tn(stats.count, "{n} entry", "{n} entries")} />
+          <StatChip tone="muted" label={t("Entries")} value={fmtNum(stats.count)} sub={t("across {n} item(s)", { n: new Set(logs.map((l) => l.inventoryItem?._id)).size })} />
+          <StatChip tone="warn" label={t("Top reason")} value={t(stats.topReason)} sub={t("most-logged this list")} />
         </StatRow>
       )}
 
       <Toolbar>
-        <Search value={search} onChange={setSearch} placeholder="Search wastage log" />
-        <Seg options={["All", ...REASONS]} value={reason} onChange={setReason} ariaLabel="Filter by reason" />
+        <Search value={search} onChange={setSearch} placeholder={t("Search wastage log")} />
+        <Seg options={["All", ...REASONS]} value={reason} onChange={setReason} ariaLabel={t("Filter by reason")} />
         <Spacer />
-        <button type="button" className="zc-btn pri" onClick={() => setShowForm(true)}>＋ Log wastage</button>
+        <button type="button" className="zc-btn pri" onClick={() => setShowForm(true)}>＋ {t("Log wastage")}</button>
       </Toolbar>
 
       <TableShell
-        headers={["Date", "Item", "Qty", "Reason", "Cost impact", "Notes", "Recorded by"]}
+        headers={[N_("Date"), N_("Item"), N_("Qty"), N_("Reason"), N_("Cost impact"), N_("Notes"), N_("Recorded by")]}
         minWidth={760}
         isEmpty={filtered.length === 0}
         emptyIcon="🗑️"
-        emptyText={logs.length === 0 ? "No wastage recorded" : "No entries match these filters"}
+        emptyText={logs.length === 0 ? t("No wastage recorded") : t("No entries match these filters")}
       >
         {filtered.map((l) => (
           <tr key={l._id}>
             <td className="num" style={{ color: "var(--text-2)", fontSize: 11.5 }}>{fmtDateTime(l.wastageDate || l.createdAt)}</td>
-            <td style={{ color: "var(--text-1)", fontWeight: 600 }}>{l.inventoryItem?.name || "—"}</td>
-            <td className="num" style={{ color: "var(--text-2)" }}>{num(l.quantity)} {l.inventoryItem?.unit}</td>
-            <td><span className={`zc-tag ${REASON_KIND[l.reason] || "done"}`}><i />{l.reason}</span></td>
+            <td style={{ color: "var(--text-1)", fontWeight: 600 }}>{localName(l.inventoryItem) || "—"}</td>
+            <td className="num" style={{ color: "var(--text-2)" }}>{num(l.quantity)} {unitLabel(l.inventoryItem?.unit)}</td>
+            <td><span className={`zc-tag ${REASON_KIND[l.reason] || "done"}`}><i />{t(l.reason)}</span></td>
             <td className="money neg">{money(l.costImpact)}</td>
             <td style={{ color: "var(--text-3)", fontSize: 11.5 }}>{l.notes || "—"}</td>
             <td style={{ color: "var(--text-3)", fontSize: 11.5 }}>{l.recordedBy?.name || "—"}</td>
@@ -108,38 +111,38 @@ export default function WastageTab() {
 
       {showForm && (
         <Modal
-          title="Log wastage"
-          sub="Deducts stock and records the cost impact"
+          title={t("Log wastage")}
+          sub={t("Deducts stock and records the cost impact")}
           onClose={() => setShowForm(false)}
           footer={
             <>
-              <button type="button" className="zc-btn" onClick={() => setShowForm(false)}>Cancel</button>
+              <button type="button" className="zc-btn" onClick={() => setShowForm(false)}>{t("Cancel")}</button>
               <button type="button" className="zc-btn pri" disabled={saving} onClick={handleSave}>
-                {saving ? "Saving…" : "Record wastage"}
+                {saving ? t("Saving…") : t("Record wastage")}
               </button>
             </>
           }
         >
           <div style={{ display: "grid", gap: 14 }}>
             <div>
-              <label style={label}>Item</label>
+              <label style={label}>{t("Item")}</label>
               <select style={inp} value={form.inventoryItem} onChange={(e) => setForm({ ...form, inventoryItem: e.target.value })}>
-                <option value="">Select item…</option>
-                {items.map((i) => <option key={i._id} value={i._id}>{i.name} ({num(i.currentStock)} {i.unit} in stock)</option>)}
+                <option value="">{t("Select item…")}</option>
+                {items.map((i) => <option key={i._id} value={i._id}>{localName(i)} ({t("{qty} in stock", { qty: `${num(i.currentStock)} ${unitLabel(i.unit)}` })})</option>)}
               </select>
             </div>
             <div>
-              <label style={label}>Quantity {selectedItem ? `(${selectedItem.unit})` : ""}</label>
+              <label style={label}>{t("Quantity")} {selectedItem ? `(${unitLabel(selectedItem.unit)})` : ""}</label>
               <input type="number" style={inp} value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} />
             </div>
             <div>
-              <label style={label}>Reason</label>
+              <label style={label}>{t("Reason")}</label>
               <select style={inp} value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })}>
-                {REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                {REASONS.map((r) => <option key={r} value={r}>{t(r)}</option>)}
               </select>
             </div>
             <div>
-              <label style={label}>Notes</label>
+              <label style={label}>{t("Notes")}</label>
               <input style={inp} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </div>
           </div>

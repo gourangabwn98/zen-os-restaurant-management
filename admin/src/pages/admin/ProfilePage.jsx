@@ -27,6 +27,7 @@ import {
   addRestaurantPrinter, updateRestaurantPrinter, deleteRestaurantPrinter,
 } from "../../services/adminService.js";
 import PageHeader from "./shared/PageHeader.jsx";
+import { t, tn, N_, fmtNum } from "../../i18n/core.js";
 
 // ── page-scoped styles (tokens only — light / dark safe) ─────────────────────
 if (typeof document !== "undefined" && !document.getElementById("prof-styles")) {
@@ -74,12 +75,12 @@ if (typeof document !== "undefined" && !document.getElementById("prof-styles")) 
   document.head.appendChild(s);
 }
 
-const fmt12 = (t) => {
-  if (!t) return "—";
-  const [h, m] = t.split(":").map(Number);
-  const ampm = h >= 12 ? "PM" : "AM";
+const fmt12 = (hhmm) => {
+  if (!hhmm) return "—";
+  const [h, m] = hhmm.split(":").map(Number);
+  const ampm = h >= 12 ? t("PM") : t("AM");
   const h12 = h % 12 || 12;
-  return `${h12}:${m < 10 ? "0" : ""}${m} ${ampm}`;
+  return `${fmtNum(h12)}:${fmtNum(m, { minimumIntegerDigits: 2 })} ${ampm}`;
 };
 const orDash = (v) => (v && String(v).trim() ? v : "—");
 
@@ -91,11 +92,11 @@ const SectionCard = ({ title, sub, editing, onEdit, onSave, onCancel, viewConten
       <div style={{ flex: 1 }} />
       {editing ? (
         <div style={{ display: "flex", gap: 8 }}>
-          <button type="button" className="zc-btn sm" onClick={onCancel}>Cancel</button>
-          <button type="button" className="zc-btn pri sm" onClick={onSave}>Save</button>
+          <button type="button" className="zc-btn sm" onClick={onCancel}>{t("Cancel")}</button>
+          <button type="button" className="zc-btn pri sm" onClick={onSave}>{t("Save")}</button>
         </div>
       ) : (
-        <button type="button" className="zc-btn sm" onClick={onEdit}>Edit</button>
+        <button type="button" className="zc-btn sm" onClick={onEdit}>{t("Edit")}</button>
       )}
     </div>
     <div style={{ padding: 18 }}>{editing ? editContent : viewContent}</div>
@@ -131,7 +132,7 @@ const ServiceRow = ({ label, on, editable, onClick }) => (
   <div className={`prof-row${on ? " on" : ""}`} style={editable ? { cursor: "pointer" } : undefined} onClick={editable ? onClick : undefined}>
     <Toggle on={on} onClick={editable ? onClick : undefined} disabled={!editable} />
     <span style={{ fontSize: 12.5, fontWeight: 500, color: "var(--text-1)" }}>{label}</span>
-    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-3)" }}>{on ? "Accepting orders" : "Turned off"}</span>
+    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-3)" }}>{on ? t("Accepting orders") : t("Turned off")}</span>
   </div>
 );
 
@@ -139,12 +140,12 @@ const ServiceRow = ({ label, on, editable, onClick }) => (
 // MAIN
 // RestaurantProfile.paymentMode (restaurant-server/utils/paymentMode.js)
 const PAYMENT_MODE_META = {
-  CASH:   { icon: "💵", label: "Cash only",
-            help: "Customers order directly and pay at the table or counter. They're shown how to use “Call waiter” to pay." },
-  ONLINE: { icon: "📲", label: "Online only (pay before ordering)",
-            help: "Customers pay with PhonePe first. The order reaches waiters and the kitchen only after the payment is verified; unpaid orders cancel after 15 min." },
-  BOTH:   { icon: "🔀", label: "Cash or online — customer chooses",
-            help: "Customers pick at checkout. Choosing online works like “Online only” (pay first, then the order is sent)." },
+  CASH:   { icon: "💵", label: N_("Cash only"),
+            help: N_("Customers order directly and pay at the table or counter. They're shown how to use “Call waiter” to pay.") },
+  ONLINE: { icon: "📲", label: N_("Online only (pay before ordering)"),
+            help: N_("Customers pay with PhonePe first. The order reaches waiters and the kitchen only after the payment is verified; unpaid orders cancel after 15 min.") },
+  BOTH:   { icon: "🔀", label: N_("Cash or online — customer chooses"),
+            help: N_("Customers pick at checkout. Choosing online works like “Online only” (pay first, then the order is sent).") },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -195,7 +196,7 @@ export default function ProfilePage() {
           };
           setProfile(merged); setDraft(merged);
         }
-      } catch { toast.error("Failed to load profile"); }
+      } catch { toast.error(t("Failed to load profile")); }
       finally { setLoading(false); }
     })();
   }, []);
@@ -222,13 +223,13 @@ export default function ProfilePage() {
     try {
       const updated = { ...profile, ...sectionFields(sec) };
       if (sec === "services" && (updated.editWindowMinutes === "" || updated.editWindowMinutes == null)) {
-        toast.error("Enter the minutes a Placed order can be changed (0 = start preparing immediately)");
+        toast.error(t("Enter the minutes a Placed order can be changed (0 = start preparing immediately)"));
         return;
       }
       if (sec === "payment" && updated.upiId) {
         const upiPattern = /^[\w.-]{2,256}@[a-zA-Z]{2,64}$/;
         if (!upiPattern.test(updated.upiId.trim())) {
-          toast.error("Enter a valid UPI ID, e.g. restaurantname@okhdfcbank");
+          toast.error(t("Enter a valid UPI ID, e.g. restaurantname@okhdfcbank"));
           return;
         }
         updated.upiId = updated.upiId.trim();
@@ -237,14 +238,14 @@ export default function ProfilePage() {
       setProfile(updated); setEditing((p) => ({ ...p, [sec]: false }));
       try {
         await updateRestaurantProfile(updated);
-        toast.success("Section saved");
+        toast.success(t("Section saved"));
       } catch (err) {
         // Roll back and reopen the section, with the server's reason
         // (e.g. "Online only" needs PhonePe configured).
         setProfile(before); setDraft(updated); setEditing((p) => ({ ...p, [sec]: true }));
-        toast.error(err?.response?.data?.message || "Failed to save");
+        toast.error(err?.response?.data?.message || t("Failed to save"));
       }
-    } catch { toast.error("Failed to save"); }
+    } catch { toast.error(t("Failed to save")); }
   };
 
   const set = (k, v) => setDraft((p) => ({ ...p, [k]: v }));
@@ -259,8 +260,8 @@ export default function ProfilePage() {
       const res = await uploadRestaurantLogo(fd);
       const url = res?.data?.logoUrl;
       setProfile((p) => ({ ...p, logo: url })); setDraft((p) => ({ ...p, logo: url }));
-      toast.success("Logo uploaded");
-    } catch { toast.error("Failed to upload logo"); setLogoPreview(""); }
+      toast.success(t("Logo uploaded"));
+    } catch { toast.error(t("Failed to upload logo")); setLogoPreview(""); }
     finally { setUploading(false); }
   };
 
@@ -272,18 +273,18 @@ export default function ProfilePage() {
       const res = await uploadPaymentQr(fd);
       const url = res?.data?.paymentQr || "";
       setProfile((p) => ({ ...p, paymentQr: url })); setDraft((p) => ({ ...p, paymentQr: url }));
-      toast.success("Payment QR uploaded");
-    } catch (err) { toast.error(err?.response?.data?.message || "Failed to upload payment QR"); }
+      toast.success(t("Payment QR uploaded"));
+    } catch (err) { toast.error(err?.response?.data?.message || t("Failed to upload payment QR")); }
     finally { setQrUploading(false); if (qrFileRef.current) qrFileRef.current.value = ""; }
   };
 
   const handlePaymentQrRemove = async () => {
-    if (!window.confirm("Remove the payment QR from bills?")) return;
+    if (!window.confirm(t("Remove the payment QR from bills?"))) return;
     try {
       await removePaymentQr();
       setProfile((p) => ({ ...p, paymentQr: "" })); setDraft((p) => ({ ...p, paymentQr: "" }));
-      toast.success("Payment QR removed");
-    } catch { toast.error("Failed to remove payment QR"); }
+      toast.success(t("Payment QR removed"));
+    } catch { toast.error(t("Failed to remove payment QR")); }
   };
 
   // Uploads immediately (like the logo) — shown in both view and edit mode.
@@ -291,32 +292,32 @@ export default function ProfilePage() {
     <div style={{ marginTop: 16, display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap",
       padding: "12px 14px", borderRadius: "var(--r-ctl)", border: "1px solid var(--edge)", background: "var(--card-2)" }}>
       {profile.paymentQr
-        ? <img src={profile.paymentQr} alt="Payment QR" style={{ width: 110, height: 110, objectFit: "contain", background: "#fff", borderRadius: 8, padding: 4 }} />
-        : <div style={{ width: 110, height: 110, display: "grid", placeItems: "center", borderRadius: 8, border: "2px dashed var(--edge)", color: "var(--text-3)", fontSize: 11, textAlign: "center" }}>No QR yet</div>}
+        ? <img src={profile.paymentQr} alt={t("Payment QR")} style={{ width: 110, height: 110, objectFit: "contain", background: "#fff", borderRadius: 8, padding: 4 }} />
+        : <div style={{ width: 110, height: 110, display: "grid", placeItems: "center", borderRadius: 8, border: "2px dashed var(--edge)", color: "var(--text-3)", fontSize: 11, textAlign: "center" }}>{t("No QR yet")}</div>}
       <div style={{ display: "grid", gap: 8, flex: 1, minWidth: 180 }}>
-        <b style={{ fontSize: 13, color: "var(--text-1)" }}>Payment QR on bills</b>
-        <span style={{ fontSize: 11.5, color: "var(--text-2)" }}>Upload your UPI / bank QR image. It's shown on the waiter and admin bill so customers can scan and pay. Staff still mark the order paid.</span>
+        <b style={{ fontSize: 13, color: "var(--text-1)" }}>{t("Payment QR on bills")}</b>
+        <span style={{ fontSize: 11.5, color: "var(--text-2)" }}>{t("Upload your UPI / bank QR image. It's shown on the waiter and admin bill so customers can scan and pay. Staff still mark the order paid.")}</span>
         <div style={{ display: "flex", gap: 8 }}>
           <input ref={qrFileRef} type="file" accept="image/*" hidden onChange={handlePaymentQrUpload} />
           <button type="button" className="zc-btn sm" disabled={qrUploading} onClick={() => qrFileRef.current?.click()}>
-            {qrUploading ? "Uploading…" : profile.paymentQr ? "Replace QR" : "Upload QR"}
+            {qrUploading ? t("Uploading…") : profile.paymentQr ? t("Replace QR") : t("Upload QR")}
           </button>
-          {profile.paymentQr && <button type="button" className="zc-btn sm danger" onClick={handlePaymentQrRemove}>Remove</button>}
+          {profile.paymentQr && <button type="button" className="zc-btn sm danger" onClick={handlePaymentQrRemove}>{t("Remove")}</button>}
         </div>
       </div>
     </div>
   );
 
   const getCurrentLocation = () => {
-    if (!navigator.geolocation) return toast.error("Geolocation not supported");
+    if (!navigator.geolocation) return toast.error(t("Geolocation not supported"));
     navigator.geolocation.getCurrentPosition(
-      ({ coords }) => { setDraft((p) => ({ ...p, latitude: coords.latitude.toFixed(6), longitude: coords.longitude.toFixed(6) })); toast.success("Location fetched"); },
-      () => toast.error("Could not get location"),
+      ({ coords }) => { setDraft((p) => ({ ...p, latitude: coords.latitude.toFixed(6), longitude: coords.longitude.toFixed(6) })); toast.success(t("Location fetched")); },
+      () => toast.error(t("Could not get location")),
     );
   };
 
   const handleAddBanner = async () => {
-    if (!bannerFile) return toast.error("Please select an image");
+    if (!bannerFile) return toast.error(t("Please select an image"));
     setBannerUploading(true);
     try {
       const fd = new FormData(); fd.append("banner", bannerFile);
@@ -326,8 +327,8 @@ export default function ProfilePage() {
       if (upd) { setProfile((p) => ({ ...p, banners: upd.banners })); setDraft((p) => ({ ...p, banners: upd.banners })); }
       setBannerFile(null); setBannerLink("");
       if (bannerFileRef.current) bannerFileRef.current.value = "";
-      toast.success("Banner added");
-    } catch { toast.error("Failed to upload banner"); }
+      toast.success(t("Banner added"));
+    } catch { toast.error(t("Failed to upload banner")); }
     finally { setBannerUploading(false); }
   };
 
@@ -335,27 +336,27 @@ export default function ProfilePage() {
     const optimistic = profile.banners.map((b) => (b._id === banner._id ? { ...b, active: !b.active } : b));
     setProfile((p) => ({ ...p, banners: optimistic }));
     try { await updateRestaurantBanner(banner._id, { active: !banner.active }); }
-    catch { toast.error("Failed"); setProfile((p) => ({ ...p, banners: profile.banners })); }
+    catch { toast.error(t("Failed")); setProfile((p) => ({ ...p, banners: profile.banners })); }
   };
 
   const handleDeleteBanner = async (id) => {
-    if (!window.confirm("Delete this banner?")) return;
+    if (!window.confirm(t("Delete this banner?"))) return;
     try {
       const res = await deleteRestaurantBanner(id); const upd = res?.data?.data;
       if (upd) { setProfile((p) => ({ ...p, banners: upd.banners })); setDraft((p) => ({ ...p, banners: upd.banners })); }
-      toast.success("Banner deleted");
-    } catch { toast.error("Failed"); }
+      toast.success(t("Banner deleted"));
+    } catch { toast.error(t("Failed")); }
   };
 
   const handleAddPrinter = async () => {
-    if (!newPrinterIp.trim()) return toast.error("Enter an IP address");
+    if (!newPrinterIp.trim()) return toast.error(t("Enter an IP address"));
     setPrinterSaving(true);
     try {
       const res = await addRestaurantPrinter({ ip: newPrinterIp.trim(), name: newPrinterName.trim() || "Printer", active: true });
       const upd = res?.data?.data;
       if (upd) { setProfile((p) => ({ ...p, printerIps: upd.printerIps })); setDraft((p) => ({ ...p, printerIps: upd.printerIps })); }
-      setNewPrinterIp(""); setNewPrinterName(""); toast.success("Printer added");
-    } catch { toast.error("Failed"); }
+      setNewPrinterIp(""); setNewPrinterName(""); toast.success(t("Printer added"));
+    } catch { toast.error(t("Failed")); }
     finally { setPrinterSaving(false); }
   };
 
@@ -363,32 +364,32 @@ export default function ProfilePage() {
     const optimistic = profile.printerIps.map((p) => (p._id === printer._id ? { ...p, active: !p.active } : p));
     setProfile((p) => ({ ...p, printerIps: optimistic }));
     try { await updateRestaurantPrinter(printer._id, { active: !printer.active }); }
-    catch { toast.error("Failed"); setProfile((p) => ({ ...p, printerIps: profile.printerIps })); }
+    catch { toast.error(t("Failed")); setProfile((p) => ({ ...p, printerIps: profile.printerIps })); }
   };
 
   const handleDeletePrinter = async (id) => {
-    if (!window.confirm("Remove this printer?")) return;
+    if (!window.confirm(t("Remove this printer?"))) return;
     try {
       const res = await deleteRestaurantPrinter(id); const upd = res?.data?.data;
       if (upd) { setProfile((p) => ({ ...p, printerIps: upd.printerIps })); setDraft((p) => ({ ...p, printerIps: upd.printerIps })); }
-      toast.success("Printer removed");
-    } catch { toast.error("Failed"); }
+      toast.success(t("Printer removed"));
+    } catch { toast.error(t("Failed")); }
   };
 
   const handleSaveAll = async () => {
     setSaving(true);
-    try { await updateRestaurantProfile(profile); toast.success("All settings saved!"); }
-    catch { toast.error("Failed to save"); }
+    try { await updateRestaurantProfile(profile); toast.success(t("All settings saved!")); }
+    catch { toast.error(t("Failed to save")); }
     finally { setSaving(false); }
   };
 
   if (loading) {
     return (
       <div>
-        <PageHeader title="Restaurant profile" />
+        <PageHeader title={t("Restaurant profile")} />
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "80px 0", color: "var(--text-3)" }}>
           <div className="zc-spin" />
-          <div style={{ fontSize: 13 }}>Loading profile…</div>
+          <div style={{ fontSize: 13 }}>{t("Loading profile…")}</div>
         </div>
       </div>
     );
@@ -396,108 +397,108 @@ export default function ProfilePage() {
 
   const logoSrc = logoPreview || profile.logo;
   const services = [
-    { key: "dineIn", label: "Dine-in" },
-    { key: "takeAway", label: "Takeaway" },
-    { key: "delivery", label: "Delivery" },
+    { key: "dineIn", label: t("Dine-in") },
+    { key: "takeAway", label: t("Takeaway") },
+    { key: "delivery", label: t("Delivery") },
   ];
 
   return (
     <div>
-      <PageHeader title="Restaurant profile" sub="Everything here is restaurant data, stored in the database — an admin can change it without a redeploy" />
+      <PageHeader title={t("Restaurant profile")} sub={t("Everything here is restaurant data, stored in the database — an admin can change it without a redeploy")} />
 
       <div className="prof-grid">
         {/* ── LEFT ── */}
         <div>
           {/* Identity */}
-          <SectionCard title="Identity" sub="Shown on the customer site, bills and KOT headers"
+          <SectionCard title={t("Identity")} sub={t("Shown on the customer site, bills and KOT headers")}
             editing={editing.basic} onEdit={() => startEdit("basic")} onCancel={() => cancelEdit("basic")} onSave={() => saveSection("basic")}
             viewContent={<div style={{ display: "flex", gap: 16 }}>
-              <div className="prof-avatar">{logoSrc ? <img src={logoSrc} alt="logo" /> : (profile.restaurantName?.[0] || "R")}</div>
+              <div className="prof-avatar">{logoSrc ? <img src={logoSrc} alt={t("Logo")} /> : (profile.restaurantName?.[0] || "R")}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <Kv pairs={[
-                  ["Restaurant name", orDash(profile.restaurantName), true],
-                  ["Phone", orDash(profile.phone)],
-                  ["Email", orDash(profile.email)],
-                  ["Contact person", orDash(profile.contactPerson)],
+                  [t("Restaurant name"), orDash(profile.restaurantName), true],
+                  [t("Phone"), orDash(profile.phone)],
+                  [t("Email"), orDash(profile.email)],
+                  [t("Contact person"), orDash(profile.contactPerson)],
                 ]} />
               </div>
             </div>}
             editContent={<div>
               <div style={{ display: "flex", gap: 16, marginBottom: 16 }}>
-                <div className="prof-avatar">{logoSrc ? <img src={logoSrc} alt="logo" /> : (draft.restaurantName?.[0] || "R")}</div>
+                <div className="prof-avatar">{logoSrc ? <img src={logoSrc} alt={t("Logo")} /> : (draft.restaurantName?.[0] || "R")}</div>
                 <div>
                   <input type="file" accept="image/*" ref={logoFileRef} style={{ display: "none" }} onChange={handleLogoUpload} />
-                  <button type="button" className="zc-btn sm" onClick={() => logoFileRef.current?.click()}>{uploading ? "Uploading…" : "Change logo"}</button>
-                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>Recommended: 400×400px, max 5MB</div>
+                  <button type="button" className="zc-btn sm" onClick={() => logoFileRef.current?.click()}>{uploading ? t("Uploading…") : t("Change logo")}</button>
+                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>{t("Recommended: 400×400px, max 5MB")}</div>
                 </div>
               </div>
               <div className="prof-edit-grid">
-                <Field label="Restaurant name" full><input className="zc-input" value={draft.restaurantName} onChange={(e) => set("restaurantName", e.target.value)} /></Field>
-                <Field label="Phone"><input className="zc-input" value={draft.phone} onChange={(e) => set("phone", e.target.value)} /></Field>
-                <Field label="Email"><input className="zc-input" type="email" value={draft.email} onChange={(e) => set("email", e.target.value)} /></Field>
-                <Field label="Contact person" full><input className="zc-input" value={draft.contactPerson} onChange={(e) => set("contactPerson", e.target.value)} /></Field>
+                <Field label={t("Restaurant name")} full><input className="zc-input" value={draft.restaurantName} onChange={(e) => set("restaurantName", e.target.value)} /></Field>
+                <Field label={t("Phone")}><input className="zc-input" value={draft.phone} onChange={(e) => set("phone", e.target.value)} /></Field>
+                <Field label={t("Email")}><input className="zc-input" type="email" value={draft.email} onChange={(e) => set("email", e.target.value)} /></Field>
+                <Field label={t("Contact person")} full><input className="zc-input" value={draft.contactPerson} onChange={(e) => set("contactPerson", e.target.value)} /></Field>
               </div>
             </div>}
           />
 
           {/* Address & location */}
-          <SectionCard title="Address & location" sub="Used to check whether a customer's table QR / delivery point is in range"
+          <SectionCard title={t("Address & location")} sub={t("Used to check whether a customer's table QR / delivery point is in range")}
             editing={editing.address} onEdit={() => startEdit("address")} onCancel={() => cancelEdit("address")} onSave={() => saveSection("address")}
             viewContent={<Kv pairs={[
-              ["Full address", orDash(profile.address), true],
-              ["City", orDash(profile.city)],
-              ["Coordinates", profile.latitude && profile.longitude ? `${profile.latitude}, ${profile.longitude}` : "—"],
-              ["Dine-in range", profile.dineInRange ? `${profile.dineInRange} m` : "—"],
-              ["Delivery range", profile.deliveryRange ? `${profile.deliveryRange} m` : "—"],
+              [t("Full address"), orDash(profile.address), true],
+              [t("City"), orDash(profile.city)],
+              [t("Coordinates"), profile.latitude && profile.longitude ? `${profile.latitude}, ${profile.longitude}` : "—"],
+              [t("Dine-in range"), profile.dineInRange ? `${fmtNum(profile.dineInRange)} ${t("m")}` : "—"],
+              [t("Delivery range"), profile.deliveryRange ? `${fmtNum(profile.deliveryRange)} ${t("m")}` : "—"],
             ]} />}
             editContent={<div>
               <div className="prof-edit-grid" style={{ marginBottom: 12 }}>
-                <Field label="Full address" full><input className="zc-input" value={draft.address} onChange={(e) => set("address", e.target.value)} /></Field>
-                <Field label="City"><input className="zc-input" value={draft.city} onChange={(e) => set("city", e.target.value)} /></Field>
-                <Field label="Dine-in range (m)"><input className="zc-input" type="number" value={draft.dineInRange} onChange={(e) => setNum("dineInRange", e.target.value)} /></Field>
-                <Field label="Latitude"><input className="zc-input" value={draft.latitude} onChange={(e) => set("latitude", e.target.value)} /></Field>
-                <Field label="Longitude"><input className="zc-input" value={draft.longitude} onChange={(e) => set("longitude", e.target.value)} /></Field>
-                <Field label="Delivery range (m)"><input className="zc-input" type="number" value={draft.deliveryRange} onChange={(e) => setNum("deliveryRange", e.target.value)} /></Field>
+                <Field label={t("Full address")} full><input className="zc-input" value={draft.address} onChange={(e) => set("address", e.target.value)} /></Field>
+                <Field label={t("City")}><input className="zc-input" value={draft.city} onChange={(e) => set("city", e.target.value)} /></Field>
+                <Field label={t("Dine-in range (m)")}><input className="zc-input" type="number" value={draft.dineInRange} onChange={(e) => setNum("dineInRange", e.target.value)} /></Field>
+                <Field label={t("Latitude")}><input className="zc-input" value={draft.latitude} onChange={(e) => set("latitude", e.target.value)} /></Field>
+                <Field label={t("Longitude")}><input className="zc-input" value={draft.longitude} onChange={(e) => set("longitude", e.target.value)} /></Field>
+                <Field label={t("Delivery range (m)")}><input className="zc-input" type="number" value={draft.deliveryRange} onChange={(e) => setNum("deliveryRange", e.target.value)} /></Field>
               </div>
-              <button type="button" className="zc-btn sm" onClick={getCurrentLocation}>📍 Use my current location</button>
+              <button type="button" className="zc-btn sm" onClick={getCurrentLocation}>📍 {t("Use my current location")}</button>
             </div>}
           />
 
           {/* Business details */}
-          <SectionCard title="Business details" sub="Compliance numbers and the customer-facing description"
+          <SectionCard title={t("Business details")} sub={t("Compliance numbers and the customer-facing description")}
             editing={editing.biz} onEdit={() => startEdit("biz")} onCancel={() => cancelEdit("biz")} onSave={() => saveSection("biz")}
             viewContent={<Kv pairs={[
-              ["FSSAI number", orDash(profile.fssaiNumber)],
-              ["GST number", orDash(profile.gstNumber)],
-              ["About", orDash(profile.aboutRestaurant), true],
+              [t("FSSAI number"), orDash(profile.fssaiNumber)],
+              [t("GST number"), orDash(profile.gstNumber)],
+              [t("About"), orDash(profile.aboutRestaurant), true],
             ]} />}
             editContent={<div className="prof-edit-grid">
-              <Field label="FSSAI number"><input className="zc-input" value={draft.fssaiNumber} onChange={(e) => set("fssaiNumber", e.target.value)} /></Field>
-              <Field label="GST number"><input className="zc-input" value={draft.gstNumber} onChange={(e) => set("gstNumber", e.target.value)} /></Field>
-              <Field label="About" full><textarea className="zc-textarea" rows={3} value={draft.aboutRestaurant} onChange={(e) => set("aboutRestaurant", e.target.value)} /></Field>
+              <Field label={t("FSSAI number")}><input className="zc-input" value={draft.fssaiNumber} onChange={(e) => set("fssaiNumber", e.target.value)} /></Field>
+              <Field label={t("GST number")}><input className="zc-input" value={draft.gstNumber} onChange={(e) => set("gstNumber", e.target.value)} /></Field>
+              <Field label={t("About")} full><textarea className="zc-textarea" rows={3} value={draft.aboutRestaurant} onChange={(e) => set("aboutRestaurant", e.target.value)} /></Field>
             </div>}
           />
 
           {/* Payment — UPI + PhonePe */}
-          <SectionCard title="Payment" sub="PhonePe gateway + UPI deep-link fallback"
+          <SectionCard title={t("Payment")} sub={t("PhonePe gateway + UPI deep-link fallback")}
             editing={editing.payment} onEdit={() => startEdit("payment")} onCancel={() => cancelEdit("payment")} onSave={() => saveSection("payment")}
             viewContent={<div>
               <Kv pairs={[
-                ["PhonePe gateway", profile.phonePeEnabled
-                  ? "Active — customers pay online, orders auto-confirm as Paid on a verified PhonePe result"
-                  : "Off — set PHONEPE_MERCHANT_ID / PHONEPE_SALT_KEY in the backend .env to enable"],
-                ["Customers can pay", PAYMENT_MODE_META[profile.paymentMode || "BOTH"].label
-                  + (profile.paymentMode === "ONLINE" && !profile.phonePeEnabled ? " — ⚠ PhonePe is off, so customers are offered cash instead" : "")],
-                ["UPI ID (fallback)", profile.upiId || "Not set — used only when the PhonePe gateway is off"],
-                ["Payee name", profile.upiPayeeName || profile.restaurantName || "—"],
+                [t("PhonePe gateway"), profile.phonePeEnabled
+                  ? t("Active — customers pay online, orders auto-confirm as Paid on a verified PhonePe result")
+                  : t("Off — set PHONEPE_MERCHANT_ID / PHONEPE_SALT_KEY in the backend .env to enable")],
+                [t("Customers can pay"), t(PAYMENT_MODE_META[profile.paymentMode || "BOTH"].label)
+                  + (profile.paymentMode === "ONLINE" && !profile.phonePeEnabled ? ` — ⚠ ${t("PhonePe is off, so customers are offered cash instead")}` : "")],
+                [t("UPI ID (fallback)"), profile.upiId || t("Not set — used only when the PhonePe gateway is off")],
+                [t("Payee name"), profile.upiPayeeName || profile.restaurantName || "—"],
               ]} />
               {paymentQrBlock}
               <div style={{ marginTop: 16, padding: "12px 14px", borderRadius: "var(--r-ctl)", fontSize: 11.5, color: "var(--text-2)", background: "var(--wait-fill)", border: "1px solid var(--wait-line)" }}>
-                A UPI deep-link payment is never proof of payment — those orders stay at <b style={{ color: "var(--wait-ink)" }}>Pending verification</b> until an admin or waiter confirms against the bank receipt. Only a checksum-verified PhonePe result marks an order <b style={{ color: "var(--ready-ink)" }}>Paid</b> automatically.
+                {t("A UPI deep-link payment is never proof of payment — those orders stay at Pending verification until an admin or waiter confirms against the bank receipt. Only a checksum-verified PhonePe result marks an order Paid automatically.")}
               </div>
             </div>}
             editContent={<div className="prof-edit-grid">
-              <Field label="How customers can pay" full>
+              <Field label={t("How customers can pay")} full>
                 <div role="radiogroup" aria-label="How customers can pay" style={{ display: "grid", gap: 8 }}>
                   {["CASH", "ONLINE", "BOTH"].map((m) => {
                     const meta = PAYMENT_MODE_META[m];
@@ -514,9 +515,9 @@ export default function ProfilePage() {
                         }}>
                         <span aria-hidden="true" style={{ fontSize: 18, lineHeight: 1.2 }}>{meta.icon}</span>
                         <span style={{ display: "grid", gap: 2 }}>
-                          <b style={{ fontSize: 13 }}>{meta.label}</b>
+                          <b style={{ fontSize: 13 }}>{t(meta.label)}</b>
                           <span style={{ fontSize: 11.5, color: "var(--text-2)" }}>
-                            {blocked ? "Needs the PhonePe gateway — set PHONEPE_MERCHANT_ID / PHONEPE_SALT_KEY in the backend .env first." : meta.help}
+                            {blocked ? t("Needs the PhonePe gateway — set PHONEPE_MERCHANT_ID / PHONEPE_SALT_KEY in the backend .env first.") : t(meta.help)}
                           </span>
                         </span>
                       </button>
@@ -524,43 +525,42 @@ export default function ProfilePage() {
                   })}
                 </div>
               </Field>
-              <Field label="Restaurant UPI ID"><input className="zc-input" placeholder="restaurantname@okhdfcbank" value={draft.upiId} onChange={(e) => set("upiId", e.target.value)} /></Field>
-              <Field label="Payee name (optional — defaults to restaurant name)"><input className="zc-input" placeholder={draft.restaurantName || "Restaurant"} value={draft.upiPayeeName} onChange={(e) => set("upiPayeeName", e.target.value)} /></Field>
+              <Field label={t("Restaurant UPI ID")}><input className="zc-input" placeholder="restaurantname@okhdfcbank" value={draft.upiId} onChange={(e) => set("upiId", e.target.value)} /></Field>
+              <Field label={t("Payee name (optional — defaults to restaurant name)")}><input className="zc-input" placeholder={draft.restaurantName || t("Restaurant")} value={draft.upiPayeeName} onChange={(e) => set("upiPayeeName", e.target.value)} /></Field>
               <div style={{ gridColumn: "1 / -1" }}>{paymentQrBlock}</div>
             </div>}
           />
 
           {/* Services & preferences */}
-          <SectionCard title="Services & preferences" sub="What customers can order and how"
+          <SectionCard title={t("Services & preferences")} sub={t("What customers can order and how")}
             editing={editing.services} onEdit={() => startEdit("services")} onCancel={() => cancelEdit("services")} onSave={() => saveSection("services")}
             viewContent={<div>
               {services.map((s) => <ServiceRow key={s.key} label={s.label} on={profile.services[s.key]} editable={false} />)}
               <div style={{ borderTop: "1px solid var(--edge)", marginTop: 6, paddingTop: 12, display: "flex", alignItems: "center", gap: 9, fontSize: 12.5, color: "var(--text-2)" }}>
                 <span>{profile.notificationSound ? "🔔" : "🔕"}</span>
-                <span>{profile.notificationSound ? "Notification sound on" : "Notification sound off"}</span>
+                <span>{profile.notificationSound ? t("Notification sound on") : t("Notification sound off")}</span>
               </div>
               <div style={{ borderTop: "1px solid var(--edge)", marginTop: 12, paddingTop: 12, display: "flex", alignItems: "center", gap: 9, fontSize: 12.5, color: "var(--text-2)" }}>
                 <span>⏱️</span>
                 <span>{Number(profile.editWindowMinutes) > 0
-                  ? `Placed orders can be changed for ${profile.editWindowMinutes} min, then start preparing automatically (KOT prints)`
-                  : "Placed orders start preparing immediately (no time to change them)"}</span>
+                  ? t("Placed orders can be changed for {n} min, then start preparing automatically (KOT prints)", { n: Number(profile.editWindowMinutes) })
+                  : t("Placed orders start preparing immediately (no time to change them)")}</span>
               </div>
             </div>}
             editContent={<div>
               {services.map((s) => <ServiceRow key={s.key} label={s.label} on={draft.services[s.key]} editable onClick={() => setService(s.key)} />)}
               <div style={{ borderTop: "1px solid var(--edge)", marginTop: 6, paddingTop: 12, display: "flex", alignItems: "center", gap: 10 }}>
                 <Toggle on={draft.notificationSound} onClick={() => set("notificationSound", !draft.notificationSound)} />
-                <span style={{ fontSize: 12.5, color: "var(--text-1)" }}>Notification sound</span>
+                <span style={{ fontSize: 12.5, color: "var(--text-1)" }}>{t("Notification sound")}</span>
               </div>
               <div style={{ borderTop: "1px solid var(--edge)", marginTop: 12, paddingTop: 12 }}>
-                <Field label="Minutes a Placed order can be changed before it starts preparing (0–15)">
+                <Field label={t("Minutes a Placed order can be changed before it starts preparing (0–15)")}>
                   <input className="zc-input" type="number" min={0} max={15} step={1} style={{ maxWidth: 120 }}
                     value={draft.editWindowMinutes}
                     onChange={(e) => set("editWindowMinutes", e.target.value === "" ? "" : Math.max(0, Math.min(15, Math.round(Number(e.target.value)))))} />
                 </Field>
                 <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 6 }}>
-                  Waiter/admin orders are Placed straight away; customer orders once a waiter or admin accepts them. While
-                  Placed, anyone can change the order; then it moves to Preparing and the KOT prints. 0 = immediately.
+                  {t("Waiter/admin orders are Placed straight away; customer orders once a waiter or admin accepts them. While Placed, anyone can change the order; then it moves to Preparing and the KOT prints. 0 = immediately.")}
                 </div>
               </div>
             </div>}
@@ -570,68 +570,68 @@ export default function ProfilePage() {
         {/* ── RIGHT ── */}
         <div>
           {/* Operating hours */}
-          <SectionCard title="Operating hours" sub="When the restaurant accepts orders"
+          <SectionCard title={t("Operating hours")} sub={t("When the restaurant accepts orders")}
             editing={editing.hours} onEdit={() => startEdit("hours")} onCancel={() => cancelEdit("hours")} onSave={() => saveSection("hours")}
             viewContent={<Kv pairs={[
-              ["Opens", fmt12(profile.openingTime)],
-              ["Closes", fmt12(profile.closingTime)],
-              ["Avg delivery time", profile.avgDeliveryTime ? `${profile.avgDeliveryTime} min` : "—"],
+              [t("Opens"), fmt12(profile.openingTime)],
+              [t("Closes"), fmt12(profile.closingTime)],
+              [t("Avg delivery time"), profile.avgDeliveryTime ? t("{n} min", { n: profile.avgDeliveryTime }) : "—"],
             ]} />}
             editContent={<div className="prof-edit-grid">
-              <Field label="Opening time"><input className="zc-input" type="time" value={draft.openingTime} onChange={(e) => set("openingTime", e.target.value)} /></Field>
-              <Field label="Closing time"><input className="zc-input" type="time" value={draft.closingTime} onChange={(e) => set("closingTime", e.target.value)} /></Field>
-              <Field label="Avg delivery time (min)" full><input className="zc-input" type="number" value={draft.avgDeliveryTime} onChange={(e) => setNum("avgDeliveryTime", e.target.value)} /></Field>
+              <Field label={t("Opening time")}><input className="zc-input" type="time" value={draft.openingTime} onChange={(e) => set("openingTime", e.target.value)} /></Field>
+              <Field label={t("Closing time")}><input className="zc-input" type="time" value={draft.closingTime} onChange={(e) => set("closingTime", e.target.value)} /></Field>
+              <Field label={t("Avg delivery time (min)")} full><input className="zc-input" type="number" value={draft.avgDeliveryTime} onChange={(e) => setNum("avgDeliveryTime", e.target.value)} /></Field>
             </div>}
           />
 
           {/* Pricing & charges */}
-          <SectionCard title="Pricing & charges" sub="Tax, service and delivery fees applied to every order"
+          <SectionCard title={t("Pricing & charges")} sub={t("Tax, service and delivery fees applied to every order")}
             editing={editing.pricing} onEdit={() => startEdit("pricing")} onCancel={() => cancelEdit("pricing")} onSave={() => saveSection("pricing")}
             viewContent={<Kv pairs={[
-              ["GST rate", `${profile.gstRate ?? 0}%`],
-              ["Service charge", profile.serviceCharge > 0 ? `₹${profile.serviceCharge}` : "Not set"],
-              ["Packing charge", profile.packingCharge > 0 ? `₹${profile.packingCharge}` : "Not set"],
-              ["Min order amount", profile.minOrderAmount > 0 ? `₹${profile.minOrderAmount}` : "None"],
-              ["Free delivery above", profile.freeDeliveryAbove > 0 ? `₹${profile.freeDeliveryAbove}` : "—"],
-              ["Delivery base fee", `₹${profile.deliveryBaseFee ?? 0}`],
-              ["Delivery fee / km", `₹${profile.deliveryFeePerKm ?? 0}`, true],
+              [t("GST rate"), `${fmtNum(profile.gstRate ?? 0)}%`],
+              [t("Service charge"), profile.serviceCharge > 0 ? `₹${fmtNum(profile.serviceCharge)}` : t("Not set")],
+              [t("Packing charge"), profile.packingCharge > 0 ? `₹${fmtNum(profile.packingCharge)}` : t("Not set")],
+              [t("Min order amount"), profile.minOrderAmount > 0 ? `₹${fmtNum(profile.minOrderAmount)}` : t("None")],
+              [t("Free delivery above"), profile.freeDeliveryAbove > 0 ? `₹${fmtNum(profile.freeDeliveryAbove)}` : "—"],
+              [t("Delivery base fee"), `₹${fmtNum(profile.deliveryBaseFee ?? 0)}`],
+              [t("Delivery fee / km"), `₹${fmtNum(profile.deliveryFeePerKm ?? 0)}`, true],
             ]} />}
             editContent={<div className="prof-edit-grid">
-              <Field label="GST rate (%)"><input className="zc-input" type="number" value={draft.gstRate} onChange={(e) => setNum("gstRate", e.target.value)} /></Field>
-              <Field label="Service charge (₹)"><input className="zc-input" type="number" value={draft.serviceCharge} onChange={(e) => setNum("serviceCharge", e.target.value)} /></Field>
-              <Field label="Packing charge (₹)"><input className="zc-input" type="number" value={draft.packingCharge} onChange={(e) => setNum("packingCharge", e.target.value)} /></Field>
-              <Field label="Min order amount (₹)"><input className="zc-input" type="number" value={draft.minOrderAmount} onChange={(e) => setNum("minOrderAmount", e.target.value)} /></Field>
-              <Field label="Free delivery above (₹)"><input className="zc-input" type="number" value={draft.freeDeliveryAbove} onChange={(e) => setNum("freeDeliveryAbove", e.target.value)} /></Field>
-              <Field label="Delivery base fee (₹)"><input className="zc-input" type="number" value={draft.deliveryBaseFee} onChange={(e) => setNum("deliveryBaseFee", e.target.value)} /></Field>
-              <Field label="Delivery fee per km (₹)" full><input className="zc-input" type="number" value={draft.deliveryFeePerKm} onChange={(e) => setNum("deliveryFeePerKm", e.target.value)} /></Field>
+              <Field label={t("GST rate (%)")}><input className="zc-input" type="number" value={draft.gstRate} onChange={(e) => setNum("gstRate", e.target.value)} /></Field>
+              <Field label={t("Service charge (₹)")}><input className="zc-input" type="number" value={draft.serviceCharge} onChange={(e) => setNum("serviceCharge", e.target.value)} /></Field>
+              <Field label={t("Packing charge (₹)")}><input className="zc-input" type="number" value={draft.packingCharge} onChange={(e) => setNum("packingCharge", e.target.value)} /></Field>
+              <Field label={t("Min order amount (₹)")}><input className="zc-input" type="number" value={draft.minOrderAmount} onChange={(e) => setNum("minOrderAmount", e.target.value)} /></Field>
+              <Field label={t("Free delivery above (₹)")}><input className="zc-input" type="number" value={draft.freeDeliveryAbove} onChange={(e) => setNum("freeDeliveryAbove", e.target.value)} /></Field>
+              <Field label={t("Delivery base fee (₹)")}><input className="zc-input" type="number" value={draft.deliveryBaseFee} onChange={(e) => setNum("deliveryBaseFee", e.target.value)} /></Field>
+              <Field label={t("Delivery fee per km (₹)")} full><input className="zc-input" type="number" value={draft.deliveryFeePerKm} onChange={(e) => setNum("deliveryFeePerKm", e.target.value)} /></Field>
             </div>}
           />
 
           {/* Printers */}
           <div className="zc-card" style={{ marginBottom: 16 }}>
             <div className="zc-card-h">
-              <div><div className="t">Printers</div><div className="s">Local print service, discovered on the restaurant network</div></div>
+              <div><div className="t">{t("Printers")}</div><div className="s">{t("Local print service, discovered on the restaurant network")}</div></div>
               <div style={{ flex: 1 }} />
-              <span style={{ fontSize: 11, color: "var(--text-3)" }}>{profile.printerIps.length} printer{profile.printerIps.length !== 1 ? "s" : ""}</span>
+              <span style={{ fontSize: 11, color: "var(--text-3)" }}>{tn(profile.printerIps.length, "{n} printer", "{n} printers")}</span>
             </div>
             <div style={{ padding: 18 }}>
               {profile.printerIps.length === 0 ? (
-                <div style={{ fontSize: 12.5, color: "var(--text-3)", fontStyle: "italic", paddingBottom: 8 }}>No printers configured</div>
+                <div style={{ fontSize: 12.5, color: "var(--text-3)", fontStyle: "italic", paddingBottom: 8 }}>{t("No printers configured")}</div>
               ) : profile.printerIps.map((printer) => (
                 <div key={printer._id} className="prof-list-row">
                   <span style={{ width: 8, height: 8, borderRadius: "50%", flex: "none", background: printer.active ? "var(--ready)" : "var(--text-3)" }} />
                   <div style={{ minWidth: 90, fontSize: 12.5, fontWeight: 600, color: "var(--text-1)" }}>{printer.name}</div>
                   <div style={{ flex: 1, fontFamily: "monospace", fontSize: 12.5, color: "var(--text-2)" }}>{printer.ip}</div>
-                  <span className={`zc-tag ${printer.active ? "ready" : "done"}`}><i />{printer.active ? "Online" : "Off"}</span>
+                  <span className={`zc-tag ${printer.active ? "ready" : "done"}`}><i />{printer.active ? t("Online") : t("Off")}</span>
                   <Toggle on={printer.active} onClick={() => handleTogglePrinter(printer)} />
-                  <button type="button" className="zc-btn ghost sm" onClick={() => handleDeletePrinter(printer._id)} aria-label="Remove printer">🗑</button>
+                  <button type="button" className="zc-btn ghost sm" onClick={() => handleDeletePrinter(printer._id)} aria-label={t("Remove printer")}>🗑</button>
                 </div>
               ))}
               <div style={{ display: "flex", gap: 9, marginTop: 12, flexWrap: "wrap" }}>
                 <input className="zc-input" style={{ width: 160, fontFamily: "monospace" }} value={newPrinterIp} onChange={(e) => setNewPrinterIp(e.target.value)} placeholder="192.168.1.100" />
-                <input className="zc-input" style={{ flex: 1, minWidth: 120 }} value={newPrinterName} onChange={(e) => setNewPrinterName(e.target.value)} placeholder="e.g. Kitchen" />
+                <input className="zc-input" style={{ flex: 1, minWidth: 120 }} value={newPrinterName} onChange={(e) => setNewPrinterName(e.target.value)} placeholder={t("e.g. Kitchen")} />
                 <button type="button" className="zc-btn pri sm" onClick={handleAddPrinter} disabled={printerSaving || !newPrinterIp.trim()}>
-                  {printerSaving ? "Adding…" : "Add printer"}
+                  {printerSaving ? t("Adding…") : t("Add printer")}
                 </button>
               </div>
             </div>
@@ -640,49 +640,49 @@ export default function ProfilePage() {
           {/* Banners */}
           <div className="zc-card" style={{ marginBottom: 16 }}>
             <div className="zc-card-h">
-              <div><div className="t">Banners</div><div className="s">Carousel on the customer home screen</div></div>
+              <div><div className="t">{t("Banners")}</div><div className="s">{t("Carousel on the customer home screen")}</div></div>
               <div style={{ flex: 1 }} />
-              <span style={{ fontSize: 11, color: "var(--text-3)" }}>{profile.banners.length} banner{profile.banners.length !== 1 ? "s" : ""}</span>
+              <span style={{ fontSize: 11, color: "var(--text-3)" }}>{tn(profile.banners.length, "{n} banner", "{n} banners")}</span>
             </div>
             <div style={{ padding: 18 }}>
               {profile.banners.length === 0 ? (
-                <div style={{ fontSize: 12.5, color: "var(--text-3)", fontStyle: "italic", paddingBottom: 8 }}>No banners yet</div>
+                <div style={{ fontSize: 12.5, color: "var(--text-3)", fontStyle: "italic", paddingBottom: 8 }}>{t("No banners yet")}</div>
               ) : profile.banners.map((banner) => (
                 <div key={banner._id} className="prof-list-row">
-                  <img src={banner.imageUrl} alt="banner" className="prof-thumb" style={{ width: 72, height: 38 }} />
+                  <img src={banner.imageUrl} alt={t("banner")} className="prof-thumb" style={{ width: 72, height: 38 }} />
                   <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {banner.link || <span style={{ color: "var(--text-3)", fontStyle: "italic" }}>No link</span>}
+                    {banner.link || <span style={{ color: "var(--text-3)", fontStyle: "italic" }}>{t("No link")}</span>}
                   </div>
-                  <span className={`zc-tag ${banner.active ? "ready" : "done"}`}><i />{banner.active ? "Active" : "Off"}</span>
+                  <span className={`zc-tag ${banner.active ? "ready" : "done"}`}><i />{banner.active ? t("Active") : t("Off")}</span>
                   <Toggle on={banner.active} onClick={() => handleToggleBanner(banner)} />
-                  <button type="button" className="zc-btn ghost sm" onClick={() => handleDeleteBanner(banner._id)} aria-label="Delete banner">🗑</button>
+                  <button type="button" className="zc-btn ghost sm" onClick={() => handleDeleteBanner(banner._id)} aria-label={t("Delete banner")}>🗑</button>
                 </div>
               ))}
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
                 <input type="file" accept="image/*" ref={bannerFileRef} style={{ display: "none" }} onChange={(e) => setBannerFile(e.target.files[0])} />
                 <button type="button" className="zc-btn sm" onClick={() => bannerFileRef.current?.click()}>
-                  {bannerFile ? `📎 ${bannerFile.name.slice(0, 20)}…` : "Choose image"}
+                  {bannerFile ? `📎 ${bannerFile.name.slice(0, 20)}…` : t("Choose image")}
                 </button>
-                <input className="zc-input" style={{ flex: 1, minWidth: 140 }} value={bannerLink} onChange={(e) => setBannerLink(e.target.value)} placeholder="Link URL (optional)" />
+                <input className="zc-input" style={{ flex: 1, minWidth: 140 }} value={bannerLink} onChange={(e) => setBannerLink(e.target.value)} placeholder={t("Link URL (optional)")} />
                 <button type="button" className="zc-btn pri sm" onClick={handleAddBanner} disabled={bannerUploading || !bannerFile}>
-                  {bannerUploading ? "Uploading…" : "Add banner"}
+                  {bannerUploading ? t("Uploading…") : t("Add banner")}
                 </button>
               </div>
             </div>
           </div>
 
           {/* Links */}
-          <SectionCard title="Links" sub="Shown in the footer of the customer site"
+          <SectionCard title={t("Links")} sub={t("Shown in the footer of the customer site")}
             editing={editing.social} onEdit={() => startEdit("social")} onCancel={() => cancelEdit("social")} onSave={() => saveSection("social")}
             viewContent={<Kv pairs={[
-              ["Instagram", profile.socialInstagram || "—"],
-              ["Facebook", profile.socialFacebook || "—"],
-              ["Website", profile.website || "—", true],
+              [t("Instagram"), profile.socialInstagram || "—"],
+              [t("Facebook"), profile.socialFacebook || "—"],
+              [t("Website"), profile.website || "—", true],
             ]} />}
             editContent={<div className="prof-edit-grid">
-              <Field label="Instagram URL"><input className="zc-input" placeholder="https://instagram.com/…" value={draft.socialInstagram} onChange={(e) => set("socialInstagram", e.target.value)} /></Field>
-              <Field label="Facebook URL"><input className="zc-input" placeholder="https://facebook.com/…" value={draft.socialFacebook} onChange={(e) => set("socialFacebook", e.target.value)} /></Field>
-              <Field label="Website" full><input className="zc-input" placeholder="https://yourwebsite.com" value={draft.website} onChange={(e) => set("website", e.target.value)} /></Field>
+              <Field label={t("Instagram URL")}><input className="zc-input" placeholder="https://instagram.com/…" value={draft.socialInstagram} onChange={(e) => set("socialInstagram", e.target.value)} /></Field>
+              <Field label={t("Facebook URL")}><input className="zc-input" placeholder="https://facebook.com/…" value={draft.socialFacebook} onChange={(e) => set("socialFacebook", e.target.value)} /></Field>
+              <Field label={t("Website")} full><input className="zc-input" placeholder="https://yourwebsite.com" value={draft.website} onChange={(e) => set("website", e.target.value)} /></Field>
             </div>}
           />
         </div>
@@ -690,7 +690,7 @@ export default function ProfilePage() {
 
       <div style={{ textAlign: "center", paddingTop: 8 }}>
         <button type="button" className="zc-btn pri" style={{ padding: "12px 40px", borderRadius: 30, fontSize: 14 }} onClick={handleSaveAll} disabled={saving}>
-          {saving ? "Saving…" : "Save all settings"}
+          {saving ? t("Saving…") : t("Save all settings")}
         </button>
       </div>
     </div>
