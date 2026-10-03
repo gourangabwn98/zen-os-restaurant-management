@@ -68,7 +68,7 @@ export const uploadPaymentQr = async (req, res) => {
     const { RestaurantProfile } = req.models;
     if (!req.file) return res.status(400).json({ message: "No file uploaded" });
     const url = await uploadToCloudinary(req.file.buffer, "adda-payment-qr", 1000);
-    const profile = await RestaurantProfile.findOneAndUpdate({}, { paymentQr: url }, { new: true, upsert: true });
+    const profile = await RestaurantProfile.findOneAndUpdate({}, { paymentQr: url }, { returnDocument: "after", upsert: true });
     res.json({ success: true, paymentQr: url, data: profile });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
@@ -77,7 +77,7 @@ export const uploadPaymentQr = async (req, res) => {
 export const removePaymentQr = async (req, res) => {
   try {
     const { RestaurantProfile } = req.models;
-    const profile = await RestaurantProfile.findOneAndUpdate({}, { paymentQr: "" }, { new: true });
+    const profile = await RestaurantProfile.findOneAndUpdate({}, { paymentQr: "" }, { returnDocument: "after" });
     res.json({ success: true, data: profile });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
@@ -87,7 +87,7 @@ export const uploadRestaurantLogo = async (req, res) => {
     const { RestaurantProfile } = req.models;
     if (!req.file) return res.status(400).json({ message: "No file uploaded" });
     const url = await uploadToCloudinary(req.file.buffer, "adda-logos");
-    const profile = await RestaurantProfile.findOneAndUpdate({}, { logo: url }, { new: true, upsert: true });
+    const profile = await RestaurantProfile.findOneAndUpdate({}, { logo: url }, { returnDocument: "after", upsert: true });
     res.json({ success: true, logo: url, data: profile });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };

@@ -127,7 +127,7 @@ export const markLookedInto = async ({ StaffReview, reviewId, note, actor }) => 
   const updated = await StaffReview.findOneAndUpdate(
     { _id: reviewId, complaint: true, lookedInto: null },
     { $set: { lookedInto: { at: new Date(), by: actor, note: clean } } },
-    { new: true },
+    { returnDocument: "after" },
   );
   if (updated) return updated;
   const exists = await StaffReview.findById(reviewId);

@@ -56,7 +56,7 @@ export const createSupplier = async (req, res) => {
 export const updateSupplier = async (req, res) => {
   try {
     const { Supplier } = req.models;
-    const supplier = await Supplier.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const supplier = await Supplier.findByIdAndUpdate(req.params.id, req.body, { returnDocument: "after" });
     if (!supplier) return res.status(404).json({ message: "Supplier not found" });
     res.json({ supplier });
   } catch (err) { res.status(400).json({ message: err.message }); }
@@ -127,7 +127,7 @@ export const updateItem = async (req, res) => {
     // writes a StockLedger entry. Editing it directly would create an
     // unaudited stock change.
     const { currentStock, ...rest } = req.body;
-    const item = await InventoryItem.findByIdAndUpdate(req.params.id, rest, { new: true });
+    const item = await InventoryItem.findByIdAndUpdate(req.params.id, rest, { returnDocument: "after" });
     if (!item) return res.status(404).json({ message: "Item not found" });
     res.json({ item: withLevel(item.toObject()) });
   } catch (err) { res.status(400).json({ message: err.message }); }
@@ -137,7 +137,7 @@ export const deleteItem = async (req, res) => {
   try {
     const { InventoryItem } = req.models;
     // Soft delete — preserves ledger/recipe history integrity.
-    const item = await InventoryItem.findByIdAndUpdate(req.params.id, { status: "Inactive" }, { new: true });
+    const item = await InventoryItem.findByIdAndUpdate(req.params.id, { status: "Inactive" }, { returnDocument: "after" });
     if (!item) return res.status(404).json({ message: "Item not found" });
     res.json({ message: "Item deactivated", item });
   } catch (err) { res.status(500).json({ message: err.message }); }

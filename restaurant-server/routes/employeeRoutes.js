@@ -10,8 +10,13 @@ import {
   hrSummary, updatePolicy, getReviews, reviewLookedInto, getPay, addAdvance, paySalary,
   getLeave, addLeave, decide, uploadPhoto, myLeave, myLeaveRequest, myLeaveCancel,
 } from "../controllers/staffHrController.js";
+import { objectIdParam } from "../middleware/validateIds.js";
 
 const router = express.Router();
+// Malformed ids → 404, never a CastError 500 (middleware/validateIds.js).
+router.param("id", objectIdParam);
+router.param("leaveId", objectIdParam);
+router.param("reviewId", objectIdParam);
 router.use(protect);
 
 // Self-service — any employee, their own data only. Mounted before the

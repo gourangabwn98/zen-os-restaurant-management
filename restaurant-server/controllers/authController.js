@@ -208,7 +208,7 @@
 //     if (typeof vegMode !== "boolean")
 //       return res.status(400).json({ message: "vegMode must be boolean" });
 //     const user = await req.models.User.findByIdAndUpdate(
-//       req.user._id, { vegMode }, { new: true }
+//       req.user._id, { vegMode }, { returnDocument: "after" }
 //     );
 //     res.json({ message: "Veg mode updated", vegMode: user.vegMode });
 //   } catch (err) {
@@ -221,7 +221,7 @@
 //   try {
 //     const { language } = req.body;
 //     const user = await req.models.User.findByIdAndUpdate(
-//       req.user._id, { language }, { new: true }
+//       req.user._id, { language }, { returnDocument: "after" }
 //     );
 //     res.json({ message: "Language updated", language: user.language });
 //   } catch (err) {
@@ -232,7 +232,8 @@
 import jwt      from "jsonwebtoken";
 import bcrypt   from "bcryptjs";
 import admin    from "../utils/firebaseAdmin.js";
-import sendOTP, { isConsoleProvider } from "../utils/sendOTP.js";
+import sendOTP from "../utils/sendOTP.js";
+import { otpSendBlocked } from "../utils/otpGuard.js";
 import { getDB }     from "../config/db.js";
 import { getModels } from "../config/getModels.js";
 const waiterCache = new Map();
@@ -255,6 +256,23 @@ const generateOTP = () =>
 // MONGO_URI happened to point at). Both are now removed on purpose.
 const findRestaurantByPhone = async (_phone) => process.env.MONGO_URI || null;
 
+// An OTP is only ever echoed in an HTTP response when a developer opts in
+// explicitly (OTP_DEV_ECHO=true) on a non-production server. It used to be
+// echoed whenever no SMS provider was configured — so on such a server anyone
+// could request a staff/ADMIN phone's OTP and read it from the response.
+const echoOtp = () => process.env.OTP_DEV_ECHO === "true" && process.env.NODE_ENV !== "production";
+
+// Phone / OTP must be plain text. sanitizeInput strips "$" operators, but a
+// leftover {} would still reach a query (or a Map key) — refuse it cleanly.
+const isText = (v) => typeof v === "string" && v.trim().length > 0 && v.length <= 64;
+
+// Wrong-OTP limit: after MAX_OTP_TRIES wrong codes the OTP is thrown away and
+// a new one must be requested (a 6-digit code with unlimited tries can be
+// guessed). In-memory, like waiterCache — no extra package.
+const MAX_OTP_TRIES = 5;
+const adminOtpFails = new Map(); // phone → wrong tries for the current admin OTP
+
+
 // ────────────────────────────────────────────────────────────────────────────
 // POST /api/auth/admin/send-otp
 // Step 1 of admin login — sends OTP to admin phone
@@ -262,7 +280,9 @@ const findRestaurantByPhone = async (_phone) => process.env.MONGO_URI || null;
 export const adminSendOTP = async (req, res) => {
   try {
     const { phone } = req.body;
-    if (!phone) return res.status(400).json({ message: "Phone number required" });
+    if (!isText(phone)) return res.status(400).json({ message: "Phone number required" });
+    const blocked = otpSendBlocked(phone);
+    if (blocked) return res.status(429).json({ message: blocked });
 
     // 1 — Find which restaurant this phone belongs to
     const mongoUri = await findRestaurantByPhone(phone);
@@ -277,7 +297,8 @@ export const adminSendOTP = async (req, res) => {
 
     // 3 — Verify user exists and is admin in THEIR DB
   const user = await User.findOne({
-  $or: [{ phone }, { email: { $regex: new RegExp(`^${phone}$`, "i") } }],
+  // phone is user input — escape it before using it as a regex.
+  $or: [{ phone }, { email: { $regex: new RegExp(`^${String(phone).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") } }],
   isAdmin: true,
 });
 if (!user)
@@ -291,6 +312,7 @@ if (!user)
     user.otp        = otp;
     user.otpExpiry  = otpExpiry;
     await user.save();
+    adminOtpFails.delete(phone);
 
     // 5 — Send OTP
     await sendOTP(phone, otp);
@@ -300,8 +322,7 @@ if (!user)
     res.json({
       message: "OTP sent successfully",
       phone,
-      // In dev mode show OTP in response for testing
-      ...(process.env.NODE_ENV === "development" && { otp }),
+      ...(echoOtp() && { otp }),
     });
   } catch (err) {
     console.error("adminSendOTP error:", err.message);
@@ -316,7 +337,7 @@ if (!user)
 export const adminVerifyOTP = async (req, res) => {
   try {
     const { phone, otp } = req.body;
-    if (!phone || !otp)
+    if (!isText(phone) || !isText(otp))
       return res.status(400).json({ message: "Phone and OTP required" });
 
     // 1 — Find restaurant for this phone
@@ -336,8 +357,18 @@ export const adminVerifyOTP = async (req, res) => {
       return res.status(403).json({ message: "This admin account has been deactivated" });
 
     // 4 — Verify OTP
-    if (!user.otp || user.otp !== otp)
+    if (!user.otp || user.otp !== otp) {
+      const tries = (adminOtpFails.get(phone) || 0) + 1;
+      if (user.otp && tries >= MAX_OTP_TRIES) {
+        adminOtpFails.delete(phone);
+        user.otp = undefined; user.otpExpiry = undefined;
+        await user.save();
+        return res.status(429).json({ message: "Too many wrong tries — request a new OTP" });
+      }
+      adminOtpFails.set(phone, tries);
       return res.status(400).json({ message: "Invalid OTP" });
+    }
+    adminOtpFails.delete(phone);
 
     if (!user.otpExpiry || new Date() > user.otpExpiry)
       return res.status(400).json({ message: "OTP expired. Request a new one." });
@@ -396,7 +427,9 @@ const staffSession = (staffUser, restaurantName) => ({
 // ────────────────────────────────────────────────────────────────────────────
 export const waiterSendOTP = async (req, res) => {
   const { phone } = req.body;
-  if (!phone) return res.status(400).json({ message: "Phone required" });
+  if (!isText(phone)) return res.status(400).json({ message: "Phone required" });
+  const blocked = otpSendBlocked(phone);
+  if (blocked) return res.status(429).json({ message: blocked });
   const mongoUri = process.env.MONGO_URI;
   if (!mongoUri) return res.status(500).json({ message: "Server not configured" });
 
@@ -422,10 +455,10 @@ export const waiterSendOTP = async (req, res) => {
     res.json({
       message: "OTP sent",
       staffName: staffUser.name,
-      // Only present when no real SMS provider is configured (nothing was
-      // actually texted anywhere) — lets you test the employee login flow
-      // end-to-end without Twilio/MSG91 set up yet.
-      ...(isConsoleProvider() && { otp }),
+      // Local testing only: OTP_DEV_ECHO=true on a non-production server.
+      // (Was: whenever no SMS provider was set — then anyone could read a
+      // staff or admin phone's OTP straight from this response.)
+      ...(echoOtp() && { otp }),
     });
   } catch (err) {
     console.error("waiterSendOTP:", err.message);
@@ -439,12 +472,19 @@ export const waiterSendOTP = async (req, res) => {
 // ────────────────────────────────────────────────────────────────────────────
 export const waiterVerifyOTP = async (req, res) => {
   const { phone, otp } = req.body;
-  if (!phone || !otp) return res.status(400).json({ message: "Phone and OTP required" });
+  if (!isText(phone) || !isText(otp)) return res.status(400).json({ message: "Phone and OTP required" });
 
   const cached = waiterCache.get(phone);
   if (!cached)            return res.status(400).json({ message: "OTP expired. Please resend." });
   if (Date.now() > cached.expires) { waiterCache.delete(phone); return res.status(400).json({ message: "OTP expired." }); }
-  if (cached.otp !== otp) return res.status(401).json({ message: "Wrong OTP." });
+  if (cached.otp !== otp) {
+    cached.tries = (cached.tries || 0) + 1;
+    if (cached.tries >= MAX_OTP_TRIES) {
+      waiterCache.delete(phone);
+      return res.status(429).json({ message: "Too many wrong tries — request a new OTP." });
+    }
+    return res.status(401).json({ message: "Wrong OTP." });
+  }
 
   try {
     const { mongoUri, staffName, restaurantName } = cached;
@@ -595,7 +635,7 @@ export const updateVegMode = async (req, res) => {
     if (typeof vegMode !== "boolean")
       return res.status(400).json({ message: "vegMode must be boolean" });
     const user = await req.models.User
-      .findByIdAndUpdate(req.user._id, { vegMode }, { new: true });
+      .findByIdAndUpdate(req.user._id, { vegMode }, { returnDocument: "after" });
     res.json({ vegMode: user.vegMode });
   } catch (err) { res.status(500).json({ message: "Server error" }); }
 };
@@ -604,7 +644,7 @@ export const updateLanguage = async (req, res) => {
   try {
     const { language } = req.body;
     const user = await req.models.User
-      .findByIdAndUpdate(req.user._id, { language }, { new: true });
+      .findByIdAndUpdate(req.user._id, { language }, { returnDocument: "after" });
     res.json({ language: user.language });
   } catch (err) { res.status(500).json({ message: "Server error" }); }
 };
@@ -618,7 +658,7 @@ export const updateTheme = async (req, res) => {
     if (!["light", "dark", "system"].includes(themePreference))
       return res.status(400).json({ message: "themePreference must be 'light', 'dark' or 'system'" });
     const user = await req.models.User
-      .findByIdAndUpdate(req.user._id, { themePreference }, { new: true });
+      .findByIdAndUpdate(req.user._id, { themePreference }, { returnDocument: "after" });
     res.json({ themePreference: user.themePreference });
   } catch (err) { res.status(500).json({ message: "Server error" }); }
 };
@@ -695,32 +735,39 @@ const getMongoUriBySlug = async (_slug) => process.env.MONGO_URI || null;
 //     res.status(500).json({ message: err.message });
 //   }
 // };
-// FIND and REPLACE the entire firebaseLogin function:
-
+// ────────────────────────────────────────────────────────────────────────────
+// POST /api/auth/admin/firebase-login   Body: { firebaseToken }
+// Admin login, step 2. The phone comes ONLY from the verified Firebase ID
+// token, never from the request body — it used to accept { phone } alone, so
+// anyone who knew the owner's number got a 7-day admin session without an
+// OTP. Same pattern as employeeFirebaseVerify above.
+// ────────────────────────────────────────────────────────────────────────────
 export const firebaseLogin = async (req, res) => {
+  const { firebaseToken } = req.body || {};
+  if (!firebaseToken || typeof firebaseToken !== "string")
+    return res.status(400).json({ message: "Verification missing — please resend the OTP" });
+
+  let phone;
   try {
-    const { phone } = req.body;
-    if (!phone) return res.status(400).json({ message: "Phone required" });
+    const decoded = await admin.auth().verifyIdToken(firebaseToken);
+    phone = decoded.phone_number?.replace(/^\+91/, "");
+  } catch (err) {
+    console.error("firebaseLogin token:", err.message);
+    return res.status(401).json({ message: "Invalid or expired verification — please resend the OTP" });
+  }
+  if (!phone) return res.status(400).json({ message: "Phone not found in token" });
 
-    // Use findRestaurantByPhone — already defined in this file
-    const mongoUri = await findRestaurantByPhone(phone);
-    if (!mongoUri)
-      return res.status(404).json({ message: "Restaurant not found for this phone" });
+  try {
+    const { User } = getModels(await getDB(process.env.MONGO_URI));
 
-    // Use getDB — already imported in this file
-    const conn    = await getDB(mongoUri);
-    const { User } = getModels(conn);
-
-    const user = await User.findOne({
-      phone,
-      $or: [
-        { isAdmin: true },
-        { role: { $in: ["admin","manager","owner"] } },
-      ],
-    });
+    // "admin" is the only admin role (middleware/rbac.js); isAdmin covers
+    // accounts created before `role` existed.
+    const user = await User.findOne({ phone, $or: [{ isAdmin: true }, { role: "admin" }] });
 
     if (!user)
       return res.status(403).json({ message: "Phone not registered as admin" });
+    if (user.status === "Inactive")
+      return res.status(403).json({ message: "This admin account has been deactivated" });
 
     const token = jwt.sign(
       { id: user._id },
@@ -737,6 +784,6 @@ export const firebaseLogin = async (req, res) => {
     });
   } catch (err) {
     console.error("firebaseLogin error:", err.message);
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: "Login failed" });
   }
 };

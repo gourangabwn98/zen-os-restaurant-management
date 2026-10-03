@@ -7,6 +7,9 @@
 // one; there is no public employee signup anywhere in this system.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { revenueOrderMatch } from "./insightsService.js";
+import { zonedInstant } from "./offerStatsService.js";
+
 export const EMPLOYEE_ROLES = ["waiter", "chef"]; // extensible — add new categories here only
 
 const PHONE_RE = /^[6-9]\d{9}$/; // Indian mobile numbers, matching the OTP flow already in place
@@ -125,7 +128,7 @@ export const setEmployeeStatus = async ({ User, id, status }) => {
   const employee = await User.findOneAndUpdate(
     { _id: id, role: { $in: EMPLOYEE_ROLES } },
     { $set: { status } },
-    { new: true }
+    { returnDocument: "after" }
   );
   if (!employee) { const err = new Error("Employee not found"); err.statusCode = 404; throw err; }
   return employee;
@@ -143,10 +146,23 @@ export const listEmployees = async ({ User, role, search, status }) => {
 };
 
 // ── Statistics ──────────────────────────────────────────────────────────────
-// "Today" is computed in the server's local time zone consistently (see
-// Note in adminController.js's dashboard for the same pattern) so an
-// employee's stats and the admin dashboard's "today" never disagree.
-const todayRange = () => {
+// Days are the RESTAURANT's calendar days (RestaurantProfile.timezone, passed
+// in as `tz`) — the same boundaries as the admin dashboard. The server's own
+// clock is UTC on the host, which used to make a waiter's "today" run from
+// 5:30 AM to 5:30 AM IST. Without a tz (old callers) it falls back to the
+// server's local day.
+const ymdParts = (date, tz) => {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" })
+    .formatToParts(date).map((x) => [x.type, x.value]));
+  return [+p.year, +p.month, +p.day];
+};
+/** [start, end] of the calendar day y-m-d in tz (end = 1 ms before the next day). */
+const dayBounds = (y, m, d, tz) => ({
+  start: zonedInstant(y, m, d, 0, tz),
+  end: new Date(zonedInstant(y, m, d + 1, 0, tz).getTime() - 1),
+});
+const todayRange = (tz) => {
+  if (tz) return dayBounds(...ymdParts(new Date(), tz), tz);
   const start = new Date(); start.setHours(0, 0, 0, 0);
   const end = new Date(); end.setHours(23, 59, 59, 999);
   return { start, end };
@@ -156,8 +172,17 @@ const todayRange = () => {
  * boundaries, matching todayRange()'s local-time convention — not UTC
  * midnight, which would silently shift results by a day in most timezones.
  * Falls back to today when either bound is missing. */
-const resolveRange = (from, to) => {
-  if (!from && !to) return todayRange();
+const YMD_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const resolveRange = (from, to, tz) => {
+  if (!from && !to) return todayRange(tz);
+  if (tz) {
+    const today = todayRange(tz);
+    const f = YMD_RE.exec(String(from || "")), t = YMD_RE.exec(String(to || ""));
+    return {
+      start: f ? dayBounds(+f[1], +f[2], +f[3], tz).start : today.start,
+      end: t ? dayBounds(+t[1], +t[2], +t[3], tz).end : today.end,
+    };
+  }
   const start = from ? new Date(`${from}T00:00:00`) : (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
   const end   = to   ? new Date(`${to}T23:59:59.999`) : (() => { const d = new Date(); d.setHours(23,59,59,999); return d; })();
   return { start, end };
@@ -170,8 +195,8 @@ const resolveRange = (from, to) => {
  * the order's current state, not history, so a past date range wouldn't mean
  * anything for them. Counts by the field that actually names THIS employee
  * for each stage, never a generic "a waiter did this". */
-export const getEmployeeTodayStats = async ({ Order, employeeId, role, from, to }) => {
-  const { start, end } = resolveRange(from, to);
+export const getEmployeeTodayStats = async ({ Order, employeeId, role, from, to, tz }) => {
+  const { start, end } = resolveRange(from, to, tz);
   const idMatch = { $eq: employeeId };
 
   if (role === "chef") {
@@ -203,10 +228,11 @@ export const getEmployeeTodayStats = async ({ Order, employeeId, role, from, to 
 };
 
 /** Admin-wide employee performance list, optionally scoped to a date range. */
-export const getEmployeePerformance = async ({ User, Order, from, to, role }) => {
+export const getEmployeePerformance = async ({ User, Order, from, to, role, tz }) => {
   const employees = await listEmployees({ User, role });
-  const rangeStart = from ? new Date(from) : todayRange().start;
-  const rangeEnd   = to   ? new Date(to)   : todayRange().end;
+  // Same day boundaries as every other employee figure (was new Date(from),
+  // i.e. UTC midnight, and an inclusive "to" that stopped at its 00:00).
+  const { start: rangeStart, end: rangeEnd } = resolveRange(from, to, tz);
 
   return Promise.all(employees.map(async (emp) => {
     const idMatch = { $eq: emp._id };
@@ -235,15 +261,17 @@ export const getEmployeePerformance = async ({ User, Order, from, to, role }) =>
  * by cancelledBy.id/cancelledAt instead, since an order can be cancelled
  * before it was ever confirmed (no confirmedBy set yet) and orderService's
  * cancelOrder() records its own actor/timestamp for exactly that reason. */
-export const getWaiterOrderActivity = async ({ Order, employeeId, from, to }) => {
-  const { start, end } = resolveRange(from, to);
+export const getWaiterOrderActivity = async ({ Order, employeeId, from, to, tz }) => {
+  const { start, end } = resolveRange(from, to, tz);
   const idMatch = { $eq: employeeId };
   const FIELDS = "orderId total tableNo orderType status paymentStatus confirmedAt cancelledAt cancelReason";
 
   const [ordersCount, collectionAgg, unpaidOrders, cancelledOrders] = await Promise.all([
     Order.countDocuments({ "confirmedBy.id": idMatch, confirmedAt: { $gte: start, $lte: end } }),
     Order.aggregate([
-      { $match: { "confirmedBy.id": employeeId, confirmedAt: { $gte: start, $lte: end }, paymentStatus: "PAID" } },
+      // Collection = revenue (PAID and not CANCELLED) — a paid-then-cancelled
+      // order is not money the waiter took (insightsService.revenueOrderMatch).
+      { $match: { "confirmedBy.id": employeeId, confirmedAt: { $gte: start, $lte: end }, ...revenueOrderMatch() } },
       { $group: { _id: null, total: { $sum: "$total" } } },
     ]),
     Order.find({

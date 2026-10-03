@@ -96,7 +96,7 @@ export default function DutyPanel() {
 
   const status = session ? session.presenceStatus : "OFFLINE";
   const meta = STATUS_META[status];
-  const { workingSeconds, breakSeconds } = liveElapsed(session, nowMs);
+  const { workingSeconds } = liveElapsed(session, nowMs);
 
   return (
     <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 20 }}>

@@ -1,7 +1,7 @@
 import { STORAGE_KEY } from "../theme.js";
 // ─── src/context/AuthContext.jsx ──────────────────────────────────────────────
-import { createContext, useState } from "react";
-export const AuthContext = createContext(null);
+import { useState } from "react";
+import { AuthContext } from "./authContextObject.js";
 
 // src/context/AuthContext.jsx — make sure BOTH use same key
 export function AuthProvider({ children }) {

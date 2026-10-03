@@ -81,10 +81,12 @@ export default function LoginPage() {
     setLoading(true);
     try {
       // Verify with Firebase
-      await confirmRef.current.confirm(otp);
+      const result = await confirmRef.current.confirm(otp);
 
-      // Firebase verified — now get our JWT from backend
-      const { data } = await api.post("/auth/admin/firebase-login", { phone });
+      // Firebase verified — the backend reads the phone from this signed ID
+      // token (never from a typed number) and returns our JWT.
+      const firebaseToken = await result.user.getIdToken();
+      const { data } = await api.post("/auth/admin/firebase-login", { firebaseToken });
       login(data);
       nav("/admin");
       toast.success(t("Welcome, {name}!", { name: data.name || t("Admin") }));

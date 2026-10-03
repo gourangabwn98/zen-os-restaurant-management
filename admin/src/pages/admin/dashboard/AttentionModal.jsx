@@ -8,13 +8,14 @@ import { createPortal } from "react-dom";
 import { Modal } from "../inventory/invUI.jsx";
 import Badge from "../shared/Badge.jsx";
 import { t, tn, fmtNum, fmtDate, fmtTime, localName } from "../../../i18n/core.js";
+import { customerName } from "../shared/customerName.js";
 
 const money = (n) => `₹${fmtNum(Math.round(n || 0))}`;
 const total = (list) => list.reduce((s, o) => s + Number(o.total || 0), 0);
 const when = (d) => `${fmtDate(d, { day: "numeric", month: "short" })} · ${fmtTime(d)}`;
 
 function OrderRow({ o, typeLabel, statusKey, children }) {
-  const who = o.guestName || o.user?.name;
+  const who = customerName(o);
   const phone = o.guestPhone || o.user?.phone;
   return (
     <div className="zd-mrow">

@@ -150,20 +150,23 @@ const PAYMENT_MODE_META = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Shape of a profile before the server copy arrives (a constant, so the
+// load effect can depend on it without re-running).
+const DEFAULTS = {
+  restaurantName: "", phone: "", email: "", contactPerson: "", logo: "",
+  address: "", city: "", latitude: "", longitude: "",
+  dineInRange: 50, deliveryRange: 5000,
+  fssaiNumber: "", gstNumber: "", aboutRestaurant: "", gstRate: 0,
+  openingTime: "09:00", closingTime: "22:00", avgDeliveryTime: 30,
+  minOrderAmount: 0, freeDeliveryAbove: 300, deliveryBaseFee: 40,
+  deliveryFeePerKm: 8, serviceCharge: 0, packingCharge: 0,
+  socialInstagram: "", socialFacebook: "", website: "",
+  services: { dineIn: true, takeAway: true, delivery: true },
+  notificationSound: true, banners: [], printerIps: [], editWindowMinutes: 3,
+  upiId: "", upiPayeeName: "", paymentMode: "BOTH",
+};
+
 export default function ProfilePage() {
-  const DEFAULTS = {
-    restaurantName: "", phone: "", email: "", contactPerson: "", logo: "",
-    address: "", city: "", latitude: "", longitude: "",
-    dineInRange: 50, deliveryRange: 5000,
-    fssaiNumber: "", gstNumber: "", aboutRestaurant: "", gstRate: 0,
-    openingTime: "09:00", closingTime: "22:00", avgDeliveryTime: 30,
-    minOrderAmount: 0, freeDeliveryAbove: 300, deliveryBaseFee: 40,
-    deliveryFeePerKm: 8, serviceCharge: 0, packingCharge: 0,
-    socialInstagram: "", socialFacebook: "", website: "",
-    services: { dineIn: true, takeAway: true, delivery: true },
-    notificationSound: true, banners: [], printerIps: [], editWindowMinutes: 3,
-    upiId: "", upiPayeeName: "", paymentMode: "BOTH",
-  };
 
   const [profile, setProfile] = useState(DEFAULTS);
   const [draft, setDraft] = useState(DEFAULTS);

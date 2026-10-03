@@ -137,3 +137,9 @@ export const addWaitlistEntry   = (body) => api.post("/admin/waitlist", body);
 export const notifyWaitlistEntry= (id) => api.post(`/admin/waitlist/${id}/notify`);
 export const seatWaitlistEntry  = (id, tableNo) => api.post(`/admin/waitlist/${id}/seat`, { tableNo });
 export const cancelWaitlistEntry= (id) => api.post(`/admin/waitlist/${id}/cancel`);
+// Combine Bill for a table — the admin ticks SOME orders; the server
+// re-validates every id and uses only stored amounts (combinedBillService.js).
+export const previewCombinedBill  = (tableNo, orderIds) => api.post("/admin/combined-bill/preview", { tableNo, orderIds });
+export const printCombinedBill    = (tableNo, orderIds, requestKey) => api.post("/admin/combined-bill/print", { tableNo, orderIds, requestKey });
+export const paySelectedOrders    = (tableNo, orderIds, paymentMethod) => api.post("/admin/combined-bill/pay", { tableNo, orderIds, paymentMethod });
+export const completeSelectedOrders = (tableNo, orderIds) => api.post("/admin/combined-bill/complete", { tableNo, orderIds });

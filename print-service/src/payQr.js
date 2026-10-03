@@ -164,7 +164,8 @@ export class PayQrProvider {
    */
   async forBill(payload = {}, profile = {}) {
     if (payload.paymentStatus === "PAID") return null;
-    const total = Number(payload.total) || 0;
+    // A combined bill with some orders already paid asks only for the rest.
+    const total = Number(payload.combined && payload.dueTotal != null ? payload.dueTotal : payload.total) || 0;
     const amount = total > 0 ? total : undefined;
 
     if (profile.paymentQr) {

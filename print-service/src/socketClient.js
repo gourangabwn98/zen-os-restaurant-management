@@ -63,7 +63,7 @@ export class SocketClient {
       this.processor.ingest({
         jobId: payload.jobId, jobType: "KOT",
         orderId: payload.orderId, tableNo: payload.tableNo, orderType: payload.orderType,
-        items: payload.items,
+        items: payload.items, notes: payload.notes || "",
       });
     });
 

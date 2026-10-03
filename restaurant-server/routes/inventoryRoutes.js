@@ -13,8 +13,12 @@ import {
   getRecipes, getRecipeForMenuItem, upsertRecipe, deleteRecipe,
 } from "../controllers/inventoryController.js";
 import { extractPurchaseDocument, confirmPurchaseImport } from "../controllers/purchaseImportController.js";
+import { objectIdParam } from "../middleware/validateIds.js";
 
 const router = express.Router();
+// Malformed ids → 404, never a CastError 500 (middleware/validateIds.js).
+router.param("id", objectIdParam);
+router.param("menuItemId", objectIdParam);
 router.use(protect);
 
 // Overview

@@ -311,7 +311,7 @@ export const sendToKitchenTx = async ({ models, db, orderId, actor, role }) => {
           $set: { status: "PREPARING", preparedBy: actor, preparingAt: now, autoPrepareAt: null, sendError: "" },
           $push: { statusHistory: { status: "PREPARING", changedBy: actor, changedAt: now } },
         },
-        { new: true, session },
+        { returnDocument: "after", session },
       );
       if (!updated) {
         const err = new Error("This order is no longer Placed (already preparing or cancelled)");
@@ -357,7 +357,7 @@ export const confirmOrderTx = async ({ req, orderId }) => {
       $set: { status: "CONFIRMED", confirmedBy: actor, confirmedAt: now, autoPrepareAt, sendError: "" },
       $push: { statusHistory: { status: "CONFIRMED", changedBy: actor, changedAt: now, note: "Order accepted" } },
     },
-    { new: true },
+    { returnDocument: "after" },
   );
   if (!updated) {
     const err = new Error("Order is no longer awaiting confirmation (already accepted or cancelled)");
@@ -394,7 +394,7 @@ export const autoSendDueOrders = async ({ models, db, now = new Date(), onSent, 
       const parked = await Order.findOneAndUpdate(
         { _id, status: "CONFIRMED" },
         { $set: { sendError: String(err.message || "Could not start preparing").slice(0, 300), autoPrepareAt: null } },
-        { new: true },
+        { returnDocument: "after" },
       );
       results.failed++;
       if (parked) onFailed?.(parked);
@@ -499,13 +499,14 @@ export const modifyOrderItemsTx = async ({ req, orderId, items, revision }) => {
   }
 
   const updated = await Order.findOneAndUpdate(
-    { _id: orderId, status: "CONFIRMED", stockDeducted: { $ne: true }, revision },
+    // revision 0 also matches orders saved before the field existed (no field).
+    { _id: orderId, status: "CONFIRMED", stockDeducted: { $ne: true }, revision: revision === 0 ? { $in: [0, null] } : revision },
     {
       $set: { items: dbItems, subtotal, tax, serviceCharge, discount, total },
       $inc: { revision: 1 },
       $push: { statusHistory: { status: "CONFIRMED", changedBy: actor, changedAt: new Date(), note } },
     },
-    { new: true },
+    { returnDocument: "after" },
   );
   if (!updated) {
     const fresh = await Order.findById(orderId).select("status revision");
@@ -660,7 +661,7 @@ export const transitionOrderStatusTx = async ({ req, orderId, toStatus, note }) 
       $set:  { status: toStatus, ...extraFields },
       $push: { statusHistory: { status: toStatus, changedBy: actor, changedAt: new Date(), note: note || "" } },
     },
-    { new: true }
+    { returnDocument: "after" }
   );
 
   if (!updated) {
@@ -775,7 +776,7 @@ export const promotePaidOrder = async ({ models, orderId, now = new Date() }) =>
       },
       $push: { statusHistory: { status: "PENDING_CONFIRMATION", changedBy: SYSTEM_ACTOR, changedAt: now, note: "Paid online" } },
     },
-    { new: true },
+    { returnDocument: "after" },
   );
   if (!updated) return { order: await Order.findById(orderId), promoted: false };
   if (tableSessionId) {
@@ -812,7 +813,7 @@ export const expireUnpaidOrders = async ({ models, now = new Date(), beforeCance
         },
         $push: { statusHistory: { status: "CANCELLED", changedBy: SYSTEM_ACTOR, changedAt: now, note: "Not paid in time" } },
       },
-      { new: true },
+      { returnDocument: "after" },
     );
     if (updated) cancelled.push(updated);
   }

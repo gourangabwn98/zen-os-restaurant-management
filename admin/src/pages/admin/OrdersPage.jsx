@@ -8,6 +8,7 @@ import { placeOrder, newIdempotencyKey } from "../../services/orderService.js";
 import { getSocket } from "../../services/socketService.js";
 import { consumePendingOrderFocus } from "../../services/orderFocus.js";
 import CombinedBillModal from "./shared/CombinedBillModal.jsx";
+import CombineBillPanel from "./shared/CombineBillPanel.jsx";
 import VoiceOrder from "./shared/VoiceOrder.jsx";
 import { statusKind } from "./shared/statusKind.js";
 import { MANUAL_PAYMENT_STATUSES, needsPaidFirst, PAID_FIRST_HINT } from "./shared/paymentRules.js";
@@ -25,6 +26,7 @@ const profileCached    = () => cached("order:profile", 5 * ORDER_DATA_TTL, () =>
 const categoriesCached = () => cached("order:categories", ORDER_DATA_TTL, () => getCategories());
 const prefetchOrderData = () => { menuCached().catch(() => {}); profileCached().catch(() => {}); categoriesCached().catch(() => {}); };
 import { t, tn, fmtNum, fmtDate, fmtDateTime, fmtTime, localName } from "../../i18n/core.js";
+import { customerName } from "./shared/customerName.js";
 
 // ── add this to adminService.js if not already there ─────────────────────────
 // export const updateOrderPayment = (id, data) => api.patch(`/admin/orders/${id}/payment`, data);
@@ -302,7 +304,7 @@ const EditOrderItemsModal = ({ order, onClose, onSaved, onAddMore }) => {
 const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onCombinedBill, onPrint, onAddItems, onEditItems, onConfirm, onReject, actionBusy }) => {
   if (!order) return null;
   const isPending = order.status === "PENDING_CONFIRMATION";
-  const displayName  = order.user?.name || order.guestName || t("Guest");
+  const displayName  = customerName(order) || t("Guest");
   const displayPhone = order.guestPhone || order.user?.phone || null;
   const subtotal     = order.subtotal ?? order.items?.reduce((s,i)=>s+i.price*i.qty,0) ?? 0;
   // Items can only change while Placed and before its KOT exists.
@@ -1167,7 +1169,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
               {t("Add Items to Order")}
             </span>
             <span style={{ fontSize:12, color:T2, marginTop:2 }}>
-              {order.orderId} · {order.guestName||order.user?.name||t("Guest")}
+              {order.orderId} · {customerName(order)||t("Guest")}
               {order.tableNo ? ` · ${t("T{n}", { n: order.tableNo })}` : ""}
               · <span style={{ color:isPaid?"var(--ready-ink)":"var(--wait-ink)", fontWeight:600 }}>
                   {isPaid?`✓ ${t("PAID")}`:`⏳ ${t("DUE")}`} ₹{fmtNum(Math.round(order.total))}
@@ -1522,8 +1524,14 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
 
 // `label` / `billTarget` let the same view show a takeaway order (no table):
 // the heading reads "Takeaway #…" and the bill goes by order id, not tableNo.
-const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPaymentChange, onCombinedBill, onAddItems, onNewOrder, label, billTarget }) => {
+const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPaymentChange, onCombinedBill, onAddItems, onNewOrder, label, billTarget, onRefresh }) => {
   const [expandedOrder, setExpandedOrder] = useState(null);
+  // Combine Bill selection mode (tables only). Restored after a refresh while
+  // the panel keeps its ticks in sessionStorage.
+  const [combineMode, setCombineMode] = useState(() => {
+    if (label) return false;
+    try { return sessionStorage.getItem(`combineBill:${tableNo}`) !== null; } catch { return false; }
+  });
   const heading = label || t("Table {n}", { n: tableNo });
   const bill = billTarget || { mode: "table", value: tableNo };
 
@@ -1542,6 +1550,10 @@ const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPayme
         </button>
       </div>
     );
+  }
+
+  if (combineMode) {
+    return <CombineBillPanel tableNo={tableNo} orders={orders} onExit={() => setCombineMode(false)} onRefresh={onRefresh} />;
   }
 
   const grandTotal  = orders.reduce((s,o) => s + Number(o.total||0), 0);
@@ -1638,7 +1650,7 @@ const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPayme
                 <div style={{ width:6, height:6, borderRadius:"50%",
                   background:paid?"var(--ready-ink)":"var(--stop-ink)", flexShrink:0 }}/>
                 <span style={{ color:T2 }}>
-                  {o.user?.name||o.guestName||t("Order {n}", { n: i+1 })}
+                  {customerName(o)||t("Order {n}", { n: i+1 })}
                 </span>
                 <span style={{ fontSize:10, color:T3 }}>({tn(o.items?.length||0, "{n} item", "{n} items")})</span>
               </div>
@@ -1675,11 +1687,11 @@ const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPayme
       </div>
 
       {onCombinedBill && (
-        <button className="op-btn" onClick={()=>onCombinedBill(bill.mode, bill.value)}
+        <button className="op-btn" onClick={()=>(label ? onCombinedBill(bill.mode, bill.value) : setCombineMode(true))}
           style={{ width:"100%", marginTop:10, padding:"10px", borderRadius:10,
             border:`1px solid var(--violet-mid)`, background:`var(--violet-faint)`,
             color:PINK, cursor:"pointer", fontSize:13, fontWeight:600 }}>
-          🧾 {label ? t("Generate Bill for {name}", { name: heading }) : t("Generate Combined Bill for Table {n}", { n: tableNo })}
+          🧾 {label ? t("Generate Bill for {name}", { name: heading }) : t("Generate Combine Bill")}
         </button>
       )}
     </div>
@@ -1688,7 +1700,7 @@ const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPayme
 
 // ── OrderCard — individual order row inside table view ─────────────────────────
 const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPaymentChange, onCombinedBill, onAddItems, nowTick }) => {
-  const displayName  = order.user?.name || order.guestName || t("Order {n}", { n: idx+1 });
+  const displayName  = customerName(order) || t("Order {n}", { n: idx+1 });
   const displayPhone = order.guestPhone||order.user?.phone ||  null;
   const av           = avc(displayName);
   const canAddItems  = order.status === "CONFIRMED" && !order.stockDeducted; // only while Placed
@@ -1900,7 +1912,7 @@ const PendingOrdersModal = ({ orders, busy, onConfirm, onReject, onClose }) => {
           ) : (
             <div style={{ display: "grid", gap: 10 }}>
               {sorted.map((o) => {
-                const name = o.guestName || o.user?.name || t("Guest");
+                const name = customerName(o) || t("Guest");
                 const phone = o.guestPhone || o.user?.phone || null;
                 const waitMin = Math.max(0, Math.round((new Date().getTime() - new Date(o.createdAt).getTime()) / 60000));
                 const overdue = waitMin >= 10;
@@ -2260,13 +2272,15 @@ export default function OrdersPage() {
       .reduce((sum, o) => sum + Number(o.total || 0), 0);
   const todayActiveOrders = todayOrders.filter((o) => ACTIVE_ORDER_STATUSES.includes(o.status));
   const todayActiveValue = todayActiveOrders.reduce((s, o) => s + Number(o.total || 0), 0);
+  // Owed = accepted and unpaid (same rule as the Dashboard's "Still to collect").
   const dueOrdersToday = todayOrders.filter(
-    (o) => o.paymentStatus === "PENDING_VERIFICATION" && o.status !== "CANCELLED",
+    (o) => o.paymentStatus === "PENDING_VERIFICATION" && !["CANCELLED", "AWAITING_PAYMENT", "PENDING_CONFIRMATION"].includes(o.status),
   );
   const dueTotalToday = dueOrdersToday.reduce((s, o) => s + Number(o.total || 0), 0);
   const todayOrdersValue = todayOrders.reduce((s, o) => s + Number(o.total || 0), 0);
+  // Money taken = PAID and not CANCELLED (same rule as Dashboard / Insights).
   const collectedToday = todayOrders
-    .filter((o) => o.paymentStatus === "PAID")
+    .filter((o) => o.paymentStatus === "PAID" && o.status !== "CANCELLED")
     .reduce((s, o) => s + Number(o.total || 0), 0);
   const todayDineIn = todayActiveOrders.filter((o) => o.orderType === "DINE_IN" && o.tableNo);
   const occupiedTablesToday = new Set(todayDineIn.map((o) => Number(o.tableNo))).size;
@@ -2565,7 +2579,7 @@ export default function OrdersPage() {
                       const tileStyle = !isSel && !hasDue
                         ? { background: KIND_FILL[kind], borderColor: KIND_LINE[kind] }
                         : undefined;
-                      const who = o.user?.name || o.guestName;
+                      const who = customerName(o);
                       return (
                         <button
                           type="button"
@@ -2685,8 +2699,10 @@ export default function OrdersPage() {
               )
             ) : tableSelected ? (
               <MultiOrderTableView
+                key={tableSelected}
                 orders={selectedTableOrders}
                 tableNo={tableSelected}
+                onRefresh={fetchOrders}
                 nowTick={nowTick}
                 onStatusChange={(id, s) => { handleStatusChange(id, s); }}
                 onPaymentChange={handlePaymentChange}
@@ -2765,7 +2781,7 @@ export default function OrdersPage() {
                 </thead>
                 <tbody>
                   {paginated.map((o) => {
-                    const name = o.guestName || o.user?.name || t("Guest");
+                    const name = customerName(o) || t("Guest");
                     const phone = o.guestPhone || o.user?.phone || null;
                     return (
                       <tr key={o._id} onClick={() => setExpanded(o._id)} style={{ cursor: "pointer" }}>
@@ -2807,7 +2823,7 @@ export default function OrdersPage() {
             {/* mobile cards */}
             <div className="op-only-narrow" style={{ padding: "10px 12px 4px" }}>
               {paginated.map((o) => {
-                const name = o.guestName || o.user?.name || t("Guest");
+                const name = customerName(o) || t("Guest");
                 return (
                   <div key={o._id} className="op-ocard" onClick={() => setExpanded(o._id)}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>

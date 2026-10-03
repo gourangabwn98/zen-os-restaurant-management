@@ -1,0 +1,218 @@
+// services/combinedBillService.js
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin → Orders → a table → "Generate Combine Bill": the admin ticks SOME of
+// the table's orders, then previews / prints ONE combined bill, marks the
+// ticked ones paid, or completes them.
+//
+// A combined bill is only a grouping of existing orders — never a new money
+// record. Every figure is the orders' own stored subtotal / discount / tax /
+// serviceCharge / total; payment and completion stay per order (each order
+// is still counted exactly once by revenueOrderMatch everywhere).
+//
+// Selection rule = the existing table combined bill (getCombinedBill): the
+// table's DINE_IN orders that are accepted and still on the table
+// (CONFIRMED, PREPARING, READY, DELIVERED). Every id is re-checked here
+// against the database — nothing about an order is taken from the client.
+// Each write is one atomic conditional update per order, so retries, double
+// clicks and two admins at once are safe; the result lists what happened to
+// every requested id.
+// ─────────────────────────────────────────────────────────────────────────────
+import { ORDER_STATUSES, PAYMENT_STATUSES, ORDER_TYPES } from "../utils/orderStateMachine.js";
+import { roundMoney } from "../utils/recipeCost.js";
+
+const pick = (list, v) => { if (!list.includes(v)) throw new Error(`combinedBillService: unknown enum ${v}`); return v; };
+const CANCELLED = pick(ORDER_STATUSES, "CANCELLED");
+const COMPLETED = pick(ORDER_STATUSES, "COMPLETED");
+const DELIVERED = pick(ORDER_STATUSES, "DELIVERED");
+const PAID = pick(PAYMENT_STATUSES, "PAID");
+const DINE_IN = pick(ORDER_TYPES, "DINE_IN");
+export const COMBINABLE = ["CONFIRMED", "PREPARING", "READY", "DELIVERED"].map((s) => pick(ORDER_STATUSES, s));
+export const MAX_SELECTION = 50;
+const PAY_METHODS = ["Cash", "Online"];
+
+const OBJECT_ID = /^[a-f0-9]{24}$/i;
+const httpError = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
+
+/** Pure: request body → { tableNo, ids } or throws 400. Duplicates collapse. */
+export const parseSelection = (body = {}) => {
+  const tableNo = Number(body.tableNo);
+  if (!Number.isInteger(tableNo) || tableNo <= 0) throw httpError("tableNo is required");
+  if (!Array.isArray(body.orderIds) || !body.orderIds.length) throw httpError("Select at least one order");
+  const ids = [...new Set(body.orderIds.map(String))];
+  if (ids.length > MAX_SELECTION) throw httpError(`At most ${MAX_SELECTION} orders at once`);
+  const bad = ids.filter((id) => !OBJECT_ID.test(id));
+  if (bad.length) throw httpError(`Invalid order id: ${bad[0]}`);
+  return { tableNo, ids };
+};
+
+/** Pure: why an order can't be part of this table's combined bill, or null. */
+export const ineligibleReason = (order, tableNo) => {
+  if (!order) return "Order not found";
+  if (order.orderType !== DINE_IN || Number(order.tableNo) !== tableNo) return "Not an order of this table";
+  if (order.status === CANCELLED) return "Cancelled";
+  if (!COMBINABLE.includes(order.status)) return order.status === COMPLETED ? "Already completed" : "Not accepted yet";
+  return null;
+};
+
+/** Pure: the combined figures — sums of the orders' STORED amounts. */
+export const combineTotals = (orders) => {
+  const sum = (f) => roundMoney(orders.reduce((s, o) => s + (Number(o[f]) || 0), 0));
+  const paid = orders.filter((o) => o.paymentStatus === PAID);
+  return {
+    orderCount: orders.length,
+    subtotal: sum("subtotal"), discount: sum("discount"), tax: sum("tax"),
+    serviceCharge: sum("serviceCharge"), total: sum("total"),
+    paidTotal: roundMoney(paid.reduce((s, o) => s + (Number(o.total) || 0), 0)),
+    dueTotal: roundMoney(orders.filter((o) => o.paymentStatus !== PAID).reduce((s, o) => s + (Number(o.total) || 0), 0)),
+    allPaid: orders.length > 0 && paid.length === orders.length,
+  };
+};
+
+// The customer on an order (staff-placed orders keep the waiter in `user`).
+const customerOf = (o) => o.guestName || ((!o.source || o.source === "CUSTOMER") ? o.user?.name : "") || "";
+
+/** Loads + validates a selection. → { tableNo, orders (eligible, oldest first), rejected } */
+export const resolveSelection = async ({ models, body }) => {
+  const { tableNo, ids } = parseSelection(body);
+  const found = await models.Order.find({ _id: { $in: ids } }).populate("user", "name phone").lean();
+  const byId = new Map(found.map((o) => [String(o._id), o]));
+  const orders = [], rejected = [];
+  for (const id of ids) {
+    const o = byId.get(id);
+    const why = ineligibleReason(o, tableNo);
+    if (why) rejected.push({ id, orderId: o?.orderId || "", reason: why });
+    else orders.push(o);
+  }
+  orders.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  return { tableNo, orders, rejected };
+};
+
+/** Preview ("Generate Combined Bill") — read only. */
+export const previewCombinedBill = async ({ models, body }) => {
+  const { tableNo, orders, rejected } = await resolveSelection({ models, body });
+  return {
+    tableNo, rejected,
+    orders: orders.map((o) => ({
+      _id: o._id, orderId: o.orderId, status: o.status, paymentStatus: o.paymentStatus, paymentMethod: o.paymentMethod,
+      customer: customerOf(o), createdAt: o.createdAt,
+      items: (o.items || []).map((i) => ({ name: i.name, nameBn: i.nameBn || "", qty: i.qty, price: i.price })),
+      subtotal: o.subtotal, discount: o.discount || 0, couponCode: o.coupon?.code || "", tax: o.tax, serviceCharge: o.serviceCharge, total: o.total,
+    })),
+    totals: combineTotals(orders),
+  };
+};
+
+/** The BillPrintJob payload for ONE combined bill (billRenderer's `orders` layout). */
+export const combinedPrintPayload = ({ tableNo, orders, restaurant }) => {
+  const t = combineTotals(orders);
+  const methods = [...new Set(orders.filter((o) => o.paymentStatus === PAID).map((o) => o.paymentMethod || "Cash"))];
+  return {
+    combined: true,
+    restaurantName: restaurant?.restaurantName || "",
+    logoUrl: /^https?:\/\//i.test(restaurant?.logo || "") ? restaurant.logo : "",
+    orderId: `${orders.length} orders`,
+    tableNo, orderType: DINE_IN,
+    orders: orders.map((o) => ({
+      orderId: o.orderId, total: o.total, paymentStatus: o.paymentStatus,
+      items: (o.items || []).map((i) => ({ name: i.name, qty: i.qty, price: i.price })),
+    })),
+    items: orders.flatMap((o) => o.items || []).map((i) => ({ name: i.name, qty: i.qty, price: i.price })),
+    subtotal: t.subtotal, discount: t.discount, tax: t.tax, serviceCharge: t.serviceCharge, total: t.total,
+    couponCode: "",
+    paymentStatus: t.allPaid ? PAID : "PENDING_VERIFICATION",
+    paymentMethod: t.allPaid ? methods.join(" + ") : "",
+    dueTotal: t.dueTotal,
+    guestName: [...new Set(orders.map(customerOf).filter(Boolean))].join(", "),
+    guestPhone: "",
+  };
+};
+
+/** "Print Combined Bill" — exactly ONE BillPrintJob for the selection.
+ * Double clicks / retries: the client sends a requestKey per print intent
+ * (unique index → the second insert returns the first job), and an identical
+ * selection printed in the last 15 s by anyone returns that job too. */
+export const printCombinedBill = async ({ models, body, actor }) => {
+  const { BillPrintJob, RestaurantProfile } = models;
+  const { tableNo, orders, rejected } = await resolveSelection({ models, body });
+  if (!orders.length) throw httpError("None of the selected orders can be billed", 409);
+  const key = orders.map((o) => String(o._id)).sort().join(",");
+  const requestKey = typeof body.requestKey === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(body.requestKey) ? body.requestKey : null;
+
+  if (requestKey) {
+    const same = await BillPrintJob.findOne({ requestKey }).lean();
+    if (same) return { job: same, duplicate: true, rejected, payload: same.payload };
+  }
+  const recent = await BillPrintJob.findOne({ combinedKey: key, createdAt: { $gte: new Date(Date.now() - 15000) } }).lean();
+  if (recent) return { job: recent, duplicate: true, rejected, payload: recent.payload };
+
+  const restaurant = await RestaurantProfile.findOne().select("restaurantName logo").lean();
+  const payload = combinedPrintPayload({ tableNo, orders, restaurant });
+  try {
+    const job = await BillPrintJob.create({
+      order: null, orderId: payload.orderId, tableNo, orderType: DINE_IN, payload,
+      combinedKey: key, combinedOrders: orders.map((o) => o._id), ...(requestKey && { requestKey }),
+      createdBy: actor,
+    });
+    return { job: job.toObject(), duplicate: false, rejected, payload };
+  } catch (err) {
+    if (err?.code === 11000 && requestKey) {
+      const same = await BillPrintJob.findOne({ requestKey }).lean();
+      return { job: same, duplicate: true, rejected, payload: same.payload };
+    }
+    throw err;
+  }
+};
+
+/** "Mark Selected as Paid" — per order, atomic, idempotent.
+ * Only an eligible, not-yet-paid order changes; an already-paid one is
+ * reported, never re-written (its method stays as recorded). */
+export const markSelectedPaid = async ({ models, body, canPay }) => {
+  const method = body.paymentMethod;
+  if (!PAY_METHODS.includes(method)) throw httpError(`paymentMethod must be one of: ${PAY_METHODS.join(", ")}`);
+  if (!canPay) throw httpError("You are not allowed to mark payments", 403);
+  const { tableNo, orders, rejected } = await resolveSelection({ models, body });
+  const paid = [], alreadyPaid = [], changed = [];
+  for (const o of orders) {
+    if (o.paymentStatus === PAID) { alreadyPaid.push(o.orderId); continue; }
+    const updated = await models.Order.findOneAndUpdate(
+      // Re-checked at write time: still this table, still combinable, still unpaid.
+      { _id: o._id, orderType: DINE_IN, tableNo, status: { $in: COMBINABLE }, paymentStatus: { $ne: PAID } },
+      { $set: { paymentStatus: PAID, paymentMethod: method } },
+      { returnDocument: "after" },
+    );
+    if (updated) { paid.push(o.orderId); changed.push(updated); continue; }
+    const now = await models.Order.findById(o._id).select("status paymentStatus orderId").lean();
+    if (now?.paymentStatus === PAID) alreadyPaid.push(o.orderId);
+    else rejected.push({ id: String(o._id), orderId: o.orderId, reason: now?.status === CANCELLED ? "Cancelled" : "Changed by someone else — refresh" });
+  }
+  return { paid, alreadyPaid, rejected, changed };
+};
+
+/** "Complete Selected Orders" — the normal completion rule for every order:
+ * served (DELIVERED) and PAID → COMPLETED, through the existing
+ * transitionOrderStatusTx (atomic, table session close, events). The admin
+ * "any status" override is NOT used here, so a bulk click can never skip the
+ * kitchen or complete an unpaid bill. */
+export const completeSelected = async ({ req, body, transition }) => {
+  const { orders, rejected } = await resolveSelection({ models: req.models, body });
+  const completed = [], alreadyCompleted = [], changed = [];
+  for (const o of orders) {
+    if (o.paymentStatus !== PAID) { rejected.push({ id: String(o._id), orderId: o.orderId, reason: "Not paid yet" }); continue; }
+    if (o.status !== DELIVERED) { rejected.push({ id: String(o._id), orderId: o.orderId, reason: "Not served yet (mark Delivered first)" }); continue; }
+    try {
+      const result = await transition({ req, orderId: o._id, toStatus: COMPLETED, note: "Completed with combined bill" });
+      completed.push(o.orderId); changed.push({ ...result, previousStatus: o.status });
+    } catch (err) {
+      const now = await req.models.Order.findById(o._id).select("status").lean();
+      if (now?.status === COMPLETED) alreadyCompleted.push(o.orderId);
+      else rejected.push({ id: String(o._id), orderId: o.orderId, reason: err.message });
+    }
+  }
+  // Ids that were already COMPLETED at selection time come back as rejected
+  // "Already completed" from resolveSelection — report them as done instead.
+  const done = rejected.filter((r) => r.reason === "Already completed");
+  return {
+    completed, alreadyCompleted: [...alreadyCompleted, ...done.map((r) => r.orderId)],
+    rejected: rejected.filter((r) => r.reason !== "Already completed"), changed,
+  };
+};

@@ -21,6 +21,7 @@ export const createKotJobForOrder = async ({ KOTJob, order, actor, session }) =>
           tableNo:   order.tableNo,
           orderType: order.orderType,
           items:     order.items.map((i) => ({ name: i.name, nameBn: i.nameBn || "", qty: i.qty, notes: i.notes || "" })),
+          notes:     order.notes || "",
           priority:  order.priority === "URGENT" ? "URGENT" : "NORMAL",
           status:    "PENDING",
           createdBy: actor,

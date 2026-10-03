@@ -93,7 +93,7 @@ export const updateCategory = async ({ models, db, id, name, nameBn, image }) =>
   if (!Object.keys(set).length) return { category: current, renamedFrom: null, itemsMoved: 0 };
 
   if (!renaming) {
-    const category = await Category.findByIdAndUpdate(id, { $set: set }, { new: true });
+    const category = await Category.findByIdAndUpdate(id, { $set: set }, { returnDocument: "after" });
     return { category, renamedFrom: null, itemsMoved: 0 };
   }
 
@@ -104,7 +104,7 @@ export const updateCategory = async ({ models, db, id, name, nameBn, image }) =>
       // Conditional on the old name, so two admins renaming at once can't
       // both move the items (the loser gets 409 below).
       category = await Category.findOneAndUpdate(
-        { _id: id, name: current.name }, { $set: set }, { new: true, session },
+        { _id: id, name: current.name }, { $set: set }, { returnDocument: "after", session },
       );
       if (!category) throw httpError("This category was changed by someone else — refresh and try again", 409);
       const r = await MenuItem.updateMany({ category: current.name }, { $set: { category: newName } }, { session });

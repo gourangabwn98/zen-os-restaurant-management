@@ -130,7 +130,7 @@ export const startBreak = async ({ AttendanceSession, employeeId }) => {
       $set:  { presenceStatus: "BREAK" },
       $push: { breaks: { startedAt: at, endedAt: null, durationSeconds: 0 } },
     },
-    { new: true }
+    { returnDocument: "after" }
   );
   if (!updated) {
     const err = new Error("Could not start break — status changed, please retry");
@@ -161,7 +161,7 @@ export const endBreak = async ({ AttendanceSession, employeeId }) => {
   const updated = await AttendanceSession.findOneAndUpdate(
     { _id: session._id, status: "OPEN", presenceStatus: "BREAK" },
     { $set: { presenceStatus: "ONLINE", breaks: newBreaks, totalBreakSeconds } },
-    { new: true }
+    { returnDocument: "after" }
   );
   if (!updated) {
     const err = new Error("Could not resume duty — status changed, please retry");
@@ -180,7 +180,7 @@ export const endDuty = async ({ AttendanceSession, employeeId }) => {
   const updated = await AttendanceSession.findOneAndUpdate(
     { _id: session._id, status: "OPEN" },
     { $set: fields },
-    { new: true }
+    { returnDocument: "after" }
   );
   if (!updated) {
     const err = new Error("Duty session was already ended");
@@ -218,7 +218,7 @@ export const sweepStaleAttendanceSessions = async ({ AttendanceSession, graceMs 
     const updated = await AttendanceSession.findOneAndUpdate(
       { _id: doc._id, status: "OPEN", lastSeenAt: doc.lastSeenAt },
       { $set: fields },
-      { new: true }
+      { returnDocument: "after" }
     );
     if (updated) closed.push(updated);
   }

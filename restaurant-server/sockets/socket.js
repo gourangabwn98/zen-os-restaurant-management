@@ -212,7 +212,7 @@ export const initSocket = (httpServer) => {
 
         const jobs = [
           ...kot.map((j) => ({ jobId: String(j._id), jobType: "KOT", status: j.status, attempts: j.attempts,
-            orderId: j.orderId, tableNo: j.tableNo, orderType: j.orderType, items: j.items, createdAt: j.createdAt })),
+            orderId: j.orderId, tableNo: j.tableNo, orderType: j.orderType, items: j.items, notes: j.notes || "", createdAt: j.createdAt })),
           ...bill.map((j) => ({ jobId: String(j._id), jobType: "BILL", status: j.status, attempts: j.attempts,
             orderId: j.orderId, tableNo: j.tableNo, orderType: j.orderType, payload: j.payload, createdAt: j.createdAt })),
         ].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
@@ -249,7 +249,7 @@ export const initSocket = (httpServer) => {
         const job = await Model.findByIdAndUpdate(
           jobId,
           { $set: setFields, ...(incFields ? { $inc: incFields } : {}) },
-          { new: true }
+          { returnDocument: "after" }
         );
 
         if (job) {
@@ -362,7 +362,7 @@ export const emitKotCreated = (tenantKey, kotJob) => {
   const payload = {
     jobId: String(kotJob._id), jobType: "KOT",
     orderId: kotJob.orderId, tableNo: kotJob.tableNo, orderType: kotJob.orderType,
-    items: kotJob.items, attempts: kotJob.attempts || 0, priority: kotJob.priority || "NORMAL",
+    items: kotJob.items, notes: kotJob.notes || "", attempts: kotJob.attempts || 0, priority: kotJob.priority || "NORMAL",
   };
   emit(rooms.staff(tenantKey), "kot:created", { kotJob });
   // The Kitchen app's realtime feed — a chef never joins the staff room, so

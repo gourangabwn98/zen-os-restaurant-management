@@ -142,7 +142,7 @@ export const updateCoupon = async ({ models, id, body }) => {
   if (!existing) throw httpError("Coupon not found", 404);
   const data = normalizeCouponInput(body, existing);
   try {
-    return await models.Coupon.findByIdAndUpdate(id, { $set: data }, { new: true });
+    return await models.Coupon.findByIdAndUpdate(id, { $set: data }, { returnDocument: "after" });
   } catch (err) {
     if (duplicateCode(err)) throw httpError(`A coupon with code ${data.code} already exists`, 409);
     throw err;

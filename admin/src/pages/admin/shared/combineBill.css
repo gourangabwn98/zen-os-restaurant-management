@@ -1,0 +1,48 @@
+/* shared/combineBill.css — Combine Bill selection mode (CombineBillPanel.jsx).
+   Layout only; colours, radii and type sizes are the shared tokens. */
+.cb { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.cb-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.cb-head b { display: block; font-size: 14px; color: var(--text-1); }
+.cb-head span { font-size: 12px; color: var(--text-3); }
+.cb-all { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
+.cb input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--violet); flex: none; cursor: pointer; }
+.cb input[type="checkbox"]:disabled { cursor: not-allowed; }
+.cb-list { display: flex; flex-direction: column; gap: 6px; }
+.cb-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--edge);
+  border-radius: var(--r-row); background: var(--grad-panel); cursor: pointer; min-width: 0; }
+.cb-row.on { border-color: var(--violet-mid); background: var(--violet-faint); }
+.cb-row.off { opacity: .55; cursor: not-allowed; }
+.cb-main { flex: 1; min-width: 0; }
+.cb-top { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.cb-no { font-size: 13px; color: var(--text-1); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.cb-who { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.cb-tags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 5px; }
+.cb-items, .cb-why { font-size: 11px; color: var(--text-3); }
+.cb-why { color: var(--wait-ink); }
+.cb-amt { font-size: 14px; color: var(--text-1); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* sticky action bar */
+.cb-bar { position: sticky; bottom: 0; z-index: 5; display: flex; flex-direction: column; gap: 10px; padding: 12px;
+  border: 1px solid var(--violet-mid); border-radius: var(--r-card); background: var(--grad-modal); box-shadow: var(--shadow-pop); }
+.cb-sum { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cb-sel { font-size: 13px; font-weight: 700; color: var(--text-1); }
+.cb-hint { font-size: 12px; color: var(--text-3); }
+.cb-err { font-size: 12px; color: var(--stop-ink); }
+.cb-figs { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--text-2); }
+.cb-figs b { color: var(--text-1); font-variant-numeric: tabular-nums; }
+.cb-figs .gt b { color: var(--accent-ink); font-size: 14px; }
+.cb-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.cb-acts .zc-btn { white-space: nowrap; }
+.cb-pay { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+
+/* bill preview */
+.cb-modal { width: 520px; max-width: calc(100vw - 24px); }
+.cb-modal .mb { max-height: 62vh; overflow-y: auto; }
+.cb-bill-order { padding: 8px 0; border-bottom: 1px dashed var(--edge); }
+.cb-bill-oh { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 13px; color: var(--text-1); }
+.cb-bill-line { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--text-2); padding: 2px 0 2px 10px; }
+.cb-bill-line span:last-child, .cb-bill-tot span:last-child { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cb-bill-tot { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--text-2); }
+.cb-bill-tot > div { display: flex; justify-content: space-between; gap: 10px; }
+.cb-bill-tot .gt { font-size: 15px; font-weight: 700; color: var(--text-1); border-top: 1px solid var(--edge); padding-top: 6px; margin-top: 2px; }
+.cb-bill-tot .due { font-weight: 700; color: var(--stop-ink); }

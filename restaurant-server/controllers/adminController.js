@@ -1,4 +1,5 @@
 // controllers/adminController.js
+import mongoose from "mongoose";
 import { priceItems, computeTotals } from "../utils/pricing.js";
 import { getScheduleContext } from "../services/menuScheduleService.js";
 import { transitionOrderStatusTx, buildActor, getRoleFromUser } from "../services/orderService.js";
@@ -8,13 +9,29 @@ import {
   emitKotCreated, emitBillPrint, emitPaymentStatusChanged, emitTableCleared,
   emitTableFreed, emitInventoryAlert, emitSentToKitchen,
 } from "../sockets/socket.js";
-import { computeSalesBreakdown, computeInsightsOverview } from "../services/insightsService.js";
+import { computeSalesBreakdown, computeInsightsOverview, revenueOrderMatch } from "../services/insightsService.js";
+import { zonedInstant } from "../services/offerStatsService.js";
 import { resolveTimezone } from "../utils/menuSchedule.js";
+
+const STATUS_CANCELLED = "CANCELLED";
+if (!ORDER_STATUSES.includes(STATUS_CANCELLED)) throw new Error("adminController: CANCELLED is not an order status");
 
 // ── GET /api/admin/dashboard ──────────────────────────────────────────────────
 export const getDashboardStats = async (req, res) => {
   try {
-    const { User, MenuItem, Order, Invoice, Table } = req.models;
+    const { User, MenuItem, Order, Invoice, Table, RestaurantProfile } = req.models;
+
+    // "Today" and the 7 days are the restaurant's own calendar days (its
+    // timezone), not the server's (UTC on the host) — a 1 AM IST bill used to
+    // land on the previous day. Revenue = revenueOrderMatch (PAID and not
+    // CANCELLED), the one rule shared with Insights / Invoices / Offers.
+    const profile = await RestaurantProfile.findOne().select("timezone").lean();
+    const tz = resolveTimezone(profile?.timezone);
+    const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" })
+      .formatToParts(new Date()).map((x) => [x.type, x.value]));
+    const todayStart = zonedInstant(+p.year, +p.month, +p.day, 0, tz);
+    const tomorrowStart = zonedInstant(+p.year, +p.month, +p.day + 1, 0, tz);
+    const weekStart = zonedInstant(+p.year, +p.month, +p.day - 6, 0, tz);
 
     // Everything runs in parallel. The old payload also carried
     // `recentOrders`, `topItems` (an $unwind over every order ever placed) and
@@ -22,7 +39,7 @@ export const getDashboardStats = async (req, res) => {
     // and this call gates the admin's first paint, so they were removed.
     const [
       totalUsers, totalItems, totalOrders, totalInvoices,
-      revenueAgg, todayOrdersAgg, ordersByStatus,
+      revenueAgg, todayOrderCount, todayRevenueAgg, ordersByStatus,
       weeklyRevenue, totalTables,
     ] = await Promise.all([
       User.estimatedDocumentCount(),
@@ -30,17 +47,18 @@ export const getDashboardStats = async (req, res) => {
       Order.estimatedDocumentCount(),
       Invoice.estimatedDocumentCount(),
       Order.aggregate([
-        { $match: { paymentStatus: "PAID" } },
+        { $match: revenueOrderMatch() },
         { $group: { _id: null, total: { $sum: "$total" } } },
       ]),
+      Order.countDocuments({ createdAt: { $gte: todayStart, $lt: tomorrowStart } }),
       Order.aggregate([
-        { $match: { createdAt: { $gte: new Date(new Date().setHours(0,0,0,0)), $lte: new Date(new Date().setHours(23,59,59,999)) } } },
-        { $group: { _id: null, count: { $sum: 1 }, revenue: { $sum: "$total" } } },
+        { $match: revenueOrderMatch({ from: todayStart, to: new Date(tomorrowStart.getTime() - 1) }) },
+        { $group: { _id: null, total: { $sum: "$total" } } },
       ]),
       Order.aggregate([{ $group: { _id: "$status", count: { $sum: 1 }, revenue: { $sum: "$total" } } }]),
       Order.aggregate([
-        { $match: { createdAt: { $gte: new Date(Date.now() - 7*24*60*60*1000) }, paymentStatus: "PAID" } },
-        { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } }, revenue: { $sum: "$total" }, orders: { $sum: 1 } } },
+        { $match: revenueOrderMatch({ from: weekStart, to: new Date(tomorrowStart.getTime() - 1) }) },
+        { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt", timezone: tz } }, revenue: { $sum: "$total" }, orders: { $sum: 1 } } },
         { $sort: { _id: 1 } },
       ]),
       Table.countDocuments({ status: "Active" }).catch(() => 0),
@@ -50,8 +68,8 @@ export const getDashboardStats = async (req, res) => {
       stats: {
         totalUsers, totalItems, totalOrders, totalInvoices,
         totalRevenue: revenueAgg[0]?.total || 0,
-        todayOrders:  todayOrdersAgg[0]?.count || 0,
-        todayRevenue: todayOrdersAgg[0]?.revenue || 0,
+        todayOrders:  todayOrderCount,
+        todayRevenue: todayRevenueAgg[0]?.total || 0,
         totalTables,
       },
       ordersByStatus, weeklyRevenue,
@@ -286,33 +304,22 @@ export const getAllInvoices = async (req, res) => {
 // ── PATCH /api/admin/invoices/:id/status ─────────────────────────────────────
 export const updateInvoiceStatus = async (req, res) => {
   try {
-    const { Invoice, Order } = req.models;
-    const { status } = req.body;
+    const { Invoice } = req.models;
+    const status = typeof req.body?.status === "string" ? req.body.status.toLowerCase() : "";
     const allowed = ["pending","completed","paid","cancelled","refunded"];
-    if (!allowed.includes(status?.toLowerCase()))
+    if (!allowed.includes(status))
       return res.status(400).json({ message: `Invalid status. Allowed: ${allowed.join(",")}` });
 
     const invoice = await Invoice.findById(req.params.id);
     if (!invoice) return res.status(404).json({ message: "Invoice not found" });
 
-    invoice.status = status.toLowerCase();
-
-    // Bulk-finalizing a bill deliberately bypasses the per-order transition
-    // machine (paying/refunding closes out every order on the bill at once,
-    // regardless of exactly which lifecycle step each one was on).
-    if (["completed","paid"].includes(status.toLowerCase()) && invoice.orders?.length) {
-      await Order.updateMany(
-        { _id: { $in: invoice.orders } },
-        { $set: { status: "COMPLETED", paymentStatus: "PAID" } }
-      );
-    }
-    if (["cancelled","refunded"].includes(status.toLowerCase()) && invoice.orders?.length) {
-      await Order.updateMany(
-        { _id: { $in: invoice.orders } },
-        { $set: { status: "CANCELLED" } }
-      );
-    }
-
+    // The invoice's own label only. This used to Order.updateMany() every
+    // order on it to COMPLETED + PAID (or CANCELLED) — skipping the order
+    // state machine, the per-order payment rules, the stock deduction / KOT
+    // that only sendToKitchenTx may do, and stock reversal on cancel. Orders
+    // are paid / moved / cancelled through their own endpoints
+    // (PATCH /admin/orders/:id/payment, PUT /admin/orders/:id/status).
+    invoice.status = status;
     await invoice.save();
     res.json({ success: true, message: `Invoice → ${status}`, data: invoice });
   } catch (err) {
@@ -350,12 +357,17 @@ export const updateOrderPayment = async (req, res) => {
       return res.status(400).json({ message: "Nothing to update" });
     }
 
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
-      { $set: update },
-      { new: true, runValidators: true }
-    );
-    if (!order) return res.status(404).json({ message: "Order not found" });
+    // A cancelled order can't take money: marking it PAID created
+    // "cancelled · was paid" bills that no revenue total counts. The guard is
+    // in the update filter itself, so it also holds against a cancel racing it.
+    const filter = { _id: req.params.id, ...(update.paymentStatus === "PAID" && { status: { $ne: STATUS_CANCELLED } }) };
+    const order = await Order.findOneAndUpdate(filter, { $set: update }, { returnDocument: "after", runValidators: true });
+    if (!order) {
+      const exists = await Order.exists({ _id: req.params.id });
+      return exists
+        ? res.status(409).json({ message: "This order was cancelled — it can't be marked paid" })
+        : res.status(404).json({ message: "Order not found" });
+    }
 
     emitPaymentStatusChanged(req.tenantKey, order);
     res.json({ success: true, order });
@@ -399,15 +411,33 @@ export const addItemsToOrder = async (req, res) => {
     order.total           = totals.total;
 
     const actor = buildActor(req.user);
-    order.statusHistory.push({
-      status: order.status, changedBy: actor, changedAt: new Date(),
-      note: `Added ${newDbItems.length} item(s)`,
-    });
 
-    await order.save();
+    // Atomic, conditional write (same guard as orderService.modifyOrderItemsTx):
+    // only if the order is STILL Placed, stock not yet deducted, and nobody
+    // edited it since we read it. A plain save() here could land after the
+    // send-to-kitchen timer had already printed the KOT and deducted stock —
+    // the added food would then never reach the kitchen or the stock count.
+    const updated = await Order.findOneAndUpdate(
+      {
+        _id: order._id, status: "CONFIRMED", stockDeducted: { $ne: true },
+        // Orders saved before `revision` existed have no field (read as 0).
+        revision: order.revision ? order.revision : { $in: [0, null] },
+      },
+      {
+        $set: {
+          items: order.items, subtotal: order.subtotal, tax: order.tax,
+          serviceCharge: order.serviceCharge, discount: order.discount, total: order.total,
+        },
+        $push: { statusHistory: { status: "CONFIRMED", changedBy: actor, changedAt: new Date(), note: `Added ${newDbItems.length} item(s)` } },
+        $inc: { revision: 1 },
+      },
+      { returnDocument: "after", runValidators: true },
+    );
+    if (!updated)
+      return res.status(409).json({ message: "This order just went to the kitchen or was changed by someone else — refresh and place a new order for the extra items" });
 
-    emitOrderStatusChanged(req.tenantKey, order, order.status);
-    res.json(order);
+    emitOrderStatusChanged(req.tenantKey, updated, updated.status);
+    res.json(updated);
   } catch (err) {
     res.status(err.statusCode || 400).json({ message: err.message });
   }
@@ -416,18 +446,23 @@ export const addItemsToOrder = async (req, res) => {
 // ── GET /api/admin/orders/combined-bill?phone=... OR ?tableNo=... ────────────
 export const getCombinedBill = async (req, res) => {
   try {
-    const { Order, RestaurantProfile } = req.models;
+    const { Order, RestaurantProfile, User } = req.models;
     const { phone, tableNo, orderIds } = req.query;
     const ACTIVE_STATUSES = ["CONFIRMED","PREPARING","READY","DELIVERED"];
 
     let matchOrders = [];
 
     if (orderIds) {
-      const ids = orderIds.split(",");
-      matchOrders = await Order.find({ _id: { $in: ids } }).populate("user","name phone");
+      // Picked orders — but never a cancelled or still-unpaid pay-first one:
+      // their totals are not owed and must not join the bill.
+      const ids = String(orderIds).split(",").map((x) => x.trim()).filter((x) => mongoose.isValidObjectId(x));
+      matchOrders = await Order.find({ _id: { $in: ids }, status: { $nin: [STATUS_CANCELLED, "AWAITING_PAYMENT"] } }).populate("user","name phone");
     } else if (phone) {
+      // `user` is a reference, so "user.phone" never matched anything — find
+      // the logged-in customer's id by phone instead.
+      const users = await User.find({ phone: String(phone) }).select("_id").lean();
       matchOrders = await Order.find({
-        $or: [{ guestPhone: phone }, { "user.phone": phone }],
+        $or: [{ guestPhone: String(phone) }, ...(users.length ? [{ user: { $in: users.map((u) => u._id) } }] : [])],
         status: { $in: ACTIVE_STATUSES },
       }).populate("user","name phone");
     } else if (tableNo) {
@@ -483,6 +518,7 @@ export const printBill = async (req, res) => {
     const order = await Order.findById(req.params.id).populate("user","name phone");
     if (!order) return res.status(404).json({ message: "Order not found" });
     const restaurant = await RestaurantProfile.findOne().select("restaurantName logo").lean();
+    const byCustomer = !order.source || order.source === "CUSTOMER";
 
     const payload = {
       // Bill header: name + logo (Admin → Profile). The print service turns
@@ -501,8 +537,9 @@ export const printBill = async (req, res) => {
       total:         order.total,
       paymentMethod: order.paymentMethod || "Cash",
       paymentStatus: order.paymentStatus,
-      guestName:     order.guestName  || order.user?.name  || "",
-      guestPhone:    order.guestPhone || order.user?.phone || "",
+      // The customer — on a staff-placed order `user` is the waiter/admin.
+      guestName:     order.guestName  || (byCustomer ? order.user?.name  : "") || "",
+      guestPhone:    order.guestPhone || (byCustomer ? order.user?.phone : "") || "",
     };
 
     // Persisted job — this is what gives the bill print a job ID, a status

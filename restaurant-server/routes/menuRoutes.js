@@ -10,6 +10,7 @@ import { requireAdmin, requireStaff } from "../middleware/rbac.js";
 // import { uploadMiddleware } from "../middleware/uploadMiddleware.js";
 // import { upload } from "../middleware/uploadMiddleware.js";
 import multer from "multer";
+import { objectIdParam } from "../middleware/validateIds.js";
 
 // Memory storage — no disk, direct to Cloudinary
 const upload = multer({
@@ -18,6 +19,8 @@ const upload = multer({
 });
 // const upload = multer({ dest: "uploads/" });
 const router = express.Router();
+// Malformed ids → 404, never a CastError 500 (middleware/validateIds.js).
+router.param("id", objectIdParam);
 // Public routes — use dbFromHeader (customer QR scan)
 // router.get("/",          dbFromHeader, getMenu);
 // router.get("/categories",dbFromHeader, getCategoriesWithImage);

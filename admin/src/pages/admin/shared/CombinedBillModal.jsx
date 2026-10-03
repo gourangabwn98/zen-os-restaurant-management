@@ -4,11 +4,12 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // import { PRIMARY } from "../../../theme.js";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import toast from "react-hot-toast";
 import api from "../../../services/api.js";
 import { PRIMARY } from "../../../theme.js";
 import { t, tn, N_, fmtNum, localName } from "../../../i18n/core.js";
+import { customerName } from "./customerName.js";
 
 const PINK  = PRIMARY;
 const CARD  = "#16132a";
@@ -22,13 +23,20 @@ const PAY_STYLE = {
   PENDING_VERIFICATION: { bg:"rgba(245,158,11,0.15)",  color:"#fbbf24" },
   FAILED:               { bg:"rgba(239,68,68,0.15)",   color:"#f87171" },
 };
+// Keyed by the real status enum (utils/orderStateMachine.js) — these used to
+// be the pre-rename "Placed"/"Preparing"/… keys, so every badge fell back to
+// grey and showed the raw code.
 const STATUS_STYLE = {
-  Placed:    { bg:"rgba(56,122,221,0.15)",  color:"#60a5fa" },
-  Preparing: { bg:"rgba(186,117,23,0.15)",  color:"#fbbf24" },
-  Ready:     { bg:"rgba(16,185,129,0.15)",  color:"#34d399" },
-  Delivered: { bg:"rgba(16,185,129,0.15)",  color:"#34d399" },
-  Completed: { bg:"rgba(107,114,128,0.15)", color:"#9ca3af" },
-  Cancelled: { bg:"rgba(239,68,68,0.15)",   color:"#f87171" },
+  CONFIRMED: { bg:"rgba(56,122,221,0.15)",  color:"#60a5fa" },
+  PREPARING: { bg:"rgba(186,117,23,0.15)",  color:"#fbbf24" },
+  READY:     { bg:"rgba(16,185,129,0.15)",  color:"#34d399" },
+  DELIVERED: { bg:"rgba(16,185,129,0.15)",  color:"#34d399" },
+  COMPLETED: { bg:"rgba(107,114,128,0.15)", color:"#9ca3af" },
+  CANCELLED: { bg:"rgba(239,68,68,0.15)",   color:"#f87171" },
+};
+const STATUS_LABEL = {
+  PENDING_CONFIRMATION: N_("Pending confirmation"), CONFIRMED: N_("Placed"), PREPARING: N_("Preparing"),
+  READY: N_("Ready"), DELIVERED: N_("Delivered"), COMPLETED: N_("Completed"), CANCELLED: N_("Cancelled"),
 };
 const fmt = (n) => fmtNum(Math.round(n||0));
 
@@ -46,6 +54,11 @@ export default function CombinedBillModal({ mode, value, onClose, onPaymentChang
   const [loading, setLoading] = useState(true);
   const [printing, setPrinting] = useState(false);
   const [showQr, setShowQr]     = useState(true);
+  const [paying, setPaying]     = useState(false);
+
+  // Latest onClose without re-fetching the bill each time the parent re-renders.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
   useEffect(() => {
     const params = {};
@@ -55,23 +68,34 @@ export default function CombinedBillModal({ mode, value, onClose, onPaymentChang
 
     api.get("/admin/orders/combined-bill", { params })
       .then(r => setBill(r.data))
-      .catch(err => { toast.error(err.response?.data?.message || t("Failed to load bill")); onClose(); })
+      .catch(err => { toast.error(err.response?.data?.message || t("Failed to load bill")); onCloseRef.current(); })
       .finally(() => setLoading(false));
   }, [mode, value]);
 
-  const handleMarkAllPaid = async () => {
-    if (!bill?.orders?.length) return;
+  // Records how the money came in (Cash / UPI) on every order still unpaid.
+  // Each order is its own request; the screen shows exactly which ones the
+  // server accepted, so a partial failure is never shown as "all paid".
+  const handleMarkAllPaid = async (paymentMethod) => {
+    if (paying || !bill?.orders?.length) return;
+    const unpaid = bill.orders.filter(o => o.paymentStatus !== "PAID");
+    if (!unpaid.length) return;
+    setPaying(true);
     try {
-      await Promise.all(bill.orders.map(o =>
-        api.patch(`/admin/orders/${o._id}/payment`, { paymentStatus: "PAID" })
+      const results = await Promise.allSettled(unpaid.map(o =>
+        api.patch(`/admin/orders/${o._id}/payment`, { paymentStatus: "PAID", paymentMethod })
       ));
+      const done = new Map();
+      results.forEach((r, i) => { if (r.status === "fulfilled") done.set(String(unpaid[i]._id), r.value.data?.order); });
       setBill(prev => ({
         ...prev,
-        orders: prev.orders.map(o => ({ ...o, paymentStatus: "PAID" })),
+        orders: prev.orders.map(o => done.has(String(o._id)) ? { ...o, paymentStatus: "PAID", paymentMethod } : o),
       }));
-      if (onPaymentChange) onPaymentChange();
-      toast.success(t("All orders marked Paid ✓"));
-    } catch { toast.error(t("Failed to mark paid")); }
+      if (done.size && onPaymentChange) onPaymentChange();
+      const failed = results.filter(r => r.status === "rejected");
+      if (!failed.length) toast.success(t("All orders marked Paid ✓"));
+      else toast.error(failed[0].reason?.response?.data?.message
+        || t("{n} of {total} orders couldn't be marked paid — try again", { n: failed.length, total: unpaid.length }));
+    } finally { setPaying(false); }
   };
 
   const handlePrint = () => {
@@ -134,8 +158,7 @@ export default function CombinedBillModal({ mode, value, onClose, onPaymentChang
             <div style={{ fontSize:10, fontWeight:600, color:T3, letterSpacing:1,
               textTransform:"uppercase", marginBottom:10 }}>{t("Order Breakdown")}</div>
             {bill.orders.map((o,i) => {
-              const name = o.user?.name || o.guestName || t("Order {n}", { n: i+1 });
-              const st   = PAY_STYLE[o.paymentStatus];
+              const name = customerName(o) || t("Order {n}", { n: i+1 });
               return (
                 <div key={o._id} style={{ display:"flex", justifyContent:"space-between",
                   alignItems:"center", padding:"9px 12px", borderRadius:8, marginBottom:5,
@@ -147,7 +170,7 @@ export default function CombinedBillModal({ mode, value, onClose, onPaymentChang
                     </div>
                   </div>
                   <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                    <Badge label={o.status} map={STATUS_STYLE}/>
+                    <Badge label={o.status} map={STATUS_STYLE} text={STATUS_LABEL[o.status]}/>
                     <Badge label={o.paymentStatus} map={PAY_STYLE} text={PAY_LABEL[o.paymentStatus]}/>
                     <span style={{ fontWeight:700, color:PINK, minWidth:60, textAlign:"right" }}>
                       ₹{fmt(o.total)}
@@ -221,12 +244,21 @@ export default function CombinedBillModal({ mode, value, onClose, onPaymentChang
 
           {/* Actions */}
           {!allPaid && (
-            <button onClick={handleMarkAllPaid} style={{ width:"100%", padding:"13px",
-              borderRadius:12, border:"none", cursor:"pointer", fontWeight:700, fontSize:14,
-              background:"rgba(16,185,129,0.2)", color:"#34d399",
-              border:"1px solid rgba(16,185,129,0.3)" }}>
-              ✓ {t("Mark All Orders as Paid · ₹{amount} Due", { amount: fmt(dueTotal) })}
-            </button>
+            <>
+              <div style={{ fontSize:12, color:T2, textAlign:"center", marginBottom:8 }}>
+                {t("Mark All Orders as Paid · ₹{amount} Due", { amount: fmt(dueTotal) })} — {t("how did the customer pay?")}
+              </div>
+              <div style={{ display:"flex", gap:8 }}>
+                {[["Cash", t("Paid in cash")], ["Online", t("Paid by UPI")]].map(([m, label]) => (
+                  <button key={m} type="button" disabled={paying} onClick={() => handleMarkAllPaid(m)} style={{ flex:1, padding:"13px",
+                    borderRadius:12, cursor: paying ? "wait" : "pointer", fontWeight:700, fontSize:14, opacity: paying ? 0.6 : 1,
+                    background:"rgba(16,185,129,0.2)", color:"#34d399",
+                    border:"1px solid rgba(16,185,129,0.3)" }}>
+                    {paying ? t("Saving…") : `✓ ${label}`}
+                  </button>
+                ))}
+              </div>
+            </>
           )}
           {allPaid && (
             <div style={{ textAlign:"center", padding:"12px", borderRadius:12,

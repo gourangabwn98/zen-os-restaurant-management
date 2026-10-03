@@ -12,8 +12,11 @@ import { getCategories, createCategory, updateCategory, deleteCategory, reorderC
 import { protect, dbFromHeader } from "../middleware/authMiddleware.js";
 import { requireAdmin } from "../middleware/rbac.js";
 import { upload } from "../middleware/uploadMiddleware.js"; // ← ADD
+import { objectIdParam } from "../middleware/validateIds.js";
 
 const router = express.Router();
+// Malformed ids → 404, never a CastError 500 (middleware/validateIds.js).
+router.param("id", objectIdParam);
 // router.get("/",       dbFromHeader, getCategories);
 const autoAuth = (req, res, next) =>
   req.headers.authorization?.startsWith("Bearer ")

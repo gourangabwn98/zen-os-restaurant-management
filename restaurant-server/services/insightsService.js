@@ -21,7 +21,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import mongoose from "mongoose";
-import { ORDER_STATUSES, PAYMENT_STATUSES } from "../utils/orderStateMachine.js";
+import { ORDER_STATUSES, PAYMENT_STATUSES, ORDER_SOURCES } from "../utils/orderStateMachine.js";
 import { computeRecipeCost, stockIngredientIds, roundMoney } from "../utils/recipeCost.js";
 
 // Fails at boot, not silently at query time, if an enum is ever renamed.
@@ -215,9 +215,14 @@ export const computeSalesBreakdown = async ({ models, from, to }) => {
 // nothing here estimates them.
 // ═════════════════════════════════════════════════════════════════════════════
 
+// Who the CUSTOMER is. On a staff-placed order `user` is the waiter/admin who
+// keyed it (orderService.placeOrderTx) and the customer is guestName/Phone —
+// so `user` only identifies the customer on a customer-placed order. (It used
+// to count every waiter as a regular customer of their own orders.)
+const STAFF_SOURCES = ORDER_SOURCES.filter((s) => s !== "CUSTOMER");
 export const customerKeyExpr = {
   $cond: [
-    { $ifNull: ["$user", false] },
+    { $and: [{ $ifNull: ["$user", false] }, { $not: [{ $in: [{ $ifNull: ["$source", "CUSTOMER"] }, STAFF_SOURCES] }] }] },
     { $concat: ["u:", { $toString: "$user" }] },
     { $cond: [{ $gt: [{ $strLenCP: { $ifNull: ["$guestPhone", ""] } }, 0] }, { $concat: ["p:", "$guestPhone"] }, null] },
   ],

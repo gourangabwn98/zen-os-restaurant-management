@@ -58,7 +58,7 @@ export const createTable = async (req, res) => {
 export const updateTable = async (req, res) => {
   try {
     const { Table } = req.models;
-    const table = await Table.findOneAndUpdate({ tableNo: req.params.tableNo }, req.body, { new: true });
+    const table = await Table.findOneAndUpdate({ tableNo: req.params.tableNo }, req.body, { returnDocument: "after" });
     if (!table) return res.status(404).json({ message: "Table not found" });
     res.json({ table });
   } catch (err) { res.status(400).json({ message: err.message }); }
@@ -81,7 +81,7 @@ export const regenerateQR = async (req, res) => {
     const table   = await Table.findOneAndUpdate(
       { tableNo: req.params.tableNo },
       { qrUrl: qr.url, qrCode: qr.dataUri, qrToken },
-      { new: true }
+      { returnDocument: "after" }
     );
     if (!table) return res.status(404).json({ message: "Table not found" });
     res.json({ table, qrUrl: qr.url, qrCode: qr.dataUri });

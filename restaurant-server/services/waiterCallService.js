@@ -175,7 +175,7 @@ export const cancelCall = async ({ models, order }) => {
   const call = await models.WaiterCall.findOneAndUpdate(
     { order: order._id, active: true },
     { $set: { status: "CANCELLED", active: false } },
-    { new: true },
+    { returnDocument: "after" },
   );
   return call;
 };
@@ -185,7 +185,7 @@ export const acknowledgeCall = async ({ models, callId, actor, now = new Date() 
   const call = await models.WaiterCall.findOneAndUpdate(
     { _id: callId, active: true, status: "OPEN", expiresAt: { $gt: now } },
     { $set: { status: "ACKNOWLEDGED", acknowledgedBy: actor, acknowledgedAt: now } },
-    { new: true },
+    { returnDocument: "after" },
   );
   if (call) return call;
   const exists = await models.WaiterCall.findById(callId).lean();
@@ -199,7 +199,7 @@ export const resolveCall = async ({ models, callId, actor, now = new Date() }) =
   const call = await models.WaiterCall.findOneAndUpdate(
     { _id: callId, active: true },
     { $set: { status: "RESOLVED", active: false, resolvedBy: actor, resolvedAt: now } },
-    { new: true },
+    { returnDocument: "after" },
   );
   if (call) return call;
   const exists = await models.WaiterCall.exists({ _id: callId });

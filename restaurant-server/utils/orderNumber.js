@@ -56,7 +56,7 @@ export const nextOrderId = async ({ Counter, Order }) => {
   const updated = await Counter.findOneAndUpdate(
     { _id: ORDER_NUMBER_KEY },
     { $inc: { seq: 1 } },
-    { new: true, upsert: true },
+    { returnDocument: "after", upsert: true },
   );
 
   return formatOrderId(updated.seq);

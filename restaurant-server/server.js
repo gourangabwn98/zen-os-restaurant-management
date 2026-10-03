@@ -9,6 +9,7 @@ dns.setServers(["1.1.1.1", "8.8.8.8"]);
 import express    from "express";
 import cors       from "cors";
 import "./config/env.js";
+import { runSecurityCheck } from "./config/securityCheck.js";
 import { connectDB, getDB } from "./config/db.js";
 import { getModels } from "./config/getModels.js";
 import { tenantKeyFromUri } from "./utils/tenantKey.js";
@@ -46,6 +47,10 @@ import waiterCallRoutes from "./routes/waiterCallRoutes.js";
 import couponRoutes from "./routes/couponRoutes.js";
 import { errorHandler, notFound } from "./middleware/errorMiddleware.js";
 import compression from "compression";
+import { sanitizeInput } from "./middleware/sanitizeInput.js";
+
+// Deployment settings security depends on (warns; stops only without JWT_SECRET).
+runSecurityCheck();
 
 const app    = express();
 const server = http.createServer(app);
@@ -71,6 +76,9 @@ app.use(compression());
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
+// Drop "$…" keys from every body — blocks { phone: { $ne: null } } style
+// operator injection into Mongo filters (middleware/sanitizeInput.js).
+app.use(sanitizeInput);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 // Includes the deployed commit SHA (Render sets RENDER_GIT_COMMIT automatically

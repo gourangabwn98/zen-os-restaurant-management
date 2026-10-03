@@ -18,7 +18,7 @@ export const createChef = async (req, res) => {
 export const updateChef = async (req, res) => {
   try {
     const { Chef } = req.models;
-    const chef = await Chef.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const chef = await Chef.findByIdAndUpdate(req.params.id, req.body, { returnDocument: "after" });
     if (!chef) return res.status(404).json({ message: "Chef not found" });
     res.json(chef);
   } catch (err) { res.status(400).json({ message: err.message }); }
@@ -36,7 +36,7 @@ export const updateChefStatus = async (req, res) => {
   try {
     const { Chef } = req.models;
     const chef = await Chef.findByIdAndUpdate(
-      req.params.id, { status: req.body.status }, { new: true }
+      req.params.id, { status: req.body.status }, { returnDocument: "after" }
     );
     if (!chef) return res.status(404).json({ message: "Chef not found" });
     res.json(chef);

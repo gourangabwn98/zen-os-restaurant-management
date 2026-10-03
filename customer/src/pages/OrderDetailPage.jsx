@@ -30,7 +30,7 @@ const CALLABLE = ["PENDING_CONFIRMATION", "CONFIRMED", "PREPARING", "READY", "DE
 
 /** "Pay within 12:34" — counts down to a pay-first order's deadline. */
 function PayDeadline({ deadline }) {
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, []);
   const left = Math.max(0, Math.ceil((new Date(deadline).getTime() - now) / 1000));
   if (!left) return <p className="muted small" style={{ marginTop: 8 }}>The time to pay has run out — this order will be cancelled shortly.</p>;

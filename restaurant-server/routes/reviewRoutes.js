@@ -4,8 +4,11 @@
 import express from "express";
 import { optionalProtect } from "../middleware/authMiddleware.js";
 import { getOrderReviewState, submitOrderReview } from "../services/reviewService.js";
+import { objectIdParam } from "../middleware/validateIds.js";
 
 const router = express.Router();
+// Malformed ids → 404, never a CastError 500 (middleware/validateIds.js).
+router.param("orderId", objectIdParam);
 const send = (fn) => async (req, res) => {
   try { await fn(req, res); }
   catch (err) { res.status(err.statusCode || 500).json({ message: err.message }); }

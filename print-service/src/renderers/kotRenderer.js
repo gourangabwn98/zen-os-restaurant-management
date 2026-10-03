@@ -47,6 +47,12 @@ export const renderKot = (job, { header = null, width = DEFAULT_WIDTH } = {}) =>
     }
   }
 
+  // The whole order's note, after the items so the cook reads it last.
+  if (toPrintable(d.notes)) {
+    lines.push(separator(W));
+    for (const n of wrapText(`ORDER NOTE: ${d.notes}`, W)) lines.push({ text: n, bold: true });
+  }
+
   lines.push(separator(W));
   lines.push({ text: `Total Items: ${items.reduce((s, i) => s + (Number(i.qty) || 0), 0)}`, bold: true, align: "right" });
   lines.push({ type: "feed" });

@@ -236,7 +236,7 @@ export const applyPhonePeResult = async ({ models, orderId, merchantTransactionI
           "payment.raw": { code: result.code || "PAYMENT_SUCCESS" },
         },
       },
-      { new: true },
+      { returnDocument: "after" },
     );
     return { order: updated || (await Order.findById(orderId)), changed: Boolean(updated) };
   }
@@ -254,7 +254,7 @@ export const applyPhonePeResult = async ({ models, orderId, merchantTransactionI
           "payment.raw": { code: result.code || "PAYMENT_ERROR" },
         },
       },
-      { new: true },
+      { returnDocument: "after" },
     );
     return { order: updated || (await Order.findById(orderId)), changed: Boolean(updated) };
   }
@@ -263,7 +263,7 @@ export const applyPhonePeResult = async ({ models, orderId, merchantTransactionI
   const updated = await Order.findOneAndUpdate(
     { ...match, "payment.state": PENDING },
     { $set: { "payment.lastCheckedAt": now } },
-    { new: true },
+    { returnDocument: "after" },
   );
   return { order: updated || (await Order.findById(orderId)), changed: false };
 };

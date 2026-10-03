@@ -7,7 +7,7 @@ export default function Sheet({ onClose, children, footer, label }) {
   const bodyRef = useRef(null);
   const startY = useRef(null);
   const closeRef = useRef(onClose);
-  closeRef.current = onClose;
+  useEffect(() => { closeRef.current = onClose; }, [onClose]);
 
   useEffect(() => {
     const prev = document.body.style.overflow;

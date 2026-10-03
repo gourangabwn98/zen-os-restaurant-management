@@ -52,7 +52,7 @@ export const markNotified = async ({ WaitlistEntry }, entryId) => {
   const entry = await WaitlistEntry.findOneAndUpdate(
     { _id: entryId, status: "WAITING" },
     { $set: { status: "NOTIFIED", notifiedAt: new Date() } },
-    { new: true }
+    { returnDocument: "after" }
   );
   if (!entry) {
     const err = new Error("Waitlist entry not found or no longer waiting");
@@ -89,7 +89,7 @@ export const seatWaitlistEntry = async ({ WaitlistEntry, Table, TableSession }, 
   const entry = await WaitlistEntry.findOneAndUpdate(
     { _id: entryId, status: { $in: ACTIVE_STATUSES } },
     { $set: { status: "SEATED", tableNo: table.tableNo, seatedAt: new Date() } },
-    { new: true }
+    { returnDocument: "after" }
   );
   if (!entry) {
     const err = new Error("Waitlist entry not found or already seated/cancelled");
@@ -105,7 +105,7 @@ export const cancelWaitlistEntry = async ({ WaitlistEntry }, entryId) => {
   const entry = await WaitlistEntry.findOneAndUpdate(
     { _id: entryId, status: { $in: ACTIVE_STATUSES } },
     { $set: { status: "CANCELLED", cancelledAt: new Date() } },
-    { new: true }
+    { returnDocument: "after" }
   );
   if (!entry) {
     const err = new Error("Waitlist entry not found or already seated/cancelled");

@@ -11,16 +11,25 @@ import {
   getAdminAttendanceToday, getAdminAttendanceHistory,
   getAdminAttendanceEmployee, getAdminAttendanceSummary,
 } from "../controllers/attendanceController.js";
+import { objectIdParam } from "../middleware/validateIds.js";
+import { previewCombined, printCombined, paySelected, completeSelectedOrders } from "../controllers/combinedBillController.js";
 
 const router = express.Router();
+// Malformed ids → 404, never a CastError 500 (middleware/validateIds.js).
+router.param("id", objectIdParam);
 router.use(protect);
 
 // Staff (admin + waiter) — day-to-day floor operations
 router.get("/dashboard",             requireStaff, getDashboardStats);
 router.get("/orders",                requireStaff, getAllOrders);
 router.get("/orders/combined-bill",  requireStaff, getCombinedBill);
+// Combine Bill for a table — admin picks SOME orders (services/combinedBillService.js).
+router.post("/combined-bill/preview",  requireAdmin, previewCombined);
+router.post("/combined-bill/print",    requireAdmin, printCombined);
+router.post("/combined-bill/pay",      requireAdmin, paySelected);
+router.post("/combined-bill/complete", requireAdmin, completeSelectedOrders);
 router.get("/invoices/all",          requireStaff, getAllInvoices);
-router.patch("/invoices/:id/status", requireStaff, updateInvoiceStatus);
+router.patch("/invoices/:id/status", requireAdmin, updateInvoiceStatus);
 router.put("/orders/:id/status",     requireStaff, requireWaiterOnDuty, updateOrderStatus);
 router.patch("/orders/:id/payment",  requireStaff, requireWaiterOnDuty, updateOrderPayment);
 router.post("/orders/:id/add-items", requireStaff, requireWaiterOnDuty, addItemsToOrder);

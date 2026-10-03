@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   getOrder, confirmOrder, rejectOrder, updateOrderStatus, addItemsToOrder,
@@ -46,7 +46,6 @@ function SendCountdown({ order }) {
 
 export default function OrderDetailPage() {
   const { id } = useParams();
-  const nav = useNavigate();
 
   const [order, setOrder] = useState(null);
   const [error, setError] = useState(null);

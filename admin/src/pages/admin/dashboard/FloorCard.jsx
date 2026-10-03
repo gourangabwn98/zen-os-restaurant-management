@@ -7,6 +7,7 @@ import Ico from "./icons.jsx";
 import Badge from "../shared/Badge.jsx";
 import { needsPaidFirst, PAID_FIRST_HINT } from "../shared/paymentRules.js";
 import { t, N_, fmtNum, localName } from "../../../i18n/core.js";
+import { customerName } from "../shared/customerName.js";
 
 const money = (n) => `₹${fmtNum(Math.round(n || 0))}`;
 const STATE_LABEL = {
@@ -87,7 +88,7 @@ export default function FloorCard({ tables, tablesLoaded, nextStatus, statusLabe
             return (
               <div className="zd-tord" key={o._id}>
                 <div>
-                  <div className="zd-cap">{o.orderId} · {o.user?.name || o.guestName || t("Guest")}</div>
+                  <div className="zd-cap">{o.orderId} · {customerName(o) || t("Guest")}</div>
                   {o.items?.map((item, i) => (
                     <div className="zd-item" key={i}>
                       <span><span className="zd-qty">{fmtNum(item.qty)}</span>{localName(item)}</span>

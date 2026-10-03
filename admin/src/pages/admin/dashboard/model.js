@@ -26,12 +26,19 @@ export const isToday = (d) => isSameDay(d, new Date());
 const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 const sum = (list) => list.reduce((acc, o) => acc + Number(o.total || 0), 0);
 const isActive = (o) => !ACTIVE_EXCLUDE.includes(o.status);
-// Payment still to be collected on an order that is (or was) really served.
-const isUnpaid = (o) => o.paymentStatus === "PENDING_VERIFICATION" && o.status !== "CANCELLED" && o.status !== "AWAITING_PAYMENT";
+// Payment still to be collected on an order the restaurant has ACCEPTED.
+// Not yet accepted (PENDING_CONFIRMATION) is not money owed — it may still be
+// rejected — and it shows separately under "Needs your attention".
+const NOT_OWED = ["CANCELLED", "AWAITING_PAYMENT", "PENDING_CONFIRMATION"];
+const isUnpaid = (o) => o.paymentStatus === "PENDING_VERIFICATION" && !NOT_OWED.includes(o.status);
+// Money taken = PAID and not CANCELLED — the same rule as Insights, Invoices
+// and the server (insightsService.revenueOrderMatch). A paid-then-cancelled
+// order is not revenue.
+const isRevenue = (o) => o.paymentStatus === "PAID" && o.status !== "CANCELLED";
 
 // ── "Three answers" + today's detail ──────────────────────────────────────
 export function todaySummary(todayOrders) {
-  const paid = todayOrders.filter((o) => o.paymentStatus === "PAID");
+  const paid = todayOrders.filter(isRevenue);
   const cash = paid.filter((o) => o.paymentMethod === "Cash");
   const online = paid.filter((o) => o.paymentMethod === "Online");
   const open = todayOrders.filter(isUnpaid);
@@ -60,8 +67,8 @@ export function todaySummary(todayOrders) {
 
 // Same figures the old tile grid showed (last 1000 orders the page loads).
 export function overallTotals(allOrders) {
-  const paid = allOrders.filter((o) => o.paymentStatus === "PAID");
-  const due = allOrders.filter((o) => o.paymentStatus === "PENDING_VERIFICATION");
+  const paid = allOrders.filter(isRevenue);
+  const due = allOrders.filter(isUnpaid);
   const cash = paid.filter((o) => o.paymentMethod === "Cash");
   const online = paid.filter((o) => o.paymentMethod === "Online");
   const totalRev = sum(paid);

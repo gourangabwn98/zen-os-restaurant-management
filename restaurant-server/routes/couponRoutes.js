@@ -5,8 +5,11 @@ import {
 } from "../controllers/couponController.js";
 import { protect, optionalProtect } from "../middleware/authMiddleware.js";
 import { requireAdmin } from "../middleware/rbac.js";
+import { objectIdParam } from "../middleware/validateIds.js";
 
 const router = express.Router();
+// Malformed ids → 404, never a CastError 500 (middleware/validateIds.js).
+router.param("id", objectIdParam);
 
 // ── Customer (guest or logged in — the login decides which audience applies) ─
 router.get("/",             optionalProtect, getLiveCoupons);

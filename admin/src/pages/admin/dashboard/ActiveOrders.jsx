@@ -6,6 +6,7 @@ import Badge from "../shared/Badge.jsx";
 import { needsPaidFirst } from "../shared/paymentRules.js";
 import { ACTIVE_EXCLUDE } from "./model.js";
 import { t, fmtNum, fmtTime, localName } from "../../../i18n/core.js";
+import { customerName } from "../shared/customerName.js";
 
 const money = (n) => `₹${fmtNum(Math.round(n || 0))}`;
 const initials = (n) => (!n || n === "Guest" ? "G" : n.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2));
@@ -39,7 +40,7 @@ export default function ActiveOrders({ orders, nextStatus, statusLabel, statusKe
       ) : (
         <div className="zd-olist">
           {visible.map((o) => {
-            const who = o.guestName || o.user?.name;
+            const who = customerName(o);
             const next = nextStatus[o.status] || [];
             return (
               <div className="zd-ord" key={o._id}>

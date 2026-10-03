@@ -64,7 +64,7 @@ export const getPrintQueue = async (req, res) => {
 
     const jobs = [
       ...kot.map((j) => ({ jobId: String(j._id), jobType: "KOT", status: j.status, attempts: j.attempts,
-        orderId: j.orderId, tableNo: j.tableNo, orderType: j.orderType, items: j.items,
+        orderId: j.orderId, tableNo: j.tableNo, orderType: j.orderType, items: j.items, notes: j.notes || "",
         priority: j.priority || "NORMAL", createdAt: j.createdAt })),
       ...bill.map((j) => ({ jobId: String(j._id), jobType: "BILL", status: j.status, attempts: j.attempts,
         orderId: j.orderId, tableNo: j.tableNo, orderType: j.orderType, payload: j.payload, createdAt: j.createdAt })),
@@ -89,7 +89,7 @@ export const updateKotJobStatus = async (req, res) => {
     const job = await KOTJob.findByIdAndUpdate(
       req.params.id,
       { $set: { status, ...(status === "PRINTED" ? { printedAt: new Date() } : {}) } },
-      { new: true }
+      { returnDocument: "after" }
     );
     if (!job) return res.status(404).json({ message: "KOT job not found" });
     res.json({ job });

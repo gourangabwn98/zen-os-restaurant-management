@@ -5,7 +5,9 @@ export default function PageHeader({ title, sub, right }) {
       display: "flex", alignItems: "flex-start", gap: 12,
       marginBottom: 20, flexWrap: "wrap",
     }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
+      {/* 220px basis: on a phone the actions wrap below the title instead of
+          squeezing it to a few letters. */}
+      <div style={{ flex: "1 1 220px", minWidth: 0 }}>
         <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: "-.025em", color: "var(--text-1)" }}>
           {title}
         </div>
@@ -13,7 +15,7 @@ export default function PageHeader({ title, sub, right }) {
           <div style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 2 }}>{sub}</div>
         )}
       </div>
-      {right && <div style={{ display: "flex", alignItems: "center", gap: 10 }}>{right}</div>}
+      {right && <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>{right}</div>}
     </div>
   );
 }

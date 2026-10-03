@@ -64,7 +64,7 @@ export const updatePolicy = send(async (req, res) => {
     if (!Number.isInteger(v) || v < 1 || v > 28) { const e = new Error("Salary day must be 1–28"); e.statusCode = 400; throw e; }
     set["staffPolicy.salaryDay"] = v;
   }
-  const profile = await RestaurantProfile.findOneAndUpdate({}, { $set: set }, { new: true });
+  const profile = await RestaurantProfile.findOneAndUpdate({}, { $set: set }, { returnDocument: "after" });
   if (!profile) { const e = new Error("Set up the restaurant profile first"); e.statusCode = 409; throw e; }
   res.json({ policy: profile.staffPolicy });
 });

@@ -140,7 +140,7 @@ const pushOffer = async ({ models, log, now }) => {
   return NotificationLog.findOneAndUpdate(
     { _id: log._id, status: OFFER_STATUS.SENDING },
     { $set: { status: OFFER_STATUS.SENT, sentAt: now, recipientCount, error: "" } },
-    { new: true },
+    { returnDocument: "after" },
   );
 };
 
@@ -190,7 +190,7 @@ export const cancelScheduledOffer = async ({ models, id }) => {
   const updated = await models.NotificationLog.findOneAndUpdate(
     { _id: id, status: OFFER_STATUS.SCHEDULED },
     { $set: { status: OFFER_STATUS.CANCELLED } },
-    { new: true },
+    { returnDocument: "after" },
   );
   if (updated) return updated;
   const exists = await models.NotificationLog.exists({ _id: id });
@@ -218,6 +218,10 @@ export const runDueOffers = async ({ models, now = new Date() }) => {
   await NotificationLog.updateMany(
     { status: { $exists: false } },
     [{ $set: { status: OFFER_STATUS.SENT, sentAt: "$createdAt", startsAt: "$createdAt" } }],
+    // Mongoose 9 refuses a pipeline update without this. Without it this line
+    // threw on EVERY tick, before the loop below — so no scheduled offer (or
+    // coupon announcement) was ever sent at its start time.
+    { updatePipeline: true },
   );
 
   const stale = await NotificationLog.updateMany(
@@ -230,7 +234,7 @@ export const runDueOffers = async ({ models, now = new Date() }) => {
     const log = await NotificationLog.findOneAndUpdate(
       { status: OFFER_STATUS.SCHEDULED, startsAt: { $lte: now } },
       { $set: { status: OFFER_STATUS.SENDING, sendingAt: now } },
-      { sort: { startsAt: 1 }, new: true },
+      { sort: { startsAt: 1 }, returnDocument: "after" },
     );
     if (!log) break;
 

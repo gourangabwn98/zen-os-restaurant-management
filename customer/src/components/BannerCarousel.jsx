@@ -13,9 +13,11 @@ export default function BannerCarousel({ banners, picks = [], tableLabel, onBrow
     ...(active.length ? [] : picks.slice(0, 2).map((it) => ({ kind: "item", item: it }))),
   ];
 
-  const [slide, setSlide] = useState(0);
+  const [rawSlide, setSlide] = useState(0);
   const touchX = useRef(null);
   const count = slides.length;
+  // Banners can be removed while showing the last one — fall back to the first.
+  const slide = rawSlide >= count ? 0 : rawSlide;
   const go = (i) => setSlide(((i % count) + count) % count);
 
   useEffect(() => {
@@ -24,7 +26,6 @@ export default function BannerCarousel({ banners, picks = [], tableLabel, onBrow
     return () => clearInterval(id);
   }, [count]);
 
-  useEffect(() => { if (slide >= count) setSlide(0); }, [slide, count]);
 
   return (
     <section

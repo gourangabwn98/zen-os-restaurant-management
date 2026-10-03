@@ -126,7 +126,7 @@ export const updateMenuTime = async ({ models, db, id, input = {} }) => {
 
   return withTx(db, async (session) => {
     const mt = Object.keys(set).length
-      ? await MenuTime.findByIdAndUpdate(id, { $set: set }, { new: true, session }).lean()
+      ? await MenuTime.findByIdAndUpdate(id, { $set: set }, { returnDocument: "after", session }).lean()
       : current;
     if (!mt) throw httpError("Menu time not found", 404);
     if (set.schedule || categoryIds !== undefined) await syncCategories({ Category, mt, categoryIds, session });

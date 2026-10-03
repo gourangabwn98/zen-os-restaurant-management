@@ -455,6 +455,9 @@ const kotJobSchema = new mongoose.Schema({
   tableNo:    { type: Number, default: null },
   orderType:  { type: String, enum: ORDER_TYPES },
   items:      [{ name: String, nameBn: String, qty: Number, notes: String }],
+  // The order's own note ("less spicy", "birthday table") — printed on the
+  // ticket under the items. Used to be dropped: only item notes reached paper.
+  notes:      { type: String, default: "" },
   // Optional — lets a staff-placed order flag its KOT as urgent, so the
   // Kitchen Display can play a distinct, stronger alert tone for it.
   // Never settable by a customer/guest (see services/orderService.js).
@@ -485,7 +488,15 @@ const billPrintJobSchema = new mongoose.Schema({
   lastError:  { type: String, default: "" },
   printedAt:  { type: Date, default: null },
   createdBy:  { type: actorSchema, default: () => ({}) },
+  // Combined bill (services/combinedBillService.js): ONE job for several
+  // orders. `order` stays null; combinedOrders lists them. requestKey is the
+  // client's per-click key — unique, so a double click can't make two jobs.
+  combinedOrders: { type: [mongoose.Schema.Types.ObjectId], default: undefined },
+  combinedKey:    { type: String, default: undefined },
+  requestKey:     { type: String, default: undefined },
 }, { timestamps: true });
+billPrintJobSchema.index({ requestKey: 1 }, { unique: true, sparse: true });
+billPrintJobSchema.index({ combinedKey: 1, createdAt: -1 }, { sparse: true });
 
 // ── Printer devices (Phase 5) ───────────────────────────────────────────────
 // A registered local print-service credential. The plaintext key is shown

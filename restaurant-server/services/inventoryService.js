@@ -165,7 +165,7 @@ export const deductStockForOrder = async ({ models, order, actor, session }) => 
     let updated = await InventoryItem.findOneAndUpdate(
       { _id: need.inventoryItem, currentStock: { $gte: need.qty } },
       { $inc: { currentStock: -need.qty } },
-      { new: true, session }
+      { returnDocument: "after", session }
     );
     if (!updated) {
       // Lost a race against another order between validation and deduction.
@@ -177,7 +177,7 @@ export const deductStockForOrder = async ({ models, order, actor, session }) => 
     // pin the stored balance to the same 6-dp precision as the quantities.
     if (updated.currentStock !== roundQty(updated.currentStock)) {
       updated = await InventoryItem.findByIdAndUpdate(
-        updated._id, { $set: { currentStock: roundQty(updated.currentStock) } }, { new: true, session }
+        updated._id, { $set: { currentStock: roundQty(updated.currentStock) } }, { returnDocument: "after", session }
       );
     }
 
@@ -243,7 +243,7 @@ export const reverseStockForOrder = async ({ models, order, actor, session }) =>
   const claimed = await Order.findOneAndUpdate(
     { _id: order._id, stockDeducted: true, stockReversed: false },
     { $set: { stockReversed: true } },
-    { session, new: true }
+    { session, returnDocument: "after" }
   );
   if (!claimed) return { reversed: false };
 
@@ -251,12 +251,12 @@ export const reverseStockForOrder = async ({ models, order, actor, session }) =>
     let updated = await InventoryItem.findByIdAndUpdate(
       d.inventoryItem,
       { $inc: { currentStock: d.qty } },
-      { new: true, session }
+      { returnDocument: "after", session }
     );
     if (!updated) continue; // item was deleted since — nothing to credit back to
     if (updated.currentStock !== roundQty(updated.currentStock)) {
       updated = await InventoryItem.findByIdAndUpdate(
-        updated._id, { $set: { currentStock: roundQty(updated.currentStock) } }, { new: true, session }
+        updated._id, { $set: { currentStock: roundQty(updated.currentStock) } }, { returnDocument: "after", session }
       );
     }
 
@@ -334,7 +334,7 @@ export const recordPurchase = async ({ models, body, actor, session }) => {
     const updated = await InventoryItem.findByIdAndUpdate(
       it.inventoryItem,
       { $inc: { currentStock: it.quantity }, $set: { costPrice: it.costPrice } },
-      { new: true, session }
+      { returnDocument: "after", session }
     );
     if (!updated) continue;
 
@@ -383,7 +383,7 @@ export const recordWastage = async ({ models, body, actor, session }) => {
   const updated = await InventoryItem.findOneAndUpdate(
     { _id: inventoryItem, currentStock: { $gte: quantity } },
     { $inc: { currentStock: -quantity } },
-    { new: true, session }
+    { returnDocument: "after", session }
   );
   if (!updated) {
     const err = new Error("Insufficient stock to record this wastage");
@@ -595,7 +595,7 @@ export const saveRecipe = async ({ models, body }) => {
       menuItem, ingredients: snapshot, status: "Active",
       totalCost, costIncomplete: incomplete, costedAt: new Date(),
     },
-    { new: true, upsert: true, runValidators: true },
+    { returnDocument: "after", upsert: true, runValidators: true },
   );
 };
 

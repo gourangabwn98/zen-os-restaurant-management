@@ -133,7 +133,7 @@ export const addMenuItem = async (req, res) => {
 // export const updateMenuItem = async (req, res) => {
 //   try {
 //     const { MenuItem } = req.models;
-//     const item = await MenuItem.findByIdAndUpdate(req.params.id, req.body, { new: true });
+//     const item = await MenuItem.findByIdAndUpdate(req.params.id, req.body, { returnDocument: "after" });
 //     if (!item) return res.status(404).json({ message: "Item not found" });
 //     res.json(item);
 //   } catch (err) { res.status(400).json({ message: err.message }); }

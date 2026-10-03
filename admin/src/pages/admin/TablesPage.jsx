@@ -11,6 +11,7 @@ import {
 import { getSocket } from "../../services/socketService.js";
 import { useVisibleInterval } from "../../hooks/useVisibleInterval.js";
 import { t, tn, N_, fmtNum, fmtTime, localName } from "../../i18n/core.js";
+import { customerName } from "./shared/customerName.js";
 
 // ── Dark tokens ───────────────────────────────────────────────────────────────
 const PINK       = PRIMARY;
@@ -388,7 +389,7 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
           {order && (
             <div style={{ fontSize:12, color:T2, marginTop:5, fontFamily:"'DM Mono',monospace" }}>
               {order.orderId}
-              {order.user?.name && <span style={{ fontFamily:"'DM Sans',sans-serif", marginLeft:8, color:T3 }}>· {order.user.name}</span>}
+              {customerName(order) && <span style={{ fontFamily:"'DM Sans',sans-serif", marginLeft:8, color:T3 }}>· {customerName(order)}</span>}
             </div>
           )}
         </div>
@@ -474,11 +475,13 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
               </span>
               <span className="tag" style={{ background:"rgba(139,92,246,0.15)", color:"#c4b5fd",
                 border:"1px solid rgba(139,92,246,0.3)" }}>{t("Dining")}</span>
+              {/* "PAID" is the real enum (orderStateMachine.js) — this compared
+                  against the pre-rename "Paid", so every paid order showed amber. */}
               <span className="tag" style={{
-                background: order.paymentStatus==="Paid" ? GREEN_LIGHT : "rgba(245,158,11,0.15)",
-                color: order.paymentStatus==="Paid" ? "#34d399" : "#fbbf24",
-                border:`1px solid ${order.paymentStatus==="Paid" ? "rgba(16,185,129,0.3)" : "rgba(245,158,11,0.3)"}`,
-              }}>{t(order.paymentStatus)}</span>
+                background: order.paymentStatus==="PAID" ? GREEN_LIGHT : "rgba(245,158,11,0.15)",
+                color: order.paymentStatus==="PAID" ? "#34d399" : "#fbbf24",
+                border:`1px solid ${order.paymentStatus==="PAID" ? "rgba(16,185,129,0.3)" : "rgba(245,158,11,0.3)"}`,
+              }}>{order.paymentStatus==="PAID" ? t("Paid") : t("Payment pending")}</span>
             </div>
 
             <div style={{ fontSize:10, fontWeight:600, color:T3, letterSpacing:1.2,

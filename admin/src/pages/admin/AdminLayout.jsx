@@ -165,6 +165,11 @@ if (!document.getElementById("admin-layout-styles")) {
     .side-foot-btn.danger { color: var(--stop-ink); }
     .side-foot-btn.danger:hover { background: var(--stop-fill); }
     .side-version { padding: 6px 12px 0; font-size: 10px; color: var(--text-3); }
+    /* Phones / small tablets: the sidebar is a slide-over drawer above the
+       page (it used to stay docked and leave a 390px phone ~160px of page). */
+    .side.side-drawer { position: fixed; left: 0; top: 0; z-index: 950; box-shadow: var(--shadow-pop);
+      max-width: calc(100vw - 48px); }
+    .side-scrim { position: fixed; inset: 0; z-index: 940; background: var(--scrim); }
     @keyframes spin { to { transform: rotate(360deg); } }
   `;
   document.head.appendChild(s);
@@ -195,6 +200,20 @@ export default function AdminLayout() {
   // Full sidebar show/hide, persisted across sessions.
   const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem("adminSidebarOpen") !== "0");
   useEffect(() => { localStorage.setItem("adminSidebarOpen", sidebarOpen ? "1" : "0"); }, [sidebarOpen]);
+  // Narrow screens get a drawer instead (not persisted: it opens on demand
+  // and closes once a page is picked).
+  const [narrow, setNarrow] = useState(() => window.matchMedia("(max-width: 820px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 820px)");
+    const on = () => setNarrow(mq.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const showSide = narrow ? drawerOpen : sidebarOpen;
+  const openSide = () => (narrow ? setDrawerOpen(true) : setSidebarOpen(true));
+  const closeSide = () => (narrow ? setDrawerOpen(false) : setSidebarOpen(false));
+  const go = (id) => { setPage(id); if (narrow) setDrawerOpen(false); };
 
   // Nothing here gates the first paint any more: the page renders at once and
   // the sidebar badges / restaurant name fill in when these arrive.
@@ -237,16 +256,17 @@ export default function AdminLayout() {
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: BG_MAIN }}>
-      {!sidebarOpen && (
+      {(narrow || !sidebarOpen) && (
         <div className="side-mini">
-          <button type="button" className="side-toggle-btn" onClick={() => setSidebarOpen(true)} title={t("Show sidebar")}>
+          <button type="button" className="side-toggle-btn" onClick={openSide} title={t("Show sidebar")} aria-label={t("Show sidebar")}>
             <Icon id="sidebarOpen" />
           </button>
         </div>
       )}
 
-      {sidebarOpen && (
-        <aside className="side">
+      {narrow && drawerOpen && <div className="side-scrim" onClick={() => setDrawerOpen(false)} aria-hidden="true" />}
+      {showSide && (
+        <aside className={`side${narrow ? " side-drawer" : ""}`}>
           <div className="side-brand">
             <div className="side-mk">
               {rLogo
@@ -257,12 +277,12 @@ export default function AdminLayout() {
               <div className="side-nm">{rName}</div>
               <div className="side-sb">{t("Admin panel")}</div>
             </div>
-            <NotificationBell inline user={user} onNavigate={() => setPage("orders")} />
+            <NotificationBell inline user={user} onNavigate={() => go("orders")} />
           </div>
 
           <div className="side-toolbar">
             <div style={{ flex: 1, minWidth: 0 }}><ThemeToggle compact /></div>
-            <button type="button" className="side-toggle-btn" onClick={() => setSidebarOpen(false)} title={t("Hide sidebar")}>
+            <button type="button" className="side-toggle-btn" onClick={closeSide} title={t("Hide sidebar")} aria-label={t("Hide sidebar")}>
               <Icon id="sidebarClose" />
             </button>
           </div>
@@ -272,29 +292,29 @@ export default function AdminLayout() {
 
           <div className="zc-navgrp">{t("Operations")}</div>
           {OPERATIONS_NAV_A.map((n) => (
-            <NavItem key={n.id} {...n} active={page === n.id} count={badgeFor(n.badgeKey)} onClick={() => setPage(n.id)} />
+            <NavItem key={n.id} {...n} active={page === n.id} count={badgeFor(n.badgeKey)} onClick={() => go(n.id)} />
           ))}
           <a href="/kitchen" target="_blank" rel="noopener noreferrer" className="zc-nav" style={{ textDecoration: "none" }}>
             <Icon id="chef" />{t("Kitchen Display")}
           </a>
           {OPERATIONS_NAV_B.map((n) => (
-            <NavItem key={n.id} {...n} active={page === n.id} onClick={() => setPage(n.id)} />
+            <NavItem key={n.id} {...n} active={page === n.id} onClick={() => go(n.id)} />
           ))}
 
           <div className="zc-navgrp">{t("Management")}</div>
           {MANAGEMENT_NAV.map((n) => (
-            <NavItem key={n.id} {...n} active={page === n.id} onClick={() => setPage(n.id)} />
+            <NavItem key={n.id} {...n} active={page === n.id} onClick={() => go(n.id)} />
           ))}
 
           <div className="zc-navgrp">{t("Finance")}</div>
           {FINANCE_NAV.map((n) => (
-            <NavItem key={n.id} {...n} active={page === n.id} onClick={() => setPage(n.id)} />
+            <NavItem key={n.id} {...n} active={page === n.id} onClick={() => go(n.id)} />
           ))}
 
           <div className="side-sp" />
           <div className="zc-navgrp">{t("Settings")}</div>
           {SETTINGS_NAV.map((n) => (
-            <NavItem key={n.id} {...n} active={page === n.id} onClick={() => setPage(n.id)} />
+            <NavItem key={n.id} {...n} active={page === n.id} onClick={() => go(n.id)} />
           ))}
 
           {user && (
@@ -318,7 +338,7 @@ export default function AdminLayout() {
 
       {/* ── Main content ── */}
       <main style={{
-        flex: 1, padding: 24, overflowY: "auto", minHeight: "100vh",
+        flex: 1, minWidth: 0, padding: narrow ? 14 : 24, overflowY: "auto", minHeight: "100vh",
         background: BG_MAIN,
         backgroundImage: "var(--glow-main)",
         backgroundAttachment: "fixed",

@@ -113,6 +113,27 @@ const run = async () => {
     assert.equal(lines[1].size, "large");
   });
 
+  await test("bill (combined): one bill, items grouped per order, summed totals, due amount", () => {
+    const job = { orderId: "2 orders", payload: {
+      combined: true, orderId: "2 orders", orderType: "DINE_IN", tableNo: 5, paymentStatus: "PENDING_VERIFICATION",
+      orders: [
+        { orderId: "ORD00045", total: 450, paymentStatus: "PAID", items: [{ name: "Chicken Biryani", qty: 2, price: 200 }] },
+        { orderId: "ORD00048", total: 320, paymentStatus: "PENDING_VERIFICATION", items: [{ name: "Pizza", qty: 1, price: 280 }] },
+      ],
+      subtotal: 680, discount: 0, tax: 60, serviceCharge: 30, total: 770, dueTotal: 320,
+    } };
+    const t = text(renderBill(job, { header: HEADER }));
+    assert.match(t, /COMBINED BILL - 2 ORDERS/);
+    assert.match(t, /Orders {5}: +ORD00045, ORD00048/);
+    assert.ok(t.indexOf("Order ORD00045 (paid)") < t.indexOf("Chicken Biryani"));
+    assert.ok(t.indexOf("Order ORD00048") < t.indexOf("Pizza"));
+    assert.match(t, /TOTAL +: +Rs770/);
+    assert.match(t, /DUE NOW +: +Rs320/);
+    assert.equal((t.match(/TAX INVOICE/g) || []).length, 1);
+    // A normal bill is unchanged: no combined lines.
+    assert.doesNotMatch(text(renderBill(billJob(), { header: HEADER })), /COMBINED|DUE NOW|Orders {5}:/);
+  });
+
   // ── KOT ──
   await test("kot: header, title, details, items as xN, total items, kitchen copy", () => {
     const lines = renderKot(kotJob(), { header: HEADER });
@@ -127,6 +148,15 @@ const run = async () => {
     assert.match(t, /\[ KITCHEN COPY \]/);
     assert.equal(lines.find((l) => l.text === "ITEMS").bold, true);
     assert.equal(lines.at(-1).type, "cut");
+  });
+
+  await test("kot: the order's own note is printed after the items, in bold", () => {
+    const lines = renderKot(kotJob({ notes: "Birthday table — bring candles" }));
+    const t = text(lines);
+    assert.match(t, /ORDER NOTE: Birthday table/);
+    assert.ok(t.indexOf("ORDER NOTE") > t.indexOf("Chicken Biryani"));
+    assert.equal(lines.find((l) => /ORDER NOTE/.test(l.text || "")).bold, true);
+    assert.doesNotMatch(text(renderKot(kotJob({ notes: "" }))), /ORDER NOTE/);
   });
 
   await test("kot: never shows any price or total amount", () => {

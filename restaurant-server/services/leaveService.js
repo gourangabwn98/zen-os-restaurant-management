@@ -75,7 +75,7 @@ export const decideLeave = async ({ StaffLeave, leaveId, decision, paid, actor }
   if (!["APPROVED", "DECLINED"].includes(decision)) fail("decision must be APPROVED or DECLINED", 400);
   const set = { status: decision, decidedBy: actor, decidedAt: new Date() };
   if (decision === "APPROVED") set.paid = !!paid;
-  const updated = await StaffLeave.findOneAndUpdate({ _id: leaveId, status: "PENDING" }, { $set: set }, { new: true });
+  const updated = await StaffLeave.findOneAndUpdate({ _id: leaveId, status: "PENDING" }, { $set: set }, { returnDocument: "after" });
   if (updated) return updated;
   const exists = await StaffLeave.findById(leaveId);
   if (!exists) fail("Leave request not found", 404);
@@ -87,7 +87,7 @@ export const cancelOwnLeave = async ({ StaffLeave, leaveId, employeeId }) => {
   const updated = await StaffLeave.findOneAndUpdate(
     { _id: leaveId, employee: employeeId, status: "PENDING" },
     { $set: { status: "CANCELLED" } },
-    { new: true },
+    { returnDocument: "after" },
   );
   if (!updated) fail("Only your own pending requests can be withdrawn", 409);
   return updated;
