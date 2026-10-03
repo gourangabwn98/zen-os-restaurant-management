@@ -1,158 +1,57 @@
 // src/pages/admin/MenuAdminPage.jsx
 // ─────────────────────────────────────────────────────────────────────────────
-// Zen OS "Menu items" — migrated to the shared design system
-// (design-reference/zen-os-design-reference.html → "Menu items" / "Add menu
-// item"). Visual language only: every API call, field, and rule is unchanged.
+// Menu items — layout follows the "big-menu manager" reference (status strip,
+// Menu times + categories rail, items grouped by category with the time window
+// shown once per group, view chips, bulk bar); look comes from the Zen OS
+// design system (tokens.css / surfaces.css). Every API call, field, and rule
+// is unchanged:
 //
-//   list / search / filter   getMenu({ includeUnavailable: true })
+//   list / search / filter   getMenu({ includeUnavailable: true })  (+ client filters)
 //   add / edit               createMenuItem / updateMenuItem  (multipart)
 //   delete                   deleteMenuItem
-//   availability toggle      updateMenuItem(id, { isAvailable })
+//   availability On / Off    updateMenuItem(id, { isAvailable })  (also in bulk)
 //   categories               getCategories / createCategory / updateCategory / deleteCategory
-//                            (Categories manager: view, add, edit/rename, delete empty)
 //   scheduled visibility     updateMenuSchedule (PATCH /menu/schedule, bulk)
+//   restaurant timezone      getRestaurantProfile (for the timeline's "now")
 // Images go to Cloudinary through the backend, same as before.
 //
 // Scheduling is separate from availability: a customer sees an item only if
 // it is Available AND its category's window AND its own window allow the
 // current restaurant time (enforced server-side — this page just edits it).
+// Layout pieces live in ./menu/ (MenuBoard.jsx, menuUI.jsx, menuKit.js).
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import toast from "react-hot-toast";
 import {
   getMenu, getCategories, createMenuItem, updateMenuItem, deleteMenuItem,
   createCategory, updateCategory, deleteCategory, updateMenuSchedule,
+  getMenuTimes, setMenuAvailability, reorderCategories, mergeCategory,
 } from "../../services/menuService.js";
+import { getRestaurantProfile } from "../../services/adminService.js";
 import PageHeader from "./shared/PageHeader.jsx";
-import StatCard from "./shared/StatCard.jsx";
 import Loader from "./shared/Loader.jsx";
-import EmptyState from "./shared/EmptyState.jsx";
-import ErrorState from "./shared/ErrorState.jsx";
-import { t, tn, N_, fmtNum, localName } from "../../i18n/core.js";
+import { t, tn, fmtNum, localName } from "../../i18n/core.js";
 import { invalidate } from "../../services/cache.js";
+import { VegDot, Switch, ScheduleBadge, CatThumb, TagEditor } from "./menu/menuUI.jsx";
+import {
+  isUrl, hasSchedule, schedLabel, schedError, fmt12, fmtMinutes, isSoldOut,
+  clockInTimezone, previewClock, isScheduleActive, buildTimeGroups, findCleanup,
+  VIEWS, VIEW_KEYS, EMPTY_FILTERS, hasExtraFilters, matchesFilters, matchesSearch,
+  loadSavedViews, storeSavedViews, errMsg,
+} from "./menu/menuKit.js";
+import { StatusStrip, MenuTimesCard, CategoryCard, ItemsPanel } from "./menu/MenuBoard.jsx";
+import { MenuTimeModal, BulkEditModal, ImportModal } from "./menu/MenuModals.jsx";
 
 // Stored values; labels go through t().
 const TAGS = ["Veg", "Non Veg"];
-const AVAIL_SEG = [N_("All"), N_("Available"), N_("Hidden")];
 const EMPTY_FORM = {
   name: "", nameBn: "", price: "", originalPrice: "", description: "",
-  category: "", tag: "Veg", isAvailable: true, rating: 4.0,
+  category: "", tag: "Veg", isAvailable: true, rating: 4.0, tags: [],
 };
 const normalizeCats = (data) => (data?.data || data || []).filter(Boolean);
 const BULK_CONFIRM_AT = 5; // confirm bulk schedule changes touching this many entries or more
-
-// "17:00" → "5:00 PM"
-const fmt12 = (hhmm) => {
-  const m = /^(\d{2}):(\d{2})$/.exec(hhmm || "");
-  if (!m) return hhmm || "";
-  const h = Number(m[1]);
-  return `${fmtNum(((h + 11) % 12) + 1)}:${fmtNum(Number(m[2]), { minimumIntegerDigits: 2 })} ${h < 12 ? t("AM") : t("PM")}`;
-};
-const hasSchedule = (x) => x?.schedule?.enabled === true;
 // Categories are referenced by their (English) name; show the Bengali one when set.
 const catLabel = (cats, name) => localName(cats.find((c) => c.name === name) || name);
-const schedLabel = (sc) => `${fmt12(sc.startTime)} – ${fmt12(sc.endTime)}${sc.endTime < sc.startTime ? ` (${t("overnight")})` : ""}`;
-const schedError = (start, end) => {
-  if (!start || !end) return t("Choose both a start and an end time");
-  if (start === end) return t("Start and end time cannot be the same");
-  return null;
-};
-
-// ── page-scoped styles (tokens only — light / dark safe) ─────────────────────
-if (typeof document !== "undefined" && !document.getElementById("menu-styles")) {
-  const s = document.createElement("style");
-  s.id = "menu-styles";
-  s.textContent = `
-    .menu-filters { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
-    .menu-thumb {
-      width: 40px; height: 40px; border-radius: 9px; flex: none; overflow: hidden;
-      background: linear-gradient(150deg, var(--violet-mid), var(--violet-faint));
-      border: 1px solid var(--edge); display: grid; place-items: center; font-size: 18px;
-    }
-    .menu-veg { width: 14px; height: 14px; border-radius: 3px; display: inline-grid; place-items: center; flex: none; }
-    .menu-veg i { width: 6px; height: 6px; border-radius: 50%; display: block; }
-    .zc-ledger tbody tr.menu-click { cursor: pointer; }
-    .menu-cards { display: none; }
-    @media (max-width: 900px) {
-      .menu-ledger-wrap { display: none; }
-      .menu-cards { display: block; }
-    }
-    .menu-mcard {
-      border: 1px solid var(--edge); border-radius: var(--r-row); background: var(--grad-panel);
-      padding: 12px 13px; margin-bottom: 8px; display: flex; gap: 11px; align-items: flex-start;
-    }
-    /* form */
-    .menu-fgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-    @media (max-width: 520px) { .menu-fgrid { grid-template-columns: 1fr; } }
-    .menu-field { display: grid; gap: 6px; min-width: 0; }
-    .menu-field.full { grid-column: 1 / -1; }
-    .menu-field > label { font-size: 11.5px; color: var(--text-2); font-weight: 500; }
-    .menu-field .hint { font-size: 10.5px; color: var(--text-3); }
-    .menu-toggle-row {
-      display: flex; gap: 10px; align-items: center; padding: 11px 14px; border-radius: 12px;
-      border: 1px solid var(--edge); background: var(--card-2);
-    }
-    .menu-toggle-row.on { border-color: var(--ready-line); background: var(--ready-fill); }
-    .menu-switch { width: 34px; height: 19px; border-radius: 20px; position: relative; flex: none; background: var(--edge-hi); transition: background .15s ease; }
-    .menu-switch.on { background: var(--ready); box-shadow: 0 0 14px -2px var(--ready); }
-    .menu-switch i { position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; transition: left .15s ease; }
-    .menu-switch.on i { left: 17px; }
-    /* scheduled visibility */
-    .menu-sched-badge {
-      display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 500;
-      padding: 1px 7px; border-radius: 6px; white-space: nowrap;
-      color: var(--accent-ink); background: var(--violet-faint); border: 1px solid var(--violet-line);
-    }
-    .menu-sched-badge.off { color: var(--text-3); background: var(--card-2); border-color: var(--edge); }
-    .menu-catpick { display: flex; flex-wrap: wrap; gap: 7px; }
-    .menu-catchip {
-      display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border-radius: 10px; cursor: pointer;
-      border: 1px solid var(--edge); background: var(--card-2); font-size: 12.5px; color: var(--text-1); user-select: none;
-    }
-    .menu-catchip.on { border-color: var(--violet-line); background: var(--violet-faint); }
-    .menu-cb { width: 15px; height: 15px; accent-color: var(--accent-ink); cursor: pointer; flex: none; margin: 0; }
-    .menu-sched-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
-  `;
-  document.head.appendChild(s);
-}
-
-const VegDot = ({ tag }) => {
-  const veg = tag === "Veg";
-  return (
-    <span className="menu-veg" style={{ border: `1.5px solid ${veg ? "var(--ready)" : "var(--stop)"}` }} aria-label={veg ? t("Vegetarian") : t("Non-vegetarian")}>
-      <i style={{ background: veg ? "var(--ready)" : "var(--stop)" }} />
-    </span>
-  );
-};
-
-const Switch = ({ on, onClick, label }) => (
-  <button type="button" role="switch" aria-checked={on} aria-label={label} onClick={onClick}
-    className={`menu-switch${on ? " on" : ""}`} style={{ border: 0, cursor: "pointer" }}>
-    <i />
-  </button>
-);
-
-// 🕒 5:00 PM – 11:00 PM  (dimmed with "off now" when outside its window)
-const ScheduleBadge = ({ schedule, off }) => (
-  <span className={`menu-sched-badge${off ? " off" : ""}`}
-    title={off ? t("Outside its schedule — hidden from customers right now") : t("Visible to customers only in this window")}>
-    🕒 {schedLabel(schedule)}{off ? ` · ${t("off now")}` : ""}
-  </span>
-);
-
-// Item thumbnail — the Cloudinary image, or a glyph fallback (also on load error)
-const Thumb = ({ src, size = 40 }) => {
-  const [broken, setBroken] = useState(false);
-  const ok = typeof src === "string" && src.startsWith("http") && !broken;
-  return (
-    <span className="menu-thumb" style={{ width: size, height: size }}>
-      {ok
-        ? <img src={src} alt="" onError={() => setBroken(true)}
-            style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 9 }} />
-        : "🍽️"}
-    </span>
-  );
-};
 
 // ── image upload box (dashed drop target — matches reference) ────────────────
 function ImageUploadBox({ currentUrl, file, onFileChange }) {
@@ -257,22 +156,6 @@ function CategoryPicker({ value, categories, onChange, onOpenCreate, onDeleteCat
   );
 }
 
-const isUrl = (s) => typeof s === "string" && /^https?:\/\//i.test(s);
-
-// Category thumbnail — its uploaded image, else its emoji (older categories
-// store one, e.g. "🍕"), else a generic glyph.
-const CatThumb = ({ image, size = 38 }) => {
-  const [broken, setBroken] = useState(false);
-  const showImg = isUrl(image) && !broken;
-  return (
-    <span className="menu-thumb" style={{ width: size, height: size, fontSize: size * 0.48 }}>
-      {showImg
-        ? <img src={image} alt="" onError={() => setBroken(true)}
-            style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 9 }} />
-        : (image && !isUrl(image) ? image : "🗂️")}
-    </span>
-  );
-};
 
 // ── add / edit category modal ──────────────────────────────────────────────
 // `category` null → create; otherwise edit (rename and/or change the image).
@@ -484,7 +367,7 @@ function CategoriesModal({ cats, items, onClose, onChanged, onView }) {
               </div>
             )}
             <div style={{ fontSize: 11, color: "var(--text-3)" }}>
-              {t("Renaming moves the category’s items with it. A category can only be deleted once it has no items. Time windows are set under 🕒 Scheduled visibility.")}
+              {t("Renaming moves the category’s items with it. A category can only be deleted once it has no items. Time windows come from its Menu time.")}
             </div>
           </div>
         </div>
@@ -519,13 +402,14 @@ function CategoriesModal({ cats, items, onClose, onChanged, onView }) {
 }
 
 // ── add / edit menu item modal ─────────────────────────────────────────────
-function ItemModal({ item, categories, onClose, onSaved, onCategoryCreated }) {
+function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategoryCreated }) {
   const isEdit = !!item?._id;
   const [form, setForm] = useState(
     isEdit
-      ? { ...EMPTY_FORM, ...item, price: item.price ?? "", originalPrice: item.originalPrice || "" }
+      ? { ...EMPTY_FORM, ...item, price: item.price ?? "", originalPrice: item.originalPrice || "", tags: item.tags || [] }
       : { ...EMPTY_FORM, category: categories[0]?.name || "" },
   );
+  const soldOut = isEdit && isSoldOut(item);
   const [imgFile, setImgFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showCat, setShowCat] = useState(false);
@@ -574,8 +458,10 @@ function ItemModal({ item, categories, onClose, onSaved, onCategoryCreated }) {
       fd.append("price", form.price);
       fd.append("category", form.category);
       fd.append("tag", form.tag);
-      fd.append("isAvailable", form.isAvailable);
+      // Only when changed: sending it clears "Sold out today" on the server.
+      if (!isEdit || form.isAvailable !== item.isAvailable) fd.append("isAvailable", form.isAvailable);
       fd.append("rating", form.rating || 4);
+      fd.append("tags", JSON.stringify(form.tags || []));
       if (form.originalPrice) fd.append("originalPrice", form.originalPrice);
       if (form.description) fd.append("description", form.description);
       if (imgFile) fd.append("image", imgFile);
@@ -686,15 +572,24 @@ function ItemModal({ item, categories, onClose, onSaved, onCategoryCreated }) {
                   placeholder={t("Short description shown to customers…")} />
               </div>
               <div className="menu-field full">
+                <label>{t("Diner tags")} <span style={{ color: "var(--text-3)", fontWeight: 400 }}>({t("optional")})</span></label>
+                <TagEditor value={form.tags || []} onChange={(v) => set("tags", v)} suggestions={allTags} />
+                <div className="hint">{t("Fish, Spicy, Bestseller… shown on the menu list and usable as filters. Veg / Non-veg stays above.")}</div>
+              </div>
+              <div className="menu-field full">
                 <label>{t("Availability")}</label>
                 <div className={`menu-toggle-row${form.isAvailable ? " on" : ""}`}>
                   <Switch on={form.isAvailable} onClick={() => set("isAvailable", !form.isAvailable)}
                     label={t("Toggle availability")} />
                   <span style={{ fontSize: 12.5, fontWeight: 500, color: "var(--text-1)" }}>
-                    {form.isAvailable ? t("Available now") : t("Hidden")}
+                    {form.isAvailable ? t("Available now")
+                      : soldOut ? t("Sold out today") : t("Hidden")}
                   </span>
                   <span style={{ fontSize: 11, color: "var(--text-3)", marginLeft: "auto" }}>
-                    {form.isAvailable ? t("Customers can order this item") : t("Stays in history, hidden from the menu")}
+                    {form.isAvailable ? t("Customers can order this item")
+                      : soldOut
+                        ? t("Comes back on by itself when the business day ends")
+                        : t("Stays in history, hidden from the menu")}
                   </span>
                 </div>
               </div>
@@ -935,27 +830,47 @@ function ScheduleModal({ cats, items, selCats, selItems, setSelCats, setSelItems
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN
 // ═══════════════════════════════════════════════════════════════════════════════
+const toggleIn = (set, id) => {
+  const n = new Set(set);
+  if (n.has(id)) n.delete(id); else n.add(id);
+  return n;
+};
+
 export default function MenuAdminPage() {
   const [items, setItems] = useState([]);
   const [cats, setCats] = useState([]);
+  const [menuTimes, setMenuTimes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [timezone, setTimezone] = useState("Asia/Kolkata");
+  const [dayEnd, setDayEnd] = useState("03:00");
+  const [nowClock, setNowClock] = useState(() => clockInTimezone("Asia/Kolkata"));
 
   const [search, setSearch] = useState("");
+  const [view, setView] = useState("all");
+  const [filters, setFiltersRaw] = useState(EMPTY_FILTERS);
+  const [saved, setSaved] = useState(loadSavedViews);
+  const [activeSaved, setActiveSaved] = useState(null);
   const [selCat, setSelCat] = useState("All");
-  const [avail, setAvail] = useState("All");
-  const [vegOnly, setVegOnly] = useState(false);
+  const [selGroup, setSelGroup] = useState(null);
+  const [preview, setPreview] = useState(null); // null = now (server flags); else { minutes, day }
+  const [collapsed, setCollapsed] = useState(() => new Set());
 
   const [modal, setModal] = useState(null); // "create" | item | null
+  const [catForm, setCatForm] = useState(null); // "create" | category | null
+  const [confirmDelCat, setConfirmDelCat] = useState(null);
+  const [deletingCat, setDeletingCat] = useState(false);
+  const [mergeAsk, setMergeAsk] = useState(null); // { from, into }
+  const [merging, setMerging] = useState(false);
   const [showCats, setShowCats] = useState(false);
   const [showSched, setShowSched] = useState(false);
-  const [selItems, setSelItems] = useState(() => new Set()); // bulk-schedule selection (ids)
+  const [mtForm, setMtForm] = useState(null); // "create" | menuTime | null
+  const [showBulk, setShowBulk] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [selItems, setSelItems] = useState(() => new Set()); // list selection — bulk bar + modals
   const [selCats, setSelCats] = useState(() => new Set());
-  const toggleItemSel = (id) => setSelItems((p) => {
-    const n = new Set(p);
-    if (n.has(id)) n.delete(id); else n.add(id);
-    return n;
-  });
+  const [busyIds, setBusyIds] = useState(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const loadCats = useCallback(
     () => getCategories().then((r) => setCats(normalizeCats(r.data))).catch(() => {}),
@@ -963,10 +878,15 @@ export default function MenuAdminPage() {
   );
 
   const load = useCallback(() => {
-    Promise.all([getMenu({ includeUnavailable: true }), getCategories()])
-      .then(([m, c]) => {
+    Promise.all([
+      getMenu({ includeUnavailable: true }),
+      getCategories(),
+      getMenuTimes().catch(() => ({ data: [] })), // an older server without menu times still shows the menu
+    ])
+      .then(([m, c, mt]) => {
         setItems(Array.isArray(m.data) ? m.data : []);
         setCats(normalizeCats(c.data));
+        setMenuTimes(Array.isArray(mt.data) ? mt.data : []);
         setError(false);
         setLoading(false);
       })
@@ -974,10 +894,142 @@ export default function MenuAdminPage() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  // Restaurant timezone → the timeline's "now", Live/Off; business day end → "Sold out today".
+  useEffect(() => {
+    getRestaurantProfile()
+      .then((r) => {
+        const p = r.data?.data || r.data;
+        if (p?.timezone) setTimezone(p.timezone);
+        if (p?.businessDayEndsAt) setDayEnd(p.businessDayEndsAt);
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    const tick = () => setNowClock(clockInTimezone(timezone));
+    tick();
+    const id = setInterval(tick, 30_000);
+    return () => clearInterval(id);
+  }, [timezone]);
+
+  // ── derived from the real lists ───────────────────────────────────────────
+  const clock = useMemo(() => previewClock(nowClock, preview), [nowClock, preview]);
+  const catByName = useMemo(() => new Map(cats.map((c) => [c.name, c])), [cats]);
+  const countByCat = useMemo(() => {
+    const m = new Map();
+    for (const i of items) m.set(i.category, (m.get(i.category) || 0) + 1);
+    return m;
+  }, [items]);
+  const countOf = useCallback(
+    (c) => (items.length ? countByCat.get(c.name) || 0 : c.itemCount || 0),
+    [items.length, countByCat],
+  );
+  const cleanup = useMemo(() => findCleanup(cats, countOf), [cats, countOf]);
+  const cleanupNames = useMemo(
+    () => new Set(cleanup.filter((x) => x.kind !== "empty").map((x) => x.cat.name)),
+    [cleanup],
+  );
+  const viewCtx = useMemo(
+    () => ({ catOf: (i) => catByName.get(i.category), clock: preview ? clock : null, cleanup: cleanupNames }),
+    [catByName, preview, clock, cleanupNames],
+  );
+
+  const counts = useMemo(() => {
+    const c = {};
+    for (const k of VIEW_KEYS) c[k] = 0;
+    for (const i of items) for (const k of VIEW_KEYS) if (VIEWS[k].test(i, viewCtx)) c[k]++;
+    return c;
+  }, [items, viewCtx]);
+
+  const timeGroups = useMemo(
+    () => buildTimeGroups({ menuTimes, cats, countOf, clock }),
+    [menuTimes, cats, countOf, clock],
+  );
+  const groupOfCat = useMemo(() => {
+    const m = new Map();
+    for (const g of timeGroups) for (const c of g.cats) m.set(c.name, g);
+    return m;
+  }, [timeGroups]);
+  const activeGroup = timeGroups.find((g) => g.key === selGroup) || timeGroups[0] || null;
+  const allTags = useMemo(() => {
+    const m = new Map();
+    for (const i of items) for (const x of i.tags || []) if (!m.has(x.toLowerCase())) m.set(x.toLowerCase(), x);
+    return [...m.values()].sort((a, b) => a.localeCompare(b));
+  }, [items]);
+
+  const q = search.trim().toLowerCase();
+  const groups = useMemo(() => {
+    const test = VIEWS[view]?.test || VIEWS.all.test;
+    const byCat = new Map();
+    for (const i of items) {
+      if (selCat !== "All" && i.category !== selCat) continue;
+      if (!test(i, viewCtx)) continue;
+      if (!matchesFilters(i, filters)) continue;
+      const cat = catByName.get(i.category);
+      if (!matchesSearch(i, q, cat?.nameBn)) continue;
+      if (!byCat.has(i.category)) byCat.set(i.category, []);
+      byCat.get(i.category).push(i);
+    }
+    // Category order = the server's (drag) order; items whose category
+    // document is missing go last under their stored category name.
+    const order = [...cats.map((c) => c.name), ...[...byCat.keys()].filter((n) => !catByName.has(n)).sort()];
+    return order.filter((n) => byCat.has(n)).map((name) => {
+      const cat = catByName.get(name);
+      return {
+        name, cat, label: cat ? localName(cat) : name || t("No category"),
+        items: byCat.get(name), timeGroup: groupOfCat.get(name) || null,
+        live: isScheduleActive(cat?.schedule, clock),
+      };
+    });
+  }, [items, cats, catByName, selCat, view, viewCtx, filters, q, clock, groupOfCat]);
+
+  const savedWithCounts = useMemo(() => saved.map((sv) => {
+    const test = VIEWS[sv.view]?.test || VIEWS.all.test;
+    const f = { ...EMPTY_FILTERS, ...sv.filters };
+    return { ...sv, count: items.filter((i) => test(i, viewCtx) && matchesFilters(i, f)).length };
+  }), [saved, items, viewCtx]);
+
+  const hasFilters = !!q || view !== "all" || hasExtraFilters(filters);
+  const setFilters = (f) => { setFiltersRaw(f || EMPTY_FILTERS); setActiveSaved(null); };
+  const pickView = (v) => { setView(v); setActiveSaved(null); };
+  const clearFilters = () => { setSearch(""); setView("all"); setSelCat("All"); setFiltersRaw(EMPTY_FILTERS); setActiveSaved(null); };
+  const applySaved = (sv) => {
+    if (activeSaved === sv.id) return clearFilters();
+    setView(sv.view || "all");
+    setFiltersRaw({ ...EMPTY_FILTERS, ...sv.filters });
+    setActiveSaved(sv.id);
+  };
+  const saveView = (name) => {
+    const sv = { id: `v${Date.now()}`, name, view, filters };
+    const next = [...saved, sv];
+    setSaved(next);
+    storeSavedViews(next);
+    setActiveSaved(sv.id);
+    toast.success(t("View “{name}” saved", { name }));
+  };
+  const removeSaved = (id) => {
+    const next = saved.filter((s) => s.id !== id);
+    setSaved(next);
+    storeSavedViews(next);
+    if (activeSaved === id) clearFilters();
+  };
+
+  const atText = preview ? t("at {time}", { time: fmtMinutes(clock.minutes) }) : t("right now");
+  const tiles = [
+    { key: "onMenu", label: t("On the menu now"), value: counts.onMenu, color: "var(--ready-ink)", sub: atText },
+    { key: "byTime", label: t("Hidden by time"), value: counts.byTime, sub: t("outside their menu time") },
+    { key: "soldOut", label: t("Sold out today"), value: counts.soldOut, color: counts.soldOut ? "var(--wait-ink)" : undefined,
+      sub: t("back at {time}", { time: fmt12(dayEnd) }) },
+    { key: "noPhoto", label: t("No photo"), value: counts.noPhoto, color: counts.noPhoto ? "var(--wait-ink)" : "var(--ready-ink)",
+      sub: counts.noPhoto ? t("diners order less without one") : t("every item has one") },
+    { key: "cleanup", label: t("Needs cleanup"), value: cleanup.length, color: cleanup.length ? "var(--stop-ink)" : "var(--ready-ink)",
+      sub: cleanup.length ? t("duplicate, test or empty categories") : t("all tidy") },
+  ];
+
+  // ── actions (all through the API) ─────────────────────────────────────────
   const handleSaved = (saved, mode, { scheduleChanged } = {}) => {
-    setItems((p) => (mode === "create" ? [saved, ...p] : p.map((i) => (i._id === saved._id ? saved : i))));
+    setItems((p) => (mode === "create" ? [saved, ...p] : p.map((i) => (i._id === saved._id ? { ...i, ...saved } : i))));
     loadCats();
-    if (scheduleChanged) load(); // refresh the server-computed "off now" flags
+    if (scheduleChanged || mode === "create") load(); // refresh server-computed flags (scheduledNow, stock)
   };
 
   const handleCategoryCreated = (newCat) => {
@@ -991,8 +1043,7 @@ export default function MenuAdminPage() {
     setCats((p) => (p.some((c) => c.name === newCat?.name) ? p : [...p, newCat]));
   };
 
-
-  // Categories manager saved/deleted something. A rename moved items on the
+  // A category was saved/deleted/merged. A rename or merge moved items on the
   // server, so reload both lists; keep the category filter pointing at the
   // same category (or reset it if that category is gone).
   const handleCategoriesChanged = ({ deleted, deletedId, renamedFrom, saved } = {}) => {
@@ -1005,285 +1056,229 @@ export default function MenuAdminPage() {
     load();
   };
 
+  const doDeleteCat = async () => {
+    setDeletingCat(true);
+    try {
+      await deleteCategory(confirmDelCat._id);
+      toast.success(t("\"{name}\" deleted", { name: localName(confirmDelCat) }));
+      handleCategoriesChanged({ deleted: confirmDelCat.name, deletedId: confirmDelCat._id });
+      setConfirmDelCat(null);
+    } catch (e) {
+      toast.error(errMsg(e, t("Failed to delete category")));
+    } finally {
+      setDeletingCat(false);
+    }
+  };
+
+  const doMerge = async () => {
+    const { from, into } = mergeAsk;
+    setMerging(true);
+    try {
+      const { data } = await mergeCategory(from._id, into._id);
+      toast.success(t("{n} items moved into {into} · “{from}” removed", { n: data.itemsMoved, into: data.into, from: data.from }));
+      handleCategoriesChanged({ deleted: from.name, deletedId: from._id });
+      setMergeAsk(null);
+    } catch (e) {
+      toast.error(errMsg(e, t("Could not merge the categories")));
+    } finally {
+      setMerging(false);
+    }
+  };
+
+  // Drag order inside one menu time → the full category order on the server.
+  const reorderGroup = async (groupIds) => {
+    const inGroup = new Set(groupIds);
+    const queue = [...groupIds];
+    const next = cats.map((c) => (inGroup.has(c._id) ? queue.shift() : c._id));
+    const byId = new Map(cats.map((c) => [c._id, c]));
+    const prev = cats;
+    setCats(next.map((id) => byId.get(id)));
+    try {
+      await reorderCategories(next);
+      invalidate("order:categories");
+    } catch (e) {
+      setCats(prev);
+      toast.error(errMsg(e, t("Could not save the new order")));
+      loadCats();
+    }
+  };
+
   const handleDelete = async (item) => {
     if (!window.confirm(t("Delete \"{name}\"? This cannot be undone.", { name: localName(item) }))) return;
     try {
       await deleteMenuItem(item._id);
       setItems((p) => p.filter((i) => i._id !== item._id));
       setSelItems((p) => { const n = new Set(p); n.delete(item._id); return n; });
+      loadCats();
       toast.success(t("Item deleted"));
     } catch (e) {
-      toast.error(e?.response?.data?.message || t("Delete failed"));
+      toast.error(errMsg(e, t("Delete failed")));
     }
   };
 
-  const toggleAvail = async (item) => {
+  const applyAvail = (ids, data) => {
+    const set = new Set(ids);
+    setItems((p) => p.map((i) => (set.has(i._id) ? { ...i, isAvailable: data.isAvailable, soldOutUntil: data.soldOutUntil } : i)));
+  };
+  const availToast = (state, what) => (state === "soldout"
+    ? t("{what} sold out today · back on at {time}", { what, time: fmt12(dayEnd) })
+    : state === "on" ? t("{what} → on the menu", { what }) : t("{what} → turned off", { what }));
+
+  const setAvailable = async (item, state) => {
+    setBusyIds((p) => new Set(p).add(item._id));
     try {
-      const { data } = await updateMenuItem(item._id, { isAvailable: !item.isAvailable });
-      setItems((p) => p.map((i) => (i._id === data._id ? { ...data, scheduledNow: i.scheduledNow } : i)));
-      toast.success(`${localName(data)} → ${data.isAvailable ? t("Available") : t("Hidden")}`);
+      const { data } = await setMenuAvailability([item._id], state);
+      applyAvail([item._id], data);
+      toast.success(availToast(state, localName(item)));
     } catch (e) {
-      toast.error(e?.response?.data?.message || t("Update failed"));
+      toast.error(errMsg(e, t("Update failed")));
+    } finally {
+      setBusyIds((p) => { const n = new Set(p); n.delete(item._id); return n; });
     }
   };
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return items.filter((i) => {
-      if (selCat !== "All" && i.category !== selCat) return false;
-      if (avail === "Available" && !i.isAvailable) return false;
-      if (avail === "Hidden" && i.isAvailable) return false;
-      if (vegOnly && i.tag !== "Veg") return false;
-      if (q && !i.name?.toLowerCase().includes(q) && !(i.nameBn || "").toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [items, search, selCat, avail, vegOnly]);
+  const bulkSetState = async (state) => {
+    const ids = [...selItems];
+    setBulkBusy(true);
+    try {
+      const { data } = await setMenuAvailability(ids, state);
+      applyAvail(ids, data);
+      toast.success(availToast(state, tn(ids.length, "{n} item", "{n} items")));
+      setSelItems(new Set());
+    } catch (e) {
+      toast.error(errMsg(e, t("Update failed")));
+    } finally {
+      setBulkBusy(false);
+    }
+  };
 
-  const availableCount = items.filter((i) => i.isAvailable).length;
-  const hiddenCount = items.length - availableCount;
-  const vegCount = items.filter((i) => i.tag === "Veg").length;
-  const nonVegCount = items.filter((i) => i.tag === "Non Veg").length;
-  const scheduledCount = items.filter(hasSchedule).length;
-  const hasFilters = search || selCat !== "All" || avail !== "All" || vegOnly;
-  const catByName = useMemo(() => new Map(cats.map((c) => [c.name, c])), [cats]);
-  const allFilteredSelected = filtered.length > 0 && filtered.every((i) => selItems.has(i._id));
-  const someFilteredSelected = filtered.some((i) => selItems.has(i._id));
-  const toggleAllFiltered = () => setSelItems((p) => {
+  const setSelMany = (ids, on) => setSelItems((p) => {
     const n = new Set(p);
-    if (allFilteredSelected) filtered.forEach((i) => n.delete(i._id));
-    else filtered.forEach((i) => n.add(i._id));
+    ids.forEach((id) => (on ? n.add(id) : n.delete(id)));
     return n;
   });
-  const clearFilters = () => { setSearch(""); setSelCat("All"); setAvail("All"); setVegOnly(false); };
+  const toggleGroup = (name) => setCollapsed((p) => toggleIn(p, name));
+  const setAllCollapsed = (all) => setCollapsed(all ? new Set(groups.map((g) => g.name)) : new Set());
+  const editCat = (c) => c?._id && setCatForm({ ...c, itemCount: countOf(c) });
+  const openBulk = () => (selItems.size
+    ? setShowBulk(true)
+    : toast(t("Tick the items to change in the list first (or a whole category with its box), then Bulk edit.")));
+  const onTile = (k) => { pickView(k); setFiltersRaw(EMPTY_FILTERS); };
 
-  const STATS = [
-    { label: t("Total items"), value: fmtNum(items.length), grad: true, sub: tn(cats.length, "{n} category", "{n} categories") },
-    { label: t("Available"), value: fmtNum(availableCount), color: "var(--ready-ink)", sub: t("Live on the menu") },
-    { label: t("Hidden"), value: fmtNum(hiddenCount), color: "var(--text-2)", sub: hiddenCount ? t("Off the menu") : t("None hidden") },
-    { label: t("Scheduled"), value: fmtNum(scheduledCount), color: "var(--accent-ink)", sub: scheduledCount ? t("Time-limited items") : t("None scheduled") },
-    { label: t("Vegetarian"), value: fmtNum(vegCount), color: "var(--ready-ink)", sub: items.length ? t("{pct}% of menu", { pct: Math.round((vegCount / items.length) * 100) }) : "—" },
-    { label: t("Non-vegetarian"), value: fmtNum(nonVegCount), color: "var(--stop-ink)", sub: items.length ? t("{pct}% of menu", { pct: Math.round((nonVegCount / items.length) * 100) }) : "—" },
-  ];
+  const ready = !loading && !error;
 
   return (
     <div>
       <PageHeader
         title={t("Menu items")}
-        sub={`${tn(items.length, "{n} item", "{n} items")} · ${tn(cats.length, "{n} category", "{n} categories")}`}
+        sub={`${tn(items.length, "{n} item", "{n} items")} · ${tn(cats.length, "{n} category", "{n} categories")} · ${tn(menuTimes.length, "{n} menu time", "{n} menu times")}`}
         right={
-          <>
-            <button type="button" className="zc-btn" disabled={loading || error} onClick={() => setShowSched(true)}>
-              🕒 {t("Scheduled visibility")}{selItems.size + selCats.size > 0 ? ` (${fmtNum(selItems.size + selCats.size)})` : ""}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" className="zc-btn" disabled={!ready} onClick={() => setShowImport(true)}>⇪ {t("Import menu")}</button>
+            <button type="button" className="zc-btn" disabled={!ready} onClick={openBulk}>
+              ✎ {t("Bulk edit")}{selItems.size ? ` (${fmtNum(selItems.size)})` : ""}
             </button>
-            <button type="button" className="zc-btn" disabled={loading || error} onClick={() => setShowCats(true)}>🗂️ {t("Categories")}</button>
             <button type="button" className="zc-btn pri" onClick={() => setModal("create")}>＋ {t("New item")}</button>
-          </>
+          </div>
         }
       />
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 20 }}>
-        {STATS.map((b, i) => <StatCard key={i} {...b} />)}
-      </div>
+      <StatusStrip tiles={tiles} view={activeSaved || hasExtraFilters(filters) ? null : view} onView={onTile} />
 
-      <div className="menu-filters">
-        <input
-          className="zc-input"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder={t("Search by item name")}
-          aria-label={t("Search menu items")}
-          style={{ flex: 1, minWidth: 220 }}
+      <div className="mb-body">
+        <div className="mb-left">
+          {loading ? (
+            <div className="zc-card"><div className="zc-card-b"><Loader rows={5} /></div></div>
+          ) : !error && (
+            <>
+              <MenuTimesCard groups={timeGroups} selected={activeGroup?.key} onSelect={setSelGroup}
+                preview={preview} setPreview={setPreview} clock={clock}
+                onAdd={() => setMtForm("create")} onEdit={setMtForm} disabled={!ready} />
+              <CategoryCard
+                group={activeGroup} countOf={countOf} selCat={selCat}
+                onPickCat={(name) => setSelCat(name)} onEditCat={editCat} onNewCat={() => setCatForm("create")}
+                onReorder={reorderGroup} cleanup={cleanup}
+                onMerge={(from, into) => setMergeAsk({ from, into })} onDeleteCat={setConfirmDelCat}
+                onReviewCat={(c) => { setSelCat(c.name); pickView("all"); }}
+                onManage={() => setShowCats(true)} onAssign={setMtForm} disabled={!ready} />
+            </>
+          )}
+        </div>
+
+        <ItemsPanel
+          loading={loading} error={error} onRetry={load} totalItems={items.length}
+          groups={groups} counts={counts} view={view} setView={pickView}
+          search={search} setSearch={setSearch}
+          saved={savedWithCounts} activeSaved={activeSaved} onApplySaved={applySaved}
+          onRemoveSaved={removeSaved} onSaveView={saveView}
+          filters={filters} setFilters={setFilters} allTags={allTags}
+          selCat={selCat} selCatLabel={catLabel(cats, selCat)} clearCat={() => setSelCat("All")}
+          preview={preview} clock={clock}
+          sel={selItems} toggleSel={(id) => setSelItems((p) => toggleIn(p, id))} setSelMany={setSelMany}
+          collapsed={q ? new Set() : collapsed} toggleGroup={toggleGroup} setAllCollapsed={setAllCollapsed}
+          busyIds={busyIds} onEdit={setModal} onDelete={handleDelete} onAvail={setAvailable} onEditCat={editCat}
+          onNew={() => setModal("create")}
+          bulk={{
+            busy: bulkBusy, setState: bulkSetState, edit: () => setShowBulk(true),
+            schedule: () => setShowSched(true), clear: () => setSelItems(new Set()),
+          }}
+          hasFilters={hasFilters} clearFilters={clearFilters}
         />
-        <div className="zc-seg" role="tablist" aria-label={t("Availability filter")}>
-          {AVAIL_SEG.map((a) => (
-            <button key={a} type="button" role="tab" aria-selected={avail === a}
-              className={avail === a ? "on" : ""} onClick={() => setAvail(a)}>{t(a)}</button>
-          ))}
-        </div>
-        <select className="zc-select" value={selCat} onChange={(e) => setSelCat(e.target.value)}
-          aria-label={t("Category filter")} style={{ width: "auto" }}>
-          <option value="All">{t("Category: All")}</option>
-          {cats.map((c) => <option key={c._id} value={c.name}>{localName(c)}</option>)}
-        </select>
-        <button type="button" onClick={() => setVegOnly((v) => !v)}
-          className={`zc-btn${vegOnly ? " good" : " ghost"}`} aria-pressed={vegOnly}>
-          <VegDot tag="Veg" />{t("Veg only")}
-        </button>
-        <div style={{ flex: 1 }} />
-        {hasFilters ? (
-          <>
-            <span style={{ fontSize: 12, color: "var(--text-2)" }}>
-              <b style={{ color: "var(--accent-ink)" }}>{fmtNum(filtered.length)}</b> {t("of {n}", { n: items.length })}
-            </span>
-            <button type="button" className="zc-btn sm" onClick={clearFilters}>{t("Clear")} ✕</button>
-          </>
-        ) : (
-          <span style={{ fontSize: 12, color: "var(--text-3)" }}>{tn(items.length, "{n} item", "{n} items")}</span>
-        )}
-      </div>
-
-      <div className="zc-card">
-        <div className="zc-card-h">
-          <span className="t">{t("Items")}</span>
-          <span className="s">{loading ? t("loading…") : error ? t("unavailable") : t("{n} shown", { n: filtered.length })}</span>
-        </div>
-
-        {loading ? (
-          <div style={{ padding: "16px 18px" }}><Loader rows={8} /></div>
-        ) : error ? (
-          <ErrorState title={t("Could not load the menu")}
-            sub={t("The server did not respond. Check that the backend is running, then try again.")}
-            onRetry={load} />
-        ) : filtered.length === 0 ? (
-          <EmptyState
-            icon={
-              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M4 5h16M4 12h16M4 19h10" />
-              </svg>
-            }
-            title={items.length === 0 ? t("No menu items yet") : t("No items match")}
-            sub={items.length === 0
-              ? t("Add your first dish or drink — it shows on the customer site as soon as it is available.")
-              : t("Nothing matches these filters. Try clearing them.")}
-            action={
-              items.length === 0
-                ? <button type="button" className="zc-btn pri" onClick={() => setModal("create")}>＋ {t("New item")}</button>
-                : hasFilters ? <button type="button" className="zc-btn" onClick={clearFilters}>{t("Clear filters")}</button> : null
-            }
-          />
-        ) : (
-          <>
-            {/* desktop / tablet ledger */}
-            <div className="menu-ledger-wrap" style={{ overflowX: "auto", padding: "6px 10px 8px" }}>
-              <table className="zc-ledger" style={{ minWidth: 760 }}>
-                <thead>
-                  <tr>
-                    <th style={{ width: 34 }}>
-                      <input type="checkbox" className="menu-cb" aria-label={t("Select all shown items")}
-                        checked={allFilteredSelected}
-                        ref={(el) => { if (el) el.indeterminate = !allFilteredSelected && someFilteredSelected; }}
-                        onChange={toggleAllFiltered} />
-                    </th>
-                    <th>{t("Item")}</th>
-                    <th style={{ width: 130 }}>{t("Category")}</th>
-                    <th className="num" style={{ width: 110 }}>{t("Price")}</th>
-                    <th className="num" style={{ width: 84 }}>{t("Rating")}</th>
-                    <th style={{ width: 132 }}>{t("Availability")}</th>
-                    <th style={{ width: 96 }} />
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((item) => (
-                    <tr key={item._id} className="menu-click" onClick={() => setModal(item)}>
-                      <td onClick={(e) => e.stopPropagation()}>
-                        <input type="checkbox" className="menu-cb" aria-label={t("Select {name}", { name: localName(item) })}
-                          checked={selItems.has(item._id)} onChange={() => toggleItemSel(item._id)} />
-                      </td>
-                      <td>
-                        <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
-                          <Thumb src={item.image} />
-                          <VegDot tag={item.tag} />
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontWeight: 600, color: "var(--text-1)" }}>{localName(item)}</div>
-                            {item.description && (
-                              <div style={{ fontSize: 11, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 320 }}>
-                                {item.description}
-                              </div>
-                            )}
-                            {hasSchedule(item) && (
-                              <div style={{ marginTop: 3 }}>
-                                <ScheduleBadge schedule={item.schedule} off={item.scheduledNow === false && item.isAvailable} />
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <span className="zc-tag done sq">{item.category ? localName(catByName.get(item.category) || item.category) : "—"}</span>
-                        {hasSchedule(catByName.get(item.category)) && (
-                          <div style={{ marginTop: 3 }}><ScheduleBadge schedule={catByName.get(item.category).schedule} /></div>
-                        )}
-                      </td>
-                      <td className="num">
-                        <span style={{ fontWeight: 600, color: "var(--text-1)" }}>₹{fmtNum(item.price)}</span>
-                        {item.originalPrice ? (
-                          <div style={{ fontSize: 11, color: "var(--text-3)", textDecoration: "line-through" }}>₹{fmtNum(item.originalPrice)}</div>
-                        ) : null}
-                      </td>
-                      <td className="num" style={{ color: "var(--wait-ink)", fontWeight: 600 }}>
-                        ★ {fmtNum(Number(item.rating || 0), { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
-                      </td>
-                      <td onClick={(e) => e.stopPropagation()}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                          <Switch on={item.isAvailable} onClick={() => toggleAvail(item)}
-                            label={t("Toggle {name} availability", { name: localName(item) })} />
-                          <span className={`zc-tag ${item.isAvailable ? "ready" : "done"}`}>
-                            <i />{item.isAvailable ? t("Available") : t("Hidden")}
-                          </span>
-                        </div>
-                      </td>
-                      <td style={{ textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
-                        <div style={{ display: "flex", gap: 5, justifyContent: "flex-end" }}>
-                          <button type="button" className="zc-btn ghost sm" title={t("Edit")} onClick={() => setModal(item)}
-                            style={{ padding: "5px 8px" }}>✏️</button>
-                          <button type="button" className="zc-btn danger sm" title={t("Delete")} onClick={() => handleDelete(item)}
-                            style={{ padding: "5px 8px" }}>🗑️</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* mobile cards */}
-            <div className="menu-cards" style={{ padding: "10px 12px 4px" }}>
-              {filtered.map((item) => (
-                <div key={item._id} className="menu-mcard" onClick={() => setModal(item)}>
-                  <input type="checkbox" className="menu-cb" aria-label={t("Select {name}", { name: localName(item) })} style={{ marginTop: 3 }}
-                    checked={selItems.has(item._id)} onClick={(e) => e.stopPropagation()}
-                    onChange={() => toggleItemSel(item._id)} />
-                  <Thumb src={item.image} size={48} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                      <VegDot tag={item.tag} />
-                      <span style={{ fontWeight: 600, color: "var(--text-1)", fontSize: 13 }}>{localName(item)}</span>
-                    </div>
-                    <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 3 }}>
-                      {localName(catByName.get(item.category) || item.category)} · ★ {fmtNum(Number(item.rating || 0), { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
-                    </div>
-                    {hasSchedule(item) && (
-                      <div style={{ marginTop: 4 }}>
-                        <ScheduleBadge schedule={item.schedule} off={item.scheduledNow === false && item.isAvailable} />
-                      </div>
-                    )}
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-                      <span className="tnum" style={{ fontWeight: 700, color: "var(--text-1)" }}>₹{fmtNum(item.price)}</span>
-                      {item.originalPrice ? (
-                        <span className="tnum" style={{ fontSize: 11, color: "var(--text-3)", textDecoration: "line-through" }}>₹{fmtNum(item.originalPrice)}</span>
-                      ) : null}
-                      <span className={`zc-tag ${item.isAvailable ? "ready" : "done"}`}><i />{item.isAvailable ? t("Available") : t("Hidden")}</span>
-                      <div style={{ marginLeft: "auto", display: "flex", gap: 5 }} onClick={(e) => e.stopPropagation()}>
-                        <Switch on={item.isAvailable} onClick={() => toggleAvail(item)} label={t("Toggle {name}", { name: localName(item) })} />
-                        <button type="button" className="zc-btn danger sm" style={{ padding: "4px 8px" }} onClick={() => handleDelete(item)}>🗑️</button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
       </div>
 
       {modal && (
         <ItemModal
           item={modal === "create" ? null : modal}
           categories={cats}
+          allTags={allTags}
           onClose={() => setModal(null)}
           onSaved={handleSaved}
           onCategoryCreated={handleCategoryCreated}
         />
+      )}
+
+      {catForm && (
+        <CategoryModal
+          category={catForm === "create" ? null : catForm}
+          onClose={() => setCatForm(null)}
+          onSaved={(saved, info) => handleCategoriesChanged({ saved, ...info })}
+        />
+      )}
+
+      {confirmDelCat && (
+        <div className="zc-scrim" onClick={() => !deletingCat && setConfirmDelCat(null)} style={{ zIndex: 1200 }}>
+          <div className="zc-modal" style={{ width: 380 }} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <div className="mh"><div className="t">{t("Delete category?")}</div></div>
+            <div className="mb" style={{ fontSize: 13, color: "var(--text-2)" }}>
+              {t("Delete “{name}”? This can’t be undone.", { name: localName(confirmDelCat) })}
+            </div>
+            <div className="mf">
+              <button type="button" className="zc-btn" disabled={deletingCat} onClick={() => setConfirmDelCat(null)}>{t("Cancel")}</button>
+              <button type="button" className="zc-btn danger" disabled={deletingCat} onClick={doDeleteCat}>
+                {deletingCat ? t("Deleting…") : t("Delete")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {mergeAsk && (
+        <div className="zc-scrim" onClick={() => !merging && setMergeAsk(null)} style={{ zIndex: 1200 }}>
+          <div className="zc-modal" style={{ width: 420 }} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <div className="mh"><div className="t">{t("Merge categories?")}</div></div>
+            <div className="mb" style={{ fontSize: 13, color: "var(--text-2)" }}>
+              {t("Move the {n} items in “{from}” into “{into}”, then remove “{from}”. The items keep their prices, photos and tags.", {
+                n: countOf(mergeAsk.from), from: localName(mergeAsk.from), into: localName(mergeAsk.into),
+              })}
+            </div>
+            <div className="mf">
+              <button type="button" className="zc-btn" disabled={merging} onClick={() => setMergeAsk(null)}>{t("Cancel")}</button>
+              <button type="button" className="zc-btn pri" disabled={merging} onClick={doMerge}>
+                {merging ? t("Merging…") : t("Merge into {name}", { name: localName(mergeAsk.into) })}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showCats && (
@@ -1292,7 +1287,7 @@ export default function MenuAdminPage() {
           items={items}
           onClose={() => setShowCats(false)}
           onChanged={handleCategoriesChanged}
-          onView={(name) => { setSelCat(name); setAvail("All"); setShowCats(false); }}
+          onView={(name) => { setSelCat(name); pickView("all"); setShowCats(false); }}
         />
       )}
 
@@ -1306,6 +1301,35 @@ export default function MenuAdminPage() {
           setSelItems={setSelItems}
           onApplied={load}
           onClose={() => setShowSched(false)}
+        />
+      )}
+
+      {mtForm && (
+        <MenuTimeModal
+          menuTime={mtForm === "create" ? null : mtForm}
+          cats={cats}
+          groupNameOf={(c) => groupOfCat.get(c.name)?.name}
+          onClose={() => setMtForm(null)}
+          onSaved={() => { invalidate("order:"); load(); }}
+        />
+      )}
+
+      {showBulk && (
+        <BulkEditModal
+          items={items.filter((i) => selItems.has(i._id))}
+          cats={cats}
+          allTags={allTags}
+          onClose={() => setShowBulk(false)}
+          onDone={() => { setSelItems(new Set()); invalidate("order:"); load(); }}
+        />
+      )}
+
+      {showImport && (
+        <ImportModal
+          cats={cats}
+          items={items}
+          onClose={() => setShowImport(false)}
+          onImported={() => { invalidate("order:"); load(); }}
         />
       )}
     </div>

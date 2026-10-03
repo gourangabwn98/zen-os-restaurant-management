@@ -1,5 +1,10 @@
 import express from "express";
-import { getMenu, addMenuItem, updateMenuItem, deleteMenuItem, toggleAvailability, getCategoriesWithImage, bulkUpdateSchedule } from "../controllers/menuController.js";
+import {
+  getMenu, addMenuItem, updateMenuItem, deleteMenuItem, toggleAvailability, getCategoriesWithImage, bulkUpdateSchedule,
+  setItemsAvailability, bulkEditMenuItems, getMenuTimes, createMenuTimeHandler, updateMenuTimeHandler, deleteMenuTimeHandler,
+  readMenuImportText, readMenuImportFile, commitMenuImport,
+} from "../controllers/menuController.js";
+import { importUploadSingle } from "../middleware/importUploadMiddleware.js";
 import { protect, dbFromHeader } from "../middleware/authMiddleware.js";
 import { requireAdmin, requireStaff } from "../middleware/rbac.js";
 // import { uploadMiddleware } from "../middleware/uploadMiddleware.js";
@@ -28,6 +33,16 @@ router.get("/categories", autoAuth, getCategoriesWithImage);
 // router.put("/:id",            protect, uploadMiddleware, updateMenuItem);
 // Bulk scheduled-visibility update for categories and/or items — admin only.
 router.patch("/schedule",     protect, requireAdmin, bulkUpdateSchedule);
+// Big-menu tools (Admin → Menu items). Registered before the "/:id" routes.
+router.patch("/availability", protect, requireStaff, setItemsAvailability); // On · Sold out today · Off
+router.post("/bulk",          protect, requireAdmin, bulkEditMenuItems);
+router.get("/times",          protect, requireAdmin, getMenuTimes);
+router.post("/times",         protect, requireAdmin, createMenuTimeHandler);
+router.put("/times/:id",      protect, requireAdmin, updateMenuTimeHandler);
+router.delete("/times/:id",   protect, requireAdmin, deleteMenuTimeHandler);
+router.post("/import/read",   protect, requireAdmin, readMenuImportText);
+router.post("/import/read-file", protect, requireAdmin, importUploadSingle("file"), readMenuImportFile);
+router.post("/import",        protect, requireAdmin, commitMenuImport);
 router.post("/",              protect, requireAdmin, upload.single("image"), addMenuItem);
 router.put("/:id",            protect, requireAdmin, upload.single("image"), updateMenuItem);
 router.delete("/:id",         protect, requireAdmin, deleteMenuItem);

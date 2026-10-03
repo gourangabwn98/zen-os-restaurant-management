@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import toast from "react-hot-toast";
 import { getRecipes, saveRecipe, deleteRecipe as deleteRecipeApi, getInventoryItems } from "../../../services/inventoryService.js";
 import { getMenu } from "../../../services/menuService.js";
+import { getSalesInsights } from "../../../services/adminService.js";
+import { daysAgo } from "./invKit.js";
 import {
   Modal, TableShell, Toolbar, Search, Seg, Spacer, Count, Loading, ErrorBox,
 } from "./invUI.jsx";
@@ -79,10 +81,11 @@ const lineErrors = (lines, stockById) => {
   return errs;
 };
 
-export default function RecipesTab() {
+export default function RecipesTab({ version }) {
   const [recipes, setRecipes] = useState([]);
   const [menuItems, setMenuItems] = useState([]);
   const [stockItems, setStockItems] = useState([]);
+  const [sold, setSold] = useState(null); // menuItem id → qty sold, last 30 days (Insights rule)
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -97,7 +100,11 @@ export default function RecipesTab() {
 
   const load = useCallback(async () => {
     try {
-      const [rRes, mRes, sRes] = await Promise.all([getRecipes(), getMenu({ ignoreSchedule: true }), getInventoryItems()]);
+      const [rRes, mRes, sRes, iRes] = await Promise.all([
+        getRecipes(), getMenu({ ignoreSchedule: true }), getInventoryItems(),
+        getSalesInsights({ from: daysAgo(30).toISOString(), to: new Date().toISOString() }).catch(() => null),
+      ]);
+      setSold(iRes ? new Map((iRes.data?.data?.items || []).filter((r) => r.menuItem).map((r) => [String(r.menuItem), r.qty])) : null);
       setRecipes(rRes.data?.recipes || []);
       setMenuItems(Array.isArray(mRes.data) ? mRes.data : []);
       setStockItems(sRes.data?.items || []);
@@ -105,7 +112,7 @@ export default function RecipesTab() {
     } catch { setError(true); }
     finally { setLoading(false); }
   }, []);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, version]);
 
   const recipeByMenuItem = useMemo(
     () => new Map(recipes.map((r) => [String(r.menuItem?._id || r.menuItem), r])),
@@ -205,8 +212,10 @@ export default function RecipesTab() {
         if (seg === "untracked" && recipe) return false;
         if (q && !mi.name.toLowerCase().includes(q) && !(mi.nameBn || "").toLowerCase().includes(q)) return false;
         return true;
-      });
-  }, [menuItems, recipeByMenuItem, search, seg]);
+      })
+      // Top dishes first (most sold in the last 30 days), then by name.
+      .sort((a, b) => (sold?.get(String(b.mi._id)) || 0) - (sold?.get(String(a.mi._id)) || 0) || a.mi.name.localeCompare(b.mi.name));
+  }, [menuItems, recipeByMenuItem, search, seg, sold]);
 
   const trackedCount = recipes.length;
 
@@ -227,8 +236,8 @@ export default function RecipesTab() {
       </Toolbar>
 
       <TableShell
-        headers={[N_("Menu item"), N_("Ingredients"), N_("Making cost"), N_("Price"), N_("Food cost"), N_("Status"), ""]}
-        minWidth={820}
+        headers={[N_("Menu item"), N_("Sold (30 days)"), N_("Ingredients"), N_("Price"), N_("Making cost"), N_("Food cost"), N_("Margin / plate"), N_("Status"), ""]}
+        minWidth={1000}
         isEmpty={rows.length === 0}
         emptyIcon="🍳"
         emptyText={menuItems.length === 0 ? t("No menu items found") : t("No menu items match these filters")}
@@ -238,17 +247,21 @@ export default function RecipesTab() {
           return (
             <tr key={mi._id}>
               <td style={{ fontWeight: 600, color: "var(--text-1)" }}>{localName(mi)}</td>
+              <td className="num" style={{ color: "var(--text-2)" }}>{sold == null ? "—" : fmtNum(sold.get(String(mi._id)) || 0)}</td>
               <td style={{ color: "var(--text-2)", fontSize: 11.5, maxWidth: 280 }}>
                 {recipe?.ingredients?.length
                   ? recipe.ingredients.map((i) => `${localName(i) || i.inventoryItem?.name || "?"} ${formatQty(i.quantity, i.unit)}`).join(", ")
                   : "—"}
               </td>
+              <td className="num" style={{ color: "var(--text-2)" }}>{mi.price != null ? formatMoney(mi.price) : "—"}</td>
               <td className="money" title={recipe?.costIncomplete ? t("Some ingredients have no cost price — total is incomplete") : undefined}>
                 {recipe ? <>{formatMoney(recipe.makingCost)}{recipe.costIncomplete && <span style={{ color: "var(--wait-ink)" }}> *</span>}</> : "—"}
               </td>
-              <td className="num" style={{ color: "var(--text-2)" }}>{mi.price != null ? formatMoney(mi.price) : "—"}</td>
-              <td className="num" style={{ color: pct == null ? "var(--text-3)" : pct > 45 ? "var(--wait-ink)" : "var(--ready-ink)" }}>
-                {pct == null ? "—" : `${fmtNum(pct)}%`}
+              <td className="num">
+                {pct == null ? <span style={{ color: "var(--text-3)" }}>—</span> : <span className={`zc-tag sq ${pct > 45 ? "wait" : "ready"}`}>{fmtNum(pct)}%</span>}
+              </td>
+              <td className="num" style={{ fontWeight: 700, color: recipe?.grossMargin == null ? "var(--text-3)" : recipe.grossMargin < 0 ? "var(--stop-ink)" : "var(--ready-ink)" }}>
+                {recipe?.grossMargin == null ? "—" : formatMoney(recipe.grossMargin)}
               </td>
               <td>
                 <span className={`zc-tag ${recipe ? "ready" : "done"}`}><i />{recipe ? t("Tracked") : t("Not tracked")}</span>

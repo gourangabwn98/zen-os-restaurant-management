@@ -1,6 +1,7 @@
 import express from "express";
 import {
   getLiveCoupons, checkCoupon, getAllCoupons, addCoupon, editCoupon, removeCoupon,
+  getOfferStats, checkOffer,
 } from "../controllers/couponController.js";
 import { protect, optionalProtect } from "../middleware/authMiddleware.js";
 import { requireAdmin } from "../middleware/rbac.js";
@@ -13,6 +14,9 @@ router.get("/check/:code",  optionalProtect, checkCoupon);
 
 // ── Admin management ─────────────────────────────────────────────────────────
 router.get   ("/admin",     protect, requireAdmin, getAllCoupons);
+// Admin → Offers: read-only results/reach and a cost check of a draft.
+router.get   ("/admin/stats", protect, requireAdmin, getOfferStats);
+router.post  ("/admin/check", protect, requireAdmin, checkOffer);
 router.post  ("/admin",     protect, requireAdmin, addCoupon);
 router.put   ("/admin/:id", protect, requireAdmin, editCoupon);
 router.delete("/admin/:id", protect, requireAdmin, removeCoupon);

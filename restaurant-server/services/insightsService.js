@@ -20,6 +20,7 @@
 // Items with no recipe at all have no cost (null), never ₹0.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import mongoose from "mongoose";
 import { ORDER_STATUSES, PAYMENT_STATUSES } from "../utils/orderStateMachine.js";
 import { computeRecipeCost, stockIngredientIds, roundMoney } from "../utils/recipeCost.js";
 
@@ -78,6 +79,8 @@ export const buildSalesBreakdown = ({ rows, menuById, liveCostByMenuItem, catego
       makingCost: hasCost ? roundMoney(makingCost) : null,
       grossProfit: hasCost ? roundMoney(costedRevenue - makingCost) : null,
       costEstimated: uncostedQty > 0 && liveCost != null,
+      // plates whose cost is known (grossProfit ÷ costedQty = profit per plate)
+      costedQty: hasCost ? coveredQty : 0,
       costPartial: hasCost && coveredQty < qty,
       _costedRevenue: costedRevenue,
     };
@@ -191,5 +194,150 @@ export const computeSalesBreakdown = async ({ models, from, to }) => {
       discount: roundMoney(o.discount || 0),
     },
     range: { from: from || null, to: to || null },
+  };
+};
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Insights overview (GET /admin/insights/overview) — everything the Insights
+// page shows for one period, in one round trip. Read-only, and every money
+// figure is built on the SAME revenue rule as above (revenueOrderMatch:
+// PAID, not CANCELLED) — no second definition of revenue lives here.
+//   sales      computeSalesBreakdown (items, categories, food cost, orders totals)
+//   series     money collected + bill count per local day/hour (restaurant tz)
+//   split      by orderType and by paymentMethod
+//   wastage    WastageLog.costImpact (cost recorded when the waste was logged)
+//   staffPay   StaffPay rows paid out in the period (advances + salaries —
+//              a SALARY row already holds the net after advances, so the sum
+//              is exactly the cash that went out, never double counted)
+//   customers  new vs returning, by user id or guest phone
+//   reviews, offers (coupon use), cancelled bills (excluded from revenue)
+// Running costs (rent, gas, power…) are not recorded anywhere in the app, so
+// nothing here estimates them.
+// ═════════════════════════════════════════════════════════════════════════════
+
+export const customerKeyExpr = {
+  $cond: [
+    { $ifNull: ["$user", false] },
+    { $concat: ["u:", { $toString: "$user" }] },
+    { $cond: [{ $gt: [{ $strLenCP: { $ifNull: ["$guestPhone", ""] } }, 0] }, { $concat: ["p:", "$guestPhone"] }, null] },
+  ],
+};
+
+/** Pure: per-customer rows in the period + keys seen before it → counts. */
+export const summariseCustomers = (rows = [], priorKeys = new Set()) => {
+  const out = { bills: 0, walkInBills: 0, identified: 0, newCount: 0, returning: 0, repeatInPeriod: 0, identifiedSpend: 0 };
+  for (const r of rows) {
+    out.bills += r.bills;
+    if (!r._id) { out.walkInBills += r.bills; continue; }
+    out.identified += 1;
+    out.identifiedSpend += r.spent || 0;
+    if (priorKeys.has(r._id)) out.returning += 1; else out.newCount += 1;
+    if (r.bills >= 2) out.repeatInPeriod += 1;
+  }
+  out.identifiedSpend = roundMoney(out.identifiedSpend);
+  return out;
+};
+
+const sumBy = async (Model, match, field) => {
+  if (!Model) return { amount: 0, count: 0 };
+  const [r] = await Model.aggregate([{ $match: match }, { $group: { _id: null, amount: { $sum: `$${field}` }, count: { $sum: 1 } } }]);
+  return { amount: roundMoney(r?.amount || 0), count: r?.count || 0 };
+};
+
+const range = (field, from, to) => ({ [field]: { $gte: from, $lte: to } });
+
+/** Money figures for one period (used for the selected AND the previous one). */
+const periodMoney = async ({ models, from, to, tz }) => {
+  const { Order, WastageLog, StaffPay } = models;
+  const match = revenueOrderMatch({ from, to });
+  const [sales, series, wastage, payRows] = await Promise.all([
+    computeSalesBreakdown({ models, from, to }),
+    Order.aggregate([
+      { $match: match },
+      { $group: {
+        _id: { d: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt", timezone: tz } }, h: { $hour: { date: "$createdAt", timezone: tz } } },
+        revenue: { $sum: "$total" }, orders: { $sum: 1 },
+      } },
+    ]),
+    sumBy(WastageLog, range("wastageDate", from, to), "costImpact"),
+    StaffPay ? StaffPay.aggregate([{ $match: range("createdAt", from, to) }, { $group: { _id: "$type", amount: { $sum: "$amount" }, count: { $sum: 1 } } }]) : [],
+  ]);
+  const pay = Object.fromEntries(payRows.map((r) => [r._id, { amount: roundMoney(r.amount), count: r.count }]));
+  return {
+    sales,
+    series: series.map((r) => ({ d: r._id.d, h: r._id.h, revenue: roundMoney(r.revenue), orders: r.orders }))
+      .sort((a, b) => a.d.localeCompare(b.d) || a.h - b.h),
+    wastage,
+    staffPay: {
+      advances: pay.ADVANCE || { amount: 0, count: 0 },
+      salaries: pay.SALARY || { amount: 0, count: 0 },
+      amount: roundMoney((pay.ADVANCE?.amount || 0) + (pay.SALARY?.amount || 0)),
+    },
+  };
+};
+
+export const computeInsightsOverview = async ({ models, from, to, prevFrom, prevTo, tz, now = new Date() }) => {
+  const { Order, StaffReview, Coupon } = models;
+  const match = revenueOrderMatch({ from, to });
+
+  const [current, previous, split, customerRows, cancelled, reviews, couponUse, coupons] = await Promise.all([
+    periodMoney({ models, from, to, tz }),
+    prevFrom && prevTo ? periodMoney({ models, from: prevFrom, to: prevTo, tz }) : null,
+    Order.aggregate([
+      { $match: match },
+      { $facet: {
+        type:   [{ $group: { _id: "$orderType",     orders: { $sum: 1 }, revenue: { $sum: "$total" } } }],
+        method: [{ $group: { _id: "$paymentMethod", orders: { $sum: 1 }, revenue: { $sum: "$total" } } }],
+      } },
+    ]),
+    Order.aggregate([
+      { $match: match },
+      { $group: { _id: customerKeyExpr, bills: { $sum: 1 }, spent: { $sum: "$total" } } },
+    ]),
+    sumBy(Order, { status: CANCELLED, ...range("createdAt", from, to) }, "total"),
+    StaffReview ? StaffReview.aggregate([
+      { $match: range("createdAt", from, to) },
+      { $group: { _id: null, count: { $sum: 1 }, total: { $sum: "$rating" }, complaints: { $sum: { $cond: ["$complaint", 1, 0] } } } },
+    ]) : [],
+    Order.aggregate([
+      { $match: { ...match, coupon: { $ne: null } } },
+      { $group: { _id: "$coupon.code", bills: { $sum: 1 }, discount: { $sum: "$discount" }, revenue: { $sum: "$total" } } },
+      { $sort: { bills: -1 } },
+    ]),
+    Coupon ? Coupon.find({ isActive: true, endsAt: { $gte: now } }, { code: 1, title: 1, startsAt: 1, endsAt: 1 }).sort({ startsAt: 1 }).limit(5).lean() : [],
+  ]);
+
+  // Was each identified customer here (a paid bill) before this period?
+  const keys = customerRows.map((r) => r._id).filter(Boolean);
+  const userIds = keys.filter((k) => k.startsWith("u:")).map((k) => k.slice(2));
+  const phones = keys.filter((k) => k.startsWith("p:")).map((k) => k.slice(2));
+  const priorRows = keys.length
+    ? await Order.aggregate([
+      { $match: { ...revenueOrderMatch({ to: new Date(from.getTime() - 1) }), $or: [
+        ...(userIds.length ? [{ user: { $in: userIds.map((id) => new mongoose.Types.ObjectId(id)) } }] : []),
+        ...(phones.length ? [{ guestPhone: { $in: phones } }] : []),
+      ] } },
+      { $group: { _id: customerKeyExpr } },
+    ])
+    : [];
+  const priorKeys = new Set(priorRows.map((r) => r._id).filter(Boolean));
+
+  const rv = reviews[0];
+  const s = split[0] || { type: [], method: [] };
+  const rows = (list) => list.map((r) => ({ key: r._id, orders: r.orders, revenue: roundMoney(r.revenue) })).sort((a, b) => b.revenue - a.revenue);
+  return {
+    timezone: tz,
+    range: { from, to, prevFrom: prevFrom || null, prevTo: prevTo || null },
+    current,
+    previous,
+    split: { type: rows(s.type), method: rows(s.method) },
+    customers: summariseCustomers(customerRows, priorKeys),
+    cancelled,
+    reviews: rv ? { count: rv.count, avg: Math.round((rv.total / rv.count) * 10) / 10, complaints: rv.complaints } : { count: 0, avg: null, complaints: 0 },
+    offers: {
+      used: couponUse.map((c) => ({ code: c._id, bills: c.bills, discount: roundMoney(c.discount), revenue: roundMoney(c.revenue) })),
+      live: coupons.filter((c) => new Date(c.startsAt) <= now).map((c) => ({ code: c.code, title: c.title, endsAt: c.endsAt })),
+      upcoming: coupons.filter((c) => new Date(c.startsAt) > now).map((c) => ({ code: c.code, title: c.title, startsAt: c.startsAt })),
+    },
   };
 };

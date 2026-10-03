@@ -8,7 +8,7 @@
 // router.delete("/:id",protect,      deleteCategory);
 // export default router;
 import express from "express";
-import { getCategories, createCategory, updateCategory, deleteCategory } from "../controllers/categoryController.js";
+import { getCategories, createCategory, updateCategory, deleteCategory, reorderCategories, mergeCategory } from "../controllers/categoryController.js";
 import { protect, dbFromHeader } from "../middleware/authMiddleware.js";
 import { requireAdmin } from "../middleware/rbac.js";
 import { upload } from "../middleware/uploadMiddleware.js"; // ← ADD
@@ -22,6 +22,9 @@ const autoAuth = (req, res, next) =>
 
 router.get("/", autoAuth, getCategories);
 router.post("/",      protect, requireAdmin, upload.single("image"), createCategory);
+// Before "/:id" so "order" is never read as an id.
+router.put("/order",  protect, requireAdmin, reorderCategories);
+router.post("/:id/merge", protect, requireAdmin, mergeCategory);
 router.put("/:id",    protect, requireAdmin, upload.single("image"), updateCategory);
 router.delete("/:id", protect, requireAdmin, deleteCategory);
 export default router;

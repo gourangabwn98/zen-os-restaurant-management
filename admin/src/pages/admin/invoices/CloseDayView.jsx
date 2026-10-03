@@ -6,8 +6,8 @@
 import { useEffect, useState } from "react";
 import { Loader } from "../shared/index.js";
 import ErrorState from "../shared/ErrorState.jsx";
-import { t, fmtNum, fmtDate, fmtTime } from "../../../i18n/core.js";
-import { billState, custName, money, totalsOf, waLink, ymd } from "./model.js";
+import { t, N_, fmtNum, fmtDate, fmtTime } from "../../../i18n/core.js";
+import { billState, custName, money, totalsOf, waLink, ymd, wasPaidVoid } from "./model.js";
 
 const FACES = [500, 200, 100, 50, 20, 10];
 const storeKey = () => `inv-cashcount-${ymd(new Date())}`;
@@ -15,7 +15,9 @@ const readCount = () => {
   try { return JSON.parse(localStorage.getItem(storeKey())) || null; } catch { return null; }
 };
 
-export default function CloseDayView({ orders, error, onRetry, restaurantName, ownerPhone, onOpen }) {
+const STEP_LABEL = { CONFIRMED: N_("Placed"), PENDING_CONFIRMATION: N_("Awaiting confirmation"), PREPARING: N_("Preparing"), READY: N_("Ready"), DELIVERED: N_("Served") };
+
+export default function CloseDayView({ orders, notBilled = [], error, onRetry, restaurantName, ownerPhone, onOpen }) {
   const [count, setCount] = useState(() => readCount() || { opening: 0, coins: 0, ...Object.fromEntries(FACES.map((f) => [f, 0])) });
   useEffect(() => { try { localStorage.setItem(storeKey(), JSON.stringify(count)); } catch { /* storage disabled */ } }, [count]);
 
@@ -28,10 +30,12 @@ export default function CloseDayView({ orders, error, onRetry, restaurantName, o
   const diff = counted - expected;
   const step = (face, d) => setCount((c) => ({ ...c, [face]: Math.max(0, (c[face] || 0) + d) }));
 
+  const notBilledAmt = notBilled.reduce((s, b) => s + (Number(b.total) || 0), 0);
   const open = [
+    ...notBilled.map((b) => ({ b, c: "var(--stop)", label: t("Not billed yet"), note: t(STEP_LABEL[b.status] || b.status) })),
     ...orders.filter((b) => billState(b) === "unpaid").map((b) => ({ b, c: "var(--wait)", label: t("Still unpaid") })),
     ...orders.filter((b) => billState(b) === "checkUpi").map((b) => ({ b, c: "var(--violet)", label: t("UPI to check") })),
-    ...orders.filter((b) => billState(b) === "cancelled").map((b) => ({ b, c: "var(--done)", label: t("Cancelled"), note: b.cancelReason })),
+    ...orders.filter((b) => billState(b) === "cancelled").map((b) => ({ b, c: "var(--done)", label: wasPaidVoid(b) ? t("Cancelled · was paid") : t("Cancelled"), note: [wasPaidVoid(b) ? t("hand the money back if not done") : "", b.cancelReason].filter(Boolean).join(" · ") })),
     ...orders.filter((b) => billState(b) !== "cancelled" && b.discount > 0).map((b) => ({ b, c: "var(--live)", label: t("Discount {amount}", { amount: money(b.discount) }), note: b.coupon?.code })),
   ];
 
@@ -42,6 +46,7 @@ export default function CloseDayView({ orders, error, onRetry, restaurantName, o
     `${t("Cash received")}: ${money(o.cash)} · ${t("Online received")}: ${money(o.online)}`,
     `${t("To collect")}: ${money(o.toCollect)} · ${t("UPI to check")}: ${money(o.checkUpi)}`,
     `${t("Discounts")}: ${money(o.discount)} · ${t("Cancelled")}: ${money(o.cancelled)}`,
+    notBilled.length ? `${t("Not billed yet")}: ${fmtNum(notBilled.length)} (${money(notBilledAmt)})` : "",
     counted ? `${t("Cash counted")}: ${money(counted)} (${diff === 0 ? t("matches") : diff < 0 ? t("short by {amount}", { amount: money(-diff) }) : t("over by {amount}", { amount: money(diff) })})` : "",
   ].filter(Boolean).join("\n");
 
@@ -57,9 +62,10 @@ export default function CloseDayView({ orders, error, onRetry, restaurantName, o
         <div className="inv-kv"><span>{t("UPI to check")}</span><b style={o.checkUpi ? { color: "var(--accent-ink)" } : undefined}>{money(o.checkUpi)}</b></div>
         <div className="inv-kv"><span>{t("Discounts")}</span><b>{money(o.discount)}</b></div>
         <div className="inv-kv"><span>{t("Cancelled")}</span><b>{money(o.cancelled)}</b></div>
+        <div className="inv-kv"><span>{t("Not billed yet")}</span><b style={notBilled.length ? { color: "var(--stop-ink)" } : undefined}>{notBilled.length ? `${fmtNum(notBilled.length)} · ${money(notBilledAmt)}` : "—"}</b></div>
 
         <div className="inv-step" style={{ marginTop: 18 }}><span className="sn">3</span>{t("Anything still open")}</div>
-        {open.length === 0 ? <div className="inv-hint">✓ {t("Nothing open — every bill today is settled.")}</div> : open.map(({ b, c, label, note }, i) => (
+        {open.length === 0 ? <div className="inv-hint">✓ {t("Nothing open — every order today is billed and settled.")}</div> : open.map(({ b, c, label, note }, i) => (
           <div key={`${b._id}-${i}`} className="inv-ocheck">
             <span className="inv-dot" style={{ background: c }} />
             <div>{label} · {b.orderId} · {money(b.total)}<small>{custName(b) || t("Walk-in guest")} · {fmtTime(b.createdAt)}{note ? ` · ${note}` : ""}</small></div>

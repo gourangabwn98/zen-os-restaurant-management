@@ -18,7 +18,7 @@ export function StateBadge({ o }) {
   const st = billState(o);
   if (st === "paid") return <Badge label={o.paymentMethod === "Online" ? N_("Paid · Online") : N_("Paid · Cash")} kind="ready" />;
   if (st === "checkUpi") return <Badge label={N_("Check UPI")} kind="vio" dot={false} />;
-  if (st === "cancelled") return <Badge label={N_("Cancelled")} kind="done" />;
+  if (st === "cancelled") return <Badge label={o.paymentStatus === "PAID" ? N_("Cancelled · was paid") : N_("Cancelled")} kind="done" />;
   return <Badge label={N_("Unpaid")} kind="wait" />;
 }
 

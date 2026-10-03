@@ -7,8 +7,22 @@ import { t, N_, fmtNum, fmtDate, fmtTime, localName } from "../../../i18n/core.j
 
 /** Same "billable order" rule the page has always used: completed OR paid. */
 export const isInvoice = (o) => o.status === "COMPLETED" || o.paymentStatus === "PAID";
-/** Cancelled orders that were never paid — shown, but never counted as billed. */
-export const isVoid = (o) => o.status === "CANCELLED" && o.paymentStatus !== "PAID";
+/**
+ * Cancelled orders — shown, but never counted as billed or received. This
+ * includes a cancelled order that had been marked PAID: the system has no
+ * separate refund state (a refund IS a cancellation), and the backend's
+ * revenue rule (insightsService.revenueOrderMatch: PAID and not CANCELLED)
+ * leaves it out too, so Invoices and Insights agree.
+ */
+export const isVoid = (o) => o.status === "CANCELLED";
+/** A cancelled order that had been marked paid (money to hand back, if not already). */
+export const wasPaidVoid = (o) => isVoid(o) && o.paymentStatus === "PAID";
+/**
+ * Not billed yet: an unpaid order still in the kitchen or on the table.
+ * Pay-first orders still AWAITING_PAYMENT are left out — they aren't on the
+ * floor yet and are cancelled automatically if never paid.
+ */
+export const isNotBilledYet = (o) => !isInvoice(o) && !isVoid(o) && o.status !== "AWAITING_PAYMENT";
 
 /**
  * Bill state from real fields:
@@ -76,6 +90,7 @@ export const periodRange = (key) => {
   if (key === "yesterday") { start.setDate(start.getDate() - 1); end.setDate(end.getDate() - 1); }
   if (key === "week") start.setDate(start.getDate() - ((start.getDay() + 6) % 7)); // Monday
   if (key === "month") start.setDate(1);
+  if (key === "lastMonth") { start.setDate(1); start.setMonth(start.getMonth() - 1); end.setDate(0); } // whole previous month
   return { from: start, to: end };
 };
 
@@ -121,6 +136,27 @@ export const toCsv = (rows) => {
     ].map(esc).join(","));
   }
   return out.join("\r\n");
+};
+
+/** Close-the-day CSV: the day's totals on top, then every bill of the day. */
+export const closeDayCsv = (bills, notBilled, date = new Date()) => {
+  const o = totalsOf(bills);
+  const notBilledAmt = notBilled.reduce((s, b) => s + (Number(b.total) || 0), 0);
+  const esc = (v) => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const summary = [
+    ["Day close", ymd(date)],
+    ["Invoices", o.count],
+    ["Billed", o.billed],
+    ["Cash received", o.cash],
+    ["Online received", o.online],
+    ["To collect", o.toCollect],
+    ["UPI to check", o.checkUpi],
+    ["Discounts", o.discount],
+    ["Cancelled", o.cancelled],
+    ["Orders not billed yet", `${notBilled.length} (${notBilledAmt})`],
+    [],
+  ].map((r) => r.map(esc).join(","));
+  return [...summary, toCsv([...bills, ...notBilled])].join("\r\n");
 };
 
 export const downloadText = (filename, text, type = "text/csv;charset=utf-8") => {

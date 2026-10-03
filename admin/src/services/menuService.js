@@ -44,3 +44,29 @@ export const createCategory = (data) => api.post("/categories", data);
 export const updateCategory = (id, data) => api.put(`/categories/${id}`, data);
 // 409 while items still use the category.
 export const deleteCategory = (id) => api.delete(`/categories/${id}`);
+
+// ── Admin → Menu items: big-menu tools ───────────────────────────────────────
+// Sort order: ids = every category id, in the new order.
+export const reorderCategories = (ids) => api.put("/categories/order", { ids });
+// Moves every item of `id` into `intoId`, then deletes `id` (one transaction).
+export const mergeCategory = (id, intoId) => api.post(`/categories/${id}/merge`, { into: intoId });
+
+// state: "on" | "soldout" (back on when the business day ends) | "off"
+export const setMenuAvailability = (ids, state) => api.patch("/menu/availability", { ids, state });
+// { ids, category?, addTags?, removeTags?, pricePercent? } — prices are computed server-side.
+export const bulkEditMenu = (body) => api.post("/menu/bulk", body);
+
+// Menu times: { name, schedule: { startTime, endTime, days, startDate, endDate }, color, categoryIds? }
+export const getMenuTimes = () => api.get("/menu/times");
+export const createMenuTime = (body) => api.post("/menu/times", body);
+export const updateMenuTime = (id, body) => api.put(`/menu/times/${id}`, body);
+export const deleteMenuTime = (id) => api.delete(`/menu/times/${id}`);
+
+// Import: read (never saves) → admin reviews → commit.
+export const readMenuImportText = (text, format = "text") => api.post("/menu/import/read", { text, format });
+export const readMenuImportFile = (file) => {
+  const fd = new FormData();
+  fd.append("file", file);
+  return api.post("/menu/import/read-file", fd, { timeout: 60_000 });
+};
+export const commitMenuImport = (rows) => api.post("/menu/import", { rows });

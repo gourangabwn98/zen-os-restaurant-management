@@ -5,7 +5,10 @@
 //   All invoices   period + status filters, Billed = Received + To collect +
 //                  Check UPI, rows grouped by day, bill drawer, Collect
 //   Customer dues  every unpaid bill across all dates, bulk "mark paid"
-//   Close the day  today's totals, cash count, open items, WhatsApp summary
+//   Close the day  (header button) today's totals, cash count, open items
+//                  incl. orders not billed yet, WhatsApp summary
+// Header "Your accountant" menu (invoices/AccountantMenu.jsx) makes the CA /
+// bank reports (Excel + PDF) and the owner summary.
 // Amounts are the order's stored subtotal / discount / serviceCharge / tax /
 // total — never re-priced here. Payments go through the existing
 // PATCH /admin/orders/:id/payment; printing through the existing print service.
@@ -20,16 +23,16 @@ import CollectModal from "./invoices/CollectModal.jsx";
 import DuesView from "./invoices/DuesView.jsx";
 import CloseDayView from "./invoices/CloseDayView.jsx";
 import {
-  isInvoice, isVoid, billState, custName, custPhone, money, totalsOf, groupByDay, daysOld,
-  periodRange, ymd, billText, waLink, toCsv, downloadText, tableLabel,
+  isInvoice, isVoid, isNotBilledYet, billState, custName, custPhone, money, totalsOf, groupByDay, daysOld,
+  periodRange, ymd, billText, waLink, tableLabel,
 } from "./invoices/model.js";
+import AccountantMenu from "./invoices/AccountantMenu.jsx";
 import { t, tn, N_, fmtNum, fmtDate, fmtTime } from "../../i18n/core.js";
 import "./invoices/invoices.css";
 
 const TABS = [
   { key: "bills", label: N_("All invoices") },
   { key: "dues", label: N_("Customer dues") },
-  { key: "close", label: N_("Close the day") },
 ];
 const PERIODS = [
   { key: "today", label: N_("Today") },
@@ -104,7 +107,8 @@ export default function InvoicesPage() {
   }, []);
 
   useEffect(() => { setOrders(null); setShown(PAGE_ROWS); loadPeriod(); }, [loadPeriod]);
-  useEffect(() => { if (tab === "dues" && dues === null) loadDues(); if (tab === "close" && today === null) loadToday(); }, [tab, dues, today, loadDues, loadToday]);
+  useEffect(() => { if (tab === "dues" && dues === null) loadDues(); }, [tab, dues, loadDues]);
+  const openCloseDay = () => { setToday(null); loadToday(); setTab("close"); };
   useEffect(() => {
     getRestaurantProfile().then((r) => setProfile(r.data?.data || r.data || null)).catch(() => {});
     // The tab badge needs the dues count even before the tab is opened.
@@ -167,10 +171,17 @@ export default function InvoicesPage() {
     ? `${fmtDate(range.from, { day: "2-digit", month: "2-digit", year: "numeric" })} – ${fmtDate(range.to, { day: "2-digit", month: "2-digit", year: "numeric" })}`
     : `${fmtDate(range.from, { day: "numeric", month: "short" })}${ymd(range.from) !== ymd(range.to) ? ` – ${fmtDate(range.to, { day: "numeric", month: "short" })}` : ""}`;
 
-  const exportCsv = () => {
-    if (!rows.length) { toast.error(t("Nothing to export in this view")); return; }
-    downloadText(`invoices-${ymd(range.from)}-to-${ymd(range.to)}.csv`, toCsv(rows));
-  };
+  // Today's orders for Close the day: billed/cancelled bills + not billed yet.
+  const todayBills = useMemo(() => (today ? today.filter((o) => isInvoice(o) || isVoid(o)) : null), [today]);
+  const todayNotBilled = useMemo(() => (today ? today.filter(isNotBilledYet) : []), [today]);
+  const openDues = useMemo(() => (dues || []).filter((o) => ["unpaid", "checkUpi"].includes(billState(o))), [dues]);
+  const duesTotal = openDues.reduce((s, o) => s + (Number(o.total) || 0), 0);
+
+  const headerSub = tab === "bills"
+    ? `${tn(totals.count, "{n} invoice", "{n} invoices")} · ${periodText}`
+    : tab === "dues"
+      ? (dues === null ? t("Loading…") : `${tn(openDues.length, "{n} unpaid bill", "{n} unpaid bills")} · ${money(duesTotal)} ${t("to collect")}`)
+      : `${t("Close the day")} · ${fmtDate(new Date(), { weekday: "long", day: "numeric", month: "short" })}`;
 
   const rowActions = (o) => {
     const st = billState(o);
@@ -189,8 +200,15 @@ export default function InvoicesPage() {
     <div className="inv">
       <PageHeader
         title={t("Invoices")}
-        sub={`${tn(totals.count, "{n} invoice", "{n} invoices")} · ${periodText}`}
-        right={tab === "bills" && <button type="button" className="zc-btn" onClick={exportCsv}>⬇ {t("Export CSV")}</button>}
+        sub={headerSub}
+        right={
+          <div className="inv-hdr-acts">
+            <AccountantMenu orders={orders} range={range} periods={PERIODS} period={period} setPeriod={setPeriod} dues={dues} profile={profile} />
+            <button type="button" className={`zc-btn${tab === "close" ? "" : " pri"}`} aria-pressed={tab === "close"} onClick={openCloseDay}>
+              {tab === "close" ? `↻ ${t("Refresh day")}` : `✓ ${t("Close the day")}`}
+            </button>
+          </div>
+        }
       />
 
       <div className="zc-subnav" role="tablist">
@@ -375,7 +393,8 @@ export default function InvoicesPage() {
 
       {tab === "close" && (
         <CloseDayView
-          orders={today ? today.filter((o) => isInvoice(o) || isVoid(o)) : null}
+          orders={todayBills}
+          notBilled={todayNotBilled}
           error={todayError} onRetry={loadToday}
           restaurantName={restaurantName} ownerPhone={profile?.phone}
           onOpen={(o) => setOpenId(o._id)}

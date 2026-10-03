@@ -188,6 +188,28 @@ through `couponOfferService.js`, which reuses the Offers broadcast (scheduled
 for `startsAt`); keep that out of `couponService.js`, which orderService
 imports and must not load Firebase Admin.
 
+## Menu items page (menu times, sold out, import)
+
+Customer visibility stays one rule (`services/menuScheduleService.js`):
+`isAvailable` AND category schedule AND item schedule. Schedules may carry
+`days` (0 = Sun) and `startDate/endDate`; an overnight window belongs to the
+day it starts. Always pass `ctx.clock` (not bare minutes) to `isScheduleActive`.
+- **Menu times** (`MenuTime`, `services/menuTimeService.js`) are named windows.
+  Assigning a category COPIES the window onto `category.schedule`; editing a menu
+  time re-copies it in the same transaction. Enforcement never reads `MenuTime`.
+- **Sold out today** = `isAvailable:false` + `soldOutUntil` (next
+  `RestaurantProfile.businessDayEndsAt`). Expired ones are switched back on by
+  `restoreSoldOutItems`, run at the start of `getScheduleContext` — i.e. before
+  every menu read and order pricing. No timer; don't move it out of there. An
+  explicit On/Off (`PUT /menu/:id` with `isAvailable`, `/toggle`) clears it, so
+  the item form only sends `isAvailable` when it actually changed.
+- **Import** (`utils/menuImportParser.js`) only produces candidate rows; nothing
+  is written until the admin-reviewed `POST /menu/import` (`commitImport`).
+  Photos/PDFs reuse the purchase-import OCR (`utils/purchaseImportExtract.js`).
+- **Bulk edit** computes prices server-side (`pricePercent`); never accept a
+  price from the client for many items.
+- Diner `tags` are display/filter only; `tag` (Veg / Non Veg) stays authoritative.
+
 ## OTP / SMS provider selection
 
 `restaurant-server/utils/sendOTP.js` **auto-detects** the provider from

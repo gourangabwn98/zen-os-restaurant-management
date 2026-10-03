@@ -1,153 +1,126 @@
+// src/pages/admin/inventory/WastageTab.jsx — Inventory → Wastage (losses).
+// GET /admin/inventory/wastage?from= (server-side period filter). Cost impact
+// is the stored WastageLog.costImpact (qty × cost price when it was logged).
 import { useEffect, useState, useCallback, useMemo } from "react";
-import toast from "react-hot-toast";
-import { getWastage, createWastage, getInventoryItems } from "../../../services/inventoryService.js";
-import {
-  Modal, TableShell, Toolbar, Search, Seg, Spacer, Loading, ErrorBox, StatChip, StatRow,
-} from "./invUI.jsx";
-import { inp, label, money, num, fmtDateTime } from "./invKit.js";
+import { getWastage } from "../../../services/inventoryService.js";
+import { Loading, ErrorBox } from "./invUI.jsx";
+import { money, fmtDateTime, daysAgo, WASTAGE_REASONS } from "./invKit.js";
+import EmptyState from "../shared/EmptyState.jsx";
 import { t, tn, N_, fmtNum, localName } from "../../../i18n/core.js";
-import { unitLabel } from "../../../utils/units.js";
+import { formatQty } from "../../../utils/units.js";
 
-// WASTAGE_REASONS — restaurant-server/utils/inventoryConstants.js
-// Values are the stored enum; t() shows them translated.
-const REASONS = [N_("Spoilage"), N_("Expired"), N_("Damaged"), N_("Accident"), N_("Other")];
+const PERIODS = [["7", N_("Last 7 days")], ["30", N_("Last 30 days")], ["all", N_("All time")]];
 const REASON_KIND = { Spoilage: "stop", Expired: "stop", Damaged: "wait", Accident: "wait", Other: "done" };
 
-export default function WastageTab() {
-  const [logs, setLogs] = useState([]);
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+export default function WastageTab({ version, open }) {
+  const [logs, setLogs] = useState(null);
   const [error, setError] = useState(false);
-
+  const [period, setPeriod] = useState("30");
   const [search, setSearch] = useState("");
   const [reason, setReason] = useState("All");
 
-  const [showForm, setShowForm] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ inventoryItem: "", quantity: "", reason: "Spoilage", notes: "" });
-
-  const load = useCallback(async () => {
-    try {
-      const [wRes, iRes] = await Promise.all([getWastage(), getInventoryItems()]);
-      setLogs(wRes.data?.logs || []);
-      setItems(iRes.data?.items || []);
-      setError(false);
-    } catch { setError(true); }
-    finally { setLoading(false); }
-  }, []);
-  useEffect(() => { load(); }, [load]);
-
-  const selectedItem = items.find((i) => i._id === form.inventoryItem);
-
-  const handleSave = async () => {
-    if (!form.inventoryItem || !(Number(form.quantity) > 0)) return toast.error(t("Select an item and a quantity > 0"));
-    setSaving(true);
-    try {
-      await createWastage({ ...form, quantity: Number(form.quantity) });
-      toast.success(t("Wastage recorded"));
-      setShowForm(false);
-      setForm({ inventoryItem: "", quantity: "", reason: "Spoilage", notes: "" });
-      load();
-    } catch (err) { toast.error(err.response?.data?.message || t("Failed to record wastage")); }
-    finally { setSaving(false); }
-  };
+  const load = useCallback(() => {
+    getWastage(period === "all" ? {} : { from: daysAgo(Number(period)).toISOString() })
+      .then((r) => { setLogs(r.data?.logs || []); setError(false); }).catch(() => setError(true));
+  }, [period]);
+  useEffect(() => { load(); }, [load, version]);
 
   const stats = useMemo(() => {
-    const totalValue = logs.reduce((s, l) => s + Number(l.costImpact || 0), 0);
+    const list = logs || [];
     const byReason = {};
-    logs.forEach((l) => { byReason[l.reason] = (byReason[l.reason] || 0) + 1; });
+    list.forEach((l) => { byReason[l.reason] = (byReason[l.reason] || 0) + Number(l.costImpact || 0); });
     const top = Object.entries(byReason).sort((a, b) => b[1] - a[1])[0];
-    return { totalValue, count: logs.length, topReason: top ? top[0] : "—" };
+    return {
+      total: list.reduce((s, l) => s + Number(l.costImpact || 0), 0),
+      items: new Set(list.map((l) => l.inventoryItem?._id)).size,
+      byReason, top,
+    };
   }, [logs]);
 
-  const filtered = useMemo(() => {
+  const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return logs.filter((l) => {
-      if (reason !== "All" && l.reason !== reason) return false;
-      if (q && ![l.inventoryItem?.name, l.inventoryItem?.nameBn].some((v) => (v || "").toLowerCase().includes(q))) return false;
-      return true;
-    });
+    return (logs || []).filter((l) => (reason === "All" || l.reason === reason)
+      && (!q || [l.inventoryItem?.name, l.inventoryItem?.nameBn, l.notes].some((v) => (v || "").toLowerCase().includes(q))));
   }, [logs, search, reason]);
 
-  if (loading) return <Loading />;
   if (error) return <ErrorBox onRetry={load} what={N_("wastage logs")} />;
+  if (!logs) return <Loading />;
 
   return (
-    <div>
-      {logs.length > 0 && (
-        <StatRow>
-          <StatChip tone="stop" label={t("Written off")} value={money(stats.totalValue)} sub={tn(stats.count, "{n} entry", "{n} entries")} />
-          <StatChip tone="muted" label={t("Entries")} value={fmtNum(stats.count)} sub={t("across {n} item(s)", { n: new Set(logs.map((l) => l.inventoryItem?._id)).size })} />
-          <StatChip tone="warn" label={t("Top reason")} value={t(stats.topReason)} sub={t("most-logged this list")} />
-        </StatRow>
-      )}
+    <>
+      <div className="zc-card ivt-strip" style={{ "--n": 4 }}>
+        <div><div className="k">{t("Written off")}</div><div className="v" style={stats.total ? { color: "var(--stop-ink)" } : undefined}>{money(stats.total)}</div><div className="d">{t(PERIODS.find((x) => x[0] === period)[1])}</div></div>
+        <div><div className="k">{t("Entries")}</div><div className="v">{fmtNum(logs.length)}</div><div className="d">{t("across {n} item(s)", { n: stats.items })}</div></div>
+        <div><div className="k">{t("Top reason")}</div><div className="v">{stats.top ? t(stats.top[0]) : "—"}</div><div className="d">{stats.top ? money(stats.top[1]) : t("nothing logged")}</div></div>
+        <div><div className="k">{t("Average entry")}</div><div className="v">{logs.length ? money(stats.total / logs.length) : "—"}</div><div className="d">{t("cost impact")}</div></div>
+      </div>
 
-      <Toolbar>
-        <Search value={search} onChange={setSearch} placeholder={t("Search wastage log")} />
-        <Seg options={["All", ...REASONS]} value={reason} onChange={setReason} ariaLabel={t("Filter by reason")} />
-        <Spacer />
-        <button type="button" className="zc-btn pri" onClick={() => setShowForm(true)}>＋ {t("Log wastage")}</button>
-      </Toolbar>
+      <div className="ivt-fbar">
+        <input className="zc-input search" type="search" value={search} onChange={(e) => setSearch(e.target.value)}
+          placeholder={t("Search wastage log")} aria-label={t("Search wastage log")} />
+        <div className="zc-seg" role="group" aria-label={t("Period")}>
+          {PERIODS.map(([k, l]) => <button key={k} type="button" className={period === k ? "on" : ""} onClick={() => setPeriod(k)}>{t(l)}</button>)}
+        </div>
+        <span className="ivt-sp" />
+        <button type="button" className="zc-btn pri" onClick={() => open("wastage")}>＋ {t("Log wastage")}</button>
+      </div>
+      <div className="ivt-fbar">
+        <div className="zc-seg" role="tablist" aria-label={t("Filter by reason")}>
+          {["All", ...WASTAGE_REASONS].map((r) => (
+            <button key={r} type="button" role="tab" aria-selected={reason === r} className={reason === r ? "on" : ""} onClick={() => setReason(r)}>
+              {t(r)}{r !== "All" && stats.byReason[r] ? <span className="ivt-seg-n">{money(stats.byReason[r])}</span> : null}
+            </button>
+          ))}
+        </div>
+      </div>
 
-      <TableShell
-        headers={[N_("Date"), N_("Item"), N_("Qty"), N_("Reason"), N_("Cost impact"), N_("Notes"), N_("Recorded by")]}
-        minWidth={760}
-        isEmpty={filtered.length === 0}
-        emptyIcon="🗑️"
-        emptyText={logs.length === 0 ? t("No wastage recorded") : t("No entries match these filters")}
-      >
-        {filtered.map((l) => (
-          <tr key={l._id}>
-            <td className="num" style={{ color: "var(--text-2)", fontSize: 11.5 }}>{fmtDateTime(l.wastageDate || l.createdAt)}</td>
-            <td style={{ color: "var(--text-1)", fontWeight: 600 }}>{localName(l.inventoryItem) || "—"}</td>
-            <td className="num" style={{ color: "var(--text-2)" }}>{num(l.quantity)} {unitLabel(l.inventoryItem?.unit)}</td>
-            <td><span className={`zc-tag ${REASON_KIND[l.reason] || "done"}`}><i />{t(l.reason)}</span></td>
-            <td className="money neg">{money(l.costImpact)}</td>
-            <td style={{ color: "var(--text-3)", fontSize: 11.5 }}>{l.notes || "—"}</td>
-            <td style={{ color: "var(--text-3)", fontSize: 11.5 }}>{l.recordedBy?.name || "—"}</td>
-          </tr>
-        ))}
-      </TableShell>
-
-      {showForm && (
-        <Modal
-          title={t("Log wastage")}
-          sub={t("Deducts stock and records the cost impact")}
-          onClose={() => setShowForm(false)}
-          footer={
-            <>
-              <button type="button" className="zc-btn" onClick={() => setShowForm(false)}>{t("Cancel")}</button>
-              <button type="button" className="zc-btn pri" disabled={saving} onClick={handleSave}>
-                {saving ? t("Saving…") : t("Record wastage")}
-              </button>
-            </>
-          }
-        >
-          <div style={{ display: "grid", gap: 14 }}>
-            <div>
-              <label style={label}>{t("Item")}</label>
-              <select style={inp} value={form.inventoryItem} onChange={(e) => setForm({ ...form, inventoryItem: e.target.value })}>
-                <option value="">{t("Select item…")}</option>
-                {items.map((i) => <option key={i._id} value={i._id}>{localName(i)} ({t("{qty} in stock", { qty: `${num(i.currentStock)} ${unitLabel(i.unit)}` })})</option>)}
-              </select>
+      <div className="zc-card">
+        {rows.length === 0 ? (
+          <EmptyState title={logs.length === 0 ? t("No wastage recorded") : t("No entries match these filters")}
+            action={logs.length === 0 ? <button type="button" className="zc-btn pri" onClick={() => open("wastage")}>＋ {t("Log wastage")}</button> : null} />
+        ) : (
+          <>
+            <div className="ivt-tablewrap">
+              <table className="zc-ledger">
+                <thead>
+                  <tr><th>{t("Date")}</th><th>{t("Item")}</th><th className="num">{t("Qty")}</th><th>{t("Reason")}</th><th>{t("Notes")}</th><th>{t("Recorded by")}</th><th className="num">{t("Cost impact")}</th></tr>
+                </thead>
+                <tbody>
+                  {rows.map((l) => (
+                    <tr key={l._id}>
+                      <td className="nw" style={{ color: "var(--text-2)", fontSize: 11.5 }}>{fmtDateTime(l.wastageDate || l.createdAt)}</td>
+                      <td style={{ fontWeight: 600 }}>{localName(l.inventoryItem) || "—"}</td>
+                      <td className="num" style={{ color: "var(--text-2)" }}>{formatQty(l.quantity, l.inventoryItem?.unit)}</td>
+                      <td><span className={`zc-tag ${REASON_KIND[l.reason] || "done"}`}><i />{t(l.reason)}</span></td>
+                      <td style={{ color: "var(--text-3)", fontSize: 11.5 }}>{l.notes || "—"}</td>
+                      <td style={{ color: "var(--text-3)", fontSize: 11.5 }}>{l.recordedBy?.name || "—"}</td>
+                      <td className="money neg">{money(l.costImpact)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div>
-              <label style={label}>{t("Quantity")} {selectedItem ? `(${unitLabel(selectedItem.unit)})` : ""}</label>
-              <input type="number" style={inp} value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} />
+            <div className="ivt-cards">
+              {rows.map((l) => (
+                <div key={l._id} className="ivt-ocard">
+                  <div className="top">
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 600 }}>{localName(l.inventoryItem) || "—"} · {formatQty(l.quantity, l.inventoryItem?.unit)}</div>
+                      <div className="ivt-hint">{fmtDateTime(l.wastageDate || l.createdAt)}{l.recordedBy?.name ? ` · ${l.recordedBy.name}` : ""}</div>
+                    </div>
+                    <b className="tnum" style={{ color: "var(--stop-ink)", flex: "none" }}>{money(l.costImpact)}</b>
+                  </div>
+                  <div className="meta">
+                    <span className={`zc-tag ${REASON_KIND[l.reason] || "done"}`}><i />{t(l.reason)}</span>
+                    {l.notes && <span className="ivt-hint">{l.notes}</span>}
+                  </div>
+                </div>
+              ))}
             </div>
-            <div>
-              <label style={label}>{t("Reason")}</label>
-              <select style={inp} value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })}>
-                {REASONS.map((r) => <option key={r} value={r}>{t(r)}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={label}>{t("Notes")}</label>
-              <input style={inp} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
-            </div>
-          </div>
-        </Modal>
-      )}
-    </div>
+            <div className="ivt-tfoot"><span>{tn(rows.length, "{n} entry", "{n} entries")}</span></div>
+          </>
+        )}
+      </div>
+    </>
   );
 }

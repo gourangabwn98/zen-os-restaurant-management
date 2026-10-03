@@ -8,7 +8,8 @@ import {
   emitKotCreated, emitBillPrint, emitPaymentStatusChanged, emitTableCleared,
   emitTableFreed, emitInventoryAlert, emitSentToKitchen,
 } from "../sockets/socket.js";
-import { computeSalesBreakdown } from "../services/insightsService.js";
+import { computeSalesBreakdown, computeInsightsOverview } from "../services/insightsService.js";
+import { resolveTimezone } from "../utils/menuSchedule.js";
 
 // ── GET /api/admin/dashboard ──────────────────────────────────────────────────
 export const getDashboardStats = async (req, res) => {
@@ -77,6 +78,40 @@ export const getSalesInsights = async (req, res) => {
       return d;
     };
     const data = await computeSalesBreakdown({ models: req.models, from: parse(req.query.from), to: parse(req.query.to) });
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message });
+  }
+};
+
+// ── GET /api/admin/insights/overview?from=ISO&to=ISO[&prevFrom=ISO&prevTo=ISO] ─
+// One round trip for the whole Insights page (services/insightsService.js →
+// computeInsightsOverview). Days/hours are bucketed in the restaurant's own
+// timezone (RestaurantProfile.timezone), never the browser's.
+const MAX_INSIGHTS_DAYS = 3 * 366;
+export const getInsightsOverview = async (req, res) => {
+  try {
+    const bad = (msg) => { const e = new Error(msg); e.statusCode = 400; throw e; };
+    const parse = (v, name, required) => {
+      if (!v) { if (required) bad(`${name} is required`); return null; }
+      const d = new Date(v);
+      if (Number.isNaN(d.getTime())) bad(`Invalid date: ${v}`);
+      return d;
+    };
+    const from = parse(req.query.from, "from", true);
+    const to = parse(req.query.to, "to", true);
+    const prevFrom = parse(req.query.prevFrom, "prevFrom");
+    const prevTo = parse(req.query.prevTo, "prevTo");
+    if (to < from) bad("to must be after from");
+    if (!prevFrom !== !prevTo) bad("prevFrom and prevTo go together");
+    if (prevFrom && prevTo < prevFrom) bad("prevTo must be after prevFrom");
+    for (const [a, b] of [[from, to], [prevFrom, prevTo]]) {
+      if (a && (b - a) / 86400000 > MAX_INSIGHTS_DAYS) bad("Pick a range of 3 years or less");
+    }
+    const profile = await req.models.RestaurantProfile.findOne().select("timezone").lean();
+    const data = await computeInsightsOverview({
+      models: req.models, from, to, prevFrom, prevTo, tz: resolveTimezone(profile?.timezone),
+    });
     res.json({ success: true, data });
   } catch (err) {
     res.status(err.statusCode || 500).json({ message: err.message });

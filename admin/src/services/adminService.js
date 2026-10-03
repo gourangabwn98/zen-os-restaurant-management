@@ -3,6 +3,7 @@ import api from "./api.js";
 export const getDashboard = () => api.get("/admin/dashboard");
 // Revenue by item / category + making cost, aggregated server-side ({ from, to } ISO).
 export const getSalesInsights = (params) => api.get("/admin/insights/sales", { params });
+export const getInsightsOverview = (params) => api.get("/admin/insights/overview", { params });
 export const getAllOrders = (params) => api.get("/admin/orders", { params });
 export const updateOrderStatus = (id, status) =>
   api.put(`/admin/orders/${id}/status`, { status });

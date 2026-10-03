@@ -11,7 +11,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import mongoose from "mongoose";
-import { isScheduleActive, minutesInTimezone, resolveTimezone, validateSchedule } from "../utils/menuSchedule.js";
+import { isScheduleActive, clockInTimezone, resolveTimezone, validateSchedule } from "../utils/menuSchedule.js";
+import { restoreSoldOutItems } from "./menuItemService.js";
 
 const MAX_BULK_IDS = 1000;
 
@@ -23,28 +24,31 @@ const httpError = (msg, statusCode = 400) => {
 
 /**
  * Snapshot of "what is scheduled-out right now" — two small queries, built
- * once per request and reused for every item.
+ * once per request and reused for every item. Every menu read and every order
+ * pricing builds one first, so this is also where expired "Sold out today"
+ * items are switched back on (before anything reads `isAvailable`).
  * @param {object} [profile] RestaurantProfile doc if the caller already has it.
- * @returns {{ timezone: string, nowMinutes: number, hiddenCategories: Set<string> }}
+ * @returns {{ timezone: string, nowMinutes: number, clock: object, hiddenCategories: Set<string> }}
  */
 export const getScheduleContext = async ({ models, profile, now = new Date() }) => {
   const { RestaurantProfile, Category } = models;
+  if (typeof models.MenuItem?.updateMany === "function") await restoreSoldOutItems({ models, now });
   const prof = profile !== undefined
     ? profile
     : await RestaurantProfile.findOne().select("timezone").lean();
   const timezone = resolveTimezone(prof?.timezone);
-  const nowMinutes = minutesInTimezone(now, timezone);
+  const clock = clockInTimezone(now, timezone);
 
   const scheduledCats = await Category.find({ "schedule.enabled": true }).select("name schedule").lean();
   const hiddenCategories = new Set(
-    scheduledCats.filter((c) => !isScheduleActive(c.schedule, nowMinutes)).map((c) => c.name),
+    scheduledCats.filter((c) => !isScheduleActive(c.schedule, clock)).map((c) => c.name),
   );
-  return { timezone, nowMinutes, hiddenCategories };
+  return { timezone, nowMinutes: clock.minutes, clock, hiddenCategories };
 };
 
 /** Schedule half of the visibility rule (isAvailable is checked separately). */
 export const isItemScheduledNow = (item, ctx) =>
-  !ctx.hiddenCategories.has(item.category) && isScheduleActive(item.schedule, ctx.nowMinutes);
+  !ctx.hiddenCategories.has(item.category) && isScheduleActive(item.schedule, ctx.clock ?? ctx.nowMinutes);
 
 const normalizeIds = (raw, label) => {
   if (raw === undefined || raw === null) return [];
@@ -80,7 +84,8 @@ export const applyBulkSchedule = async ({ models, itemIds, categoryIds, schedule
 
   const [itemRes, catRes] = await Promise.all([
     items.length ? MenuItem.updateMany({ _id: { $in: items } }, { $set: { schedule: normalized } }) : null,
-    cats.length ? Category.updateMany({ _id: { $in: cats } }, { $set: { schedule: normalized } }) : null,
+    // A hand-set window takes the category out of its Menu time.
+    cats.length ? Category.updateMany({ _id: { $in: cats } }, { $set: { schedule: normalized, menuTime: null } }) : null,
   ]);
 
   return {

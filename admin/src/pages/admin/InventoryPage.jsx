@@ -1,127 +1,143 @@
-// src/pages/admin/InventoryPage.jsx
-// Zen OS "Inventory" shell — PageHeader + .zc-subnav tab strip (matches
-// design-reference/zen-os-design-reference.html → Inventory `invNav`).
-// The eight tabs and every inventory API call are unchanged.
-import { useState } from "react";
+// src/pages/admin/InventoryPage.jsx — Admin → Operations → Inventory
+// ─────────────────────────────────────────────────────────────────────────────
+// Layout: PageHeader → add bar (one tile per way stock gets recorded) →
+// .zc-subnav tabs → tab body. Every figure comes from the existing inventory
+// API (/admin/inventory/*) — stock levels are the server's `stockLevel`
+// (classifyStockLevel: 0 → Out, ≤ criticalLevel → Critical, ≤ reorderLevel →
+// Low), stock only changes through purchase / wastage / adjust / count /
+// order deduction, each of which writes a StockLedger row server-side.
+//
+// Stock items + suppliers are loaded once here and shared with every tab and
+// entry modal; any save bumps `version`, which every tab re-loads on.
+// ─────────────────────────────────────────────────────────────────────────────
+import { useState, useEffect, useCallback, useMemo } from "react";
 import PageHeader from "./shared/PageHeader.jsx";
-import { t, N_ } from "../../i18n/core.js";
+import { t, N_, fmtNum } from "../../i18n/core.js";
+import { getInventoryItems, getSuppliers } from "../../services/inventoryService.js";
 import InventoryOverview from "./inventory/InventoryOverview.jsx";
 import StockItemsTab from "./inventory/StockItemsTab.jsx";
 import PurchasesTab from "./inventory/PurchasesTab.jsx";
 import MovementsTab from "./inventory/MovementsTab.jsx";
-import LowStockTab from "./inventory/LowStockTab.jsx";
 import WastageTab from "./inventory/WastageTab.jsx";
 import RecipesTab from "./inventory/RecipesTab.jsx";
 import SuppliersTab from "./inventory/SuppliersTab.jsx";
-
-// page-scoped layout helpers (tokens only — Light / Dark / Auto safe).
-// Classes are prefixed `invp-` so they never collide with any other screen's
-// page-scoped styles.
-if (typeof document !== "undefined" && !document.getElementById("inventory-page-styles")) {
-  const s = document.createElement("style");
-  s.id = "inventory-page-styles";
-  s.textContent = `
-    .invp-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    @media (max-width: 900px) { .invp-two-col { grid-template-columns: 1fr; } }
-    .invp-queue { display: grid; gap: 12px; }
-    .invp-queue-row {
-      border: 1px solid var(--edge); border-radius: var(--r-card); background: var(--grad-card);
-      box-shadow: var(--shadow-card); padding: 15px 18px;
-      display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-    }
-    .invp-queue-row.crit { border-color: var(--stop-line); }
-    .invp-queue-ic {
-      width: 40px; height: 40px; border-radius: 12px; flex: none; display: grid; place-items: center;
-      font-size: 17px; background: var(--wait-fill); border: 1px solid var(--wait-line); color: var(--wait-ink);
-    }
-    .invp-queue-row.crit .invp-queue-ic { background: var(--stop-fill); border-color: var(--stop-line); color: var(--stop-ink); }
-    .zc-ledger tbody tr.invp-hl td { background: linear-gradient(168deg, var(--stop-fill), transparent); border-color: var(--stop-line); }
-    .invp-mv-ic {
-      width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
-      font-size: 13px; font-weight: 700; flex: none;
-    }
-    .invp-mv-ic.in  { color: var(--ready-ink); background: var(--ready-fill); border: 1px solid var(--ready-line); }
-    .invp-mv-ic.out { color: var(--stop-ink);  background: var(--stop-fill);  border: 1px solid var(--stop-line); }
-    .invp-pline { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 6px; align-items: center; }
-    .invp-iline { display: grid; grid-template-columns: 2fr 1fr auto; gap: 6px; align-items: center; }
-    @media (max-width: 620px) {
-      .invp-pline { grid-template-columns: 1fr 1fr; }
-      .invp-pline > :nth-child(1) { grid-column: 1 / -1; }
-      .invp-pline > button { grid-column: 1 / -1; justify-self: end; }
-      .invp-iline { grid-template-columns: 1fr auto; }
-    }
-
-    /* ── Import Purchase — review list (ImportPurchaseModal.jsx) ── */
-    .impp-row-head {
-      display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 10px;
-      padding: 0 13px; font-size: 10px; color: var(--text-3); font-weight: 600;
-      letter-spacing: .06em; text-transform: uppercase;
-    }
-    .impp-item {
-      border: 1px solid var(--edge); border-radius: var(--r-row);
-      background: var(--grad-panel); overflow: hidden;
-    }
-    .impp-item.needs { border-color: var(--wait-line); }
-    .impp-row {
-      display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 10px;
-      align-items: center; padding: 10px 13px;
-    }
-    .impp-edit { padding: 13px; background: var(--card-2); }
-    @media (max-width: 720px) {
-      .impp-row-head { display: none; }
-      .impp-row { grid-template-columns: 1fr 1fr; row-gap: 8px; }
-      .impp-name { grid-column: 1 / -1; }
-      .impp-row > div:last-child { grid-column: 1 / -1; justify-content: flex-end; }
-      .impp-edit > div { grid-template-columns: 1fr !important; }
-    }
-  `;
-  document.head.appendChild(s);
-}
+import ItemDrawer from "./inventory/ItemDrawer.jsx";
+import ImportPurchaseModal from "./inventory/ImportPurchaseModal.jsx";
+import { PurchaseModal, WastageModal, CountModal, AdjustModal, ItemFormModal } from "./inventory/EntryModals.jsx";
+import { Icon } from "./inventory/invUI.jsx";
+import { needsReorder } from "./inventory/invKit.js";
+import "./inventory/inventory.css";
 
 const SECTIONS = [
-  { id: "overview",  label: N_("Overview"),   icon: "📊" },
-  { id: "items",     label: N_("Stock items"), icon: "📦" },
-  { id: "purchases", label: N_("Purchases"),  icon: "🧾" },
-  { id: "movements", label: N_("Movements"),  icon: "📒" },
-  { id: "lowstock",  label: N_("Low stock"),  icon: "⚠️" },
-  { id: "wastage",   label: N_("Wastage"),    icon: "🗑️" },
-  { id: "recipes",   label: N_("Recipes"),    icon: "🍳" },
-  { id: "suppliers", label: N_("Suppliers"),  icon: "🚚" },
+  { id: "overview",  label: N_("Overview") },
+  { id: "items",     label: N_("Stock") },
+  { id: "recipes",   label: N_("Recipes & food cost") },
+  { id: "purchases", label: N_("Purchases") },
+  { id: "wastage",   label: N_("Wastage") },
+  { id: "movements", label: N_("History") },
+  { id: "suppliers", label: N_("Suppliers") },
 ];
 
-export default function InventoryPage() {
-  const [section, setSection] = useState("overview");
+const ADD_TILES = [
+  { kind: "purchase", icon: "cart", title: N_("Record purchase"), sub: N_("stock in from a bill") },
+  { kind: "wastage",  icon: "bin",  title: N_("Log wastage"),     sub: N_("spoiled, expired, damaged") },
+  { kind: "count",    icon: "box",  title: N_("Count stock"),     sub: N_("what's on the shelf now") },
+  { kind: "import",   icon: "cam",  title: N_("Import a bill"),   sub: N_("read a PDF or photo") },
+  { kind: "item",     icon: "plus", title: N_("Add stock item"),  sub: N_("name and unit to start") },
+];
 
+export default function InventoryPage({ onNavigate }) {
+  const [section, setSection] = useState("overview");
+  const [items, setItems] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [suppliers, setSuppliers] = useState([]);
+  const [sharedError, setSharedError] = useState(false);
+  const [version, setVersion] = useState(0);
+  const [modal, setModal] = useState(null);       // { kind, item?, prefill? }
+  const [drawerId, setDrawerId] = useState(null);
+  const [historyItem, setHistoryItem] = useState("");
+
+  const loadShared = useCallback(async () => {
+    try {
+      const [iRes, sRes] = await Promise.all([getInventoryItems(), getSuppliers()]);
+      setItems(iRes.data?.items || []);
+      setSuppliers(sRes.data?.suppliers || []);
+      setSharedError(false);
+    } catch { setSharedError(true); }
+    finally { setLoaded(true); }
+  }, []);
+  useEffect(() => { loadShared(); }, [loadShared]);
+
+  const refresh = useCallback(() => { loadShared(); setVersion((v) => v + 1); }, [loadShared]);
+
+  // kind: purchase | wastage | count | adjust | item | edit | import
+  const open = useCallback((kind, item = null, extra = {}) => setModal({ kind, item, ...extra }), []);
+  const close = useCallback(() => setModal(null), []);
+  const saved = useCallback((opts) => { if (!opts?.keepOpen) setModal(null); refresh(); }, [refresh]);
+
+  const reorderCount = useMemo(
+    () => items.filter((i) => i.status === "Active" && needsReorder(i)).length,
+    [items],
+  );
+
+  const goHistory = (itemId) => { setHistoryItem(itemId || ""); setDrawerId(null); setSection("movements"); };
+
+  const ctx = {
+    items, itemsLoading: !loaded, sharedError, suppliers, version,
+    open, openItem: setDrawerId, setSection, goHistory, refresh, onNavigate,
+  };
+
+  const m = modal;
   return (
-    <div>
+    <div className="ivt">
       <PageHeader
         title={t("Inventory")}
-        sub={t("Stock items, purchases, recipes, wastage and the stock-movement ledger for this restaurant")}
+        sub={t("Stock, purchases, wastage and recipes. Every change is written to the stock history.")}
       />
 
-      <div className="zc-subnav" role="tablist" aria-label={t("Inventory sections")}>
-        {SECTIONS.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            role="tab"
-            aria-selected={section === s.id}
-            className={section === s.id ? "on" : ""}
-            onClick={() => setSection(s.id)}
-          >
-            <span aria-hidden="true">{s.icon}</span> {t(s.label)}
+      <div className="ivt-addbar">
+        {ADD_TILES.map((a) => (
+          <button key={a.kind} type="button" className="ivt-add" onClick={() => open(a.kind)}>
+            <span className="ic"><Icon id={a.icon} /></span>
+            <span><b>{t(a.title)}</b><small>{t(a.sub)}</small></span>
           </button>
         ))}
       </div>
 
-      {section === "overview"  && <InventoryOverview onNavigate={setSection} />}
-      {section === "items"     && <StockItemsTab />}
-      {section === "purchases" && <PurchasesTab />}
-      {section === "movements" && <MovementsTab />}
-      {section === "lowstock"  && <LowStockTab onNavigate={setSection} />}
-      {section === "wastage"   && <WastageTab />}
-      {section === "recipes"   && <RecipesTab />}
-      {section === "suppliers" && <SuppliersTab />}
+      <div className="zc-subnav" role="tablist" aria-label={t("Inventory sections")}>
+        {SECTIONS.map((s) => (
+          <button key={s.id} type="button" role="tab" aria-selected={section === s.id}
+            className={section === s.id ? "on" : ""} onClick={() => { if (s.id === "movements") setHistoryItem(""); setSection(s.id); }}>
+            {t(s.label)}
+            {s.id === "items" && reorderCount > 0 && <span className="ivt-tabn" title={t("Needs reorder")}>{fmtNum(reorderCount)}</span>}
+          </button>
+        ))}
+      </div>
+
+      {section === "overview"  && <InventoryOverview {...ctx} />}
+      {section === "items"     && <StockItemsTab {...ctx} />}
+      {section === "recipes"   && <RecipesTab version={version} />}
+      {section === "purchases" && <PurchasesTab {...ctx} />}
+      {section === "wastage"   && <WastageTab {...ctx} />}
+      {section === "movements" && <MovementsTab {...ctx} initialItem={historyItem} key={historyItem || "all"} />}
+      {section === "suppliers" && <SuppliersTab {...ctx} />}
+
+      {drawerId && (
+        <ItemDrawer id={drawerId} version={version} onClose={() => setDrawerId(null)}
+          onAction={(kind, it) => open(kind, it)} onFullHistory={goHistory} />
+      )}
+
+      {m?.kind === "purchase" && (
+        <PurchaseModal items={ctx.items} suppliers={suppliers} prefill={m.prefill || (m.item ? [m.item._id] : [])}
+          onClose={close} onSaved={saved} onImport={() => open("import")} />
+      )}
+      {m?.kind === "wastage" && <WastageModal items={ctx.items} prefillItem={m.item?._id || ""} onClose={close} onSaved={saved} />}
+      {m?.kind === "count" && <CountModal items={ctx.items} only={m.item?._id || null} onClose={close} onSaved={saved} />}
+      {m?.kind === "adjust" && m.item && <AdjustModal item={m.item} onClose={close} onSaved={saved} />}
+      {(m?.kind === "item" || m?.kind === "edit") && (
+        <ItemFormModal item={m.kind === "edit" ? m.item : null} items={ctx.items} suppliers={suppliers} onClose={close} onSaved={saved} />
+      )}
+      {m?.kind === "import" && <ImportPurchaseModal inventoryItems={ctx.items} onClose={close} onImported={refresh} />}
     </div>
   );
 }

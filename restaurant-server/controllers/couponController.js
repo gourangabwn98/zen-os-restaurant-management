@@ -5,6 +5,8 @@ import {
   createCouponWithNotice, updateCouponWithNotice, deleteCouponWithNotice,
 } from "../services/couponOfferService.js";
 import { buildActor } from "../services/orderService.js";
+import { computeOfferStats, checkOfferDraft } from "../services/offerStatsService.js";
+import { resolveTimezone } from "../utils/menuSchedule.js";
 
 const fail = (res, err) => res.status(err.statusCode || 500).json({ message: err.message });
 
@@ -50,4 +52,18 @@ export const removeCoupon = async (req, res) => {
     await deleteCouponWithNotice({ models: req.models, id: req.params.id });
     res.json({ message: "Coupon deleted" });
   } catch (err) { fail(res, err); }
+};
+
+// ── GET /api/coupons/admin/stats — reach, results per coupon, signals ────────
+// Read-only (services/offerStatsService.js); hours in the restaurant's timezone.
+export const getOfferStats = async (req, res) => {
+  try {
+    const profile = await req.models.RestaurantProfile.findOne().select("timezone").lean();
+    res.json(await computeOfferStats({ models: req.models, tz: resolveTimezone(profile?.timezone) }));
+  } catch (err) { fail(res, err); }
+};
+
+// ── POST /api/coupons/admin/check — cost check of draft terms (saves nothing) ─
+export const checkOffer = async (req, res) => {
+  try { res.json(await checkOfferDraft({ models: req.models, terms: req.body || {} })); } catch (err) { fail(res, err); }
 };

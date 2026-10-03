@@ -7,6 +7,9 @@ import {
   createCategory as createCategorySvc,
   updateCategory as updateCategorySvc,
   deleteCategory as deleteCategorySvc,
+  reorderCategories as reorderCategoriesSvc,
+  mergeCategory as mergeCategorySvc,
+  CATEGORY_SORT,
 } from "../services/categoryService.js";
 import { emitMenuUpdated } from "../sockets/socket.js";
 
@@ -34,7 +37,7 @@ export const getCategories = async (req, res) => {
     if (isAdminUser(req.user)) return res.json(await listCategoriesWithCounts({ models: req.models }));
     const { Category } = req.models;
     const { hiddenCategories } = await getScheduleContext({ models: req.models });
-    const cats = (await Category.find().sort({ name: 1 })).filter((c) => !hiddenCategories.has(c.name));
+    const cats = (await Category.find().sort(CATEGORY_SORT)).filter((c) => !hiddenCategories.has(c.name));
     res.json(cats);
   } catch (err) { fail(res, err); }
 };
@@ -73,5 +76,24 @@ export const deleteCategory = async (req, res) => {
     const cat = await deleteCategorySvc({ models: req.models, id: req.params.id });
     emitMenuUpdated(req.tenantKey);
     res.json({ message: `"${cat.name}" deleted` });
+  } catch (err) { fail(res, err); }
+};
+
+// ── PUT /api/categories/order  { ids: [every category id, in order] } ────────
+export const reorderCategories = async (req, res) => {
+  try {
+    const result = await reorderCategoriesSvc({ models: req.models, ids: req.body?.ids });
+    emitMenuUpdated(req.tenantKey);
+    res.json(result);
+  } catch (err) { fail(res, err); }
+};
+
+// ── POST /api/categories/:id/merge  { into: categoryId } ─────────────────────
+// Moves its items into `into` and deletes it (duplicate cleanup).
+export const mergeCategory = async (req, res) => {
+  try {
+    const result = await mergeCategorySvc({ models: req.models, db: req.db, id: req.params.id, intoId: req.body?.into });
+    emitMenuUpdated(req.tenantKey);
+    res.json(result);
   } catch (err) { fail(res, err); }
 };

@@ -141,6 +141,9 @@ const restaurantProfileSchema = new mongoose.Schema({
   // IANA timezone used to evaluate menu schedules (utils/menuSchedule.js).
   // An invalid value falls back to Asia/Kolkata at read time.
   timezone:          { type: String, default: "Asia/Kolkata" },
+  // When the business day ends ("HH:MM", restaurant time). "Sold out today"
+  // menu items switch back on at this time (services/menuItemService.js).
+  businessDayEndsAt: { type: String, default: "03:00" },
   // Staff rules (Employees → Pay / Leave). Admin-editable, never env vars.
   staffPolicy: {
     paidLeavePerMonth: { type: Number, default: 1, min: 0, max: 31 },
@@ -151,18 +154,37 @@ const restaurantProfileSchema = new mongoose.Schema({
 // ── Scheduled menu visibility (utils/menuSchedule.js) ─────────────────────────
 // One daily window per category/item, in the restaurant's timezone. Separate
 // from `isAvailable`: customer visibility = isAvailable AND schedule allows now.
-// Only ever written through PATCH /api/menu/schedule (validated there).
+// Only ever written through PATCH /api/menu/schedule or a Menu time (both
+// validated by utils/menuSchedule.js validateSchedule).
 const menuScheduleSchema = new mongoose.Schema({
   enabled:   { type: Boolean, default: false },
-  startTime: { type: String, default: "" },   // "HH:MM" 24h, inclusive
+  startTime: { type: String, default: "" },   // "HH:MM" 24h, inclusive ("" + "" = all day)
   endTime:   { type: String, default: "" },   // "HH:MM" 24h, exclusive; < start ⇒ crosses midnight
+  days:      { type: [Number], default: [] }, // 0 = Sunday … 6; empty = every day
+  startDate: { type: String, default: "" },   // "YYYY-MM-DD" inclusive; "" = open
+  endDate:   { type: String, default: "" },   // "YYYY-MM-DD" inclusive; "" = open
 }, { _id: false });
+
+// ── Menu times (Admin → Menu items) ───────────────────────────────────────────
+// A named window ("Breakfast", "Weekend fish special") that categories sit in.
+// Assigning a category copies the window onto category.schedule, so the
+// customer/order enforcement path (menuScheduleService) never reads this
+// collection. services/menuTimeService.js keeps the copies in sync.
+const menuTimeSchema = new mongoose.Schema({
+  name:      { type: String, required: true, trim: true, maxlength: 30 },
+  schedule:  { type: menuScheduleSchema, required: true },
+  color:     { type: String, default: "violet" },  // a theme swatch key, not CSS
+  sortOrder: { type: Number, default: 0 },
+}, { timestamps: true });
 
 const categorySchema = new mongoose.Schema({
   name:     { type: String, required: true, unique: true, trim: true },
   nameBn:   { type: String, default: "", trim: true, maxlength: 120 }, // optional Bengali name — display only
   image:    { type: String, default: "" },
   schedule: { type: menuScheduleSchema, default: () => ({}) },
+  // The Menu time this category sits in (null = its own window, or all day).
+  menuTime: { type: mongoose.Schema.Types.ObjectId, ref: "MenuTime", default: null },
+  sortOrder: { type: Number, default: 0 }, // admin drag order; customer menu follows it
 }, { timestamps: true });
 
 const chefSchema = new mongoose.Schema({
@@ -185,7 +207,14 @@ const menuItemSchema = new mongoose.Schema({
   isAvailable:   { type: Boolean, default: true },
   rating:        { type: Number, default: 4.0 },
   schedule:      { type: menuScheduleSchema, default: () => ({}) },
+  // Diner tags ("Fish", "Spicy", "Bestseller") — display/filter only; the
+  // Veg / Non Veg `tag` above stays the authoritative food type.
+  tags:          { type: [String], default: [] },
+  // "Sold out today": isAvailable is false until this instant, then it is
+  // switched back on (services/menuItemService.js restoreSoldOutItems).
+  soldOutUntil:  { type: Date, default: null },
 }, { timestamps: true });
+menuItemSchema.index({ soldOutUntil: 1 }, { partialFilterExpression: { soldOutUntil: { $type: "date" } } });
 
 const orderItemSchema = new mongoose.Schema({
   menuItem: { type: mongoose.Schema.Types.ObjectId, ref: "MenuItem", required: true },
@@ -853,6 +882,7 @@ export function getModels(conn) {
     Category:          conn.models.Category          || conn.model("Category",          categorySchema),
     Chef:              conn.models.Chef              || conn.model("Chef",              chefSchema),
     MenuItem:          conn.models.MenuItem          || conn.model("MenuItem",          menuItemSchema),
+    MenuTime:          conn.models.MenuTime          || conn.model("MenuTime",          menuTimeSchema),
     Order:             conn.models.Order             || conn.model("Order",             orderSchema),
     Counter:           conn.models.Counter           || conn.model("Counter",           counterSchema),
     Table:             conn.models.Table             || conn.model("Table",             tableSchema),

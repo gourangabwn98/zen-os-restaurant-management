@@ -1,0 +1,133 @@
+/* src/pages/admin/offers/offers.css — layout only. Colours, radii and type
+   sizes are existing tokens / sizes from the shared design system (the same
+   approach as insights.css and invoices.css). Responsive via container
+   queries on .ofr. */
+
+.ofr { container-type: inline-size; display: flex; flex-direction: column; gap: 14px; }
+.ofr .tnum { font-variant-numeric: tabular-nums; }
+.ofr-hint { font-size: 11.5px; color: var(--text-3); font-weight: 400; }
+.ofr-err { font-size: 11.5px; color: var(--stop-ink); margin-top: 4px; }
+.ofr-opt { font-weight: 400; color: var(--text-3); }
+.ofr-empty { text-align: center; padding: 30px 12px; color: var(--text-3); font-size: 12.5px; }
+.ofr-empty b { display: block; color: var(--text-2); font-size: 13px; margin-bottom: 4px; }
+.ofr-up { color: var(--ready-ink); }
+.ofr-down { color: var(--stop-ink); }
+
+/* reach strip */
+.ofr-strip { display: grid; grid-template-columns: minmax(0, 1.35fr) repeat(3, minmax(0, 1fr)); overflow: hidden; }
+.ofr-strip > div { padding: 14px 18px; border-left: 1px solid var(--edge); min-width: 0; }
+.ofr-strip > div:first-child { border-left: 0; }
+.ofr-strip .k { font-size: 11.5px; color: var(--text-2); font-weight: 500; }
+.ofr-strip .v { font-size: 21px; font-weight: 700; letter-spacing: -.025em; line-height: 1.2; margin-top: 2px; color: var(--text-1); }
+.ofr-strip .d { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+.ofr-of { font-size: 12px; font-weight: 500; letter-spacing: 0; color: var(--text-3); }
+.ofr-bar { height: 8px; border-radius: 99px; background: var(--raise); overflow: hidden; margin: 6px 0 4px; }
+.ofr-bar i { display: block; height: 100%; background: var(--violet); border-radius: 99px; min-width: 3px; }
+
+/* ideas */
+.ofr-sech { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.ofr-sech .t { font-size: 14px; font-weight: 600; color: var(--text-1); }
+.ofr-ideas { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.ofr-idea { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.ofr-idea .it { font-size: 13.5px; color: var(--text-1); font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.ofr-idea p { margin: 0; font-size: 12px; color: var(--text-2); line-height: 1.5; }
+.ofr-idea .foot { margin-top: auto; padding-top: 4px; }
+
+/* composer */
+.ofr-comp { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 14px; align-items: start; scroll-margin-top: 16px; }
+.ofr-body { padding: 4px 18px 16px; }
+.ofr-step { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; padding: 12px 0; border-top: 1px solid var(--edge); }
+.ofr-step:first-child { border-top: 0; padding-top: 4px; }
+.ofr-step .sn { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--violet-weak); color: var(--accent-ink); }
+.ofr-step .st { display: block; font-size: 13px; font-weight: 600; color: var(--text-1); margin: 2px 0 8px; }
+.ofr-l { display: block; font-size: 12px; font-weight: 600; color: var(--text-2); margin: 10px 0 6px; }
+.ofr-count { font-size: 11px; color: var(--text-3); text-align: right; margin-top: 3px; }
+.ofr-opts { display: flex; gap: 6px; flex-wrap: wrap; align-items: stretch; }
+.ofr-opts > button { border: 1px solid var(--edge); background: var(--card-2); color: var(--text-2); border-radius: 10px; padding: 7px 11px; font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; max-width: 100%; }
+.ofr-opts > button small { display: block; font-size: 11px; color: var(--text-3); margin-top: 1px; }
+.ofr-opts > button[aria-pressed="true"] { border-color: var(--violet); background: var(--violet-weak); color: var(--text-1); }
+.ofr-opts > button:disabled { cursor: default; opacity: .75; }
+.ofr-opts > button.mono { font-weight: 600; letter-spacing: .05em; }
+.ofr-row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.ofr-inline { display: flex; gap: 6px; }
+.ofr-inline .zc-select { width: 64px; flex: none; }
+.ofr-inline .zc-input { min-width: 0; }
+.ofr-code { text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+.ofr-dt { margin-top: 8px; max-width: 260px; }
+.ofr-date { width: auto; align-self: center; }
+.ofr-check-row { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-top: 12px; cursor: pointer; color: var(--text-1); }
+
+.ofr-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.ofr-phone { border: 1px solid var(--edge); background: var(--card-2); border-radius: 16px; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+.ofr-ph-k { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); margin-top: 4px; }
+.ofr-push { background: var(--raise); border-radius: 12px; padding: 9px 11px; font-size: 12.5px; color: var(--text-2); overflow-wrap: anywhere; }
+.ofr-push b { display: block; color: var(--text-1); font-size: 13px; margin-bottom: 2px; }
+.ofr-cpn { display: flex; gap: 10px; align-items: center; border: 1px dashed var(--violet-mid); border-radius: 12px; padding: 9px 11px; font-size: 12px; color: var(--text-2); }
+.ofr-cpn .code { font-weight: 700; letter-spacing: .06em; color: var(--accent-ink); background: var(--violet-weak); border-radius: 8px; padding: 4px 8px; flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ofr-cpn b { display: block; color: var(--text-1); font-size: 13px; overflow-wrap: anywhere; }
+.ofr-cpn small { display: block; color: var(--text-3); font-size: 11px; }
+.ofr-ph-foot { font-size: 11px; color: var(--text-3); margin-top: 4px; }
+
+.ofr-check { border-radius: 14px; padding: 11px 13px; font-size: 12.5px; line-height: 1.55; color: var(--text-2); border: 1px solid var(--edge); background: var(--card-2); }
+.ofr-check b { color: var(--text-1); }
+.ofr-check.ok { border-color: var(--ready-line); background: var(--ready-fill); }
+.ofr-check.ok b { color: var(--ready-ink); }
+.ofr-check.warn { border-color: var(--wait-line); background: var(--wait-fill); }
+.ofr-check.warn b { color: var(--wait-ink); }
+
+/* review modal */
+.ofr-review { display: flex; flex-direction: column; gap: 10px; }
+.ofr-review > div:not(.ofr-check) { display: flex; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--text-2); }
+.ofr-review > div:not(.ofr-check) b { color: var(--text-1); text-align: right; }
+.ofr-review p { margin: 0; }
+
+/* results */
+.ofr-tw { padding: 2px 10px 6px; overflow-x: auto; }
+.ofr-tbl { min-width: 980px; }
+.ofr-tbl th.num, .ofr-tbl td.num { text-align: right; }
+.ofr-tbl td { vertical-align: top; }
+.ofr-tbl .ofr-name { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.ofr-tbl .ofr-name b { color: var(--text-1); font-weight: 600; overflow-wrap: anywhere; }
+.ofr-codetag { font-weight: 700; letter-spacing: .05em; font-size: 11.5px; color: var(--accent-ink); background: var(--violet-weak); border-radius: 7px; padding: 2px 7px; white-space: nowrap; }
+.ofr-tbl .ofr-hint { margin-top: 3px; }
+.ofr-tbl .zc-tag { white-space: normal; }
+.ofr-clip { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ofr-funnel { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.ofr-funnel i { font-style: normal; color: var(--text-3); }
+.ofr-funnel b { color: var(--text-1); }
+.ofr-acts { white-space: nowrap; }
+.ofr-acts .zc-btn + .zc-btn { margin-left: 6px; }
+.ofr-foot { font-size: 11.5px; color: var(--text-3); padding: 2px 18px 14px; }
+
+@container (max-width: 1100px) {
+  .ofr-ideas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ofr-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ofr-strip > div:nth-child(3) { border-left: 0; }
+  .ofr-strip > div:nth-child(n+3) { border-top: 1px solid var(--edge); }
+}
+@container (max-width: 900px) {
+  .ofr-comp { grid-template-columns: minmax(0, 1fr); }
+}
+/* Results become stacked cards: each cell labelled from data-l. */
+@container (max-width: 760px) {
+  .ofr-tw { overflow: visible; padding: 4px 10px 8px; }
+  .ofr-tbl { min-width: 0; border-spacing: 0; }
+  .ofr-tbl thead { display: none; }
+  .ofr-tbl, .ofr-tbl tbody, .ofr-tbl tr, .ofr-tbl td { display: block; width: 100%; }
+  .ofr-tbl tr { border: 1px solid var(--edge); border-radius: 14px; margin-bottom: 10px; overflow: hidden; }
+  .ofr-tbl tbody td { border: 0 !important; border-radius: 0 !important; padding: 7px 14px; display: flex; justify-content: space-between; gap: 12px; text-align: right; }
+  .ofr-tbl tbody td.num { text-align: right; }
+  .ofr-tbl tbody td:first-child { display: block; text-align: left; padding-top: 12px; }
+  .ofr-tbl tbody td[data-l]:not(:first-child)::before { content: attr(data-l); color: var(--text-3); font-size: 11.5px; text-align: left; flex: none; }
+  .ofr-tbl tbody td.ofr-acts { justify-content: flex-start; flex-wrap: wrap; gap: 6px; padding-bottom: 12px; }
+  .ofr-acts .zc-btn + .zc-btn { margin-left: 0; }
+  .ofr-clip { max-width: 100%; white-space: normal; }
+}
+@container (max-width: 560px) {
+  .ofr-ideas, .ofr-strip, .ofr-row3 { grid-template-columns: minmax(0, 1fr); }
+  .ofr-strip > div { border-left: 0; }
+  .ofr-strip > div:nth-child(n+2) { border-top: 1px solid var(--edge); }
+  .ofr-body { padding: 4px 14px 14px; }
+  .ofr-opts > button { flex: 1 1 100%; }
+  .ofr-dt { max-width: none; }
+}

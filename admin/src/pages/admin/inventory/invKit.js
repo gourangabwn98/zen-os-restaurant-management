@@ -6,7 +6,7 @@
 // a token from src/theme/tokens.css → Light / Dark / Auto all work.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { fmtNum, fmtDate as fmtDateL, fmtDateTime as fmtDateTimeL } from "../../../i18n/core.js";
+import { t, N_, fmtNum, fmtDate as fmtDateL, fmtDateTime as fmtDateTimeL } from "../../../i18n/core.js";
 
 // token aliases kept for backward-compat with the tab files
 export const PINK   = "var(--violet)";
@@ -60,3 +60,46 @@ export const money = (n) => `₹${fmtNum(n)}`;
 export const num = (n) => fmtNum(n);
 export const fmtDate = (d) => fmtDateL(d);
 export const fmtDateTime = (d) => fmtDateTimeL(d);
+
+// ── ledger types (restaurant-server/utils/inventoryConstants.js LEDGER_TYPES) ──
+export const LEDGER_TYPES = ["PURCHASE", "SALE_DEDUCTION", "WASTAGE", "ADJUSTMENT", "PHYSICAL_COUNT", "REVERSAL"];
+export const LEDGER_LABEL = {
+  PURCHASE: N_("Purchase"), SALE_DEDUCTION: N_("Sale Deduction"), WASTAGE: N_("Wastage"),
+  ADJUSTMENT: N_("Adjustment"), PHYSICAL_COUNT: N_("Physical Count"), REVERSAL: N_("Reversal"),
+};
+export const LEDGER_KIND = {
+  PURCHASE: "ready", SALE_DEDUCTION: "live", WASTAGE: "stop",
+  ADJUSTMENT: "wait", PHYSICAL_COUNT: "vio", REVERSAL: "done",
+};
+// WASTAGE_REASONS — same file. Stored enum values; t() shows them translated.
+export const WASTAGE_REASONS = [N_("Spoilage"), N_("Expired"), N_("Damaged"), N_("Accident"), N_("Other")];
+export const STOCK_UNITS = ["g", "kg", "ml", "l", "pcs", "dozen", "packet", "box"];
+
+// Stock value = currentStock × costPrice over Active items — the exact
+// formula computeInventoryOverview uses server-side for `stockValue`.
+export const itemValue = (it) => Number(it.currentStock || 0) * Number(it.costPrice || 0);
+
+// Worst first, for the "Stock status" sort.
+export const LEVEL_RANK = { OUT_OF_STOCK: 0, CRITICAL: 1, LOW: 2, OK: 3 };
+export const needsReorder = (it) => it.stockLevel && it.stockLevel !== "OK";
+
+/** Midnight `days` days ago (local) — the start of a "last N days" window. */
+export const daysAgo = (days) => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - (days - 1));
+  return d;
+};
+
+// Ledger reasons are written by the server in English (audit trail) — show
+// the known shapes translated; anything typed by a person is shown as-is.
+const REASON_PATTERNS = [
+  [/^Order (\S+) cancelled$/, (m) => t("Order {id} cancelled", { id: m[1] })],
+  [/^Order (\S+)$/, (m) => t("Order {id}", { id: m[1] })],
+  [/^Purchase \((.+)\)$/, (m) => t("Purchase ({ref})", { ref: m[1] })],
+];
+export const reasonLabel = (r) => {
+  if (!r) return "";
+  for (const [re, fn] of REASON_PATTERNS) { const m = re.exec(r); if (m) return fn(m); }
+  return t(r);
+};

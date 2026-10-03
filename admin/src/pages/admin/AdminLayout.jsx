@@ -107,7 +107,7 @@ const MANAGEMENT_NAV = [
   { id: "users", label: N_("Users"), icon: "users" },
   { id: "menu", label: N_("Menu Items"), icon: "menu" },
   { id: "notifications", label: N_("Notifications"), icon: "bell" },
-  { id: "coupons", label: N_("Coupons"), icon: "coupon" },
+  { id: "coupons", label: N_("Offers"), icon: "coupon" },
 ];
 const FINANCE_NAV = [
   { id: "analytics", label: N_("Insights"), icon: "insights" },
@@ -335,7 +335,7 @@ export default function AdminLayout() {
             {page === "notifications" && <NotificationsPage />}
             {page === "coupons"    && <CouponsPage />}
             {page === "invoices"   && <InvoicesPage />}
-            {page === "analytics"  && <AnalyticsPage data={dashboardData} />}
+            {page === "analytics"  && <AnalyticsPage onNavigate={setPage} />}
             {page === "profile"    && <ProfilePage />}
             {page === "help"       && <HelpPage />}
           </>

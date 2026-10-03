@@ -1,0 +1,260 @@
+/* src/pages/admin/inventory/inventory.css — Admin → Inventory, layout only.
+   Colours, radii, shadows and type sizes are the shared design-system tokens
+   (tokens.css) and sizes already used by Dashboard / Invoices / Employees
+   (PageHeader 21/12.5, zc-card-h 14, strip values 21, hints 11.5, zc-ledger,
+   zc-btn, zc-tag). Prefix `ivt-` (Invoices owns `inv-`). */
+
+.ivt { container-type: inline-size; display: flex; flex-direction: column; gap: 14px; }
+.ivt .tnum { font-variant-numeric: tabular-nums; }
+.ivt .zc-subnav { margin-bottom: 0; }
+.ivt-hint { font-size: 11.5px; color: var(--text-3); }
+.ivt-tabn { font-size: 10.5px; font-weight: 700; padding: 0 6px; border-radius: 99px; line-height: 16px; background: var(--stop-fill); color: var(--stop-ink); }
+.zc-subnav button.on .ivt-tabn { background: rgba(255, 255, 255, .22); color: #fff; }
+.ivt-ico { width: 20px; height: 20px; flex: 0 0 auto; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ── add bar (one tile per way stock gets recorded) ── */
+.ivt-addbar { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.ivt-add {
+  font: inherit; color: inherit; cursor: pointer; text-align: left;
+  display: flex; gap: 11px; align-items: center; padding: 12px 13px; min-width: 0;
+  background: var(--grad-card); border: 1px solid var(--edge); border-radius: 14px; box-shadow: var(--shadow-card);
+  transition: var(--theme-transition), transform .12s ease;
+}
+.ivt-add:hover { border-color: var(--violet-line); }
+.ivt-add:focus-visible { outline: 2px solid var(--violet-line); outline-offset: 2px; }
+.ivt-add .ic {
+  width: 40px; height: 40px; border-radius: 12px; flex: none; display: grid; place-items: center;
+  background: var(--violet-weak); border: 1px solid var(--violet-mid); color: var(--accent-ink);
+}
+.ivt-add b { display: block; font-size: 13px; font-weight: 600; color: var(--text-1); }
+.ivt-add small { display: block; font-size: 11.5px; color: var(--text-3); margin-top: 1px; }
+.ivt-add > span:last-child { min-width: 0; }
+
+/* ── toolbar / filters ── */
+.ivt-fbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.ivt-fbar .zc-input.search { flex: 1 1 220px; width: auto; min-width: 180px; max-width: 340px; }
+.ivt-fbar .zc-select, .ivt-fbar input[type="date"] { width: auto; }
+.ivt-fbar .zc-seg { flex-wrap: wrap; }
+.ivt-seg-n { font-size: 10.5px; font-weight: 700; opacity: .75; margin-left: 2px; }
+.ivt-sp { flex: 1; }
+
+/* ── summary strip (same cell typography as the Invoices / Employees strips) ── */
+.ivt-strip { display: grid; grid-template-columns: repeat(var(--n, 5), minmax(0, 1fr)); overflow: hidden; }
+.ivt-strip > div { padding: 14px 18px; border-left: 1px solid var(--edge); min-width: 0; }
+.ivt-strip > div:first-child { border-left: 0; }
+.ivt-strip .k { font-size: 11.5px; color: var(--text-2); font-weight: 500; }
+.ivt-strip .v { font-size: 21px; font-weight: 700; letter-spacing: -.025em; line-height: 1.2; margin-top: 2px; color: var(--text-1); font-variant-numeric: tabular-nums; }
+.ivt-strip .d { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+.ivt-strip button.v { font: inherit; font-size: 21px; font-weight: 700; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+
+/* ── overview: kitchen cost control ── */
+.ivt-kcc { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; padding: 14px 18px; }
+.ivt-tile { background: var(--card-2); border: 1px solid var(--edge); border-radius: 12px; padding: 12px 13px; min-width: 0; display: flex; flex-direction: column; }
+.ivt-tile .k { font-size: 11.5px; color: var(--text-2); font-weight: 500; }
+.ivt-tile .v { font-size: 21px; font-weight: 700; letter-spacing: -.025em; line-height: 1.2; margin-top: 3px; color: var(--text-1); font-variant-numeric: tabular-nums; }
+.ivt-tile .d { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+.ivt-tile .zc-btn { align-self: flex-start; margin-top: auto; }
+.ivt-tile .gap { flex: 1; min-height: 8px; }
+.ivt-spark { display: flex; gap: 4px; align-items: flex-end; height: 30px; margin-top: 8px; }
+.ivt-spark i { flex: 1; border-radius: 3px; background: var(--violet-mid); min-height: 3px; }
+.ivt-spark i.cur { background: var(--grad-btn); }
+.ivt-split { display: flex; height: 8px; border-radius: 99px; overflow: hidden; margin-top: 8px; background: var(--raise); }
+.ivt-split i { display: block; height: 100%; }
+.ivt-kcc-f { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 11px 18px 13px; border-top: 1px solid var(--edge); font-size: 12.5px; color: var(--text-2); }
+.ivt-kcc-f b { color: var(--text-1); font-weight: 600; }
+
+.ivt-pl { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 14px; }
+.ivt-pl > .zc-card { min-width: 0; }
+
+/* attention / list rows */
+.ivt-rows { padding: 4px 18px 10px; }
+.ivt-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 11px; align-items: center; padding: 10px 0; border-top: 1px solid var(--edge); font-size: 12.5px; color: var(--text-1); }
+.ivt-row:first-child { border-top: 0; }
+.ivt-row small { display: block; font-size: 11.5px; color: var(--text-3); margin-top: 1px; }
+.ivt-row .r { display: flex; gap: 6px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+.ivt-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.ivt-more { background: none; border: 0; padding: 8px 0 0; color: var(--accent-ink); cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; }
+
+/* records-complete checklist */
+.ivt-meter { height: 8px; border-radius: 99px; background: var(--raise); overflow: hidden; margin: 2px 18px 6px; }
+.ivt-meter i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--wait), var(--ready)); }
+.ivt-ck { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 9px; align-items: center; padding: 9px 0; border-top: 1px solid var(--edge); font-size: 12.5px; color: var(--text-1); }
+.ivt-ck:first-child { border-top: 0; }
+.ivt-ck .m { font-weight: 700; text-align: center; }
+.ivt-ck small { display: block; font-size: 11.5px; color: var(--text-3); }
+.ivt-explain { padding: 12px 18px 16px; font-size: 12.5px; color: var(--text-2); line-height: 1.7; }
+.ivt-explain b { color: var(--text-1); font-weight: 600; }
+.ivt-explain p { margin: 0 0 8px; }
+
+/* ── stock table ── */
+.ivt-tablewrap { padding: 6px 10px 8px; overflow-x: auto; }
+.ivt .zc-ledger { min-width: 760px; }
+.ivt .zc-ledger tbody tr.ivt-click { cursor: pointer; }
+.ivt .zc-ledger tbody tr.ivt-hl td { background: linear-gradient(168deg, var(--stop-fill), transparent); border-color: var(--stop-line); }
+.ivt .zc-ledger td.nw { white-space: nowrap; }
+.ivt-name b { display: block; font-weight: 600; color: var(--text-1); line-height: 1.3; }
+.ivt-name small { display: block; font-size: 11px; color: var(--text-3); line-height: 1.3; }
+.ivt-qty { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; margin-right: 6px; }
+.ivt-lvl { height: 7px; border-radius: 99px; background: var(--raise); position: relative; min-width: 100px; }
+.ivt-lvl i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 99px; }
+.ivt-lvl .mk { position: absolute; top: -3px; bottom: -3px; width: 2px; border-radius: 1px; background: var(--text-1); }
+.ivt-acts { display: flex; gap: 6px; justify-content: flex-end; align-items: center; position: relative; }
+.ivt-tfoot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: center; padding: 8px 18px 12px; font-size: 11.5px; color: var(--text-3); }
+.ivt-tfoot .zc-tfoot { padding: 0; }
+
+/* row "⋯" menu */
+.ivt-menu-scrim { position: fixed; inset: 0; z-index: 900; }
+.ivt-menu {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 901; min-width: 190px; padding: 6px;
+  background: var(--grad-modal); border: 1px solid var(--edge-hi); border-radius: 12px; box-shadow: var(--shadow-pop);
+  display: flex; flex-direction: column;
+}
+.ivt-menu button {
+  font: inherit; font-size: 12.5px; text-align: left; color: var(--text-1); background: transparent; border: 0;
+  border-radius: 8px; padding: 8px 10px; cursor: pointer; white-space: nowrap;
+}
+.ivt-menu button:hover { background: var(--raise); }
+.ivt-menu button.danger { color: var(--stop-ink); }
+.ivt-menu hr { border: 0; border-top: 1px solid var(--edge); margin: 4px 2px; }
+
+/* movement sign chip */
+.ivt-mv { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; font-size: 13px; font-weight: 700; flex: none; }
+.ivt-mv.in  { color: var(--ready-ink); background: var(--ready-fill); border: 1px solid var(--ready-line); }
+.ivt-mv.out { color: var(--stop-ink);  background: var(--stop-fill);  border: 1px solid var(--stop-line); }
+.ivt-chg { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ivt-chg.in { color: var(--ready-ink); }
+.ivt-chg.out { color: var(--stop-ink); }
+.ivt-ba { color: var(--text-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ivt-ba b { color: var(--text-1); font-weight: 600; }
+
+/* purchase lines (expanded row) */
+.ivt-sublines { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ivt-sublines td, .ivt-sublines th { padding: 5px 8px; border-bottom: 1px solid var(--edge); text-align: left; }
+.ivt-sublines th { font-size: 10.5px; color: var(--text-3); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.ivt-sublines .num { text-align: right; font-variant-numeric: tabular-nums; }
+.ivt .zc-ledger tbody tr.ivt-exp td { background: var(--card-2); padding-top: 4px; }
+
+/* ── mobile cards (replace tables under 720px) ── */
+.ivt-cards { display: none; padding: 8px 12px 4px; }
+.ivt-ocard { border: 1px solid var(--edge); border-radius: var(--r-row); background: var(--grad-panel); padding: 12px 13px; margin-bottom: 8px; }
+.ivt-ocard.click { cursor: pointer; }
+.ivt-ocard.hl { border-color: var(--stop-line); }
+.ivt-ocard .top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.ivt-ocard .meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 9px; }
+.ivt-ocard .ivt-lvl { margin-top: 10px; }
+
+/* ── drawer (side panel on the shared scrim — same pattern as Invoices) ── */
+.ivt-drawer-scrim { position: fixed; inset: 0; background: var(--scrim); backdrop-filter: blur(4px); z-index: 1000; display: flex; justify-content: flex-end; }
+.ivt-drawer {
+  width: min(480px, 100vw); height: 100%; overflow-y: auto; background: var(--grad-modal); border-left: 1px solid var(--edge-hi);
+  box-shadow: var(--shadow-pop); padding: 20px 22px; display: flex; flex-direction: column; gap: 16px; color: var(--text-1);
+}
+.ivt-dr-h { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.ivt-dr-h h3 { margin: 2px 0 6px; font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
+.ivt-sec-k { font-size: 11px; font-weight: 700; color: var(--text-3); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 8px; }
+.ivt-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ivt-facts > div { background: var(--card-2); border: 1px solid var(--edge); border-radius: var(--r-row); padding: 9px 11px; min-width: 0; }
+.ivt-facts .k { font-size: 11px; color: var(--text-3); }
+.ivt-facts .v { font-size: 14px; font-weight: 700; color: var(--text-1); margin-top: 2px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ivt-dr-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.ivt-hist { display: flex; flex-direction: column; }
+.ivt-hist > div { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 0; border-top: 1px solid var(--edge); font-size: 12.5px; }
+.ivt-hist > div:first-child { border-top: 0; }
+.ivt-hist small { display: block; font-size: 11px; color: var(--text-3); }
+
+/* ── modals ── */
+.ivt-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ivt-fl { font-size: 11.5px; color: var(--text-2); font-weight: 500; display: block; margin-bottom: 6px; }
+.ivt-fl small { color: var(--text-3); font-weight: 400; }
+.ivt-opts { display: flex; gap: 6px; flex-wrap: wrap; }
+.ivt-opts button {
+  font: inherit; font-size: 12px; padding: 6px 11px; border-radius: 9px; cursor: pointer;
+  border: 1px solid var(--edge); background: var(--card-2); color: var(--text-2);
+}
+.ivt-opts button:hover { color: var(--text-1); border-color: var(--edge-hi); }
+.ivt-opts button.on { border-color: var(--violet-line); background: var(--violet-weak); color: var(--text-1); font-weight: 600; }
+.ivt-note { font-size: 11.5px; color: var(--text-3); background: var(--card-2); border: 1px solid var(--edge); padding: 10px 13px; border-radius: var(--r-ctl); }
+.ivt-note.warn { color: var(--wait-ink); background: var(--wait-fill); border-color: var(--wait-line); }
+.ivt-mtable { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.ivt-mtable th { font-size: 10.5px; color: var(--text-3); text-align: left; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; padding: 6px 8px; border-bottom: 1px solid var(--edge); white-space: nowrap; }
+.ivt-mtable td { padding: 7px 8px; border-bottom: 1px solid var(--edge); vertical-align: middle; }
+.ivt-mtable .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ivt-mtable tr.changed td { background: var(--violet-faint); }
+.ivt-mtable .zc-input, .ivt-mtable .zc-select { padding: 7px 10px; }
+.ivt-step { display: inline-flex; align-items: center; gap: 4px; }
+.ivt-step button { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--edge); background: var(--card-2); color: var(--text-1); cursor: pointer; font: inherit; font-weight: 700; flex: none; }
+.ivt-step button:hover { border-color: var(--edge-hi); }
+.ivt-step input { width: 76px; text-align: center; padding: 6px 6px !important; }
+.ivt-mscroll { max-height: 48vh; overflow: auto; border: 1px solid var(--edge); border-radius: var(--r-row); }
+.ivt-mscroll .ivt-mtable th { position: sticky; top: 0; background: var(--card-2); z-index: 1; }
+.ivt-mfoot-l { margin-right: auto; font-size: 12.5px; color: var(--text-2); }
+.ivt-mfoot-l b { color: var(--accent-ink); font-size: 16px; margin-left: 6px; font-variant-numeric: tabular-nums; }
+.ivt-x { background: none; border: none; color: var(--stop-ink); cursor: pointer; font-size: 15px; padding: 4px; }
+.ivt-link { background: none; border: 0; padding: 0; color: var(--accent-ink); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+
+/* ── Purchase lines editor + Recipes / Import (moved from the old injected block) ── */
+.invp-iline { display: grid; grid-template-columns: 2fr 1fr auto; gap: 6px; align-items: center; }
+.impp-row-head {
+  display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 10px;
+  padding: 0 13px; font-size: 10px; color: var(--text-3); font-weight: 600;
+  letter-spacing: .06em; text-transform: uppercase;
+}
+.impp-item { border: 1px solid var(--edge); border-radius: var(--r-row); background: var(--grad-panel); overflow: hidden; }
+.impp-item.needs { border-color: var(--wait-line); }
+.impp-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 10px; align-items: center; padding: 10px 13px; }
+.impp-edit { padding: 13px; background: var(--card-2); }
+@media (max-width: 720px) {
+  .impp-row-head { display: none; }
+  .impp-row { grid-template-columns: 1fr 1fr; row-gap: 8px; }
+  .impp-name { grid-column: 1 / -1; }
+  .impp-row > div:last-child { grid-column: 1 / -1; justify-content: flex-end; }
+  .impp-edit > div { grid-template-columns: 1fr !important; }
+}
+
+/* modal tables on phones (modals are outside the page container → media query) */
+@media (max-width: 620px) {
+  .ivt-grid2 { grid-template-columns: 1fr; }
+  .ivt-mtable.stack thead { display: none; }
+  .ivt-mtable.stack tr { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px; padding: 10px 0; border-bottom: 1px solid var(--edge); }
+  .ivt-mtable.stack td { border: 0; padding: 0; }
+  .ivt-mtable.stack td.wide { grid-column: 1 / -1; }
+  .ivt-mtable.stack td.num { text-align: left; }
+  .ivt-mtable.stack td[data-k]::before { content: attr(data-k); display: block; font-size: 10.5px; color: var(--text-3); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 2px; }
+}
+
+/* ── responsive (container = the page's own width) ── */
+@container (max-width: 1180px) {
+  .ivt-kcc { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container (max-width: 1000px) {
+  .ivt-addbar { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ivt-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ivt-strip > div:nth-child(4) { border-left: 0; }
+  .ivt-strip > div:nth-child(n+4) { border-top: 1px solid var(--edge); }
+}
+@container (max-width: 860px) {
+  .ivt-pl { grid-template-columns: minmax(0, 1fr); }
+  .ivt-kcc { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container (max-width: 720px) {
+  .ivt-tablewrap { display: none; }
+  .ivt-cards { display: block; }
+}
+@container (max-width: 560px) {
+  .ivt-addbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ivt-add { padding: 10px 11px; gap: 9px; }
+  .ivt-add .ic { width: 34px; height: 34px; border-radius: 10px; }
+  .ivt-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ivt-strip > div { padding: 12px 14px; }
+  .ivt-strip > div:nth-child(4) { border-left: 1px solid var(--edge); }
+  .ivt-strip > div:nth-child(odd) { border-left: 0; }
+  .ivt-strip > div:nth-child(n+3) { border-top: 1px solid var(--edge); }
+  .ivt-strip > div:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .ivt-fbar .zc-input.search { flex-basis: 100%; max-width: none; }
+  .ivt .zc-subnav { flex-wrap: nowrap; overflow-x: auto; }
+  .ivt .zc-subnav button { flex: none; }
+  .ivt-kcc { padding: 12px; gap: 8px; }
+}
+@container (max-width: 400px) {
+  .ivt-kcc { grid-template-columns: minmax(0, 1fr); }
+}

@@ -5,7 +5,7 @@
 // Non-component helpers (tokens, formatters, style objects) live in invKit.js.
 // Data, API calls and business logic are untouched — this is presentation only.
 // ─────────────────────────────────────────────────────────────────────────────
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Loader from "../shared/Loader.jsx";
 import ErrorState from "../shared/ErrorState.jsx";
 import EmptyState from "../shared/EmptyState.jsx";
@@ -162,5 +162,70 @@ export function TableFooter({ page, pages, total, perPage, onPage, unit = N_("ro
         <button type="button" disabled={page === pages} onClick={() => onPage(page + 1)} aria-label={t("Next page")}>›</button>
       </div>
     </div>
+  );
+}
+
+// ── line icons (same stroke style as the sidebar / Dashboard icons) ─────────
+const ICONS = {
+  cart:  <><path d="M3 4h2l2 11h11l2-8H6" /><circle cx="9" cy="19" r="1.5" /><circle cx="17" cy="19" r="1.5" /></>,
+  bin:   <><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /><path d="M10 11v6M14 11v6" /></>,
+  box:   <><path d="M3 7l9-4 9 4v10l-9 4-9-4z" /><path d="M3 7l9 4 9-4M12 11v10" /></>,
+  cam:   <><path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" /></>,
+  plus:  <><rect x="3" y="3" width="18" height="18" rx="4" /><path d="M12 8v8M8 12h8" /></>,
+  close: <path d="M6 6l12 12M18 6L6 18" />,
+};
+export function Icon({ id, size }) {
+  return (
+    <svg className="ivt-ico" viewBox="0 0 24 24" aria-hidden="true" style={size ? { width: size, height: size } : undefined}>
+      {ICONS[id]}
+    </svg>
+  );
+}
+
+// ── side drawer (same pattern as invoices/InvoiceDrawer) ────────────────────
+export function Drawer({ onClose, label: ariaLabel, children }) {
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="ivt-drawer-scrim" onClick={onClose}>
+      <aside className="ivt-drawer" role="dialog" aria-modal="true" aria-label={ariaLabel} onClick={(e) => e.stopPropagation()}>
+        {children}
+      </aside>
+    </div>
+  );
+}
+
+// ── row "⋯" menu — items: [{ label, onClick, danger? } | "-"] ───────────────
+export function RowMenu({ items }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => e.key === "Escape" && setOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+  return (
+    <span style={{ position: "relative", display: "inline-flex" }} onClick={(e) => e.stopPropagation()}>
+      <button type="button" className="zc-btn ghost sm" aria-haspopup="menu" aria-expanded={open} aria-label={t("More actions")}
+        onClick={() => setOpen((o) => !o)}>⋯</button>
+      {open && (
+        <>
+          <div className="ivt-menu-scrim" onClick={() => setOpen(false)} />
+          <div className="ivt-menu" role="menu">
+            {items.filter(Boolean).map((it, i) => (it === "-"
+              ? <hr key={`s${i}`} />
+              : (
+                <button key={it.label} type="button" role="menuitem" className={it.danger ? "danger" : undefined}
+                  onClick={() => { setOpen(false); it.onClick(); }}>
+                  {it.label}
+                </button>
+              )))}
+          </div>
+        </>
+      )}
+    </span>
   );
 }
