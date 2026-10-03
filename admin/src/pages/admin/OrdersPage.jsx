@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, Fragment } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
 import toast from "react-hot-toast";
 import {
   getAllOrders, getRestaurantProfile, updateOrderStatus,
@@ -154,6 +154,28 @@ const GlobalOrdersStyle = () => (
       .op-hide-narrow { display: none !important; }
       .op-only-narrow { display: block; }
       .op-detail-grid { grid-template-columns: 1fr 1fr; }
+    }
+    /* ── New order (NewOrderModal): cart always visible ──
+       Wide: categories | menu | cart column (items first, details below,
+       totals pinned). Narrow (≤780px): category strip on top, full-width
+       menu, and the cart as a bottom bar that opens a full sheet. */
+    .op-no-modal { position: relative; }
+    .op-no-main { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+    .op-no-cats { width: 132px; flex-direction: column; overflow-y: auto; }
+    .op-no-cart { width: 300px; display: flex; flex-direction: column; flex-shrink: 0; min-height: 0; }
+    .op-no-cartbar { display: none; }
+    .op-no-back { display: none; }
+    @media (max-width: 780px) {
+      .op-no-main { flex-direction: column; }
+      .op-no-cats { width: 100% !important; flex-direction: row !important; overflow-x: auto; overflow-y: hidden !important;
+        border-right: 0 !important; border-bottom: 1px solid var(--edge); padding: 6px 8px !important; }
+      .op-no-cats > button { flex: none; min-width: 76px; padding: 6px 4px !important; }
+      .op-no-cats > button img { width: 24px !important; height: 24px !important; }
+      .op-no-cart { display: none; position: absolute; inset: 0; z-index: 20; width: auto; border-left: 0 !important; border-radius: inherit; }
+      .op-no-cart.open { display: flex; }
+      .op-no-cartbar { display: flex; flex-shrink: 0; align-items: center; gap: 10px; padding: 10px 14px;
+        border-top: 1px solid var(--edge); background: var(--grad-rail); }
+      .op-no-back { display: inline-flex; }
     }
     .op-ocard {
       border: 1px solid var(--edge); border-radius: var(--r-row);
@@ -573,6 +595,8 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
   const [catImages, setCatImages] = useState({});
   const [catBn, setCatBn] = useState({}); // category name → Bengali name
   const [idemKey] = useState(newIdempotencyKey);
+  const [cartOpen, setCartOpen] = useState(false); // phone: cart sheet over the menu
+  const tableRef = useRef(null);
 
   useEffect(()=>{
     menuCached().then(r=>{ setMi(r.data||[]); setMenuLoading(false); }).catch(()=>setMenuLoading(false));
@@ -630,7 +654,12 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
 
   const handleSubmit = async () => {
     if(!cart.length) return toast.error(t("Add at least one item"));
-    if(orderType==="DINE_IN" && !tableNo) return toast.error(t("Enter table number"));
+    if(orderType==="DINE_IN" && !tableNo) {
+      // The table field sits below the cart items — bring it into view.
+      tableRef.current?.scrollIntoView({ behavior:"smooth", block:"center" });
+      tableRef.current?.focus({ preventScroll:true });
+      return toast.error(t("Enter table number"));
+    }
     try{
       setLoading(true);
       const { data } = await placeOrder({
@@ -664,7 +693,7 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
   return (
     <div className="zc-scrim" style={{ padding:12 }}>
 
-      <div className="zc-modal" style={{ width:"100%", maxWidth:1300, height:"92vh",
+      <div className="zc-modal op-no-modal" style={{ width:"100%", maxWidth:1300, height:"92vh",
         display:"flex", flexDirection:"column", overflow:"hidden" }}>
 
         {/* ── TOP BAR ── */}
@@ -689,13 +718,12 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
         </div>
 
         {/* ── MAIN CONTENT ── */}
-        <div style={{ display:"flex", flex:1, overflow:"hidden" }}>
+        <div className="op-no-main">
 
           {/* ── LEFT: Category tabs (vertical) ── */}
-          <div className="op-scroll" style={{ width:132, background:"var(--surface)",
+          <div className="op-scroll op-no-cats" style={{ background:"var(--surface)",
             borderRight:"1px solid var(--edge)",
-            display:"flex", flexDirection:"column", gap:4,
-            overflowY:"auto", flexShrink:0, padding:"10px 8px" }}>
+            display:"flex", gap:4, flexShrink:0, padding:"10px 8px" }}>
             {categories.map(cat=>{
               const active = selCat===cat;
               const count  = cat==="All" ? mi.length : mi.filter(m=>m.category===cat).length;
@@ -843,16 +871,16 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
           </div>
 
           {/* ── RIGHT: Cart + Order details ── */}
-          <div style={{ width:290, background:"var(--grad-rail)",
-            borderLeft:"1px solid var(--edge)",
-            display:"flex", flexDirection:"column", flexShrink:0 }}>
+          <div className={`op-no-cart${cartOpen ? " open" : ""}`} style={{ background:"var(--grad-rail)",
+            borderLeft:"1px solid var(--edge)" }}>
 
             {/* Cart header */}
             <div style={{ padding:"14px 14px 10px",
               borderBottom:"1px solid var(--edge)", flexShrink:0 }}>
               <div style={{ display:"flex", justifyContent:"space-between",
                 alignItems:"center" }}>
-                <div style={{ fontWeight:700, fontSize:15, color:"var(--text-1)" }}>
+                <div style={{ fontWeight:700, fontSize:15, color:"var(--text-1)", display:"flex", alignItems:"center", gap:6 }}>
+                  <button type="button" className="zc-btn sm ghost op-no-back" onClick={()=>setCartOpen(false)}>← {t("Menu")}</button>
                   🛒 {t("Cart")}
                   {totalQty>0 && <span className="tnum" style={{ marginLeft:8, background:"var(--grad-btn)",
                     color:"#fff", borderRadius:"50%", width:20, height:20,
@@ -868,9 +896,60 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
               </div>
             </div>
 
-            {/* Order details */}
-            <div style={{ padding:"12px 14px", borderBottom:"1px solid var(--edge)",
-              flexShrink:0, display:"flex", flexDirection:"column", gap:8 }}>
+            {/* Cart items first, then order details — one scroll area; the
+                totals + Place Order stay pinned below. */}
+            <div className="op-scroll" style={{ flex:1, overflowY:"auto", minHeight:0 }}>
+            {/* Cart items */}
+            <div style={{ padding:"10px 14px" }}>
+              {cart.length===0 ? (
+                <div style={{ textAlign:"center", padding:"22px 0", color:"var(--text-3)" }}>
+                  <div style={{ fontSize:36, marginBottom:8 }}>🛒</div>
+                  <div style={{ fontSize:13 }}>{t("No items yet")}</div>
+                  <div style={{ fontSize:11, marginTop:4 }}>{t("Tap items to add")}</div>
+                </div>
+              ) : (
+                <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                  {cart.map(c=>(
+                    <div key={c.item._id} className="zc-panel" style={{
+                      display:"flex", alignItems:"center", gap:8, padding:"8px 10px",
+                    }}>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:13, fontWeight:600, color:"var(--text-1)",
+                          overflow:"hidden", textOverflow:"ellipsis",
+                          whiteSpace:"nowrap" }}>{localName(c.item)}</div>
+                        <div className="tnum" style={{ fontSize:11, color:"var(--text-3)" }}>
+                          ₹{fmtNum(c.item.price)} × {fmtNum(c.qty)}
+                        </div>
+                      </div>
+                      <div className="tnum" style={{ fontWeight:700, color:"var(--text-1)", fontSize:13,
+                        minWidth:44, textAlign:"right" }}>
+                        ₹{fmtNum(c.item.price*c.qty)}
+                      </div>
+                      <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+                        <button onClick={()=>removeItem(c.item._id)} style={{
+                          width:24, height:24, borderRadius:"50%",
+                          border:"1px solid var(--edge)", background:"var(--card-2)",
+                          color:"var(--text-2)", cursor:"pointer", fontWeight:700,
+                          fontSize:14, display:"flex", alignItems:"center",
+                          justifyContent:"center",
+                        }}>−</button>
+                        <button onClick={()=>addItem(c.item)} style={{
+                          width:24, height:24, borderRadius:"50%",
+                          background:"var(--grad-btn)", color:"#fff", border:"none",
+                          cursor:"pointer", fontWeight:700, fontSize:14,
+                          display:"flex", alignItems:"center",
+                          justifyContent:"center",
+                        }}>+</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Order details — below the items so the cart never gets squeezed */}
+            <div style={{ padding:"12px 14px", borderTop:"1px solid var(--edge)",
+              display:"flex", flexDirection:"column", gap:8 }}>
 
               {/* Order type */}
               <div className="zc-seg" style={{ width:"100%" }}>
@@ -888,7 +967,7 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
                   background:"var(--card-2)", border:`1px solid ${tableNo?"var(--violet-line)":"var(--edge)"}`,
                   borderRadius:"var(--r-ctl)", padding:"6px 14px" }}>
                   <span style={{ fontSize:13, color:"var(--text-2)", fontWeight:500 }}>{t("Table")}</span>
-                  <input type="number" min={1} value={tableNo}
+                  <input ref={tableRef} type="number" min={1} value={tableNo}
                     onChange={e=>setTableNo(e.target.value)}
                     placeholder={t("No.")}
                     style={{ flex:1, background:"transparent", border:"none",
@@ -940,52 +1019,6 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
               )}
             </div>
 
-            {/* Cart items */}
-            <div className="op-scroll" style={{ flex:1, overflowY:"auto", padding:"10px 14px" }}>
-              {cart.length===0 ? (
-                <div style={{ textAlign:"center", padding:"40px 0", color:"var(--text-3)" }}>
-                  <div style={{ fontSize:36, marginBottom:8 }}>🛒</div>
-                  <div style={{ fontSize:13 }}>{t("No items yet")}</div>
-                  <div style={{ fontSize:11, marginTop:4 }}>{t("Tap items to add")}</div>
-                </div>
-              ) : (
-                <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-                  {cart.map(c=>(
-                    <div key={c.item._id} className="zc-panel" style={{
-                      display:"flex", alignItems:"center", gap:8, padding:"8px 10px",
-                    }}>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:13, fontWeight:600, color:"var(--text-1)",
-                          overflow:"hidden", textOverflow:"ellipsis",
-                          whiteSpace:"nowrap" }}>{localName(c.item)}</div>
-                        <div className="tnum" style={{ fontSize:11, color:"var(--text-3)" }}>
-                          ₹{fmtNum(c.item.price)} × {fmtNum(c.qty)}
-                        </div>
-                      </div>
-                      <div className="tnum" style={{ fontWeight:700, color:"var(--text-1)", fontSize:13,
-                        minWidth:44, textAlign:"right" }}>
-                        ₹{fmtNum(c.item.price*c.qty)}
-                      </div>
-                      <div style={{ display:"flex", alignItems:"center", gap:4 }}>
-                        <button onClick={()=>removeItem(c.item._id)} style={{
-                          width:24, height:24, borderRadius:"50%",
-                          border:"1px solid var(--edge)", background:"var(--card-2)",
-                          color:"var(--text-2)", cursor:"pointer", fontWeight:700,
-                          fontSize:14, display:"flex", alignItems:"center",
-                          justifyContent:"center",
-                        }}>−</button>
-                        <button onClick={()=>addItem(c.item)} style={{
-                          width:24, height:24, borderRadius:"50%",
-                          background:"var(--grad-btn)", color:"#fff", border:"none",
-                          cursor:"pointer", fontWeight:700, fontSize:14,
-                          display:"flex", alignItems:"center",
-                          justifyContent:"center",
-                        }}>+</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
             {/* Bill summary + Place order */}
@@ -1023,6 +1056,14 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
             )}
           </div>
         </div>
+
+        {/* Phone: cart bar under the menu — opens the full cart. */}
+        <div className="op-no-cartbar">
+          <div style={{ flex:1, minWidth:0, fontSize:13, color:"var(--text-2)" }}>
+            {cart.length ? <>🛒 <b style={{ color:"var(--text-1)" }}>{tn(totalQty, "{n} item", "{n} items")}</b> · <b className="tnum" style={{ color:"var(--text-1)" }}>₹{fmtNum(total)}</b></> : t("Cart is empty")}
+          </div>
+          <button type="button" className="zc-btn pri sm" disabled={!cart.length} onClick={()=>setCartOpen(true)}>{t("View cart")} →</button>
+        </div>
       </div>
     </div>
   );
@@ -1037,6 +1078,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
   const [selCat,      setSelCat]      = useState("All");
   const [search,      setSearch]      = useState("");
   const [cart,        setCart]        = useState([]);
+  const [cartOpen,    setCartOpen]    = useState(false); // phone: cart sheet over the menu
   const [loading,     setLoading]     = useState(false);
   const [menuLoading, setMenuLoading] = useState(true);
   const [scpi,        setScpi]        = useState(0);
@@ -1154,13 +1196,13 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
       display:"flex", alignItems:"center", justifyContent:"center",
       padding:12, backdropFilter:"blur(6px)" }}>
 
-      <div style={{ background:"var(--surface)", borderRadius:20, width:"100%", maxWidth:1300,
+      <div className="op-no-modal" style={{ background:"var(--surface)", borderRadius:20, width:"100%", maxWidth:1300,
         height:"92vh", display:"flex", flexDirection:"column",
         border:`1px solid var(--violet-mid)`,
         boxShadow:"var(--shadow-pop)", overflow:"hidden" }}>
 
         {/* ── TOP BAR ── */}
-        <div style={{ display:"flex", alignItems:"center", gap:12,
+        <div style={{ display:"flex", alignItems:"center", gap:12, flexWrap:"wrap",
           padding:"14px 20px", borderBottom:`1px solid ${BDR}`,
           background:"var(--card)", flexShrink:0 }}>
 
@@ -1228,13 +1270,12 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
         </div>
 
         {/* ── MAIN CONTENT ── */}
-        <div style={{ display:"flex", flex:1, overflow:"hidden" }}>
+        <div className="op-no-main">
 
           {/* ── LEFT: Category tabs ── */}
-          <div className="op-scroll" style={{ width:150, background:"var(--bg)",
+          <div className="op-scroll op-no-cats" style={{ background:"var(--bg)",
             borderRight:`1px solid ${BDR}`,
-            display:"flex", flexDirection:"column",
-            overflowY:"auto", flexShrink:0 }}>
+            display:"flex", flexShrink:0 }}>
             {categories.map(cat=>{
               const active = selCat===cat;
               const count  = cat==="All" ? mi.length : mi.filter(m=>m.category===cat).length;
@@ -1390,39 +1431,13 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
           </div>
 
           {/* ── RIGHT: Cart ── */}
-          <div style={{ width:280, background:"var(--card)",
-            borderLeft:`1px solid ${BDR}`,
-            display:"flex", flexDirection:"column", flexShrink:0 }}>
+          <div className={`op-no-cart${cartOpen ? " open" : ""}`} style={{ background:"var(--card)",
+            borderLeft:`1px solid ${BDR}` }}>
 
-            <div style={{ padding:"14px 14px 10px",
-              borderBottom:`1px solid ${BDR}`, flexShrink:0 }}>
-              <div style={{ fontSize:10, fontWeight:600, color:T3, letterSpacing:1,
-                textTransform:"uppercase", marginBottom:8 }}>{t("Current Order")}</div>
-              <div style={{ background:CARD2, borderRadius:8, padding:10,
-                border:`1px solid ${isPaid?"var(--ready-line)":"var(--wait-line)"}` }}>
-                <div style={{ display:"flex", justifyContent:"space-between", fontSize:12 }}>
-                  <span style={{ color:T3 }}>{t("Items")}</span>
-                  <span style={{ color:T1, fontWeight:500 }}>{fmtNum(order.items?.length||0)}</span>
-                </div>
-                <div style={{ display:"flex", justifyContent:"space-between", fontSize:13,
-                  fontWeight:700, marginTop:4 }}>
-                  <span style={{ color:T1 }}>{t("Total")}</span>
-                  <span style={{ color:PINK }}>₹{fmtNum(Math.round(order.total))}</span>
-                </div>
-                <div style={{ marginTop:6, display:"flex", gap:6 }}>
-                  <span style={{ fontSize:11, fontWeight:700, padding:"2px 8px",
-                    borderRadius:20,
-                    background:isPaid?"var(--ready-fill)":"var(--wait-fill)",
-                    color:isPaid?"var(--ready-ink)":"var(--wait-ink)" }}>
-                    {isPaid?`✓ ${t("PAID")}`:`⏳ ${t("DUE")}`}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ padding:"10px 14px 6px", flexShrink:0 }}>
+            <div style={{ padding:"12px 14px 8px", flexShrink:0, borderBottom:`1px solid ${BDR}` }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                <span style={{ fontSize:13, fontWeight:700, color:T1 }}>
+                <span style={{ fontSize:13, fontWeight:700, color:T1, display:"flex", alignItems:"center", gap:6 }}>
+                  <button type="button" className="zc-btn sm ghost op-no-back" onClick={()=>setCartOpen(false)}>← {t("Menu")}</button>
                   {t("New Items")}
                   {totalQty>0 && <span style={{ marginLeft:8, background:PINK,
                     color:"#fff", borderRadius:"50%", width:20, height:20,
@@ -1438,7 +1453,10 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
               </div>
             </div>
 
-            <div className="op-scroll" style={{ flex:1, overflowY:"auto", padding:"4px 14px" }}>
+            {/* New items first, the current order below — one scroll area so
+                the list is never squeezed; totals + button stay pinned. */}
+            <div className="op-scroll" style={{ flex:1, overflowY:"auto", minHeight:0 }}>
+            <div style={{ padding:"8px 14px" }}>
               {cart.length===0 ? (
                 <div style={{ textAlign:"center", padding:"30px 0", color:T3 }}>
                   <div style={{ fontSize:32, marginBottom:6 }}>➕</div>
@@ -1479,6 +1497,33 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
               )}
             </div>
 
+            <div style={{ padding:"12px 14px", borderTop:`1px solid ${BDR}` }}>
+              <div style={{ fontSize:10, fontWeight:600, color:T3, letterSpacing:1,
+                textTransform:"uppercase", marginBottom:8 }}>{t("Current Order")}</div>
+              <div style={{ background:CARD2, borderRadius:8, padding:10,
+                border:`1px solid ${isPaid?"var(--ready-line)":"var(--wait-line)"}` }}>
+                <div style={{ display:"flex", justifyContent:"space-between", fontSize:12 }}>
+                  <span style={{ color:T3 }}>{t("Items")}</span>
+                  <span style={{ color:T1, fontWeight:500 }}>{fmtNum(order.items?.length||0)}</span>
+                </div>
+                <div style={{ display:"flex", justifyContent:"space-between", fontSize:13,
+                  fontWeight:700, marginTop:4 }}>
+                  <span style={{ color:T1 }}>{t("Total")}</span>
+                  <span style={{ color:PINK }}>₹{fmtNum(Math.round(order.total))}</span>
+                </div>
+                <div style={{ marginTop:6, display:"flex", gap:6 }}>
+                  <span style={{ fontSize:11, fontWeight:700, padding:"2px 8px",
+                    borderRadius:20,
+                    background:isPaid?"var(--ready-fill)":"var(--wait-fill)",
+                    color:isPaid?"var(--ready-ink)":"var(--wait-ink)" }}>
+                    {isPaid?`✓ ${t("PAID")}`:`⏳ ${t("DUE")}`}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            </div>
+
             {cart.length>0 && (
               <div style={{ padding:"12px 14px 16px",
                 borderTop:`1px solid ${BDR}`, flexShrink:0 }}>
@@ -1512,6 +1557,14 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
               </div>
             )}
           </div>
+        </div>
+
+        {/* Phone: cart bar under the menu — opens the full cart. */}
+        <div className="op-no-cartbar">
+          <div style={{ flex:1, minWidth:0, fontSize:13, color:T2 }}>
+            {cart.length ? <>➕ <b style={{ color:T1 }}>{tn(totalQty, "{n} item", "{n} items")}</b> · <b style={{ color:T1 }}>₹{fmtNum(total)}</b></> : t("Cart is empty")}
+          </div>
+          <button type="button" className="zc-btn pri sm" disabled={!cart.length} onClick={()=>setCartOpen(true)}>{t("View cart")} →</button>
         </div>
       </div>
     </div>

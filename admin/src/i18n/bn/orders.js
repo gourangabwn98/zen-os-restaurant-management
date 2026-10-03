@@ -382,4 +382,8 @@ export default {
   "Sending…": "পাঠানো হচ্ছে…",
   "UPI": "UPI",
   "Cash": "নগদ",
+  // New order — phone cart bar
+  "Menu": "মেনু",
+  "Cart is empty": "কার্ট খালি",
+  "View cart": "কার্ট দেখুন",
 };
