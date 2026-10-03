@@ -23,11 +23,17 @@ export const AUDIENCES = ["ALL", "REGISTERED", "GUEST"];
 export const audienceAllows = (c, isRegistered) =>
   (c?.audience || "ALL") === "ALL" || (c.audience === "REGISTERED") === Boolean(isRegistered);
 
-const httpError = (msg, statusCode = 400) => {
+const httpError = (msg, statusCode = 400, code) => {
   const err = new Error(msg);
   err.statusCode = statusCode;
+  if (code) err.code = code;
   return err;
 };
+
+// Coupons are for logged-in customers only: a guest sees them (with a login
+// prompt) but can never apply one — checked here, never only in the UI.
+export const LOGIN_REQUIRED = "LOGIN_REQUIRED";
+const loginRequired = () => httpError("Please log in to use coupons", 403, LOGIN_REQUIRED);
 
 // Same format as offer-notification coupon codes (notificationService.js —
 // not imported, as it loads Firebase Admin), so a code sent in an offer push
@@ -111,6 +117,10 @@ export const normalizeCouponInput = (body = {}, existing = null) => {
 
   out.audience = String(pick("audience") ?? "ALL").toUpperCase();
   if (!AUDIENCES.includes(out.audience)) throw httpError(`Audience must be one of: ${AUDIENCES.join(", ")}`);
+  // Guests can't apply coupons, so a new "guests only" coupon could never be
+  // used. An existing one keeps its audience when edited.
+  if (out.audience === "GUEST" && existing?.audience !== "GUEST")
+    throw httpError("Guests can't use coupons — choose All customers or Registered users");
 
   out.isActive = has(body, "isActive") ? Boolean(body.isActive) : (existing ? Boolean(existing.isActive) : true);
   return out;
@@ -158,15 +168,17 @@ export const deleteCoupon = async ({ models, id }) => {
 
 // ── Customer side ────────────────────────────────────────────────────────────
 
-/** Coupons this customer can use right now, ending soonest first.
- * `lockedCount`: live coupons a guest could unlock by logging in. */
+/** Coupons live right now, ending soonest first. A logged-in customer gets
+ * the ones they can use; a guest sees every coupon a login would unlock
+ * (each marked `loginRequired`) — guests can view coupons, not apply them. */
 export const listLiveCoupons = async ({ models, isRegistered = false, now = new Date() }) => {
   const rows = await models.Coupon.find({ isActive: true, startsAt: { $lte: now }, endsAt: { $gte: now } })
     .sort({ endsAt: 1 })
     .lean();
-  const coupons = rows.filter((c) => audienceAllows(c, isRegistered)).map(toPublicCoupon);
-  const lockedCount = isRegistered ? 0 : rows.filter((c) => c.audience === "REGISTERED").length;
-  return { coupons, lockedCount, serverNow: now };
+  const coupons = isRegistered
+    ? rows.filter((c) => audienceAllows(c, true)).map(toPublicCoupon)
+    : rows.filter((c) => audienceAllows(c, true)).map((c) => ({ ...toPublicCoupon(c), loginRequired: true }));
+  return { coupons, lockedCount: isRegistered ? 0 : coupons.length, loginRequired: !isRegistered, serverNow: now };
 };
 
 /** Looks a code up and throws a customer-readable 400 unless it's live now. */
@@ -177,6 +189,7 @@ const findLiveCoupon = async ({ models, code, isRegistered, now }) => {
   if (!c || !c.isActive) throw httpError("This coupon code isn't valid");
   if (now < new Date(c.startsAt)) throw httpError("This coupon isn't active yet");
   if (now > new Date(c.endsAt)) throw httpError("This coupon has expired");
+  if (!isRegistered) throw loginRequired();
   if (!audienceAllows(c, isRegistered)) {
     throw httpError(c.audience === "REGISTERED" ? "Log in to use this coupon" : "This coupon is only for guest orders");
   }

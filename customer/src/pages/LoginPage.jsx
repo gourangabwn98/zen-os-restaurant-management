@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
 import { auth as firebaseAuth } from "../firebase.js";
@@ -10,6 +10,8 @@ import Icon from "../components/ui/Icon.jsx";
 
 export default function LoginPage() {
   const nav = useNavigate();
+  // Back to where login was asked for (e.g. the cart, to use a coupon).
+  const returnTo = useLocation().state?.from;
   const { auth } = useAppState();
 
   const [step, setStep]       = useState("phone"); // "phone" | "otp"
@@ -59,7 +61,7 @@ export default function LoginPage() {
       const { data } = await firebaseVerify((await firebaseAuth.currentUser.getIdToken()), name.trim());
       auth.login(data);
       toast.success(`Welcome${data.name ? `, ${data.name}` : ""}!`);
-      nav("/profile", { replace: true });
+      nav(returnTo || "/profile", { replace: true });
     } catch (err) {
       if (err.code === "auth/invalid-verification-code") toast.error("Wrong OTP. Try again.");
       else if (err.code === "auth/code-expired") { toast.error("OTP expired — resend it"); setStep("phone"); setOtp(""); }

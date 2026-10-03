@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAppState } from "../context/AppState.jsx";
-import { placeOrder, saveGuestOrderToken, newIdempotencyKey } from "../services/orderService.js";
+import { placeOrder, quoteOrder, saveGuestOrderToken, newIdempotencyKey } from "../services/orderService.js";
 import { checkCoupon } from "../services/couponService.js";
 import { getRestaurantProfile } from "../services/restaurantService.js";
 import { initiatePhonePePayment } from "../services/paymentService.js";
@@ -13,7 +13,10 @@ import Button from "../components/ui/Button.jsx";
 import Icon from "../components/ui/Icon.jsx";
 import { VegDot } from "../components/ItemCard.jsx";
 import CouponSheet from "../components/CouponSheet.jsx";
-import { couponDiscount, couponShortfall, describeCoupon } from "../utils/coupon.js";
+import { describeCoupon } from "../utils/coupon.js";
+
+const LOGIN_REQUIRED = "LOGIN_REQUIRED";
+const rupees = (n) => `₹${Math.round((Number(n) || 0) * 100) / 100}`;
 
 export default function CartPage() {
   const nav = useNavigate();
@@ -21,8 +24,6 @@ export default function CartPage() {
   const { cart, auth, table } = useAppState();
 
   const [orderType, setOrderType] = useState(table.isDineIn ? "DINE_IN" : "TAKEAWAY");
-  const [name, setName]   = useState(auth.user?.name  || "");
-  const [phone, setPhone] = useState(auth.user?.phone || "");
   const [paymentMethod, setPaymentMethod] = useState("Cash");
   const [placing, setPlacing] = useState(false);
   const [idemKey] = useState(newIdempotencyKey);
@@ -59,18 +60,43 @@ export default function CartPage() {
     if (table.isDineIn) setOrderType("DINE_IN");
   }, [table.isDineIn]);
 
-  const gstNote = "Taxes & charges calculated at checkout by the restaurant";
-  // Preview only (utils/coupon.js mirrors the server). Below the coupon's
-  // minimum it stays selected but saves nothing, and isn't sent.
-  const saving = couponDiscount(coupon, cart.subtotal);
-  const shortfall = couponShortfall(coupon, cart.subtotal);
-  const toPay = cart.subtotal - saving;
+  // ── Live bill from the server (POST /orders/quote) ──────────────────────
+  // The SAME pricing the order is stored with (orderService.priceOrderDraft):
+  // item total, coupon, GST, service charge, total payable. Re-asked whenever
+  // the items, the coupon or the login change; nothing is computed here.
+  const [quote, setQuote] = useState(null);
+  const [quoteState, setQuoteState] = useState("loading"); // loading | ok | error
+  const quoteKey = JSON.stringify([cart.cart.map((c) => [c.item._id, c.qty]), coupon?.code || "", auth.isLoggedIn]);
+  useEffect(() => {
+    if (cart.itemCount === 0) return undefined;
+    let live = true;
+    setQuoteState("loading");
+    const h = setTimeout(() => {
+      quoteOrder({ items: cart.cart.map((c) => ({ menuItemId: c.item._id, qty: c.qty })), couponCode: coupon?.code || undefined })
+        .then(({ data }) => { if (live) { setQuote(data); setQuoteState("ok"); } })
+        .catch(() => { if (live) setQuoteState("error"); });
+    }, 250);
+    return () => { live = false; clearTimeout(h); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- quoteKey captures items, coupon and login
+  }, [quoteKey]);
+
+  const couponError = quoteState === "ok" ? quote?.couponError : null;
+  const couponOk = Boolean(coupon && quoteState === "ok" && quote?.coupon && !couponError);
+  const saving = couponOk ? quote.discount : 0;
+  const toPay = quoteState === "ok" ? quote.total : null;
+
+  // Logged out (here or in another tab) → a coupon can't stay applied.
+  useEffect(() => {
+    if (couponError?.code === LOGIN_REQUIRED) setCoupon(null);
+  }, [couponError?.code]);
+
+  const askLogin = () => nav("/login", { state: { from: "/cart" } });
 
   const applyCoupon = (c) => {
+    if (!auth.isLoggedIn) { setCouponOpen(false); toast.error("Please log in to use coupons."); return; }
     setCoupon(c);
     setCouponOpen(false);
-    const off = couponDiscount(c, cart.subtotal);
-    toast.success(off ? `🎉 ${c.code} applied — you save ₹${off}` : `${c.code} applied — add ₹${couponShortfall(c, cart.subtotal)} more to use it`);
+    toast.success(`🎟️ ${c.code} applied`);
   };
 
   // "Apply in cart" from a coupon notification (NotificationsPage) — check
@@ -79,19 +105,19 @@ export default function CartPage() {
   useEffect(() => {
     if (!pendingCode) return;
     nav(location.pathname, { replace: true, state: null }); // don't re-apply on refresh/back
+    if (!auth.isLoggedIn) { toast.error("Please log in to use coupons."); return; }
     checkCoupon(pendingCode)
       .then(({ data }) => applyCoupon(data.coupon))
       .catch((err) => toast.error(err.response?.data?.message || `Couldn't apply ${pendingCode}`));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingCode]);
 
+  // Guests order with no name, phone or login (the server never required them).
   const canPlace = useMemo(() => {
     if (cart.itemCount === 0) return false;
-    if (!name.trim()) return false;
-    if (!/^\d{10}$/.test(phone.replace(/\D/g, ""))) return false;
     if (orderType === "DINE_IN" && !table.isDineIn) return false;
     return true;
-  }, [cart.itemCount, name, phone, orderType, table.isDineIn]);
+  }, [cart.itemCount, orderType, table.isDineIn]);
 
   const handlePlace = async () => {
     if (!canPlace || placing) return;
@@ -102,10 +128,12 @@ export default function CartPage() {
         orderType,
         tableNo: orderType === "DINE_IN" ? table.tableNo : undefined,
         tableToken: orderType === "DINE_IN" ? table.tableToken : undefined,
-        customerName: name.trim(),
-        customerPhone: phone.replace(/\D/g, ""),
+        // A logged-in customer's profile; a guest sends nothing.
+        customerName: auth.user?.name || undefined,
+        customerPhone: auth.user?.phone || undefined,
         paymentMethod,
-        couponCode: coupon && saving > 0 ? coupon.code : undefined,
+        // Only a coupon the server just accepted in the quote is sent.
+        couponCode: couponOk ? coupon.code : undefined,
         notes: "",
         idempotencyKey: idemKey,
       };
@@ -153,10 +181,7 @@ export default function CartPage() {
   }
 
   // Why the button is disabled — shown right above it so it's never a mystery.
-  const blocker = !name.trim() ? "Enter your name to place the order"
-    : !/^\d{10}$/.test(phone.replace(/\D/g, "")) ? "Enter a 10-digit mobile number"
-    : orderType === "DINE_IN" && !table.isDineIn ? "Scan your table's QR code for dine-in"
-    : null;
+  const blocker = orderType === "DINE_IN" && !table.isDineIn ? "Scan your table's QR code for dine-in" : null;
 
   return (
     <>
@@ -186,24 +211,16 @@ export default function CartPage() {
         <Link to="/menu" className="btn btn-ghost" style={{ margin: "12px 0", minHeight: 46 }}>+ Add more items</Link>
       </div>
 
-      {/* ── Customer details ── */}
-      <div className="two">
-        <label className="field">
-          <span>Your name</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" autoComplete="name" />
-        </label>
-        <label className="field">
-          <span>Mobile</span>
-          <input
-            value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
-            placeholder="10-digit number" inputMode="numeric" autoComplete="tel-national"
-          />
-        </label>
-      </div>
+      {/* ── Optional login (guests order without name, phone or login) ── */}
       {!auth.isLoggedIn && (
-        <p className="muted small">
-          Ordering as guest. <Link to="/profile" className="link-btn" style={{ textDecoration: "none" }}>Log in</Link> to save order history.
-        </p>
+        <div className="card login-nudge">
+          <span className="ic" aria-hidden="true">✨</span>
+          <span className="grow">
+            <b>Login is optional</b>
+            <span className="muted small">You can order as a guest. Log in to use coupons, get special offers and hear about upcoming offers first.</span>
+          </span>
+          <button type="button" className="btn btn-ghost sm" onClick={askLogin}>Log in</button>
+        </div>
       )}
 
       {/* ── Order type ── */}
@@ -229,14 +246,14 @@ export default function CartPage() {
         )}
       </div>
 
-      {/* ── Coupon ── */}
+      {/* ── Coupon — guests see it; only logged-in customers can apply ── */}
       {coupon ? (
         <div className="card coupon-applied">
           <span className="ic" aria-hidden="true">🎟️</span>
           <span className="grow">
             <b>{coupon.code}</b>
-            <span className={`small ${shortfall ? "danger" : "ok"}`}>
-              {shortfall ? `Add ₹${shortfall} more to use this coupon` : `You save ₹${saving} · ${describeCoupon(coupon)}`}
+            <span className={`small ${couponError ? "danger" : "ok"}`}>
+              {quoteState === "loading" ? "Checking…" : couponError ? couponError.message : couponOk ? `You save ${rupees(saving)} · ${describeCoupon(coupon)}` : describeCoupon(coupon)}
             </span>
           </span>
           <button type="button" className="link-btn" onClick={() => setCoupon(null)}>Remove</button>
@@ -244,7 +261,10 @@ export default function CartPage() {
       ) : (
         <button type="button" className="card coupon-cta" onClick={() => setCouponOpen(true)}>
           <span className="ic" aria-hidden="true">🎟️</span>
-          <span className="grow"><b>Apply coupon</b><span className="muted small">See offers available right now</span></span>
+          <span className="grow">
+            <b>{auth.isLoggedIn ? "Apply coupon" : "Coupons"}</b>
+            <span className="muted small">{auth.isLoggedIn ? "See offers available right now" : "See today's coupons · log in to use them"}</span>
+          </span>
           <Icon name="chevron" />
         </button>
       )}
@@ -254,13 +274,24 @@ export default function CartPage() {
         </button>
       )}
 
-      {/* ── Bill ── */}
-      <div className="card bill">
-        <div className="row"><span className="muted">Item total</span><span>₹{cart.subtotal}</span></div>
-        {saving > 0 && <div className="row"><span className="muted">Coupon ({coupon.code})</span><span className="ok">−₹{saving}</span></div>}
-        <div className="row"><span className="muted">Taxes & charges</span><span className="muted small">added on the bill</span></div>
-        <div className="row total"><span>To pay</span><span>₹{toPay}<span className="muted small"> + tax</span></span></div>
-        <p className="muted tiny" style={{ marginTop: 6 }}>{gstNote}</p>
+      {/* ── Bill — the server's own figures (the amount the order is stored with) ── */}
+      <div className="card bill" aria-busy={quoteState === "loading"}>
+        {quoteState === "error" ? (
+          <>
+            <div className="row"><span className="muted">Item total</span><span>{rupees(cart.subtotal)}</span></div>
+            <p className="small danger" style={{ margin: "6px 0 0" }}>Couldn't calculate taxes right now — the restaurant will add them to your bill.</p>
+          </>
+        ) : !quote ? (
+          <p className="muted small" style={{ margin: 0 }}>Calculating your total…</p>
+        ) : (
+          <>
+            <div className="row"><span className="muted">Item total</span><span>{rupees(quote.subtotal)}</span></div>
+            {saving > 0 && <div className="row"><span className="muted">Coupon ({coupon.code})</span><span className="ok">−{rupees(saving)}</span></div>}
+            {quote.tax > 0 && <div className="row"><span className="muted">GST{quote.gstRate ? ` (${quote.gstRate}%)` : ""}</span><span>{rupees(quote.tax)}</span></div>}
+            {quote.serviceCharge > 0 && <div className="row"><span className="muted">Service charge</span><span>{rupees(quote.serviceCharge)}</span></div>}
+            <div className={`row total${quoteState === "loading" ? " stale" : ""}`}><span>Total payable</span><span>{rupees(quote.total)}</span></div>
+          </>
+        )}
       </div>
 
       {/* ── Payment method ── */}
@@ -295,7 +326,9 @@ export default function CartPage() {
       {/* ── Place order ── */}
       {blocker && <div className="notice" role="status">{blocker}</div>}
       <Button style={{ marginTop: 8 }} onClick={handlePlace} disabled={!canPlace || placing}>
-        {placing ? (payFirst ? "Opening payment…" : "Placing order…") : payFirst ? `Continue to pay · ₹${toPay} + tax` : `Place order · ₹${toPay}`}
+        {placing ? (payFirst ? "Opening payment…" : "Placing order…")
+          : payFirst ? `Continue to pay${toPay != null ? ` · ${rupees(toPay)}` : ""}`
+          : `Place order${toPay != null ? ` · ${rupees(toPay)}` : ""}`}
       </Button>
       <p className="muted small center" style={{ marginTop: 10 }}>
         {payFirst
@@ -304,7 +337,10 @@ export default function CartPage() {
       </p>
 
       {couponOpen && (
-        <CouponSheet subtotal={cart.subtotal} applied={coupon} onApply={applyCoupon} onClose={() => setCouponOpen(false)} />
+        <CouponSheet
+          subtotal={cart.subtotal} applied={coupon} onApply={applyCoupon} onClose={() => setCouponOpen(false)}
+          loggedIn={auth.isLoggedIn} onLogin={() => { setCouponOpen(false); askLogin(); }}
+        />
       )}
     </>
   );

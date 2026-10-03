@@ -61,6 +61,30 @@ const buildActor = (user, fallbackName) => ({
   name: user?.name || user?.waiterName || fallbackName || (user ? "Staff" : "Guest"),
 });
 
+// ── Price a draft order — the ONE pricing path ─────────────────────────────
+/**
+ * Server-priced items + coupon + totals for a draft. Used by placeOrderTx AND
+ * by the cart's live quote (POST /api/orders/quote), so the amount a customer
+ * sees in the cart is computed by exactly the code that prices the stored
+ * order. Prices/availability come from the DB (priceItems); the coupon is
+ * validated against the server clock and the caller's login
+ * (couponService.resolveCouponForOrder); totals are utils/pricing.computeTotals.
+ */
+export const priceOrderDraft = async ({ req, items, couponCode, isStaffOrder, restaurant }) => {
+  const { MenuItem, RestaurantProfile } = req.models;
+  const profile = restaurant !== undefined ? restaurant : await RestaurantProfile.findOne();
+  const scheduleCtx = await getScheduleContext({ models: req.models, profile });
+  const dbItems = await priceItems(items, MenuItem, scheduleCtx);
+  // Coupons are a customer checkout feature: validated against the
+  // server-priced item subtotal and the server clock (couponService); the
+  // client only sends the code. Staff orders don't take one.
+  const coupon = isStaffOrder ? null : await resolveCouponForOrder({
+    models: req.models, code: couponCode, subtotal: dbItems.reduce((s, i) => s + i.price * i.qty, 0),
+    isRegistered: Boolean(req.user), // guests can't apply coupons; audience rule
+  });
+  return { dbItems, coupon, ...computeTotals(dbItems, profile, coupon) };
+};
+
 // ── Place order ────────────────────────────────────────────────────────────
 /**
  * Central "place an order" entry point for customer (guest or logged in),
@@ -133,16 +157,9 @@ export const placeOrderTx = async ({ req, body }) => {
   }
   const payFirst = !isStaffOrder && isPayFirst(method, phonePeEnabled);
 
-  const scheduleCtx = await getScheduleContext({ models: req.models, profile: restaurant });
-  const dbItems = await priceItems(items, MenuItem, scheduleCtx);
-  // Coupons are a customer checkout feature: validated against the
-  // server-priced item subtotal and the server clock (couponService); the
-  // client only sends the code. Staff orders don't take one.
-  const coupon = isStaffOrder ? null : await resolveCouponForOrder({
-    models: req.models, code: couponCode, subtotal: dbItems.reduce((s, i) => s + i.price * i.qty, 0),
-    isRegistered: Boolean(req.user), // audience rule (REGISTERED / GUEST coupons)
+  const { dbItems, coupon, subtotal, tax, serviceCharge, discount, total } = await priceOrderDraft({
+    req, items, couponCode, isStaffOrder, restaurant,
   });
-  const { subtotal, tax, serviceCharge, discount, total } = computeTotals(dbItems, restaurant, coupon);
 
   // ── Table / QR verification (soft — see schema comment) + session ─────────
   let tableSessionId = null;

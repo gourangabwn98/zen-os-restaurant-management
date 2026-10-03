@@ -1,9 +1,10 @@
 // src/pages/admin/AdminLayout.jsx — Ad's Cafe admin shell
-import { useState, useEffect, lazy, Suspense } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.js";
 import { getDashboard, getRestaurantProfile } from "../../services/adminService.js";
 import { getSocket } from "../../services/socketService.js";
+import { useLiveOrders } from "../../hooks/useLiveOrders.js";
 import { invalidate } from "../../services/cache.js";
 import toast from "react-hot-toast";
 
@@ -227,6 +228,12 @@ export default function AdminLayout() {
       .catch(() => toast.error(t("Failed to load dashboard")));
   }, [user, navigate]);
   useEffect(() => { prefetchPages(); }, []);
+  // Sidebar order badge: re-read the counts on every order event (a new
+  // customer order shows at once) and after a socket reconnect.
+  const refreshCounts = useCallback(() => {
+    getDashboard().then((r) => setDashboardData(r.data)).catch(() => {});
+  }, []);
+  useLiveOrders(refreshCounts, { debounceMs: 800 });
   // Any menu change (this admin or another device) drops the cached order data.
   useEffect(() => {
     const socket = getSocket();

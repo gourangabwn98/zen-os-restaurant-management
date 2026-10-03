@@ -131,3 +131,8 @@
   .ofr-opts > button { flex: 1 1 100%; }
   .ofr-dt { max-width: none; }
 }
+
+/* Start / end: date + time pickers side by side (wrap on narrow cards). */
+.ofr-when { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.ofr-when .ofr-l { display: flex; flex-direction: column; gap: 4px; flex: 1 1 150px; min-width: 0; margin-top: 0; }
+.ofr-when .zc-input { width: 100%; }

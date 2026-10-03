@@ -11,12 +11,20 @@ import { parseMenuText, parseMenuCsv } from "../utils/menuImportParser.js";
 import { extractDocumentText } from "../utils/purchaseImportExtract.js";
 import { sniffFileType } from "../middleware/importUploadMiddleware.js";
 import { CATEGORY_SORT } from "../services/categoryService.js";
+import { listBestSellers } from "../services/bestSellerService.js";
 
 cloudinary.config({
   cloud_name:  process.env.CLOUDINARY_CLOUD_NAME,
   api_key:     process.env.CLOUDINARY_API_KEY,
   api_secret:  process.env.CLOUDINARY_API_SECRET,
 });
+
+// GET /api/menu/best-sellers — real top sellers (last 30 days of paid,
+// not-cancelled orders) that are on the menu right now. Public, read-only.
+export const getBestSellers = async (req, res) => {
+  try { res.json({ items: await listBestSellers({ models: req.models }) }); }
+  catch (err) { res.status(500).json({ message: err.message }); }
+};
 
 export const getMenu = async (req, res) => {
   try {

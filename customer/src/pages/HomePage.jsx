@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAppState } from "../context/AppState.jsx";
@@ -15,6 +15,8 @@ import StatusStepper from "../components/StatusStepper.jsx";
 import { MenuSkeleton } from "../components/ui/Skeleton.jsx";
 import { EmptyState, ErrorState } from "../components/StateViews.jsx";
 import Icon from "../components/ui/Icon.jsx";
+import { getBestSellers } from "../services/menuService.js";
+import { getLiveCoupons } from "../services/couponService.js";
 
 export default function HomePage() {
   const nav = useNavigate();
@@ -23,6 +25,15 @@ export default function HomePage() {
   const { items, grouped, loading, error, reload, categoryImage } = useMenu({ diet: filters.diet });
   const { orders } = useMyOrders();
   const [openItem, setOpenItem] = useState(null);
+  // Slider data — real sales and coupons live right now; nothing hardcoded.
+  const [bestSellers, setBestSellers] = useState([]);
+  const [offers, setOffers] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    getBestSellers().then(({ data }) => { if (alive) setBestSellers(data.items || []); }).catch(() => {});
+    getLiveCoupons().then(({ data }) => { if (alive) setOffers(data.coupons || []); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   const handleAdd = (item, qty = 1, notes = "") => {
     cart.addItem(item, qty, notes);
@@ -66,8 +77,8 @@ export default function HomePage() {
       {items && (
         <>
           <BannerCarousel
-            banners={profile?.banners} picks={picks} tableLabel={table.tableLabel}
-            onBrowse={() => nav("/menu")} onAdd={(it) => handleAdd(it, 1)}
+            banners={profile?.banners} picks={picks} bestSellers={bestSellers} offers={offers} tableLabel={table.tableLabel}
+            onBrowse={() => nav("/menu")} onAdd={(it) => handleAdd(it, 1)} onOffer={() => nav("/offers")}
           />
 
           {grouped.length > 0 && (

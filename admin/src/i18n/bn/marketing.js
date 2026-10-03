@@ -250,4 +250,8 @@ export default {
   "{n} phones": "{n}টি ফোন",
   "+{n} bill not paid yet": "+{n}টি বিল এখনও পরিশোধ হয়নি",
   "+{n} bills not paid yet": "+{n}টি বিল এখনও পরিশোধ হয়নি",
+  // Offers composer — start/end date + time
+  "Works until {when}.": "{when} পর্যন্ত চলবে।",
+  "Pick the last day and time customers can use it.": "গ্রাহকরা শেষ কবে, কটা পর্যন্ত ব্যবহার করতে পারবেন তা বাছুন।",
+  "Everyone sees it in the cart; customers log in to apply it (guests can't use coupons).": "কার্টে সবাই দেখতে পাবেন; ব্যবহার করতে লগইন করতে হবে (অতিথিরা কুপন ব্যবহার করতে পারবেন না)।",
 };

@@ -6,6 +6,8 @@ import { enablePushNotifications, isPushEnabled, onForegroundMessage } from "./s
 import Topbar from "./components/Topbar.jsx";
 import BottomNav from "./components/BottomNav.jsx";
 import CartBar from "./components/CartBar.jsx";
+import CallWaiterFab from "./components/CallWaiterFab.jsx";
+import InstallPrompt from "./components/InstallPrompt.jsx";
 import HomePage from "./pages/HomePage.jsx";
 import MenuPage from "./pages/MenuPage.jsx";
 import OffersPage from "./pages/OffersPage.jsx";
@@ -53,6 +55,8 @@ function Shell({ children }) {
       <Topbar />
       <main className="view" key={pathname}>{children}</main>
       {showCartBar && <CartBar />}
+      <CallWaiterFab />
+      <InstallPrompt />
       <BottomNav />
     </div>
   );

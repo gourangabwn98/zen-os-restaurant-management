@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import toast from "react-hot-toast";
 import { useVisibleInterval } from "../../hooks/useVisibleInterval.js";
+import { useLiveOrders } from "../../hooks/useLiveOrders.js";
 import {
   updateOrderStatus, getAllOrders, getAllInvoices,
   updateInvoiceStatus, getAllTables, getInventoryOverview, getPrinterStatus,
@@ -140,6 +141,9 @@ export default function DashboardPage({ data, onNavigate }) {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+  // New customer orders / status changes show at once (the 10s refresh
+  // below stays as the fallback) — hooks/useLiveOrders.js.
+  useLiveOrders(fetchData, { debounceMs: 600 });
   useEffect(() => { loadOps(); }, [loadOps]);
   useEffect(() => {
     getAllTables().then((r) => setTables(r.data?.tables || [])).catch(() => setTables([]));

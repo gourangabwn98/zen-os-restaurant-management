@@ -15,14 +15,15 @@ import { getLiveCoupons } from "../services/couponService.js";
  * has priced below their original price (admin-set `originalPrice`). Prices
  * shown are the live menu prices, nothing derived. */
 export default function OffersPage() {
-  const { cart } = useAppState();
+  const { cart, auth } = useAppState();
   const { items, loading, error, reload } = useMenu();
   const [openItem, setOpenItem] = useState(null);
   const [coupons, setCoupons] = useState([]);
 
+  // Re-read on login/logout: a guest sees the coupons with a login prompt.
   useEffect(() => {
     getLiveCoupons().then(({ data }) => setCoupons(data.coupons || [])).catch(() => {});
-  }, []);
+  }, [auth.isLoggedIn]);
 
   const deals = useMemo(() => (items || [])
     .filter((m) => discountPct(m) > 0)
@@ -47,7 +48,9 @@ export default function OffersPage() {
         <>
           <div className="sec-h"><h3>Coupons</h3></div>
           <p className="muted small" style={{ margin: "-6px 0 10px" }}>
-            Apply one in your <Link to="/cart" className="link-btn">cart</Link> before placing the order.
+            {auth.isLoggedIn
+              ? <>Apply one in your <Link to="/cart" className="link-btn">cart</Link> before placing the order.</>
+              : <>Please <Link to="/login" state={{ from: "/offers" }} className="link-btn">log in</Link> to use coupons — you can still order as a guest.</>}
           </p>
           <div className="coupon-list" style={{ marginBottom: 18 }}>
             {coupons.map((c) => <CouponTicket key={c.code} coupon={c} subtotal={cart.itemCount ? cart.subtotal : null} />)}

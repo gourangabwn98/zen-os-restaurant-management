@@ -136,7 +136,7 @@ await test("an unknown code is refused", async () => {
 });
 
 await test("a live coupon resolves to a snapshot (code is case-insensitive)", async () => {
-  const snap = await resolveCouponForOrder({ models: fakeModels([SPECIAL]), code: " special50 ", subtotal: 500, now: day(25) });
+  const snap = await resolveCouponForOrder({ models: fakeModels([SPECIAL]), code: " special50 ", subtotal: 500, isRegistered: true, now: day(25) });
   assert.deepEqual(snap, {
     code: "SPECIAL50", title: "Special offer", discountType: "FLAT", discountValue: 50, maxDiscount: null, minOrderAmount: 0,
   });
@@ -144,7 +144,7 @@ await test("a live coupon resolves to a snapshot (code is case-insensitive)", as
 
 await test("an order below the minimum is refused with how much more to add", async () => {
   await assert.rejects(
-    resolveCouponForOrder({ models: fakeModels([PUJA]), code: "PUJA20", subtotal: 250, now: day(12) }),
+    resolveCouponForOrder({ models: fakeModels([PUJA]), code: "PUJA20", subtotal: 250, isRegistered: true, now: day(12) }),
     (e) => e.statusCode === 400 && /₹50 more/.test(e.message),
   );
 });
@@ -158,10 +158,23 @@ console.log("── audience (registered / guest) ──────────
 const MEMBERS = { ...SPECIAL, code: "MEMBERS30", audience: "REGISTERED" };
 const WALKIN  = { ...SPECIAL, code: "WALKIN10", audience: "GUEST" };
 
-await test("a guest sees ALL + GUEST coupons, and how many a login would unlock", async () => {
+await test("a guest SEES every coupon a login would unlock, each marked loginRequired", async () => {
   const res = await listLiveCoupons({ models: fakeModels([SPECIAL, MEMBERS, WALKIN]), isRegistered: false, now: day(25) });
-  assert.deepEqual(res.coupons.map((c) => c.code).sort(), ["SPECIAL50", "WALKIN10"]);
-  assert.equal(res.lockedCount, 1);
+  assert.deepEqual(res.coupons.map((c) => c.code).sort(), ["MEMBERS30", "SPECIAL50"]);
+  assert.ok(res.coupons.every((c) => c.loginRequired === true));
+  assert.equal(res.loginRequired, true);
+});
+
+await test("a guest can't apply even an ALL-customers coupon (LOGIN_REQUIRED, 403)", async () => {
+  await assert.rejects(
+    resolveCouponForOrder({ models: fakeModels([SPECIAL]), code: "SPECIAL50", subtotal: 500, isRegistered: false, now: day(25) }),
+    (e) => e.statusCode === 403 && e.code === "LOGIN_REQUIRED" && /log in/i.test(e.message),
+  );
+  await assert.rejects(getLiveCoupon({ models: fakeModels([SPECIAL]), code: "SPECIAL50", isRegistered: false, now: day(25) }), (e) => e.code === "LOGIN_REQUIRED");
+});
+
+await test("a guest checking an expired code still learns it expired", async () => {
+  await assert.rejects(getLiveCoupon({ models: fakeModels([PUJA]), code: "PUJA20", isRegistered: false, now: day(25) }), (e) => /expired/.test(e.message));
 });
 
 await test("a registered customer sees ALL + REGISTERED coupons, not guest-only ones", async () => {
@@ -173,7 +186,7 @@ await test("a registered customer sees ALL + REGISTERED coupons, not guest-only 
 await test("a guest can't place an order with a registered-only coupon", async () => {
   await assert.rejects(
     resolveCouponForOrder({ models: fakeModels([MEMBERS]), code: "MEMBERS30", subtotal: 500, isRegistered: false, now: day(25) }),
-    (e) => e.statusCode === 400 && /Log in/.test(e.message),
+    (e) => e.statusCode === 403 && e.code === "LOGIN_REQUIRED",
   );
 });
 
@@ -200,6 +213,11 @@ await test("audience is validated and defaults to ALL", () => {
   assert.equal(normalizeCouponInput(valid).audience, "ALL");
   assert.equal(normalizeCouponInput({ ...valid, audience: "registered" }).audience, "REGISTERED");
   assert.throws(() => normalizeCouponInput({ ...valid, audience: "VIP" }), /Audience/);
+});
+
+await test("no NEW guests-only coupon (guests can't apply coupons); an existing one keeps it", () => {
+  assert.throws(() => normalizeCouponInput({ ...valid, audience: "GUEST" }), /Guests can't use coupons/);
+  assert.equal(normalizeCouponInput({ title: "Renamed" }, { ...valid, audience: "GUEST", startsAt: new Date(valid.startsAt), endsAt: new Date(valid.endsAt) }).audience, "GUEST");
 });
 
 console.log("── admin input ─────────────────────────────────");

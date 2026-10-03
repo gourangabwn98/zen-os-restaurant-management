@@ -17,13 +17,17 @@ export default function NewOrderPage() {
   const nav = useNavigate();
   const [params] = useSearchParams();
   const preTable = params.get("table");
+  // Opened from the Table Map: a picked table, or the "Take Away" tile.
+  // Either way the type is decided — no Dine-in / Takeaway switch.
+  const preTakeaway = params.get("type") === "takeaway";
+  const locked = Boolean(preTable) || preTakeaway;
   const { auth, duty } = useAppState();
   // Only a waiter is duty-gated (mirrors the backend — see
   // attendanceService.assertOnDuty); wait for duty.session to resolve
   // (undefined = still loading) so this never flashes before we know.
   const dutyGated = auth.user?.role === "waiter" && duty.session !== undefined && !duty.onDuty;
 
-  const [orderType, setOrderType] = useState(preTable ? "DINE_IN" : "TAKEAWAY");
+  const [orderType, setOrderType] = useState(preTable ? "DINE_IN" : "TAKEAWAY"); // takeaway default when nothing picked
   const [tableNo, setTableNo]     = useState(preTable || "");
   const [tables, setTables]       = useState([]);
 
@@ -213,6 +217,17 @@ export default function NewOrderPage() {
 
       {/* Order type + table */}
       <div style={{ padding: "12px 16px" }}>
+        {locked ? (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 12,
+            border: "1.5px solid rgba(59,130,246,0.5)", background: ACCENT_SOFT, color: ACCENT, fontWeight: 800, fontSize: 14,
+          }}>
+            {preTable ? `🍽️ Dine-in · Table ${preTable}` : "🛍️ Take Away"}
+            <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 600, color: TEXT_MUTED }}>
+              {preTable ? "picked on the table map" : "no table"}
+            </span>
+          </div>
+        ) : (<>
         <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
           {["DINE_IN", "TAKEAWAY"].map((t) => (
             <button key={t} onClick={() => setOrderType(t)} style={{
@@ -239,6 +254,7 @@ export default function NewOrderPage() {
             ))}
           </select>
         )}
+        </>)}
       </div>
 
       {/* Search */}

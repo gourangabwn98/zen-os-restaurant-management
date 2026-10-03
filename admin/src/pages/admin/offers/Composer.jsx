@@ -11,7 +11,7 @@ import { checkOffer } from "../../../services/couponService.js";
 import { t, tn, N_, fmtNum, fmtTime } from "../../../i18n/core.js";
 import {
   AUDIENCE, TITLE_MAX, DESC_MAX, money, fmtWhen, fmtDay, describeDiscount, pushBodyPreview,
-  suggestCodes, startOf, validate, endOfDay, toDateInput,
+  suggestCodes, startOf, validate, endOfDay, endAt, toDateInput,
 } from "./model.js";
 
 const END_PICKS = [[0, N_("End of today")], [2, N_("In 3 days")], [6, N_("In a week")], [29, N_("In 30 days")]];
@@ -64,7 +64,7 @@ function ReviewModal({ form, start, now, stats, editing, saving, cost, onCancel,
         </div>
         <div className="mb ofr-review">
           <div><span>{t("Who can use it")}</span><b>{t(AUDIENCE[form.audience].label)}</b></div>
-          <div><span>{t("Works")}</span><b>{fmtWhen(start)} – {fmtWhen(endOfDay(form.end))}</b></div>
+          <div><span>{t("Works")}</span><b>{fmtWhen(start)} – {fmtWhen(endAt(form))}</b></div>
           <div>
             <span>{t("Phone notification")}</span>
             <b>{pushes
@@ -153,7 +153,9 @@ export default function Composer({ form, setForm, editing, coupons, stats, savin
             <div>
               <b className="st">{t("Who can use it")}</b>
               <div className="ofr-opts" role="radiogroup" aria-label={t("Who can use this offer")}>
-                {Object.entries(AUDIENCE).map(([key, a]) => (
+                {/* "Guests only" is gone: guests can't apply coupons (server rule) —
+                    shown only while editing a coupon that already has it. */}
+                {Object.entries(AUDIENCE).filter(([key]) => key !== "GUEST" || form.audience === "GUEST").map(([key, a]) => (
                   <button key={key} type="button" role="radio" aria-checked={form.audience === key} aria-pressed={form.audience === key} onClick={() => setAudience(key)}>
                     {t(a.label)}<small>{t(a.hint)}</small>
                   </button>
@@ -239,7 +241,16 @@ export default function Composer({ form, setForm, editing, coupons, stats, savin
                 </button>
               </div>
               {form.startMode === "custom" && (
-                <input type="datetime-local" className="zc-input ofr-dt" value={form.startAt} aria-label={t("Start")} onChange={set("startAt")} />
+                <div className="ofr-when">
+                  <label className="ofr-l">{t("Start date")}
+                    <input type="date" className="zc-input" value={(form.startAt || "").slice(0, 10)} aria-label={t("Start date")}
+                      onChange={(e) => setForm((f) => ({ ...f, startAt: `${e.target.value}T${(f.startAt || "").slice(11, 16) || "00:00"}` }))} />
+                  </label>
+                  <label className="ofr-l">{t("Start time")}
+                    <input type="time" className="zc-input" value={(form.startAt || "").slice(11, 16)} aria-label={t("Start time")}
+                      onChange={(e) => setForm((f) => ({ ...f, startAt: `${(f.startAt || "").slice(0, 10) || toDateInput(today)}T${e.target.value || "00:00"}` }))} />
+                  </label>
+                </div>
               )}
               <label className="ofr-l" htmlFor="of-end">{t("Ends")}</label>
               <div className="ofr-opts">
@@ -247,9 +258,16 @@ export default function Composer({ form, setForm, editing, coupons, stats, savin
                   const v = toDateInput(addDays(start || today, d));
                   return <button key={d} type="button" aria-pressed={form.end === v} onClick={() => setForm((f) => ({ ...f, end: v }))}>{t(label)}<small>{fmtDay(endOfDay(v))}</small></button>;
                 })}
-                <input id="of-end" type="date" className="zc-input ofr-date" value={form.end} min={start ? toDateInput(start) : undefined} aria-invalid={!!errors.dates} aria-label={t("End date")} onChange={set("end")} />
               </div>
-              <div className={errors.dates ? "ofr-err" : "ofr-hint"}>{errors.dates || t("Works until 11:59 PM on the end date.")}</div>
+              <div className="ofr-when">
+                <label className="ofr-l">{t("End date")}
+                  <input id="of-end" type="date" className="zc-input" value={form.end} min={start ? toDateInput(start) : undefined} aria-invalid={!!errors.dates} aria-label={t("End date")} onChange={set("end")} />
+                </label>
+                <label className="ofr-l">{t("End time")}
+                  <input type="time" className="zc-input" value={form.endTime || "23:59"} aria-invalid={!!errors.dates} aria-label={t("End time")} onChange={(e) => setForm((f) => ({ ...f, endTime: e.target.value || "23:59" }))} />
+                </label>
+              </div>
+              <div className={errors.dates ? "ofr-err" : "ofr-hint"}>{errors.dates || (form.end ? t("Works until {when}.", { when: fmtWhen(endAt(form)) }) : t("Pick the last day and time customers can use it."))}</div>
               {editing && (
                 <label className="ofr-check-row">
                   <input type="checkbox" checked={form.isActive} onChange={set("isActive")} /> {t("Active (untick to pause)")}
@@ -280,7 +298,7 @@ export default function Composer({ form, setForm, editing, coupons, stats, savin
                 <div style={{ minWidth: 0 }}>
                   <b>{form.title.trim() || t("Headline")}</b>
                   <div>{form.discountValue ? describeDiscount({ ...form, discountValue: Number(form.discountValue), maxDiscount: Number(form.maxDiscount) || null }) : "—"}{Number(form.minOrderAmount) > 0 ? ` · ${t("min ₹{min}", { min: fmtNum(Number(form.minOrderAmount)) })}` : ""}</div>
-                  {form.end && <small>{t("Valid till {date}", { date: fmtDay(endOfDay(form.end)) })}</small>}
+                  {form.end && <small>{t("Valid till {date}", { date: fmtWhen(endAt(form)) })}</small>}
                 </div>
               </div>
               <div className="ofr-ph-foot">{form.audience === "REGISTERED" ? t("Guests see “Log in to use this coupon”.") : form.audience === "GUEST" ? t("Logged-in customers don't see it.") : t("Every customer sees it in the cart while it's running.")}</div>

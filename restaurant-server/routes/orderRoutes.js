@@ -1,6 +1,6 @@
 import express from "express";
 import {
-  placeOrder, confirmOrder, approveOrder, rejectOrder,
+  placeOrder, quoteOrder, confirmOrder, approveOrder, rejectOrder,
   getMyOrders, getOrderById, cancelOrder, modifyOrderItems,
 } from "../controllers/orderController.js";
 import { protect, optionalProtect, dbFromHeader } from "../middleware/authMiddleware.js";
@@ -23,6 +23,8 @@ const autoAuth = (req, res, next) =>
 // requireWaiterOnDuty no-ops for anyone who isn't a waiter (admin, chef,
 // customer/guest) — safe to mount on routes they share.
 router.post("/",            optionalProtect, requireWaiterOnDuty, placeOrder);
+// Cart preview — same pricing as placing the order, saves nothing.
+router.post("/quote",       optionalProtect, quoteOrder);
 router.get("/my",           protect,         getMyOrders);
 router.get("/:id",           autoAuth,        getOrderById);
 

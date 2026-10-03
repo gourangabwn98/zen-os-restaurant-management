@@ -8,7 +8,7 @@ import { buildActor } from "../services/orderService.js";
 import { computeOfferStats, checkOfferDraft } from "../services/offerStatsService.js";
 import { resolveTimezone } from "../utils/menuSchedule.js";
 
-const fail = (res, err) => res.status(err.statusCode || 500).json({ message: err.message });
+const fail = (res, err) => res.status(err.statusCode || 500).json({ message: err.message, ...(typeof err.code === "string" && { code: err.code }) });
 
 // Any logged-in account counts as "registered" for a coupon's audience —
 // staff never order through the customer cart, and staff orders take no coupon.

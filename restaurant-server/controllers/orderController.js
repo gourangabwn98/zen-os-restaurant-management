@@ -7,6 +7,7 @@
 
 import {
   placeOrderTx, confirmOrderTx, cancelOrderTx, assertCanViewOrder, modifyOrderItemsTx,
+  priceOrderDraft, getSourceFromUser,
 } from "../services/orderService.js";
 import {
   emitNewOrderPendingConfirmation, emitOrderCancelled, emitOrderConfirmed,
@@ -63,7 +64,38 @@ export const placeOrder = async (req, res) => {
       err.code === 11000
         ? "Could not place the order due to a conflict. Please try again."
         : err.message || "Could not place the order.";
-    res.status(status).json({ message: clientMessage });
+    res.status(status).json({ message: clientMessage, ...(typeof err.code === "string" && { code: err.code }) });
+  }
+};
+
+// ── POST /api/orders/quote — the cart's live bill (saves nothing) ───────────
+// Same pricing path as placing the order (orderService.priceOrderDraft), so
+// "Total payable" in the cart is the amount the order will be stored with.
+// A coupon problem (expired, not started, login needed, below minimum) comes
+// back as couponError next to the un-discounted bill — never a failed quote.
+export const quoteOrder = async (req, res) => {
+  try {
+    const { items, couponCode } = req.body || {};
+    if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ message: "Add at least one item" });
+    const source = getSourceFromUser(req.user);
+    const isStaffOrder = source === "ADMIN" || source === "WAITER";
+    const restaurant = await req.models.RestaurantProfile.findOne();
+    const shape = (p) => ({
+      items: p.dbItems.map((i) => ({ menuItemId: i.menuItem, name: i.name, price: i.price, qty: i.qty, lineTotal: i.price * i.qty })),
+      subtotal: p.subtotal, discount: p.discount, tax: p.tax, serviceCharge: p.serviceCharge, total: p.total,
+      coupon: p.coupon, gstRate: restaurant?.gstRate || 0,
+    });
+    const base = await priceOrderDraft({ req, items, isStaffOrder, restaurant });
+    if (!couponCode || isStaffOrder) return res.json({ ...shape(base), couponError: null });
+    try {
+      const withCoupon = await priceOrderDraft({ req, items, couponCode, isStaffOrder, restaurant });
+      return res.json({ ...shape(withCoupon), couponError: null });
+    } catch (err) {
+      if (!err.statusCode || err.statusCode >= 500) throw err;
+      return res.json({ ...shape(base), couponError: { message: err.message, ...(typeof err.code === "string" && { code: err.code }) } });
+    }
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message });
   }
 };
 

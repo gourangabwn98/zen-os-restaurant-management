@@ -110,13 +110,15 @@ await test("a coupon that has already started is pushed right away", async () =>
   assert.equal(sent[0].data.couponCode, "PUJA20");
 });
 
-await test("a guest-only coupon is never announced (only registered users get pushes)", async () => {
+await test("a new guest-only coupon is refused (guests can't apply coupons) — nothing announced", async () => {
   sent = [];
   const models = makeModels();
-  const { coupon, warning } = await createCouponWithNotice({ models, body: body({ audience: "GUEST" }), actor, now: NOW });
-  assert.ok(!coupon.notification); // fake has no schema default (null)
-  assert.match(warning, /Guest-only/);
+  await assert.rejects(
+    createCouponWithNotice({ models, body: body({ audience: "GUEST" }), actor, now: NOW }),
+    /Guests can't use coupons/,
+  );
   assert.equal(models.NotificationLog.rows.length, 0);
+  assert.equal(sent.length, 0);
 });
 
 await test("notify unticked → no notification", async () => {

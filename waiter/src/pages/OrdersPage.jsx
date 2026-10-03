@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { getAllOrders, confirmOrder } from "../services/orderService.js";
-import { getSocket } from "../services/socketService.js";
+import { useLiveOrders } from "../hooks/useLiveOrders.js";
 import OrderCard from "../components/OrderCard.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import PrimaryButton from "../components/ui/PrimaryButton.jsx";
@@ -35,19 +35,14 @@ export default function OrdersPage() {
     }
   }, []);
 
+  // Realtime: refresh the instant an order is placed/confirmed/changed
+  // anywhere, and catch up after a reconnect (hooks/useLiveOrders.js). The
+  // 12s poll stays as a safety net if the socket is down.
+  useLiveOrders(load);
   useEffect(() => {
     load();
-    // Realtime: refresh the list the instant an order is placed/confirmed/
-    // rejected/changed anywhere (same staff-room events the admin panel uses).
-    // The 12s poll stays as a safety net if the socket drops.
     const iv = setInterval(load, 12000);
-    const socket = getSocket();
-    const events = ["order:new", "order:confirmed", "order:status_changed", "order:cancelled", "order:payment_changed"];
-    if (socket) events.forEach((e) => socket.on(e, load));
-    return () => {
-      clearInterval(iv);
-      if (socket) events.forEach((e) => socket.off(e, load));
-    };
+    return () => clearInterval(iv);
   }, [load]);
 
   const handleQuickConfirm = async (e, order) => {

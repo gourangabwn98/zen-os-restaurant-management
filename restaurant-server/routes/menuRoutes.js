@@ -1,6 +1,6 @@
 import express from "express";
 import {
-  getMenu, addMenuItem, updateMenuItem, deleteMenuItem, toggleAvailability, getCategoriesWithImage, bulkUpdateSchedule,
+  getMenu, getBestSellers, addMenuItem, updateMenuItem, deleteMenuItem, toggleAvailability, getCategoriesWithImage, bulkUpdateSchedule,
   setItemsAvailability, bulkEditMenuItems, getMenuTimes, createMenuTimeHandler, updateMenuTimeHandler, deleteMenuTimeHandler,
   readMenuImportText, readMenuImportFile, commitMenuImport,
 } from "../controllers/menuController.js";
@@ -31,6 +31,8 @@ const autoAuth = (req, res, next) =>
 
 router.get("/",           autoAuth, getMenu);
 router.get("/categories", autoAuth, getCategoriesWithImage);
+// Home slider: real top sellers that are orderable now (services/bestSellerService.js).
+router.get("/best-sellers", autoAuth, getBestSellers);
 // Admin routes — use protect (token has mongoUri)
 // router.post("/",              protect, uploadMiddleware, addMenuItem);
 // router.put("/:id",            protect, uploadMiddleware, updateMenuItem);

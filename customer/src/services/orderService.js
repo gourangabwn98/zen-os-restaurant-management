@@ -37,6 +37,10 @@ export const newIdempotencyKey = () =>
 
 // ── API calls ──────────────────────────────────────────────────────────────
 export const placeOrder = (body) => api.post("/orders", body);
+// The cart's live bill — same server pricing as placing the order; saves
+// nothing. → { items, subtotal, discount, tax, serviceCharge, total, gstRate,
+// coupon, couponError: { message, code? } | null }
+export const quoteOrder = (body) => api.post("/orders/quote", body);
 
 export const getOrder = (id) => api.get(`/orders/${id}`, { headers: guestHeaders(id) });
 

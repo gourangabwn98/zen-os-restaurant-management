@@ -18,11 +18,19 @@ export const toDateInput = (d) => (d ? `${d.getFullYear()}-${pad(d.getMonth() + 
 export const toDateTimeInput = (d) => (d ? `${toDateInput(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}` : "");
 /** End date = until 11:59 PM that day in the admin's local time (unchanged rule). */
 export const endOfDay = (v) => (v ? new Date(`${v}T23:59:59.999`) : null);
+const hhmm = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+/** The coupon's last moment: end date + end time (admin's local time).
+ * 23:59 means "to the end of that minute", like the old end-of-day rule. */
+export const endAt = (f) => {
+  if (!f.end) return null;
+  const time = /^\d{2}:\d{2}$/.test(f.endTime || "") ? f.endTime : "23:59";
+  return new Date(`${f.end}T${time}${time === "23:59" ? ":59.999" : ":00"}`);
+};
 export const fmtDay = (d) => fmtDate(d, { day: "numeric", month: "short", year: "numeric" });
 export const fmtWhen = (d) => `${fmtDate(d, { weekday: "short", day: "numeric", month: "short" })}, ${fmtTime(d, { hour: "numeric", minute: "2-digit" })}`;
 
 export const AUDIENCE = {
-  ALL:        { label: N_("All customers"),    hint: N_("Registered and guest customers both see it in the cart's coupon list.") },
+  ALL:        { label: N_("All customers"),    hint: N_("Everyone sees it in the cart; customers log in to apply it (guests can't use coupons).") },
   REGISTERED: { label: N_("Registered users"), hint: N_("Only logged-in customers see and can use it. Guests are told to log in.") },
   GUEST:      { label: N_("Guests only"),      hint: N_("Only customers ordering without logging in see and can use it.") },
 };
@@ -71,7 +79,7 @@ export const suggestCodes = (title, value, taken = new Set()) => {
 export const EMPTY_FORM = {
   code: "", title: "", description: "", discountType: "PERCENT", discountValue: "",
   maxDiscount: "", minOrderAmount: "", audience: "ALL", notify: false,
-  startMode: "now", startAt: "", end: "", isActive: true,
+  startMode: "now", startAt: "", end: "", endTime: "23:59", isActive: true,
 };
 
 /** Coupon document → composer form (Edit). Keeps its exact start time. */
@@ -80,7 +88,7 @@ export const formFromCoupon = (c) => ({
   discountType: c.discountType, discountValue: String(c.discountValue),
   maxDiscount: c.maxDiscount ? String(c.maxDiscount) : "", minOrderAmount: c.minOrderAmount ? String(c.minOrderAmount) : "",
   audience: c.audience || "ALL", notify: Boolean(c.announce),
-  startMode: "custom", startAt: toDateTimeInput(new Date(c.startsAt)), end: toDateInput(new Date(c.endsAt)),
+  startMode: "custom", startAt: toDateTimeInput(new Date(c.startsAt)), end: toDateInput(new Date(c.endsAt)), endTime: hhmm(new Date(c.endsAt)),
   isActive: c.isActive,
 });
 
@@ -99,7 +107,7 @@ export const payloadOf = (f, start) => {
     discountType: f.discountType, discountValue: Number(f.discountValue),
     maxDiscount: isPercent && f.maxDiscount !== "" ? Number(f.maxDiscount) : null,
     minOrderAmount: f.minOrderAmount !== "" ? Number(f.minOrderAmount) : 0,
-    startsAt: start.toISOString(), endsAt: endOfDay(f.end).toISOString(),
+    startsAt: start.toISOString(), endsAt: endAt(f).toISOString(),
     isActive: f.isActive,
     audience: f.audience, notify: f.audience !== "GUEST" && f.notify,
   };
@@ -109,7 +117,7 @@ export const payloadOf = (f, start) => {
 export const validate = (f, start, taken) => {
   const isPercent = f.discountType === "PERCENT";
   const v = Number(f.discountValue);
-  const end = endOfDay(f.end);
+  const end = endAt(f);
   return {
     code: !f.code ? "" : !COUPON_RE.test(f.code) ? t("3–20 characters: letters, numbers, - or _")
       : taken.has(f.code) ? t("Another offer already uses this code") : "",

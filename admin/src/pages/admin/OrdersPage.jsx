@@ -6,6 +6,7 @@ import {
 } from "../../services/adminService.js";
 import { placeOrder, newIdempotencyKey } from "../../services/orderService.js";
 import { getSocket } from "../../services/socketService.js";
+import { useLiveOrders } from "../../hooks/useLiveOrders.js";
 import { consumePendingOrderFocus } from "../../services/orderFocus.js";
 import CombinedBillModal from "./shared/CombinedBillModal.jsx";
 import CombineBillPanel from "./shared/CombineBillPanel.jsx";
@@ -2108,6 +2109,10 @@ export default function OrdersPage() {
     setAllTick((n) => n + 1);
   },[]);
   useEffect(()=>{ fetchOrders(); },[fetchOrders]);
+  // Each event is applied below (upsertOrder); this adds the catch-up after a
+  // socket RECONNECT (missed events are never replayed) and a re-read while
+  // the socket is down — orders used to stay missing until a manual refresh.
+  useLiveOrders(fetchOrders, { events: false });
   // Warm the New-order data right away so the first tap on "New order" is instant.
   useEffect(()=>{ prefetchOrderData(); },[]);
 

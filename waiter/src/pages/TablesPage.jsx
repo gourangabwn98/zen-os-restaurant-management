@@ -12,6 +12,7 @@ import {
   formatElapsed, elapsedMinutes, runningTotal, activeOrders,
 } from "../utils/tableSession.js";
 import { NAV_HEIGHT } from "../theme.js";
+import { useLiveOrders } from "../hooks/useLiveOrders.js";
 
 const AMBER = "#F5B83D";
 
@@ -40,6 +41,11 @@ export default function TablesPage() {
     if (dutyGated) return toast.error("You must be ON DUTY to perform this action.");
     nav(`/new-order?table=${tableNo}`);
   };
+  // Take Away starts here (the order page no longer offers it once a table is picked).
+  const goToTakeaway = () => {
+    if (dutyGated) return toast.error("You must be ON DUTY to perform this action.");
+    nav("/new-order?type=takeaway");
+  };
   const [tables, setTables]     = useState(null);
   const [sessions, setSessions] = useState({});
   const [error, setError]       = useState(null);
@@ -64,6 +70,9 @@ export default function TablesPage() {
     }
   }, []);
 
+  // Live: a customer's new order (and every status / table change) shows up
+  // at once — it used to wait for the 15s poll, which stays as a fallback.
+  useLiveOrders(load);
   useEffect(() => {
     load();
     const iv = setInterval(load, 15000);
@@ -190,6 +199,30 @@ export default function TablesPage() {
           )}
         </div>
       )}
+
+      {/* Take Away — NOT a table: its own full-width, differently styled tile
+          below the table grid. Starts a TAKEAWAY order (no table). */}
+      <div style={{ padding: "18px 16px 0" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 10px", color: TEXT_MUTED, fontSize: 10.5, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase" }}>
+          <span style={{ flex: 1, height: 1, background: CARD_BORDER }} />Or<span style={{ flex: 1, height: 1, background: CARD_BORDER }} />
+        </div>
+        <button
+          type="button" onClick={goToTakeaway} className="pressable"
+          aria-label="Start a Take Away order"
+          style={{
+            width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", cursor: "pointer",
+            borderRadius: 18, border: `1.5px dashed ${AMBER}`, background: `${AMBER}14`, color: TEXT_MAIN, textAlign: "left",
+            fontFamily: FONT_BODY, opacity: dutyGated ? 0.55 : 1,
+          }}
+        >
+          <span aria-hidden="true" style={{ width: 44, height: 44, borderRadius: 14, flexShrink: 0, display: "grid", placeItems: "center", background: `${AMBER}2E`, fontSize: 22 }}>🛍️</span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: "block", fontFamily: FONT_HEAD, fontWeight: 800, fontSize: 16 }}>Take Away</span>
+            <span style={{ display: "block", fontSize: 11.5, color: TEXT_MUTED }}>Order to pack and collect — no table</span>
+          </span>
+          <span aria-hidden="true" style={{ color: AMBER, fontSize: 20, fontWeight: 800 }}>＋</span>
+        </button>
+      </div>
 
       {/* Selected occupied table — its active orders, as a modal (not an
           inline block the page had to be scrolled down to reach). */}
