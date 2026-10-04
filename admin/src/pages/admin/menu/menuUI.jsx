@@ -4,6 +4,7 @@
 // plus the page-scoped stylesheet. Theme tokens only (tokens.css) — light and
 // dark safe. Helpers without JSX live in menuKit.js.
 // ─────────────────────────────────────────────────────────────────────────────
+import CategoryIcon from "../../../components/CategoryIcon.jsx";
 import { useState } from "react";
 import { t } from "../../../i18n/core.js";
 import { isUrl, schedLabel } from "./menuKit.js";
@@ -279,7 +280,7 @@ export const Thumb = ({ src, size = 40, missing = false }) => {
 
 // Category thumbnail — its uploaded image, else its emoji (older categories
 // store one, e.g. "🍕"), else a generic glyph.
-export const CatThumb = ({ image, size = 38 }) => {
+export const CatThumb = ({ image, icon, size = 38 }) => {
   const [broken, setBroken] = useState(false);
   const showImg = isUrl(image) && !broken;
   return (
@@ -287,7 +288,8 @@ export const CatThumb = ({ image, size = 38 }) => {
       {showImg
         ? <img src={image} alt="" loading="lazy" onError={() => setBroken(true)}
             style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 9 }} />
-        : (image && !isUrl(image) ? image : "🗂️")}
+        : icon ? <CategoryIcon name={icon} size={Math.round(size * 0.62)} />
+          : (image && !isUrl(image) ? image : "🗂️")}
     </span>
   );
 };

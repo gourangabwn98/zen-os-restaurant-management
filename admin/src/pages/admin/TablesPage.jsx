@@ -1,9 +1,9 @@
 import { PRIMARY, PRIMARY_LIGHT, PRIMARY_DARK } from "../../theme.js";
-import { needsPaidFirst, PAID_FIRST_HINT } from "./shared/paymentRules.js";
+import { canPickStatus, isBillSettled } from "./shared/paymentRules.js";
 import { useState, useEffect, useCallback } from "react";
 import toast from "react-hot-toast";
 import {
-  getAllOrders, updateOrderStatus, getAllInvoices, updateInvoiceStatus,
+  getAllOrders, updateOrderStatus,
   getAllTables, createTable, updateTable, deleteTable, regenerateQR, getTakeawayQR,
   getOpenTableSessions, clearTableSession,
   getWaitlist, addWaitlistEntry, seatWaitlistEntry, cancelWaitlistEntry,
@@ -37,9 +37,9 @@ const STATUS_STYLE = {
   Empty:                { bg:"rgba(255,255,255,0.04)", border:"rgba(255,255,255,0.12)", tc:"#6b7280",  label:N_("Free")      },
   PENDING_CONFIRMATION: { bg:"rgba(56,122,221,0.15)",  border:"#378ADD",               tc:"#60a5fa",  label:N_("Awaiting confirmation") },
   CONFIRMED:            { bg:"rgba(56,122,221,0.15)",  border:"#378ADD",               tc:"#60a5fa",  label:N_("Placed")    },
-  PREPARING:            { bg:"rgba(186,117,23,0.15)",  border:"#BA7517",               tc:"#fbbf24",  label:N_("Preparing") },
-  READY:                { bg:"rgba(16,185,129,0.15)",  border:"#10b981",               tc:"#34d399",  label:N_("Ready")     },
-  DELIVERED:            { bg:"rgba(16,185,129,0.15)",  border:"#10b981",               tc:"#34d399",  label:N_("Delivered") },
+  PREPARING:            { bg:"rgba(186,117,23,0.15)",  border:"#BA7517",               tc:"#fbbf24",  label:N_("Cooking") },
+  READY:                { bg:"rgba(16,185,129,0.15)",  border:"#10b981",               tc:"#34d399",  label:N_("Ready to Deliver") },
+  DELIVERED:            { bg:"rgba(16,185,129,0.15)",  border:"#10b981",               tc:"#34d399",  label:N_("Served") },
   COMPLETED:            { bg:"rgba(107,114,128,0.15)", border:"#4b5563",               tc:"#9ca3af",  label:N_("Completed") },
   CANCELLED:            { bg:"rgba(239,68,68,0.15)",   border:"#ef4444",               tc:"#f87171",  label:N_("Cancelled") },
 };
@@ -48,8 +48,15 @@ const STATUS_STYLE = {
 const ACTIVE_STATUSES = ["PENDING_CONFIRMATION","CONFIRMED","PREPARING","READY","DELIVERED"];
 // Targets offered on the "Update Order" buttons. PENDING_CONFIRMATION is
 // deliberately excluded — it's only ever an order's starting point, never
-// something to switch back to (see CLAUDE.md).
-const ALL_STATUSES    = ["CONFIRMED","PREPARING","READY","DELIVERED","COMPLETED","CANCELLED"];
+// something to switch back to (see CLAUDE.md). COMPLETED is never offered:
+// settling the bill in Invoices completes a served order (BIL-01/02).
+const ALL_STATUSES    = ["CONFIRMED","PREPARING","READY","DELIVERED","CANCELLED"].filter(canPickStatus);
+// TBL-02: any table size the restaurant actually has (server allows 1–100).
+const MIN_SEATS = 1, MAX_SEATS = 100;
+const seatsError = (v) => {
+  const n = Number(v);
+  return Number.isInteger(n) && n >= MIN_SEATS && n <= MAX_SEATS ? null : t("Seats must be a whole number from {a} to {b}", { a: MIN_SEATS, b: MAX_SEATS });
+};
 
 // ── Inject styles ─────────────────────────────────────────────────────────────
 if (!document.getElementById("tables-page-styles")) {
@@ -137,14 +144,19 @@ function QRModal({ table, onClose, onRegenerate }) {
   const name = isTakeaway ? t("Takeaway") : t("Table {n}", { n: table.tableNo });
   const [regen, setRegen] = useState(false);
   const [qrData, setQrData] = useState({ code: table.qrCode, url: table.qrUrl });
+  const [stale, setStale] = useState(!!table.qrStale);
 
-  const handleRegenerate = async () => {
+  // keepToken: fix the link only (same table token); otherwise a brand-new
+  // token — every QR already printed for this table stops working.
+  const handleRegenerate = async (keepToken = false) => {
+    if (!keepToken && !window.confirm(t("Make a new QR for {name}? QR codes already printed for this table will stop working.", { name }))) return;
     try {
       setRegen(true);
-      const { data } = await onRegenerate(table.tableNo);
+      const { data } = await onRegenerate(table.tableNo, keepToken ? { keepToken: true } : {});
       setQrData({ code: data.qrCode, url: data.qrUrl });
-      toast.success(t("QR regenerated!"));
-    } catch { toast.error(t("Regenerate failed")); }
+      setStale(false);
+      toast.success(keepToken ? t("QR link fixed — print the new QR") : t("New QR created — print it"));
+    } catch (e) { toast.error(e?.response?.data?.message || t("Regenerate failed")); }
     finally { setRegen(false); }
   };
 
@@ -204,6 +216,19 @@ function QRModal({ table, onClose, onRegenerate }) {
           </div>
         </div>
 
+        {!isTakeaway && stale && (
+          <div role="alert" style={{ display:"flex", gap:10, alignItems:"center", marginBottom:14, padding:"10px 12px",
+            borderRadius:10, background:"rgba(245,158,11,0.12)", border:"1px solid rgba(245,158,11,0.35)" }}>
+            <div style={{ flex:1, fontSize:12, color:"#fbbf24", lineHeight:1.45 }}>
+              ⚠ {t("This QR points to an old or wrong link — guests who scan it won't reach the menu.")}
+            </div>
+            <button onClick={()=>handleRegenerate(true)} disabled={regen} className="qr-btn"
+              style={{ flexShrink:0, background:"rgba(245,158,11,0.18)", color:"#fbbf24", borderColor:"rgba(245,158,11,0.4)" }}>
+              {t("Fix link")}
+            </button>
+          </div>
+        )}
+
         {qrData.url && (
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:18,
             padding:"10px 12px", background:CARD, borderRadius:10, border:`1px solid ${BORDER}` }}>
@@ -224,12 +249,12 @@ function QRModal({ table, onClose, onRegenerate }) {
           </button>
         </div>
         {!isTakeaway && <>
-          <button onClick={handleRegenerate} disabled={regen} className="qr-btn"
+          <button onClick={()=>handleRegenerate(false)} disabled={regen} className="qr-btn"
             style={{ width:"100%", background:CARD2, color:T2, borderColor:BORDER, opacity:regen?.6:1 }}>
             {regen ? <><span className="spinner" style={{ borderTopColor:T2 }} /> {t("Regenerating…")}</> : `↻ ${t("Regenerate QR")}`}
           </button>
           <div style={{ marginTop:10, fontSize:11, color:T3, textAlign:"center" }}>
-            {t("Regenerating changes the QR image but keeps the same URL")}
+            {t("A new QR replaces the old one — QR codes already printed for this table stop working.")}
           </div>
         </>}
       </div>
@@ -252,12 +277,11 @@ const Chair = ({ pos, occupied }) => {
 };
 
 // ── TableCard ─────────────────────────────────────────────────────────────────
-const TableCard = ({ config, order, invoice, onClick, isSelected, tableStatus, onToggleStatus, onDelete, onQR }) => {
+const TableCard = ({ config, order, onClick, isSelected, tableStatus, onToggleStatus, onDelete, onQR, qrStale }) => {
   const status = order ? order.status : "Empty";
   const s      = STATUS_STYLE[status] || STATUS_STYLE.Empty;
   const occ    = !!(order && ACTIVE_STATUSES.includes(status));
   const is4    = config.seats >= 4;
-  const isPending = invoice?.invoiceStatus?.toLowerCase() === "pending";
   const isActive  = tableStatus === "Active";
   const w = is4 ? 78 : 64, h = is4 ? 64 : 52;
 
@@ -283,27 +307,27 @@ const TableCard = ({ config, order, invoice, onClick, isSelected, tableStatus, o
         {is4 && <Chair pos="left" occupied={occ} />}
 
         {/* Table body */}
-        <div onClick={onClick} className={`table-card-hover ${isPending?"blink-pending":""}`}
+        <div onClick={onClick} className="table-card-hover"
           style={{
             width:w, height:h, borderRadius:12, cursor:"pointer",
             display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
-            background: isPending ? "rgba(211,47,47,0.12)" : isSelected ? PINK_LIGHT : s.bg,
-            border:`2px solid ${isSelected ? PINK : isPending ? "#d32f2f" : s.border}`,
+            background: isSelected ? PINK_LIGHT : s.bg,
+            border:`2px solid ${isSelected ? PINK : s.border}`,
             transform: isSelected ? "scale(1.07)" : "scale(1)",
             boxShadow: isSelected ? `0 0 0 4px ${PINK}22, 0 4px 16px rgba(124,58,237,.2)` : "0 2px 8px rgba(0,0,0,.2)",
             transition:"all .18s cubic-bezier(.4,0,.2,1)",
             opacity: isActive ? 1 : 0.45,
           }}>
-          <div style={{ fontSize:11, fontWeight:700, color:isPending?"#f87171":isSelected?"#c4b5fd":s.tc,
+          <div style={{ fontSize:11, fontWeight:700, color:isSelected?"#c4b5fd":s.tc,
             fontFamily:"'DM Mono',monospace", letterSpacing:0.5 }}>
             {t("T{n}", { n: config.id })}
           </div>
           <div style={{ fontSize:9, fontWeight:600, letterSpacing:0.5, textTransform:"uppercase",
-            color:isPending?"#f87171":isSelected?PINK:s.tc, marginTop:1 }}>
-            {isPending?t("Pay Due"):t(s.label)}
+            color:isSelected?PINK:s.tc, marginTop:1 }}>
+            {t(s.label)}
           </div>
           {order && ACTIVE_STATUSES.includes(order.status) && (
-            <div style={{ fontSize:11, fontWeight:700, color:isPending?"#f87171":PINK,
+            <div style={{ fontSize:11, fontWeight:700, color:PINK,
               marginTop:3, fontFamily:"'DM Mono',monospace" }}>
               ₹{fmtNum(Math.round(order.total))}
             </div>
@@ -323,8 +347,10 @@ const TableCard = ({ config, order, invoice, onClick, isSelected, tableStatus, o
       <div style={{ display:"flex", gap:4, marginTop:6, flexWrap:"wrap", justifyContent:"center" }}>
         <button onClick={e=>{ e.stopPropagation(); onQR(config.id); }}
           className="btn-ghost-dark"
-          style={{ color:"#c4b5fd", borderColor:`${PINK}44`, background:PINK_LIGHT }}>
-          {t("QR")}
+          title={qrStale ? t("QR link needs fixing") : undefined}
+          style={qrStale ? { color:"#fbbf24", borderColor:"rgba(245,158,11,0.4)", background:"rgba(245,158,11,0.12)" }
+            : { color:"#c4b5fd", borderColor:`${PINK}44`, background:PINK_LIGHT }}>
+          {qrStale ? `⚠ ${t("QR")}` : t("QR")}
         </button>
         <button onClick={e=>{ e.stopPropagation(); onToggleStatus(config.id); }}
           className="btn-ghost-dark"
@@ -343,25 +369,28 @@ const TableCard = ({ config, order, invoice, onClick, isSelected, tableStatus, o
 };
 
 // ── OrderDrawer ───────────────────────────────────────────────────────────────
-const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange, onInvoiceStatusChange, onClearTable }) => {
+const OrderDrawer = ({ config, order, session, onClose, onStatusChange, onClearTable, onSeatsChange, onOpenBilling }) => {
   const [updating,    setUpdating]    = useState(false);
-  const [invUpdating, setInvUpdating] = useState(false);
   const [clearing,    setClearing]    = useState(false);
+  const [seats,       setSeats]       = useState(String(config.seats));
+  const [savingSeats, setSavingSeats] = useState(false);
+  useEffect(() => { setSeats(String(config.seats)); }, [config.id, config.seats]);
   const s         = order ? STATUS_STYLE[order.status]||STATUS_STYLE.Empty : STATUS_STYLE.Empty;
   const subtotal  = order?.items?.reduce((sum,i)=>sum+i.price*i.qty,0)||0;
-  const isPending = invoice?.invoiceStatus?.toLowerCase()==="pending";
+  const settled   = order ? isBillSettled(order) : false;
+
+  const saveSeats = async () => {
+    const err = seatsError(seats);
+    if (err) return toast.error(err);
+    if (Number(seats) === Number(config.seats)) return;
+    try { setSavingSeats(true); await onSeatsChange(config.id, Number(seats)); }
+    finally { setSavingSeats(false); }
+  };
 
   const handleStatus = async (val) => {
     if (!val||!order) return;
     try { setUpdating(true); await onStatusChange(order._id, val); }
     finally { setUpdating(false); }
-  };
-
-  const handleInvStatus = async (ns) => {
-    if (!invoice?._id) return;
-    if (!window.confirm(t("Mark invoice as \"{status}\"?", { status: t(ns) }))) return;
-    try { setInvUpdating(true); await onInvoiceStatusChange(invoice._id, ns); }
-    finally { setInvUpdating(false); }
   };
 
   const handleClear = async () => {
@@ -371,20 +400,29 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
 
   return (
     <div className="drawer-enter" style={{
-      background: CARD, border:`1px solid ${isPending?"rgba(239,68,68,0.3)":BORDER}`,
+      background: CARD, border:`1px solid ${BORDER}`,
       borderRadius:16, padding:24, marginTop:20,
-      boxShadow: isPending ? "0 4px 32px rgba(211,47,47,.15)" : "0 4px 24px rgba(0,0,0,.2)",
+      boxShadow: "0 4px 24px rgba(0,0,0,.2)",
     }}>
       {/* Header */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 }}>
         <div>
           <div style={{ fontWeight:700, fontSize:16, display:"flex", alignItems:"center", gap:10, color:T1 }}>
             <span style={{ fontFamily:"'DM Mono',monospace", color:PINK }}>{t("T{n}", { n: config.id })}</span>
-            <span style={{ fontSize:13, color:T2, fontWeight:400 }}>· {t("{n} seats", { n: config.seats })}</span>
-            {isPending && (
-              <span className="tag" style={{ background:"rgba(239,68,68,0.15)", color:"#f87171",
-                border:"1px solid rgba(239,68,68,0.3)" }}>⚠ {t("Invoice Pending")}</span>
-            )}
+            <span style={{ fontSize:13, color:T2, fontWeight:400, display:"inline-flex", alignItems:"center", gap:6 }}>
+              ·
+              <label htmlFor="tbl-seats" style={{ fontSize:12 }}>{t("Seats")}</label>
+              <input id="tbl-seats" type="number" min={MIN_SEATS} max={MAX_SEATS} step="1" inputMode="numeric"
+                value={seats} onChange={e=>setSeats(e.target.value)}
+                onKeyDown={e=>{ if (e.key==="Enter") saveSeats(); }}
+                className="input-dark" style={{ width:70, padding:"5px 8px", fontSize:13 }} />
+              {Number(seats) !== Number(config.seats) && (
+                <button onClick={saveSeats} disabled={savingSeats} className="btn-ghost-dark"
+                  style={{ color:"#c4b5fd", borderColor:`${PINK}44`, background:PINK_LIGHT }}>
+                  {savingSeats ? <span className="spinner" /> : t("Save")}
+                </button>
+              )}
+            </span>
           </div>
           {order && (
             <div style={{ fontSize:12, color:T2, marginTop:5, fontFamily:"'DM Mono',monospace" }}>
@@ -458,14 +496,14 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
               ))}
               <div style={{ display:"flex", justifyContent:"space-between", fontWeight:700, fontSize:16, marginTop:10 }}>
                 <span style={{ color:T1 }}>{t("Total")}</span>
-                <span style={{ color:isPending?"#f87171":PINK, fontFamily:"'DM Mono',monospace" }}>
+                <span style={{ color:PINK, fontFamily:"'DM Mono',monospace" }}>
                   ₹{fmtNum(Math.round(order.total))}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* RIGHT — status + invoice */}
+          {/* RIGHT — status + bill */}
           <div>
             <div style={{ fontSize:10, fontWeight:600, color:T3, letterSpacing:1.2,
               textTransform:"uppercase", marginBottom:10 }}>{t("Current Status")}</div>
@@ -491,8 +529,7 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
                 const stl = STATUS_STYLE[st]||{ bg:"rgba(107,114,128,0.15)", border:"#4b5563", tc:"#9ca3af", label:st };
                 return (
                   <button key={st} className="status-btn" onClick={()=>handleStatus(st)}
-                    disabled={updating || needsPaidFirst(order, st)}
-                    title={needsPaidFirst(order, st) ? t(PAID_FIRST_HINT) : undefined}
+                    disabled={updating}
                     style={{ background:stl.bg, borderColor:stl.border, color:stl.tc }}>
                     {updating ? <span className="spinner" /> : t(stl.label)}
                   </button>
@@ -500,58 +537,29 @@ const OrderDrawer = ({ config, order, invoice, session, onClose, onStatusChange,
               })}
             </div>
 
-            {invoice ? (
-              <>
-                <div style={{ fontSize:10, fontWeight:600, color:T3, letterSpacing:1.2,
-                  textTransform:"uppercase", marginBottom:10 }}>{t("Invoice")}</div>
-                <div style={{
-                  background: isPending ? "rgba(239,68,68,0.08)" : GREEN_LIGHT,
-                  border:`1px solid ${isPending ? "rgba(239,68,68,0.3)" : "rgba(16,185,129,0.3)"}`,
-                  borderRadius:12, padding:14, marginBottom:12,
-                }}>
-                  {[
-                    { l:t("Invoice ID"), v:`…${invoice._id?.slice(-8)}`, mono:true },
-                    { l:t("Amount"),    v:`₹${fmtNum(Math.round(invoice.total||order.total))}`, mono:true },
-                  ].map(r => (
-                    <div key={r.l} style={{ display:"flex", justifyContent:"space-between",
-                      fontSize:12, marginBottom:8 }}>
-                      <span style={{ color:T2 }}>{r.l}</span>
-                      <span style={{ fontWeight:500, color:T1, fontFamily:r.mono?"'DM Mono',monospace":undefined }}>{r.v}</span>
-                    </div>
-                  ))}
-                  <div style={{ display:"flex", justifyContent:"space-between", fontSize:12, alignItems:"center" }}>
-                    <span style={{ color:T2 }}>{t("Status")}</span>
-                    <span className="tag" style={{
-                      background: isPending ? "rgba(239,68,68,0.15)" : GREEN_LIGHT,
-                      color: isPending ? "#f87171" : "#34d399",
-                      border:`1px solid ${isPending ? "rgba(239,68,68,0.3)" : "rgba(16,185,129,0.3)"}`,
-                      textTransform:"capitalize",
-                    }}>{t(invoice.invoiceStatus)}</span>
-                  </div>
-                </div>
-                {isPending && (
-                  <div style={{ display:"flex", gap:8 }}>
-                    <button onClick={()=>handleInvStatus("completed")} disabled={invUpdating}
-                      style={{ flex:1, padding:11, background:"rgba(16,185,129,0.2)", color:"#34d399",
-                        border:"1px solid rgba(16,185,129,0.3)", borderRadius:10, fontWeight:700,
-                        cursor:"pointer", fontSize:13, opacity:invUpdating?.5:1 }}>
-                      {invUpdating ? <span className="spinner" /> : `✓ ${t("Mark Paid")}`}
-                    </button>
-                    <button onClick={()=>handleInvStatus("cancelled")} disabled={invUpdating}
-                      style={{ flex:1, padding:11, background:"rgba(239,68,68,0.15)", color:"#f87171",
-                        border:"1px solid rgba(239,68,68,0.3)", borderRadius:10, fontWeight:700,
-                        cursor:"pointer", fontSize:13, opacity:invUpdating?.5:1 }}>
-                      {invUpdating ? <span className="spinner" /> : `✕ ${t("Cancel")}`}
-                    </button>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div style={{ background:CARD2, borderRadius:10, padding:14, fontSize:12,
-                color:T3, textAlign:"center", border:`1px dashed ${BORDER}` }}>
-                {t("No invoice generated yet")}
+            {/* BIL-01: the floor shows the bill state only — it is settled in Invoices,
+                which completes a served order and frees the table. */}
+            <div style={{ fontSize:10, fontWeight:600, color:T3, letterSpacing:1.2,
+              textTransform:"uppercase", marginBottom:10 }}>{t("Bill")}</div>
+            <div style={{
+              background: settled ? GREEN_LIGHT : "rgba(245,158,11,0.10)",
+              border:`1px solid ${settled ? "rgba(16,185,129,0.3)" : "rgba(245,158,11,0.3)"}`,
+              borderRadius:12, padding:14,
+            }}>
+              <div style={{ fontSize:13, fontWeight:700, color: settled ? "#34d399" : "#fbbf24" }}>
+                {settled ? t("Bill settled") : t("Bill open")}
               </div>
-            )}
+              <div style={{ fontSize:12, color:T2, marginTop:4, lineHeight:1.45 }}>
+                {settled ? t("The order is completed once it has been served.")
+                  : t("Bills are settled in Invoices — settling a served order completes it and frees the table.")}
+              </div>
+              {!settled && onOpenBilling && (
+                <button onClick={onOpenBilling} className="btn-ghost-dark"
+                  style={{ marginTop:10, color:"#c4b5fd", borderColor:`${PINK}44`, background:PINK_LIGHT }}>
+                  {t("Open Invoices")} →
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -702,7 +710,7 @@ function WaitlistPanel({ entries, freeTables, suggestion, onDismissSuggestion, o
             <input value={phone} onChange={e => setPhone(e.target.value)} placeholder={t("e.g. 98765xxxxx")}
               className="input-dark" style={{ marginBottom:14 }} />
 
-            <label style={{ fontSize:12, color:T2, fontWeight:600, display:"block", marginBottom:6 }}>{t("Party Size")}</label>
+            <label style={{ fontSize:12, color:T2, fontWeight:600, display:"block", marginBottom:6 }}>{t("Number of People")}</label>
             <input type="number" min="1" value={size} onChange={e => setSize(e.target.value)}
               className="input-dark" style={{ marginBottom:14 }} />
 
@@ -741,10 +749,9 @@ const StatCard = ({ label, val, color }) => (
 );
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
-export default function TablesPage() {
+export default function TablesPage({ onNavigate }) {
   const [tables,     setTables]     = useState([]);
   const [tableMap,   setTableMap]   = useState({});
-  const [invoiceMap, setInvoiceMap] = useState({});
   const [sessionMap, setSessionMap] = useState({});
   const [selected,   setSelected]   = useState(null);
   const [loading,    setLoading]    = useState(true);
@@ -756,22 +763,22 @@ export default function TablesPage() {
   const [qrTable,    setQrTable]    = useState(null);
   const [waitlist,   setWaitlist]   = useState([]);
   const [freedSuggestion, setFreedSuggestion] = useState(null);
+  const [qrBaseConfigured, setQrBaseConfigured] = useState(true);
 
   const fetchData = useCallback(async () => {
     try {
       setError(null);
-      const [ordersRes, invoicesRes, tablesRes, sessionsRes, waitlistRes] = await Promise.all([
+      const [ordersRes, tablesRes, sessionsRes, waitlistRes] = await Promise.all([
         getAllOrders({ limit:100 }),
-        getAllInvoices().catch(()=>({ data:{ invoices:[] } })),
         getAllTables().catch(()=>({ data:{ tables:[] } })),
         getOpenTableSessions().catch(()=>({ data:{ sessions:[] } })),
         getWaitlist().catch(()=>({ data:{ entries:[] } })),
       ]);
       const orders   = ordersRes?.data?.orders||[];
-      const invoices = invoicesRes?.data?.invoices||[];
       const dbTables = tablesRes?.data?.tables||[];
       const sessions = sessionsRes?.data?.sessions||[];
       setWaitlist(waitlistRes?.data?.entries||[]);
+      setQrBaseConfigured(tablesRes?.data?.qrBaseConfigured !== false);
 
       // NOTE: orderType/status moved to DINE_IN / the new canonical status
       // enum in Phase 1 — this must match those, not the old "Dining" /
@@ -781,21 +788,10 @@ export default function TablesPage() {
       orders.filter(o=>o.orderType==="DINE_IN"&&o.tableNo&&NON_TERMINAL.includes(o.status))
         .forEach(o=>{ oMap[Number(o.tableNo)] = o; });
 
-      const iMap = {};
-      invoices.forEach(inv => {
-        const ids = inv.orders?.map(String)||[];
-        for (const [tableNo, ord] of Object.entries(oMap)) {
-          if (ids.includes(String(ord._id))) {
-            iMap[Number(tableNo)] = { ...inv, invoiceStatus:inv.status||inv.paymentStatus||"pending" };
-            break;
-          }
-        }
-      });
-
       const sMap = {};
       sessions.forEach(s => { sMap[Number(s.tableNo)] = s; });
 
-      setTables(dbTables); setTableMap(oMap); setInvoiceMap(iMap); setSessionMap(sMap);
+      setTables(dbTables); setTableMap(oMap); setSessionMap(sMap);
     } catch { setError(t("Failed to load table data")); toast.error(t("Could not load tables")); }
     finally { setLoading(false); }
   }, []);
@@ -819,7 +815,7 @@ export default function TablesPage() {
   }, [fetchData]);
 
   const handleStatusChange  = async (id, ns) => { try { await updateOrderStatus(id,ns); toast.success(`→ ${t(ns)}`); await fetchData(); setSelected(null); } catch { toast.error(t("Update failed")); } };
-  const handleInvChange     = async (id, ns) => { try { await updateInvoiceStatus(id,ns); toast.success(`${t("Invoice")} → ${t(ns)}`); await fetchData(); } catch { toast.error(t("Invoice update failed")); } };
+  const handleSeatsChange   = async (tableNo, seats) => { try { await updateTable(tableNo,{ seats }); toast.success(t("Table {n} now seats {s}", { n: tableNo, s: seats })); await fetchData(); } catch(e) { toast.error(e.response?.data?.message||t("Failed to update")); } };
   const handleToggleStatus  = async (tableNo) => { const tb=tables.find(x=>x.tableNo===tableNo); if(!tb)return; const ns=tb.status==="Active"?"Inactive":"Active"; try { await updateTable(tableNo,{status:ns}); toast.success(`${t("Table {n}", { n: tableNo })} → ${t(ns)}`); fetchData(); } catch { toast.error(t("Failed to update")); } };
   const handleDelete        = async (tableNo) => { if(!window.confirm(t("Delete Table {n}?", { n: tableNo })))return; try { await deleteTable(tableNo); toast.success(t("Table {n} deleted", { n: tableNo })); fetchData(); if(selected===tableNo)setSelected(null); } catch(e){ toast.error(e.response?.data?.message||t("Failed")); } };
   const handleTakeawayQR = async () => {
@@ -828,7 +824,22 @@ export default function TablesPage() {
       setQrTable({ takeaway: true, qrCode: data.qrCode, qrUrl: data.qrUrl });
     } catch { toast.error(t("Couldn't load takeaway QR")); }
   };
-  const handleRegenerate    = async (tableNo) => { const { data }=await regenerateQR(tableNo); setTables(p=>p.map(tb=>tb.tableNo===tableNo?{...tb,qrCode:data.qrCode,qrUrl:data.qrUrl}:tb)); return { data }; };
+  // Mockup parity: every active table's QR on one printout (one per card).
+  const handlePrintAll = () => {
+    const list = tables.filter((tb) => tb.qrCode && (tb.status || "Active") === "Active").sort((a, b) => a.tableNo - b.tableNo);
+    if (!list.length) return toast.error(t("No table QR codes to print"));
+    let el = document.getElementById("qr-print-area");
+    if (!el) { el = document.createElement("div"); el.id = "qr-print-area"; document.body.appendChild(el); }
+    el.style.display = "none";
+    el.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:24px;justify-content:center;font-family:sans-serif;padding:20px">${list.map((tb) => `
+      <div style="width:240px;text-align:center;page-break-inside:avoid;border:1px solid #ddd;border-radius:12px;padding:14px">
+        <div style="font-size:20px;font-weight:800;margin-bottom:10px">${t("Table {n}", { n: Number(tb.tableNo) })}</div>
+        <img src="${tb.qrCode}" style="width:200px;height:200px"/>
+        <div style="font-size:11px;color:#777;margin-top:8px">${t("Scan to order instantly")}</div>
+      </div>`).join("")}</div>`;
+    window.print();
+  };
+  const handleRegenerate    = async (tableNo, opts) => { const { data }=await regenerateQR(tableNo, opts); setTables(p=>p.map(tb=>tb.tableNo===tableNo?{...tb,qrCode:data.qrCode,qrUrl:data.qrUrl,qrStale:false}:tb)); return { data }; };
   const handleClearTable    = async (session) => {
     if (!session?._id) return;
     if (!window.confirm(t("Clear Table {n}? This closes the table's session.", { n: session.tableNo }))) return;
@@ -863,12 +874,15 @@ export default function TablesPage() {
   };
 
   const handleCreate = async () => {
-    if (!newTableNo) return toast.error(t("Table number required"));
+    const no = Number(newTableNo);
+    if (!newTableNo || !Number.isInteger(no) || no < 1) return toast.error(t("Table number required"));
+    const err = seatsError(newSeats);
+    if (err) return toast.error(err);
     setCreating(true);
     try {
       await createTable({ tableNo:parseInt(newTableNo), seats:parseInt(newSeats) });
       toast.success(t("Table {n} created!", { n: newTableNo }));
-      setShowModal(false); setNewTableNo("");
+      setShowModal(false); setNewTableNo(""); setNewSeats("4");
       await fetchData();
       const res = await getAllTables();
       const created = (res.data?.tables||[]).find(tb=>tb.tableNo===parseInt(newTableNo));
@@ -882,10 +896,11 @@ export default function TablesPage() {
   const freeTables    = activeTables.filter(tb=>(tb.occupancyStatus||"AVAILABLE")==="AVAILABLE")
     .map(tb=>({ tableNo:tb.tableNo, seats:tb.seats }));
   const revenue       = Object.values(tableMap).reduce((s,o)=>s+Number(o.total||0),0);
-  const pendingCount  = Object.values(invoiceMap).filter(i=>i.invoiceStatus?.toLowerCase()==="pending").length;
+  // Served but bill still open — waiting to be settled in Invoices (BIL-01).
+  const billsOpen     = Object.values(tableMap).filter(o=>o.status==="DELIVERED"&&!isBillSettled(o)).length;
+  const staleQrs      = tables.filter(tb=>tb.qrStale).length;
   const selectedConf  = selected ? tables.find(tb=>tb.tableNo===selected) : null;
   const selectedOrder = selected ? tableMap[selected]||null : null;
-  const selectedInv   = selected ? invoiceMap[selected]||null : null;
   const selectedSession = selected ? sessionMap[selected]||null : null;
 
   if (loading) return (
@@ -918,19 +933,25 @@ export default function TablesPage() {
               <span style={{ color:GREEN, fontWeight:500 }}>{t("Live")}</span>
               <span style={{ color:T3 }}>· {t("every 30s")}</span>
             </span>
-            {pendingCount>0 && (
-              <span className="tag blink-pending" style={{ background:"rgba(239,68,68,0.15)",
-                color:"#f87171", border:"1px solid rgba(239,68,68,0.3)", fontSize:11 }}>
-                {tn(pendingCount, "{n} invoice pending", "{n} invoices pending")}
+            {billsOpen>0 && (
+              <span className="tag" style={{ background:"rgba(245,158,11,0.15)",
+                color:"#fbbf24", border:"1px solid rgba(245,158,11,0.3)", fontSize:11 }}>
+                {tn(billsOpen, "{n} served table to settle", "{n} served tables to settle")}
               </span>
             )}
           </div>
         </div>
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+        <button onClick={handlePrintAll} className="qr-btn"
+          style={{ background:PINK_LIGHT, color:"#c4b5fd", borderColor:`${PINK}44`, borderRadius:25 }}>
+          🖨 {t("Print all QR codes")}
+        </button>
         <button onClick={()=>setShowModal(true)} style={{
           padding:"11px 22px", background:`linear-gradient(135deg,${PINK},#5b21b6)`,
           color:"#fff", border:"none", borderRadius:25, fontWeight:700,
           cursor:"pointer", fontSize:13, boxShadow:`0 4px 16px ${PINK}44`,
         }}>+ {t("New Table")}</button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -939,8 +960,18 @@ export default function TablesPage() {
         <StatCard label={t("Free")}             val={fmtNum(activeTables.length-occupied)}            color={GREEN}   />
         <StatCard label={t("Active Revenue")}   val={`₹${fmtNum(Math.round(revenue))}`}                              />
         <StatCard label={t("Total Tables")}     val={fmtNum(tables.length)}                                           />
-        <StatCard label={t("Pending Invoices")} val={fmtNum(pendingCount)} color={pendingCount>0?"#f87171":GREEN}     />
+        <StatCard label={t("Served · bill open")} val={fmtNum(billsOpen)} color={billsOpen>0?"#fbbf24":GREEN}         />
       </div>
+
+      {/* TBL-01: printed QRs that won't open the customer app */}
+      {(!qrBaseConfigured || staleQrs>0) && (
+        <div role="alert" style={{ marginBottom:16, padding:"12px 16px", borderRadius:10, fontSize:12.5, lineHeight:1.5,
+          background:"rgba(245,158,11,0.10)", border:"1px solid rgba(245,158,11,0.35)", color:"#fbbf24" }}>
+          {!qrBaseConfigured
+            ? `⚠ ${t("The customer app address isn't set on the server (CUSTOMER_FRONTEND_URL), so table QR codes can't be made correctly. Ask your technical person to set it.")}`
+            : `⚠ ${tn(staleQrs, "{n} table QR points to an old or wrong link. Open its QR and press “Fix link”, then reprint it.", "{n} table QRs point to an old or wrong link. Open each QR and press “Fix link”, then reprint it.")}`}
+        </div>
+      )}
 
       {/* Legend */}
       <div style={{ display:"flex", gap:16, flexWrap:"wrap", marginBottom:16,
@@ -948,9 +979,8 @@ export default function TablesPage() {
         {[
           { label:N_("Free"),             bg:"rgba(255,255,255,0.04)", border:"rgba(255,255,255,0.15)" },
           { label:N_("Placed"),           bg:"rgba(56,122,221,0.15)",  border:"#378ADD" },
-          { label:N_("Preparing"),        bg:"rgba(186,117,23,0.15)",  border:"#BA7517" },
-          { label:N_("Ready"),            bg:GREEN_LIGHT,              border:GREEN },
-          { label:N_("Invoice pending"),  bg:"rgba(211,47,47,0.12)",   border:"#d32f2f", blink:true },
+          { label:N_("Cooking"),          bg:"rgba(186,117,23,0.15)",  border:"#BA7517" },
+          { label:N_("Ready to Deliver"), bg:GREEN_LIGHT,              border:GREEN },
           { label:N_("Occupied chair"),   bg:PINK_LIGHT,               border:PINK },
         ].map(l => (
           <div key={l.label} style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:T2 }}>
@@ -1003,7 +1033,7 @@ export default function TablesPage() {
               <TableCard key={tb.tableNo}
                 config={{ id:tb.tableNo, seats:tb.seats }}
                 order={tableMap[tb.tableNo]||null}
-                invoice={invoiceMap[tb.tableNo]||null}
+                qrStale={!!tb.qrStale}
                 onClick={()=>setSelected(selected===tb.tableNo?null:tb.tableNo)}
                 isSelected={selected===tb.tableNo}
                 tableStatus={tb.status||"Active"}
@@ -1033,11 +1063,12 @@ export default function TablesPage() {
       {selected && selectedConf && (
         <OrderDrawer
           config={{ id:selectedConf.tableNo, seats:selectedConf.seats }}
-          order={selectedOrder} invoice={selectedInv} session={selectedSession}
+          order={selectedOrder} session={selectedSession}
           onClose={()=>setSelected(null)}
           onStatusChange={handleStatusChange}
-          onInvoiceStatusChange={handleInvChange}
           onClearTable={handleClearTable}
+          onSeatsChange={handleSeatsChange}
+          onOpenBilling={onNavigate ? ()=>onNavigate("invoices") : undefined}
         />
       )}
 
@@ -1046,7 +1077,7 @@ export default function TablesPage() {
         <div className="modal-overlay" onClick={()=>setShowModal(false)}>
           <div className="modal-box" style={{ width:380 }} onClick={e=>e.stopPropagation()}>
             <div style={{ fontSize:18, fontWeight:700, color:T1, marginBottom:4 }}>{t("Add New Table")}</div>
-            <div style={{ fontSize:13, color:T2, marginBottom:22 }}>{t("A QR code will be generated automatically.")}</div>
+            <div style={{ marginBottom:18 }} />
 
             <label style={{ fontSize:12, color:T2, fontWeight:600, display:"block", marginBottom:6 }}>{t("Table Number")}</label>
             <input type="number" placeholder={t("e.g. 9")} value={newTableNo}
@@ -1054,19 +1085,16 @@ export default function TablesPage() {
               className="input-dark" style={{ marginBottom:14 }} />
 
             <label style={{ fontSize:12, color:T2, fontWeight:600, display:"block", marginBottom:6 }}>{t("Seating Capacity")}</label>
-            <select value={newSeats} onChange={e=>setNewSeats(e.target.value)}
-              className="input-dark" style={{ marginBottom:20 }}>
-              <option value="2">{t("{n} Seats", { n: 2 })}</option>
-              <option value="4">{t("{n} Seats", { n: 4 })}</option>
-              <option value="6">{t("{n} Seats", { n: 6 })}</option>
-            </select>
+            <input type="number" min={MIN_SEATS} max={MAX_SEATS} step="1" inputMode="numeric"
+              placeholder={t("e.g. 4")} value={newSeats} onChange={e=>setNewSeats(e.target.value)}
+              aria-invalid={!!(newSeats && seatsError(newSeats))}
+              className="input-dark" style={{ marginBottom:newSeats && seatsError(newSeats) ? 6 : 14 }} />
+            {newSeats && seatsError(newSeats) && (
+              <div style={{ fontSize:11.5, color:"#f87171", marginBottom:14 }}>{seatsError(newSeats)}</div>
+            )}
 
-            <div style={{ display:"flex", gap:10, alignItems:"flex-start", padding:"10px 14px",
-              background:PINK_LIGHT, borderRadius:10, marginBottom:20, border:`1px solid ${PINK}22` }}>
-              <span style={{ fontSize:20 }}>⬛</span>
-              <div style={{ fontSize:12, color:"#c4b5fd", lineHeight:1.5 }}>
-                {t("A unique QR code for Table {n} will be auto-generated.", { n: newTableNo || "?" })}
-              </div>
+            <div style={{ fontSize:12, color:T2, marginBottom:20 }}>
+              {t("Unique QR code for the table will be auto generated.")}
             </div>
 
             <div style={{ display:"flex", gap:10 }}>

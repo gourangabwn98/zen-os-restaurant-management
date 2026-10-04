@@ -1,7 +1,16 @@
 // src/pages/admin/employees/shared.js — small helpers shared by the Employees screen.
 import { t, N_, fmtNum, fmtDate } from "../../../i18n/core.js";
 
-export const ROLE_LABEL = { waiter: N_("Waiter"), chef: N_("Chef"), admin: N_("Admin") };
+export const ROLE_LABEL = { waiter: N_("Waiter"), chef: N_("Chef"), admin: N_("Admin"), staff: N_("Other") };
+/** EMP-03: "staff" people show their own job title (Cleaner, Cashier…). */
+export const roleText = (e) => (e?.role === "staff" ? e.jobTitle || t("Other") : t(ROLE_LABEL[e?.role] || e?.role || ""));
+// EMP-01 — the manager's words for a shift (attendanceService SHIFT_STATES).
+export const SHIFT_STATES = [
+  { id: "ON_SHIFT", label: N_("On shift") },
+  { id: "ON_BREAK", label: N_("On break") },
+  { id: "OFF_SHIFT", label: N_("Off shift") },
+];
+export const shiftFromDuty = (status) => (status === "ONLINE" ? "ON_SHIFT" : status === "BREAK" ? "ON_BREAK" : "OFF_SHIFT");
 // Duty state from the attendance service (AttendanceSession lifecycle).
 export const DUTY_LABEL = { ONLINE: N_("On duty"), BREAK: N_("On break"), OFFLINE: N_("Off duty") };
 

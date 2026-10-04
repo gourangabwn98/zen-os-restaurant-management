@@ -129,7 +129,8 @@ export default function InventoryPage({ onNavigate }) {
 
       {m?.kind === "purchase" && (
         <PurchaseModal items={ctx.items} suppliers={suppliers} prefill={m.prefill || (m.item ? [m.item._id] : [])}
-          onClose={close} onSaved={saved} onImport={() => open("import")} />
+          onClose={close} onSaved={saved} onImport={() => open("import")}
+          onSupplierAdded={(s) => setSuppliers((p) => [...p, s])} />
       )}
       {m?.kind === "wastage" && <WastageModal items={ctx.items} prefillItem={m.item?._id || ""} onClose={close} onSaved={saved} />}
       {m?.kind === "count" && <CountModal items={ctx.items} only={m.item?._id || null} onClose={close} onSaved={saved} />}

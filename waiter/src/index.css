@@ -1,6 +1,6 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { background: #08070C; }
-body { font-family: 'DM Sans', sans-serif; color: #fff; -webkit-tap-highlight-color: transparent; overflow-x: hidden; }
+body { font-family: 'DM Sans', 'Noto Sans Bengali', sans-serif; color: #fff; -webkit-tap-highlight-color: transparent; overflow-x: hidden; }
 input, textarea, select, button { font-family: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
 ::-webkit-scrollbar { display: none; }

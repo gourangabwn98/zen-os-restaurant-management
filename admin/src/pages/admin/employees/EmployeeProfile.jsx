@@ -9,13 +9,13 @@
 //   Documents   User.hr fields + photo
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { getEmployeeStats } from "../../../services/adminService.js";
+import { getEmployeeStats, setEmployeeShift } from "../../../services/adminService.js";
 import { getAttendanceEmployee } from "../../../services/attendanceService.js";
 import { StatCard, Loader, Badge } from "../shared/index.js";
 import ErrorState from "../shared/ErrorState.jsx";
 import { TableShell } from "../inventory/invUI.jsx";
 import { t, N_, fmtNum, fmtDate, fmtTime } from "../../../i18n/core.js";
-import { ROLE_LABEL, DUTY_LABEL, initials, fmtDuration, toDateInput, phoneLabel, count, missingDocs } from "./shared.js";
+import { DUTY_LABEL, initials, fmtDuration, toDateInput, phoneLabel, count, missingDocs, roleText, SHIFT_STATES, shiftFromDuty } from "./shared.js";
 import ReviewsTab from "./ReviewsTab.jsx";
 import PayTab from "./PayTab.jsx";
 import LeaveTab from "./LeaveTab.jsx";
@@ -65,7 +65,8 @@ export default function EmployeeProfile({ employee, duty, ordersToday, hr, polic
           <div style={{ minWidth: 0 }}>
             <h3>
               {employee.name}
-              <Badge label={ROLE_LABEL[employee.role] || employee.role} kind="vio" dot={false} />
+              <Badge label={roleText(employee)} kind="vio" dot={false} />
+              {employee.role === "staff" && <Badge label={N_("No app login")} kind="done" dot={false} />}
               {!active && <Badge label={N_("Inactive")} kind="done" />}
             </h3>
             <div className="meta">
@@ -128,6 +129,33 @@ export default function EmployeeProfile({ employee, duty, ordersToday, hr, polic
   );
 }
 
+// ── EMP-01: the manager sets someone's shift (they forgot, or can't log in) ──
+// The live duty list refreshes from the attendance socket event.
+function ShiftControl({ employee, status }) {
+  const [busy, setBusy] = useState(false);
+  const cur = shiftFromDuty(status);
+  const set = async (state) => {
+    if (state === cur) return;
+    setBusy(true);
+    try {
+      await setEmployeeShift(employee._id, state);
+      toast.success(t("{name}: {state}", { name: employee.name, state: t(SHIFT_STATES.find((s) => s.id === state).label) }));
+    } catch (err) { toast.error(err.response?.data?.message || t("Update failed")); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div className="zc-seg" role="radiogroup" aria-label={t("Set shift")}>
+        {SHIFT_STATES.map((s) => (
+          <button key={s.id} type="button" role="radio" aria-checked={cur === s.id} className={cur === s.id ? "on" : ""}
+            disabled={busy} onClick={() => set(s.id)}>{t(s.label)}</button>
+        ))}
+      </div>
+      <div className="emp-hint" style={{ marginTop: 6 }}>{t("Set by you — it stays until you or they change it.")}</div>
+    </div>
+  );
+}
+
 // ── Overview ────────────────────────────────────────────────────────────────
 function useMonthAttendance(employeeId, monthStart) {
   const [state, setState] = useState({ key: null, data: null, error: false });
@@ -173,9 +201,10 @@ function OverviewTab({ employee, duty, ordersToday, hr }) {
         <div className="emp-kv"><span>{t("Working time")}</span><b>{fmtDuration(duty?.workingSeconds)}</b></div>
         <div className="emp-kv"><span>{t("Break time")}</span><b>{fmtDuration(duty?.breakSeconds)}</b></div>
         {!duty && employee.status === "Inactive" && <div className="emp-kv"><span style={{ color: "var(--text-3)" }}>{t("Inactive accounts aren't tracked.")}</span></div>}
+        {employee.status !== "Inactive" && <ShiftControl employee={employee} status={status} />}
       </div>
 
-      <div className="zc-panel emp-panel">
+      {employee.role !== "staff" && <div className="zc-panel emp-panel">
         <h4>{t("Orders today")} <small>{isChef ? t("Kitchen") : t("Floor")}</small></h4>
         {!stats ? <Loader rows={2} /> : isChef ? (
           <>
@@ -191,7 +220,7 @@ function OverviewTab({ employee, duty, ordersToday, hr }) {
             <div className="emp-kv"><span>{t("Completed")}</span><b>{count(stats.completed)}</b></div>
           </>
         )}
-      </div>
+      </div>}
 
       <div className="zc-panel emp-panel">
         <h4>{t("Customers")} <small>{isChef ? t("Food ratings") : t("Service ratings")}</small></h4>

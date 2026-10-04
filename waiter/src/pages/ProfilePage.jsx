@@ -7,6 +7,8 @@ import { getMyDashboard } from "../services/authService.js";
 import GlassCard from "../components/ui/GlassCard.jsx";
 import LeaveRequestCard from "../components/LeaveRequestCard.jsx";
 import { ACCENT, ACCENT_GRADIENT, ACCENT_GLOW, TEXT_FAINT, NAV_HEIGHT } from "../theme.js";
+import { t, LanguageToggle } from "../i18n/index.jsx";
+import { BRAND } from "../brand.js";
 
 export default function ProfilePage() {
   const nav = useNavigate();
@@ -18,16 +20,16 @@ export default function ProfilePage() {
   }, []);
 
   const handleLogout = () => {
-    if (!window.confirm("Sign out?")) return;
+    if (!window.confirm(t("Sign out?"))) return;
     disconnectSocket();
     auth.logout();
-    toast.success("Signed out");
+    toast.success(t("Signed out"));
     nav("/login", { replace: true });
   };
 
   return (
     <div style={{ paddingBottom: NAV_HEIGHT + 20 }}>
-      <div style={{ padding: "20px 16px 10px", fontSize: 25, fontWeight: 800, color: "#fff", letterSpacing: -0.5 }}>Profile</div>
+      <div style={{ padding: "20px 16px 10px", fontSize: 25, fontWeight: 800, color: "#fff", letterSpacing: -0.5 }}>{t("Profile")}</div>
 
       <div style={{ margin: "12px 16px" }}>
         <GlassCard style={{ padding: "22px 18px" }}>
@@ -40,29 +42,35 @@ export default function ProfilePage() {
               {(auth.user?.name || "?").charAt(0).toUpperCase()}
             </div>
             <div>
-              <div style={{ fontWeight: 800, fontSize: 17.5, color: "#fff", letterSpacing: -0.3 }}>{auth.user?.name || "Waiter"}</div>
+              <div style={{ fontWeight: 800, fontSize: 17.5, color: "#fff", letterSpacing: -0.3 }}>{auth.user?.name || t("Waiter")}</div>
               <div style={{ fontSize: 12.5, color: TEXT_FAINT, marginTop: 2 }}>+91 {auth.user?.phone}</div>
-              <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 1, textTransform: "capitalize" }}>{auth.user?.role || "waiter"}</div>
+              <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 1, textTransform: "capitalize" }}>{t(auth.user?.role || "waiter")}</div>
             </div>
           </div>
         </GlassCard>
       </div>
 
-      {auth.user?.restaurantName && (
-        <div style={{ margin: "0 16px 16px", fontSize: 12.5, color: TEXT_FAINT, textAlign: "center" }}>
-          {auth.user.restaurantName}
+      <div style={{ margin: "0 16px 16px", fontSize: 12.5, color: TEXT_FAINT, textAlign: "center" }}>
+        {auth.user?.restaurantName || BRAND.name}
+      </div>
+
+      {/* GLB-04 — English / বাংলা (kept on this device; nothing resets) */}
+      <div style={{ margin: "0 16px 16px" }}>
+        <div style={{ fontSize: 11.5, fontWeight: 700, color: TEXT_FAINT, textTransform: "uppercase", marginBottom: 8, letterSpacing: 0.5 }}>
+          {t("Language")}
         </div>
-      )}
+        <LanguageToggle />
+      </div>
 
       {stats && (
         <div style={{ margin: "0 16px 16px" }}>
           <div style={{ fontSize: 11.5, fontWeight: 700, color: TEXT_FAINT, textTransform: "uppercase", marginBottom: 10, letterSpacing: 0.5 }}>
-            Today's Statistics
+            {t("Today's statistics")}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-            <StatBox label="Orders Today" value={stats.ordersToday} />
-            <StatBox label="Active" value={stats.pending} />
-            <StatBox label="Completed" value={stats.completed} />
+            <StatBox label={t("Orders today")} value={stats.ordersToday} />
+            <StatBox label={t("Active")} value={stats.pending} />
+            <StatBox label={t("Completed")} value={stats.completed} />
           </div>
         </div>
       )}
@@ -77,7 +85,7 @@ export default function ProfilePage() {
             display: "flex", alignItems: "center", gap: 12, padding: "15px 12px", cursor: "pointer",
           }}>
             <span style={{ fontSize: 17 }}>🚪</span>
-            <span style={{ fontSize: 14, fontWeight: 600, color: "#F87171" }}>Sign Out</span>
+            <span style={{ fontSize: 14, fontWeight: 600, color: "#F87171" }}>{t("Sign out")}</span>
           </div>
         </GlassCard>
       </div>

@@ -11,9 +11,40 @@ export const ALL_STATUSES = [
 export const ORDER_TYPES = ["DINE_IN", "TAKEAWAY", "ONLINE"];
 // "not on the floor": finished, or a pay-first order nobody has paid for yet
 export const ACTIVE_EXCLUDE = ["COMPLETED", "CANCELLED", "AWAITING_PAYMENT"];
-// In the kitchen's hands (or about to be) vs. food on the table.
-const COOKING_STATUSES = ["PENDING_CONFIRMATION", "CONFIRMED", "PREPARING"];
-const SERVED_STATUSES = ["READY", "DELIVERED"];
+
+// ── DSH-04: the floor status flow, driven only by named events ──────────────
+//   Placed (held — ORD-01, nothing has reached the kitchen yet)
+//   → Cooking           the KOT fired (CONFIRMED → PREPARING)
+//   → Ready to Deliver  the kitchen marked it ready (PREPARING → READY)
+//   → Eating            the waiter tapped Served (READY → DELIVERED)
+//   → Completed         the bill was settled in billing (→ COMPLETED)
+// Each state is read straight off the order status the event set — never
+// guessed from timers, payments or other orders.
+export const FLOOR_STATE_OF = {
+  PENDING_CONFIRMATION: "placed",
+  CONFIRMED: "placed",
+  PREPARING: "cooking",
+  READY: "ready",
+  DELIVERED: "eating",
+  COMPLETED: "completed",
+};
+export const FLOOR_FLOW = ["placed", "cooking", "ready", "eating", "completed"];
+const onFloor = (o) => o.status !== "CANCELLED" && o.status !== "AWAITING_PAYMENT";
+const isBillSettled = (o) => (o.billStatus ? o.billStatus === "SETTLED" : o.status === "COMPLETED");
+const newest = (list, field = "createdAt") => list.reduce((a, b) => (new Date(b[field] || b.createdAt) > new Date(a[field] || a.createdAt) ? b : a));
+
+/**
+ * DSH-05: the order a table is "on" right now — the newest still-active one;
+ * if none is active, the newest completed one (shown as Completed until the
+ * next order arrives, which puts the table straight back to its new state).
+ * Returns null for a table nobody ordered at today.
+ */
+export function currentTableOrder(orders) {
+  const list = (orders || []).filter(onFloor);
+  if (!list.length) return null;
+  const active = list.filter((o) => o.status !== "COMPLETED");
+  return active.length ? newest(active) : newest(list, "completedAt");
+}
 
 // A table whose oldest open order is this old shows as "Long stay" (amber).
 export const LONG_STAY_MIN = 90;
@@ -93,29 +124,30 @@ export function olderUnpaid(allOrders) {
 }
 
 // ── floor ─────────────────────────────────────────────────────────────────
-// One entry per active table: its open orders (oldest first), the amount on
-// it, a state for the colour, and how long it has been occupied.
-export function floorTables(tables, todayOrders, invoiceMap, now = Date.now()) {
+// One entry per active table: its state (current order — DSH-04/05), the
+// still-active orders (oldest first), what is on them, how long the table has
+// been seated, and — information only, the Dashboard never bills (BIL-01) —
+// whether a served order still has its bill open.
+export function floorTables(tables, todayOrders, now = Date.now()) {
   const byTable = {};
   todayOrders
-    .filter((o) => o.orderType === "DINE_IN" && o.tableNo && isActive(o))
+    .filter((o) => o.orderType === "DINE_IN" && o.tableNo && onFloor(o))
     .forEach((o) => { (byTable[Number(o.tableNo)] ||= []).push(o); });
 
   return tables
     .filter((tb) => tb.status === "Active" || !tb.status)
     .sort((a, b) => a.tableNo - b.tableNo)
     .map((tb) => {
-      const orders = (byTable[tb.tableNo] || []).slice().sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-      const inv = invoiceMap[tb.tableNo] || null;
-      const billPending = inv?.invoiceStatus?.toLowerCase() === "pending";
-      if (!orders.length) return { tableNo: tb.tableNo, state: "free", orders, amount: 0, minutes: 0, invoice: inv, billPending };
-      const minutes = Math.max(0, Math.floor((now - new Date(orders[0].createdAt).getTime()) / 60000));
-      const cooking = orders.some((o) => COOKING_STATUSES.includes(o.status));
-      const state = billPending ? "bill"
-        : minutes >= LONG_STAY_MIN ? "long"
-        : cooking ? "cooking"
-        : orders.some((o) => SERVED_STATUSES.includes(o.status)) ? "eating" : "cooking";
-      return { tableNo: tb.tableNo, state, orders, amount: sum(orders), minutes, invoice: inv, billPending };
+      const all = byTable[tb.tableNo] || [];
+      const current = currentTableOrder(all);
+      const orders = all.filter(isActive).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      const state = current ? FLOOR_STATE_OF[current.status] || "placed" : "free";
+      const minutes = orders.length ? Math.max(0, Math.floor((now - new Date(orders[0].createdAt).getTime()) / 60000)) : 0;
+      return {
+        tableNo: tb.tableNo, seats: tb.seats, state, current, orders, allToday: all,
+        amount: sum(orders), minutes, longStay: minutes >= LONG_STAY_MIN,
+        billOpen: orders.filter((o) => o.status === "DELIVERED" && !isBillSettled(o)).length,
+      };
     });
 }
 
@@ -148,13 +180,14 @@ export function niceAxis(max) {
 // Most serious first. Each item carries a navigation target or an action key
 // the page knows how to handle — never a made-up number.
 // awaitingConfirm: the PENDING_CONFIRMATION orders themselves (shown in the detail modal).
-export function attentionItems({ inv, printer, pendingInvoices, awaitingConfirm, older }) {
+export function attentionItems({ inv, printer, billsToSettle = [], awaitingConfirm, older }) {
   const items = [];
   const names = (list) => (list || []).slice(0, 3);
   if (inv?.outOfStock?.count > 0) items.push({ sev: "red", kind: "out", count: inv.outOfStock.count, names: names(inv.outOfStock.items), action: "stock" });
   if (printer && !printer.online) items.push({ sev: "red", kind: "printerOff", pending: printer.queue?.pending ?? 0, action: "profile" });
   if (printer?.queue?.failed > 0) items.push({ sev: "red", kind: "printerFailed", count: printer.queue.failed, action: "profile" });
-  if (pendingInvoices > 0) items.push({ sev: "red", kind: "invoices", count: pendingInvoices, action: "invoices" });
+  // Served but the bill isn't settled yet — settled in Invoices, not here (BIL-01).
+  if (billsToSettle.length > 0) items.push({ sev: "amber", kind: "settle", count: billsToSettle.length, orders: billsToSettle, action: "invoices" });
   if (awaitingConfirm.length > 0) items.push({ sev: "amber", kind: "confirm", count: awaitingConfirm.length, orders: awaitingConfirm, action: "orders" });
   if (older) items.push({ sev: "amber", kind: "olderUnpaid", ...older, action: "orders" });
   const lowCount = (inv?.critical?.count || 0) + (inv?.lowStock?.count || 0);

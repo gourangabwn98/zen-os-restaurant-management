@@ -6,7 +6,9 @@ import { auth as firebaseAuth } from "../firebase.js";
 import { checkStaffPhone, firebaseStaffLogin } from "../services/authService.js";
 import { useAppState } from "../context/AppState.jsx";
 import PrimaryButton from "../components/ui/PrimaryButton.jsx";
-import { ACCENT, TEXT_MUTED, TEXT_FAINT, GLASS_BG, GLASS_BORDER, ACCENT_GRADIENT, ACCENT_GLOW } from "../theme.js";
+import { ACCENT, TEXT_MUTED, TEXT_FAINT, GLASS_BG, GLASS_BORDER } from "../theme.js";
+import { t, LanguageToggle } from "../i18n/index.jsx";
+import { BRAND } from "../brand.js";
 
 export default function LoginPage() {
   const nav = useNavigate();
@@ -22,7 +24,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (timer <= 0) return;
-    const id = setInterval(() => setTimer((t) => t - 1), 1000);
+    const id = setInterval(() => setTimer((n) => n - 1), 1000);
     return () => clearInterval(id);
   }, [timer]);
 
@@ -35,7 +37,7 @@ export default function LoginPage() {
   };
 
   const handleSend = async () => {
-    if (phone.length !== 10) return toast.error("Enter a valid 10-digit phone number");
+    if (phone.length !== 10) return toast.error(t("Enter a valid 10-digit phone number"));
     setLoading(true);
     try {
       const { data } = await checkStaffPhone(phone);
@@ -46,16 +48,16 @@ export default function LoginPage() {
       confirmRef.current = await signInWithPhoneNumber(firebaseAuth, `+91${phone}`, window.recaptchaVerifier);
       setStep("otp");
       setTimer(120);
-      toast.success(`OTP sent to +91 ${phone}`);
+      toast.success(t("OTP sent to +91 {phone}", { phone }));
     } catch (err) {
       resetRecaptcha();
-      toast.error(err.response?.data?.message || err.message || "Couldn't send OTP");
+      toast.error(err.response?.data?.message || err.message || t("Couldn't send OTP"));
     } finally { setLoading(false); }
   };
 
   const handleVerify = async () => {
-    if (otp.length !== 6) return toast.error("Enter the 6-digit OTP");
-    if (!confirmRef.current) return toast.error("Please resend the OTP");
+    if (otp.length !== 6) return toast.error(t("Enter the 6-digit OTP"));
+    if (!confirmRef.current) return toast.error(t("Please resend the OTP"));
     setLoading(true);
     try {
       const cred = await confirmRef.current.confirm(otp);
@@ -63,12 +65,12 @@ export default function LoginPage() {
       // Our own JWT is the session from here on — drop the Firebase one.
       signOut(firebaseAuth).catch(() => {});
       auth.login(data);
-      toast.success(`Welcome, ${data.name || "there"}!`);
+      toast.success(t("Welcome, {name}!", { name: data.name || t("there") }));
       nav("/tables", { replace: true });
     } catch (err) {
-      if (err.code === "auth/invalid-verification-code") toast.error("Wrong OTP — try again");
-      else if (err.code === "auth/code-expired") { toast.error("OTP expired — resend it"); handleBack(); }
-      else toast.error(err.response?.data?.message || "Login failed");
+      if (err.code === "auth/invalid-verification-code") toast.error(t("Wrong OTP — try again"));
+      else if (err.code === "auth/code-expired") { toast.error(t("OTP expired — resend it")); handleBack(); }
+      else toast.error(err.response?.data?.message || t("Login failed"));
     } finally { setLoading(false); }
   };
 
@@ -78,24 +80,21 @@ export default function LoginPage() {
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", padding: 24 }}>
       <div style={{ textAlign: "center", marginBottom: 30 }}>
-        <div style={{
-          width: 64, height: 64, margin: "0 auto 12px", borderRadius: "50%",
-          background: ACCENT_GRADIENT, display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 30, boxShadow: ACCENT_GLOW,
-        }}>
-          🧑‍🍳
-        </div>
+        {/* GLB-01: Hotel KHOAI mark + wordmark (src/brand.js) */}
+        <img src={BRAND.mark} alt={BRAND.name} width="72" height="72" style={{ display: "block", margin: "0 auto 10px", borderRadius: "50%" }} />
+        <img src={BRAND.wordmark} alt="" height="30" style={{ display: "block", margin: "0 auto 4px", height: 30, width: "auto" }} />
+        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 2, color: TEXT_FAINT, textTransform: "uppercase", marginBottom: 14 }}>{BRAND.name} · {t("Waiter")}</div>
         <div style={{ fontWeight: 800, fontSize: 21, color: "#fff", letterSpacing: -0.4 }}>
-          {step === "phone" ? "Waiter Login" : `Hi ${staffName || "there"}, verify your number`}
+          {step === "phone" ? t("Waiter login") : t("Hi {name}, verify your number", { name: staffName || t("there") })}
         </div>
         <div style={{ fontSize: 12.5, color: TEXT_FAINT, marginTop: 4 }}>
-          {step === "phone" ? "Enter your registered staff phone number" : `Code sent to +91 ${phone}`}
+          {step === "phone" ? t("Enter your registered staff phone number") : t("Code sent to +91 {phone}", { phone })}
         </div>
       </div>
 
       {step === "phone" ? (
         <>
-          <Field label="Phone Number">
+          <Field label={t("Phone number")}>
             <div style={{ display: "flex", gap: 8 }}>
               <div style={{ ...inputStyle, width: 56, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>+91</div>
               <input
@@ -106,7 +105,7 @@ export default function LoginPage() {
             </div>
           </Field>
           <PrimaryButton onClick={handleSend} loading={loading} style={{ width: "100%" }}>
-            {loading ? "Please wait…" : "Send OTP →"}
+            {loading ? t("Please wait…") : `${t("Send OTP")} →`}
           </PrimaryButton>
         </>
       ) : (
@@ -127,16 +126,17 @@ export default function LoginPage() {
             }}
           />
           <PrimaryButton id="verify-btn" onClick={handleVerify} loading={loading} style={{ width: "100%" }}>
-            {loading ? "Please wait…" : "Verify & Continue ✓"}
+            {loading ? t("Please wait…") : `${t("Verify & continue")} ✓`}
           </PrimaryButton>
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14 }}>
-            <button onClick={handleBack} style={linkBtn}>← Change number</button>
+            <button onClick={handleBack} style={linkBtn}>← {t("Change number")}</button>
             <button onClick={handleResend} disabled={timer > 0} style={{ ...linkBtn, color: timer > 0 ? TEXT_FAINT : ACCENT }}>
-              {timer > 0 ? `Resend in ${Math.floor(timer / 60)}:${String(timer % 60).padStart(2, "0")}` : "Resend OTP"}
+              {timer > 0 ? t("Resend in {time}", { time: `${Math.floor(timer / 60)}:${String(timer % 60).padStart(2, "0")}` }) : t("Resend OTP")}
             </button>
           </div>
         </>
       )}
+      <LanguageToggle style={{ marginTop: 22 }} />
       <div id="recaptcha-container" />
     </div>
   );

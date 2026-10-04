@@ -8,6 +8,7 @@
 // All writes go through services/menuService.js; prices and windows are
 // validated (and prices computed) server-side.
 // ─────────────────────────────────────────────────────────────────────────────
+import TimePicker from "../../../components/TimePicker.jsx";
 import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { t, tn, fmtNum, localName } from "../../../i18n/core.js";
@@ -115,9 +116,9 @@ export function MenuTimeModal({ menuTime, cats, groupNameOf, onClose, onSaved })
               </div>
               {!allDay && (
                 <>
-                  <input type="time" className="zc-input" style={{ width: 130 }} aria-label={t("Start time")} value={start} onChange={(e) => setStart(e.target.value)} />
+                  <TimePicker ariaLabel={t("Start time")} value={start} onChange={setStart} />
                   <span style={{ color: "var(--text-3)" }}>→</span>
-                  <input type="time" className="zc-input" style={{ width: 130 }} aria-label={t("End time")} value={end} onChange={(e) => setEnd(e.target.value)} />
+                  <TimePicker ariaLabel={t("End time")} value={end} onChange={setEnd} />
                 </>
               )}
             </div>

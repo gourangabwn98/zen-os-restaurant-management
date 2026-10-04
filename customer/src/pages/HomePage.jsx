@@ -8,6 +8,7 @@ import { useRestaurantProfile } from "../hooks/useRestaurantProfile.js";
 import { isActiveOrder, STATUS_LABEL } from "../utils/orderStatus.js";
 import SearchRow from "../components/SearchRow.jsx";
 import BannerCarousel from "../components/BannerCarousel.jsx";
+import OffersRail from "../components/OffersRail.jsx";
 import CategoryTiles from "../components/CategoryTiles.jsx";
 import ItemCard from "../components/ItemCard.jsx";
 import ItemDetailSheet from "../components/ItemDetailSheet.jsx";
@@ -22,7 +23,7 @@ export default function HomePage() {
   const nav = useNavigate();
   const { cart, table, filters } = useAppState();
   const profile = useRestaurantProfile();
-  const { items, grouped, loading, error, reload, categoryImage } = useMenu({ diet: filters.diet });
+  const { items, grouped, loading, error, reload, categoryImage, categoryIcon } = useMenu({ diet: filters.diet });
   const { orders } = useMyOrders();
   const [openItem, setOpenItem] = useState(null);
   // Slider data — real sales and coupons live right now; nothing hardcoded.
@@ -55,7 +56,11 @@ export default function HomePage() {
   const more    = useMemo(() => rankItems(items || []).filter((m) => !popular.includes(m)).slice(0, 6), [items, popular]);
   const deals   = useMemo(() => (items || []).filter((m) => !isOutOfStock(m) && discountPct(m) > 0)
     .sort((a, b) => discountPct(b) - discountPct(a)), [items]);
-  const picks   = useMemo(() => popular.filter((i) => i.image).slice(0, 3), [popular]);
+  // CUS-02: hero slides from the admin's item flags (MNU-03/04/05).
+  const orderable = useMemo(() => (items || []).filter((i) => !isOutOfStock(i)), [items]);
+  const specials  = useMemo(() => orderable.filter((i) => i.isTodaysSpecial), [orderable]);
+  const chefsPicks = useMemo(() => orderable.filter((i) => i.isChefsPick), [orderable]);
+  const fastItems = useMemo(() => orderable.filter((i) => i.isFastAvailable), [orderable]);
   const live    = (orders || []).filter(isActiveOrder).slice(0, 2);
 
   return (
@@ -77,14 +82,17 @@ export default function HomePage() {
       {items && (
         <>
           <BannerCarousel
-            banners={profile?.banners} picks={picks} bestSellers={bestSellers} offers={offers} tableLabel={table.tableLabel}
-            onBrowse={() => nav("/menu")} onAdd={(it) => handleAdd(it, 1)} onOffer={() => nav("/offers")}
+            banners={profile?.banners} specials={specials} chefsPicks={chefsPicks} fastItems={fastItems}
+            bestSellers={bestSellers} tableLabel={table.tableLabel}
+            onBrowse={() => nav("/menu")} onAdd={(it) => handleAdd(it, 1)}
           />
+
+          <OffersRail offers={offers} />
 
           {grouped.length > 0 && (
             <CategoryTiles
               names={grouped.map(([c]) => c)} active="All"
-              onPick={pickCategory} imageFor={categoryImage}
+              onPick={pickCategory} imageFor={categoryImage} iconFor={categoryIcon}
             />
           )}
 

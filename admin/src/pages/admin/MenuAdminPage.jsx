@@ -20,6 +20,7 @@
 // current restaurant time (enforced server-side — this page just edits it).
 // Layout pieces live in ./menu/ (MenuBoard.jsx, menuUI.jsx, menuKit.js).
 // ─────────────────────────────────────────────────────────────────────────────
+import TimePicker from "../../components/TimePicker.jsx";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import toast from "react-hot-toast";
 import {
@@ -33,11 +34,13 @@ import Loader from "./shared/Loader.jsx";
 import { t, tn, fmtNum, localName } from "../../i18n/core.js";
 import { invalidate } from "../../services/cache.js";
 import { VegDot, Switch, ScheduleBadge, CatThumb, TagEditor } from "./menu/menuUI.jsx";
+import CategoryIcon from "../../components/CategoryIcon.jsx";
 import {
   isUrl, hasSchedule, schedLabel, schedError, fmt12, fmtMinutes, isSoldOut,
   clockInTimezone, previewClock, isScheduleActive, buildTimeGroups, findCleanup,
   VIEWS, VIEW_KEYS, EMPTY_FILTERS, hasExtraFilters, matchesFilters, matchesSearch,
   loadSavedViews, storeSavedViews, errMsg,
+  ITEM_FLAGS, isSmartCat, manualCats, memberNames, CATEGORY_ICON_KEYS,
 } from "./menu/menuKit.js";
 import { StatusStrip, MenuTimesCard, CategoryCard, ItemsPanel } from "./menu/MenuBoard.jsx";
 import { MenuTimeModal, BulkEditModal, ImportModal } from "./menu/MenuModals.jsx";
@@ -47,6 +50,13 @@ const TAGS = ["Veg", "Non Veg"];
 const EMPTY_FORM = {
   name: "", nameBn: "", price: "", originalPrice: "", description: "",
   category: "", tag: "Veg", isAvailable: true, rating: 4.0, tags: [],
+  categories: [], isTodaysSpecial: false, isChefsPick: false, isFastAvailable: false,
+};
+// Item counts per category name, across every category an item is listed in.
+const countMembers = (items, cats) => {
+  const m = new Map();
+  for (const i of items) for (const n of memberNames(i, cats)) m.set(n, (m.get(n) || 0) + 1);
+  return m;
 };
 const normalizeCats = (data) => (data?.data || data || []).filter(Boolean);
 const BULK_CONFIRM_AT = 5; // confirm bulk schedule changes touching this many entries or more
@@ -99,7 +109,10 @@ function ImageUploadBox({ currentUrl, file, onFileChange }) {
 }
 
 // ── category picker: choose / create / delete (feature preserved) ───────────
-function CategoryPicker({ value, categories, onChange, onOpenCreate, onDeleteCategory }) {
+function CategoryPicker({ value, categories: allCategories, onChange, onOpenCreate, onDeleteCategory }) {
+  // The primary category is always one the restaurant made (MNU-01); built-in
+  // ones fill themselves (flags below / real orders).
+  const categories = manualCats(allCategories);
   const [confirm, setConfirm] = useState(null);
   const selected = categories.find((c) => c.name === value) || null;
 
@@ -167,6 +180,8 @@ function CategoryModal({ category = null, onClose, onSaved }) {
   const [file, setFile] = useState(null);
   const [removeImage, setRemoveImage] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [icon, setIcon] = useState(category?.icon || "");
+  const smart = isSmartCat(category);
   const currentImage = removeImage ? "" : (category?.image || "");
   const renaming = isEdit && name.trim() && name.trim() !== category.name;
   const itemCount = category?.itemCount ?? 0;
@@ -184,6 +199,7 @@ function CategoryModal({ category = null, onClose, onSaved }) {
       const fd = new FormData();
       fd.append("name", name.trim());
       fd.append("nameBn", nameBn.trim());
+      fd.append("icon", icon);
       if (file) fd.append("image", file);
       else if (isEdit && removeImage) fd.append("removeImage", "true");
       if (isEdit) {
@@ -219,10 +235,17 @@ function CategoryModal({ category = null, onClose, onSaved }) {
         <div className="mb" style={{ display: "grid", gap: 14 }}>
           <div className="menu-field">
             <label htmlFor="cat-name">{t("Category name")} *</label>
-            <input id="cat-name" className="zc-input" value={name} autoFocus maxLength={40}
+            <input id="cat-name" className="zc-input" value={name} autoFocus={!smart} maxLength={40} disabled={smart}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && submit()}
               placeholder={t("e.g. Biryani, Desserts…")} />
+            {smart && (
+              <div className="hint">
+                {category.smartSource === "flag"
+                  ? t("Built-in category — its name is fixed. Items appear here when you switch on “{flag}” in the item form.", { flag: t(ITEM_FLAGS.find((f) => f.flag === category.smartFlag)?.label || "") })
+                  : t("Built-in category — its name is fixed. It fills itself from real orders and customer ratings, and stays hidden from customers until there is data.")}
+              </div>
+            )}
             {renaming && itemCount > 0 && (
               <div className="hint">
                 {tn(itemCount, "The {n} item in “{name}” will move to the new name.", "The {n} items in “{name}” will move to the new name.", { name: category.name })}
@@ -234,6 +257,20 @@ function CategoryModal({ category = null, onClose, onSaved }) {
             <input id="cat-name-bn" lang="bn" className="zc-input" value={nameBn} maxLength={40}
               onChange={(e) => setNameBn(e.target.value)} placeholder={t("e.g. বিরিয়ানি, মিষ্টি…")} />
             <div className="hint">{t("Shown when the admin panel is in Bengali. Customers and the kitchen still see the English name.")}</div>
+          </div>
+          <div className="menu-field">
+            <label>{t("Icon")}</label>
+            <div role="radiogroup" aria-label={t("Icon")} style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              <button type="button" role="radio" aria-checked={!icon} className={`zc-btn sm${!icon ? " pri" : " ghost"}`}
+                onClick={() => setIcon("")} title={t("Picked from the name")}>{t("Automatic")}</button>
+              {CATEGORY_ICON_KEYS.map((k) => (
+                <button key={k} type="button" role="radio" aria-checked={icon === k} aria-label={k}
+                  className={`zc-btn sm${icon === k ? " pri" : " ghost"}`} style={{ padding: 6 }} onClick={() => setIcon(k)}>
+                  <CategoryIcon name={k} size={20} />
+                </button>
+              ))}
+            </div>
+            <div className="hint">{t("Shown on the customer menu when the category has no photo.")}</div>
           </div>
           <div className="menu-field">
             <label>{t("Category image")} <span style={{ color: "var(--text-3)", fontWeight: 400 }}>({t("optional")})</span></label>
@@ -283,12 +320,9 @@ function CategoriesModal({ cats, items, onClose, onChanged, onView }) {
 
   // Live counts from the loaded items (they include hidden ones); falls back
   // to the server's itemCount before the items list has loaded.
-  const counts = useMemo(() => {
-    const m = new Map();
-    for (const i of items) m.set(i.category, (m.get(i.category) || 0) + 1);
-    return m;
-  }, [items]);
-  const countOf = (c) => (items.length ? counts.get(c.name) || 0 : c.itemCount || 0);
+  const counts = useMemo(() => countMembers(items, cats), [items, cats]);
+  // Data-driven built-ins: the server's count (it knows the real orders).
+  const countOf = (c) => (items.length && !(isSmartCat(c) && !c.smartFlag) ? counts.get(c.name) || 0 : c.itemCount || 0);
 
   const shown = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -344,11 +378,12 @@ function CategoriesModal({ cats, items, onClose, onChanged, onView }) {
                       display: "flex", alignItems: "center", gap: 12, padding: "10px 12px",
                       borderBottom: "1px solid var(--border)", flexWrap: "wrap",
                     }}>
-                      <CatThumb image={c.image} />
+                      <CatThumb image={c.image} icon={c.iconShown} />
                       <div style={{ flex: "1 1 160px", minWidth: 0 }}>
                         <div style={{ fontWeight: 600, fontSize: 13.5, color: "var(--text-1)", overflowWrap: "anywhere" }}>{localName(c)}{c.nameBn && <span style={{ fontWeight: 400, fontSize: 11.5, color: "var(--text-3)" }}> · {c.nameBn === localName(c) ? c.name : c.nameBn}</span>}</div>
                         <div style={{ fontSize: 11.5, color: "var(--text-3)", marginTop: 2, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                           <span>{tn(n, "{n} item", "{n} items")}</span>
+                          {isSmartCat(c) && <span className="zc-tag vio sq">{c.smartFlag ? t("Built-in · items you mark") : t("Built-in · from real orders and ratings")}</span>}
                           {hasSchedule(c) && <ScheduleBadge schedule={c.schedule} />}
                         </div>
                       </div>
@@ -357,9 +392,11 @@ function CategoriesModal({ cats, items, onClose, onChanged, onView }) {
                           title={n === 0 ? t("No items in this category") : t("Show only {name} items", { name: localName(c) })}
                           onClick={() => onView(c.name)}>{t("View items")}</button>
                         <button type="button" className="zc-btn sm" onClick={() => setForm({ ...c, itemCount: n })}>{t("Edit")}</button>
-                        <button type="button" className="zc-btn danger sm" disabled={n > 0}
-                          title={n > 0 ? tn(n, "Move or delete its {n} item first", "Move or delete its {n} items first") : t("Delete {name}", { name: localName(c) })}
-                          onClick={() => setConfirmDel(c)}>{t("Delete")}</button>
+                        {!isSmartCat(c) && (
+                          <button type="button" className="zc-btn danger sm" disabled={n > 0}
+                            title={n > 0 ? tn(n, "Move or delete its {n} item first", "Move or delete its {n} items first") : t("Delete {name}", { name: localName(c) })}
+                            onClick={() => setConfirmDel(c)}>{t("Delete")}</button>
+                        )}
                       </div>
                     </div>
                   );
@@ -406,8 +443,8 @@ function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategor
   const isEdit = !!item?._id;
   const [form, setForm] = useState(
     isEdit
-      ? { ...EMPTY_FORM, ...item, price: item.price ?? "", originalPrice: item.originalPrice || "", tags: item.tags || [] }
-      : { ...EMPTY_FORM, category: categories[0]?.name || "" },
+      ? { ...EMPTY_FORM, ...item, price: item.price ?? "", originalPrice: item.originalPrice || "", tags: item.tags || [], categories: item.categories || [] }
+      : { ...EMPTY_FORM, category: manualCats(categories)[0]?.name || "" },
   );
   const soldOut = isEdit && isSoldOut(item);
   const [imgFile, setImgFile] = useState(null);
@@ -421,6 +458,11 @@ function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategor
   const schedChanged = sched.enabled !== origSched.enabled ||
     (sched.enabled && (sched.startTime !== origSched.startTime || sched.endTime !== origSched.endTime));
   const catSched = categories.find((c) => c.name === form.category && hasSchedule(c))?.schedule;
+  const extraChoices = manualCats(categories).filter((c) => c.name !== form.category);
+  const toggleExtra = (name) => set("categories", form.categories.includes(name)
+    ? form.categories.filter((n) => n !== name) : [...form.categories, name]);
+  // Data-driven built-ins this item is in right now (server-computed, read-only).
+  const autoIn = isEdit ? categories.filter((c) => isSmartCat(c) && !c.smartFlag && (item.categoryList || []).includes(c.name)) : [];
 
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && !showCat && onClose();
@@ -457,6 +499,8 @@ function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategor
       fd.append("nameBn", (form.nameBn || "").trim());
       fd.append("price", form.price);
       fd.append("category", form.category);
+      fd.append("categories", JSON.stringify((form.categories || []).filter((n) => n !== form.category)));
+      for (const f of ITEM_FLAGS) fd.append(f.flag, form[f.flag] ? "true" : "false");
       fd.append("tag", form.tag);
       // Only when changed: sending it clears "Sold out today" on the server.
       if (!isEdit || form.isAvailable !== item.isAvailable) fd.append("isAvailable", form.isAvailable);
@@ -572,6 +616,40 @@ function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategor
                   placeholder={t("Short description shown to customers…")} />
               </div>
               <div className="menu-field full">
+                <label>{t("Also show in")} <span style={{ color: "var(--text-3)", fontWeight: 400 }}>({t("optional")})</span></label>
+                {extraChoices.length === 0 ? (
+                  <div className="hint">{t("Create more categories to list this item in several places.")}</div>
+                ) : (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {extraChoices.map((c) => {
+                      const on = form.categories.includes(c.name);
+                      return (
+                        <button key={c._id || c.name} type="button" aria-pressed={on}
+                          className={`zc-btn sm${on ? " pri" : " ghost"}`} onClick={() => toggleExtra(c.name)}>
+                          {on ? "✓ " : ""}{localName(c)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="hint">{t("The same item — one price, one stock, one on/off switch — listed in more than one category.")}</div>
+              </div>
+              <div className="menu-field full">
+                <label>{t("Special lists")}</label>
+                <div style={{ display: "grid", gap: 6 }}>
+                  {ITEM_FLAGS.map((f) => (
+                    <div key={f.flag} className={`menu-toggle-row${form[f.flag] ? " on" : ""}`}>
+                      <Switch on={!!form[f.flag]} onClick={() => set(f.flag, !form[f.flag])} label={t(f.label)} />
+                      <span style={{ fontSize: 12.5, fontWeight: 500, color: "var(--text-1)" }}>{t(f.label)}</span>
+                      <span style={{ fontSize: 11, color: "var(--text-3)", marginLeft: "auto" }}>{t(f.hint)}</span>
+                    </div>
+                  ))}
+                </div>
+                {autoIn.length > 0 && (
+                  <div className="hint">{t("Also listed automatically in: {list}", { list: autoIn.map((c) => localName(c)).join(", ") })}</div>
+                )}
+              </div>
+              <div className="menu-field full">
                 <label>{t("Diner tags")} <span style={{ color: "var(--text-3)", fontWeight: 400 }}>({t("optional")})</span></label>
                 <TagEditor value={form.tags || []} onChange={(v) => set("tags", v)} suggestions={allTags} />
                 <div className="hint">{t("Fish, Spicy, Bestseller… shown on the menu list and usable as filters. Veg / Non-veg stays above.")}</div>
@@ -603,11 +681,11 @@ function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategor
                   </span>
                   {sched.enabled ? (
                     <span style={{ display: "flex", gap: 6, alignItems: "center", marginLeft: "auto" }}>
-                      <input type="time" className="zc-input" aria-label={t("Schedule start time")} style={{ width: 130 }}
-                        value={sched.startTime} onChange={(e) => setSched((p) => ({ ...p, startTime: e.target.value }))} />
+                      <TimePicker ariaLabel={t("Schedule start time")}
+                        value={sched.startTime} onChange={(v) => setSched((p) => ({ ...p, startTime: v }))} />
                       <span style={{ color: "var(--text-3)" }}>→</span>
-                      <input type="time" className="zc-input" aria-label={t("Schedule end time")} style={{ width: 130 }}
-                        value={sched.endTime} onChange={(e) => setSched((p) => ({ ...p, endTime: e.target.value }))} />
+                      <TimePicker ariaLabel={t("Schedule end time")}
+                        value={sched.endTime} onChange={(v) => setSched((p) => ({ ...p, endTime: v }))} />
                     </span>
                   ) : (
                     <span style={{ fontSize: 11, color: "var(--text-3)", marginLeft: "auto" }}>{t("No time restriction")}</span>
@@ -786,11 +864,11 @@ function ScheduleModal({ cats, items, selCats, selItems, setSelCats, setSelItems
             <div className="menu-sched-bar">
               <div className="menu-field">
                 <label htmlFor="sch-start">{t("Start (visible from)")}</label>
-                <input id="sch-start" type="time" className="zc-input" value={start} onChange={(e) => setStart(e.target.value)} />
+                <TimePicker id="sch-start" ariaLabel={t("Start (visible from)")} value={start} onChange={setStart} />
               </div>
               <div className="menu-field">
                 <label htmlFor="sch-end">{t("End (hidden from)")}</label>
-                <input id="sch-end" type="time" className="zc-input" value={end} onChange={(e) => setEnd(e.target.value)} />
+                <TimePicker id="sch-end" ariaLabel={t("End (hidden from)")} value={end} onChange={setEnd} />
               </div>
             </div>
             <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: -8 }}>
@@ -914,13 +992,10 @@ export default function MenuAdminPage() {
   // ── derived from the real lists ───────────────────────────────────────────
   const clock = useMemo(() => previewClock(nowClock, preview), [nowClock, preview]);
   const catByName = useMemo(() => new Map(cats.map((c) => [c.name, c])), [cats]);
-  const countByCat = useMemo(() => {
-    const m = new Map();
-    for (const i of items) m.set(i.category, (m.get(i.category) || 0) + 1);
-    return m;
-  }, [items]);
+  // MNU-01/03–07: an item counts in every category it is listed in.
+  const countByCat = useMemo(() => countMembers(items, cats), [items, cats]);
   const countOf = useCallback(
-    (c) => (items.length ? countByCat.get(c.name) || 0 : c.itemCount || 0),
+    (c) => (items.length && !(isSmartCat(c) && !c.smartFlag) ? countByCat.get(c.name) || 0 : c.itemCount || 0),
     [items.length, countByCat],
   );
   const cleanup = useMemo(() => findCleanup(cats, countOf), [cats, countOf]);
@@ -961,13 +1036,15 @@ export default function MenuAdminPage() {
     const test = VIEWS[view]?.test || VIEWS.all.test;
     const byCat = new Map();
     for (const i of items) {
-      if (selCat !== "All" && i.category !== selCat) continue;
+      if (selCat !== "All" && !memberNames(i, cats).has(selCat)) continue;
       if (!test(i, viewCtx)) continue;
       if (!matchesFilters(i, filters)) continue;
       const cat = catByName.get(i.category);
       if (!matchesSearch(i, q, cat?.nameBn)) continue;
-      if (!byCat.has(i.category)) byCat.set(i.category, []);
-      byCat.get(i.category).push(i);
+      // One category picked → its items under it (extra / built-in members too).
+      const key = selCat !== "All" ? selCat : i.category;
+      if (!byCat.has(key)) byCat.set(key, []);
+      byCat.get(key).push(i);
     }
     // Category order = the server's (drag) order; items whose category
     // document is missing go last under their stored category name.

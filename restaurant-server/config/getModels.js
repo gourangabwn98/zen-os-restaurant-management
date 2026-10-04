@@ -5,10 +5,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import mongoose from "mongoose";
-import { ORDER_STATUSES, ORDER_SOURCES, ORDER_TYPES } from "../utils/orderStateMachine.js";
-import { STOCK_UNITS, LEDGER_TYPES, WASTAGE_REASONS } from "../utils/inventoryConstants.js";
+import { ORDER_STATUSES, ORDER_SOURCES, ORDER_TYPES, BILL_STATUSES } from "../utils/orderStateMachine.js";
+import {
+  STOCK_UNITS, LEDGER_TYPES, WASTAGE_REASONS, AUTO_ORDER_PREFERENCES, CREDIT_PREFERENCES, BILL_NUMBER_SOURCES,
+  PURCHASE_PAYMENT_TYPES, PAYMENT_SOURCES, PAYABLE_PARTIES, SETTLE_SOURCES,
+} from "../utils/inventoryConstants.js";
 import { nextOrderId } from "../utils/orderNumber.js";
 import { INGREDIENT_SOURCES } from "../utils/recipeCost.js";
+import { CATEGORY_KINDS, SMART_KEYS } from "../utils/menuCategories.js";
 
 // ── Atomic counters ──────────────────────────────────────────────────────────
 // One document per sequence (currently just "orderId"). Incremented with a
@@ -33,11 +37,16 @@ const userSchema = new mongoose.Schema({
   language:   { type: String, default: "English" },
   // ── Admin/staff panel UI preference ──────────────────────────────────────
   // Same shape as vegMode/language: a per-user setting with its own PATCH
-  // endpoint (PATCH /api/auth/theme). "system" follows the device's
-  // prefers-color-scheme. Purely cosmetic — never gates any behaviour.
-  themePreference: { type: String, enum: ["light","dark","system"], default: "system" },
+  // endpoint (PATCH /api/auth/theme). GLB-05: only light/dark are written now;
+  // "system" stays in the enum so older saved values still load (the admin
+  // app maps it to light/dark). Purely cosmetic — never gates any behaviour.
+  themePreference: { type: String, enum: ["light","dark","system"], default: "dark" },
   isAdmin:    { type: Boolean, default: false },
-  role:       { type: String, enum: ["admin","waiter","chef","customer"], default: "customer" },
+  // "staff" (EMP-03) = an employee with a custom job (Cashier, Helper …) and
+  // no app login — the OTP login and RBAC only ever accept admin/waiter/chef.
+  role:       { type: String, enum: ["admin","waiter","chef","customer","staff"], default: "customer" },
+  // EMP-03 — the custom role name for role "staff" (reused for later hires).
+  jobTitle:   { type: String, default: "", trim: true, maxlength: 40 },
   address:    { type: String, default: "" }, // employee address (Employee Management)
   waiterName: { type: String },
   // ── RBAC / staff account lifecycle (Phase 1) ──────────────────────────────
@@ -146,7 +155,8 @@ const restaurantProfileSchema = new mongoose.Schema({
   businessDayEndsAt: { type: String, default: "03:00" },
   // Staff rules (Employees → Pay / Leave). Admin-editable, never env vars.
   staffPolicy: {
-    paidLeavePerMonth: { type: Number, default: 1, min: 0, max: 31 },
+    // EMP-02 — leaves earned per month; unused ones carry forward (no cap).
+    paidLeavePerMonth: { type: Number, default: 4, min: 0, max: 31 },
     salaryDay:         { type: Number, default: 5, min: 1, max: 28 },
   },
 }, { timestamps: true });
@@ -185,7 +195,16 @@ const categorySchema = new mongoose.Schema({
   // The Menu time this category sits in (null = its own window, or all day).
   menuTime: { type: mongoose.Schema.Types.ObjectId, ref: "MenuTime", default: null },
   sortOrder: { type: Number, default: 0 }, // admin drag order; customer menu follows it
+  // MNU-03/04/05/07 — a SMART category's members are computed (item flags or
+  // real sales/ratings), never assigned; services/smartCategoryService.js
+  // creates one per key and keeps its name fixed. MANUAL = ordinary category.
+  kind:     { type: String, enum: CATEGORY_KINDS, default: "MANUAL" },
+  smartKey: { type: String, enum: SMART_KEYS, default: undefined },
+  // MNU-06 — a line icon from the shared category icon set (admin picks);
+  // shown when the category has no photo. "" = derived from the name.
+  icon:     { type: String, default: "" },
 }, { timestamps: true });
+categorySchema.index({ smartKey: 1 }, { unique: true, partialFilterExpression: { smartKey: { $type: "string" } } });
 
 const chefSchema = new mongoose.Schema({
   name:      { type: String, required: true, trim: true },
@@ -201,6 +220,14 @@ const menuItemSchema = new mongoose.Schema({
   originalPrice: { type: Number },
   description:   { type: String },
   category:      { type: String, required: true },
+  // MNU-01 — the SAME item also listed under these categories (names, like
+  // `category`, which stays the primary: schedule, reports, history). One
+  // document, so price / stock / availability can never drift between them.
+  categories:    { type: [String], default: [] },
+  // MNU-03/04/05 — flags that put the item in the built-in smart categories.
+  isFastAvailable: { type: Boolean, default: false },
+  isChefsPick:     { type: Boolean, default: false },
+  isTodaysSpecial: { type: Boolean, default: false },
   categoryImage: { type: String, default: "" },
   tag:           { type: String, enum: ["Veg","Non Veg"], required: true },
   image:         { type: String, default: "" },
@@ -215,6 +242,7 @@ const menuItemSchema = new mongoose.Schema({
   soldOutUntil:  { type: Date, default: null },
 }, { timestamps: true });
 menuItemSchema.index({ soldOutUntil: 1 }, { partialFilterExpression: { soldOutUntil: { $type: "date" } } });
+menuItemSchema.index({ categories: 1 });
 
 const orderItemSchema = new mongoose.Schema({
   menuItem: { type: mongoose.Schema.Types.ObjectId, ref: "MenuItem", required: true },
@@ -303,6 +331,16 @@ const orderSchema = new mongoose.Schema({
 
   paymentStatus:  { type: String, enum: ["PENDING_VERIFICATION","PAID","FAILED"], default: "PENDING_VERIFICATION" },
   paymentMethod:  { type: String, enum: ["Cash","Online"], default: "Cash" },
+
+  // ── Bill lifecycle (BIL-02) ───────────────────────────────────────────────
+  // Financial state of this order's bill, independent of the operational
+  // `status` (Cooking → Ready to Deliver → Eating) and of `paymentStatus`
+  // (money received). Written ONLY by services/billingService.js. No default:
+  // documents from before this field read through effectiveBillStatus()
+  // (utils/orderStateMachine.js) — COMPLETED ⇒ SETTLED, else OPEN.
+  billStatus:     { type: String, enum: BILL_STATUSES },
+  billSettledAt:  { type: Date, default: null },
+  billSettledBy:  { type: actorSchema, default: null },
 
   // ── Online payment gateway (PhonePe) ─────────────────────────────────────
   // Present only for orders where the customer started an online payment. The
@@ -528,6 +566,19 @@ const supplierSchema = new mongoose.Schema({
   gstNumber:  { type: String, default: "" },
   notes:      { type: String, default: "" },
   status:     { type: String, enum: ["Active","Inactive"], default: "Active" },
+  // INV-12 — what this supplier provides: stock items, or names not stocked yet.
+  suppliedItems: {
+    type: [new mongoose.Schema({
+      inventoryItem: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryItem", default: null },
+      name:          { type: String, trim: true, default: "" },
+    }, { _id: false })],
+    default: [],
+  },
+  // INV-13 — how re-orders to this supplier should go.
+  autoOrderPreference: { type: String, enum: AUTO_ORDER_PREFERENCES, default: "ASK_FIRST" },
+  // INV-14 — their payment terms; Record Purchase defaults Paid/Credit from it.
+  creditPreference: { type: String, enum: CREDIT_PREFERENCES, default: "UPFRONT" },
+  creditTerms:      { type: String, default: "", trim: true, maxlength: 200 },
 }, { timestamps: true });
 
 const inventoryItemSchema = new mongoose.Schema({
@@ -591,9 +642,16 @@ const recipeSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const stockPurchaseItemSchema = new mongoose.Schema({
-  inventoryItem: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryItem", required: true },
+  // INV-04: a line typed in by hand still ends up linked to a stock item (an
+  // existing one with that name, or one created from it) — older purchases
+  // always had it. `name`/`unit` are the snapshot shown on the purchase.
+  inventoryItem: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryItem", default: null },
+  name:          { type: String, default: "", trim: true },
+  unit:          { type: String, default: "" },
+  manual:        { type: Boolean, default: false },
   quantity:      { type: Number, required: true, min: 0.0001 },
-  costPrice:     { type: Number, required: true, min: 0 },
+  costPrice:     { type: Number, required: true, min: 0 },   // rate per unit
+  amount:        { type: Number, default: null },             // quantity × rate
   batchNo:       { type: String, default: "" },
   expiryDate:    { type: Date, default: null },
 }, { _id: false });
@@ -602,11 +660,37 @@ const stockPurchaseSchema = new mongoose.Schema({
   supplier:       { type: mongoose.Schema.Types.ObjectId, ref: "Supplier", default: null },
   items:          { type: [stockPurchaseItemSchema], default: [] },
   totalCost:      { type: Number, required: true, min: 0 },
+  // INV-02 — the SUPPLIER's own bill number is the stored value; where it
+  // came from is kept so a system-made fallback is always visibly marked.
   invoiceNumber:  { type: String, default: "" },
+  billNumberSource: { type: String, enum: BILL_NUMBER_SOURCES, default: undefined },
   purchaseDate:   { type: Date, default: Date.now },
+  // INV-03 — as written on the bill (restaurant time), both required for new
+  // purchases; purchaseDate is the same moment as a Date.
+  billDate:       { type: String, default: "" },   // "YYYY-MM-DD"
+  billTime:       { type: String, default: "" },   // "HH:MM" 24h
+  billPhoto:      { type: String, default: "" },   // INV-05 — Cloudinary URL
   notes:          { type: String, default: "" },
+  // INV-06/07 — Paid or Credit, and for Paid where the money came from.
+  // Unset on purchases recorded before this existed ("not recorded").
+  paymentType:    { type: String, enum: PURCHASE_PAYMENT_TYPES, default: undefined },
+  paymentSource:  { type: String, enum: PAYMENT_SOURCES, default: undefined },
+  // What the business still owes for this purchase: the supplier (Credit) or
+  // the owner (paid from Owner's Pocket — a loan, never a drawer outflow).
+  payable: {
+    type: new mongoose.Schema({
+      to:            { type: String, enum: PAYABLE_PARTIES, required: true },
+      amount:        { type: Number, required: true, min: 0 },
+      settledAt:     { type: Date, default: null },
+      settledSource: { type: String, enum: SETTLE_SOURCES, default: null },
+      settledBy:     { type: actorSchema, default: null },
+    }, { _id: false }),
+    default: null,
+  },
   createdBy:      { type: actorSchema, default: () => ({}) },
 }, { timestamps: true });
+stockPurchaseSchema.index({ "payable.to": 1, "payable.settledAt": 1 });
+stockPurchaseSchema.index({ purchaseDate: -1 });
 
 // The single, append-only, unified audit trail for every stock movement of
 // every kind — this IS the "Stock Movements" view. Never edited, only
@@ -629,9 +713,13 @@ stockLedgerSchema.index({ type: 1, createdAt: -1 });
 stockLedgerSchema.index({ relatedOrder: 1 });
 
 const wastageLogSchema = new mongoose.Schema({
-  inventoryItem: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryItem", required: true },
+  // INV-08: waste of something that isn't a stock item — `itemName` only.
+  inventoryItem: { type: mongoose.Schema.Types.ObjectId, ref: "InventoryItem", default: null },
+  itemName:      { type: String, default: "", trim: true },
   quantity:      { type: Number, required: true, min: 0.0001 },
+  unit:          { type: String, default: "" },            // INV-09 — as entered (pcs, kg, …)
   reason:        { type: String, enum: WASTAGE_REASONS, default: "Other" },
+  reasonText:    { type: String, default: "", trim: true, maxlength: 200 }, // INV-10 — "Others"
   costImpact:    { type: Number, default: 0 }, // qty * item.costPrice at time of wastage
   notes:         { type: String, default: "" },
   recordedBy:    { type: actorSchema, default: () => ({}) },
@@ -709,7 +797,11 @@ const attendanceBreakSchema = new mongoose.Schema({
 
 const attendanceSessionSchema = new mongoose.Schema({
   employee:     { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  role:         { type: String, enum: ["admin","waiter","chef"], required: true },
+  role:         { type: String, enum: ["admin","waiter","chef","staff"], required: true },
+  // EMP-01 — a manager set this person's shift state. Such a session isn't
+  // closed by the heartbeat sweep (the person may have no app open at all).
+  managed:      { type: Boolean, default: false },
+  changedBy:    { type: actorSchema, default: null },
   // Denormalized snapshot at session-start time, same convenience pattern as
   // Order.waiterName — lets admin list/history views render without a join.
   employeeName: { type: String, default: "" },

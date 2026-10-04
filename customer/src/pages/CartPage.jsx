@@ -13,17 +13,28 @@ import Button from "../components/ui/Button.jsx";
 import Icon from "../components/ui/Icon.jsx";
 import { VegDot } from "../components/ItemCard.jsx";
 import CouponSheet from "../components/CouponSheet.jsx";
+import OrderEditReview from "../components/OrderEditReview.jsx";
 import { describeCoupon } from "../utils/coupon.js";
 
 const LOGIN_REQUIRED = "LOGIN_REQUIRED";
 const rupees = (n) => `₹${Math.round((Number(n) || 0) * 100) / 100}`;
 
 export default function CartPage() {
+  const { orderEdit } = useAppState();
+  // ORD-02: changing a placed order — the cart screen reviews and saves it.
+  if (orderEdit.active) return <OrderEditReview />;
+  return <ShoppingCart />;
+}
+
+function ShoppingCart() {
   const nav = useNavigate();
   const location = useLocation();
   const { cart, auth, table } = useAppState();
 
   const [orderType, setOrderType] = useState(table.isDineIn ? "DINE_IN" : "TAKEAWAY");
+  // SET-01: which services the restaurant has switched on (Admin → Profile).
+  // The server refuses a switched-off one too; this just never offers it.
+  const [services, setServices] = useState({ dineIn: true, takeAway: true, delivery: false });
   const [paymentMethod, setPaymentMethod] = useState("Cash");
   const [placing, setPlacing] = useState(false);
   const [idemKey] = useState(newIdempotencyKey);
@@ -41,6 +52,7 @@ export default function CartPage() {
       .then((r) => {
         const d = r.data?.data || {};
         setPhonePeEnabled(Boolean(d.phonePeEnabled));
+        setServices({ dineIn: true, takeAway: true, delivery: false, ...(d.services || {}) });
         const mode = d.effectivePaymentMode || "BOTH";
         setPayMode(mode);
         if (mode === "ONLINE") setPaymentMethod("Online");
@@ -56,9 +68,13 @@ export default function CartPage() {
   // Table verification (see useTableSession) can resolve asynchronously
   // after this page has already mounted with its initial guess — keep
   // orderType in sync so a slightly-late QR validation isn't missed.
+  // SET-01: the order types this customer can actually use right now.
+  const canDineIn = table.isDineIn && services.dineIn !== false;
+  const canTakeaway = services.takeAway !== false;
   useEffect(() => {
-    if (table.isDineIn) setOrderType("DINE_IN");
-  }, [table.isDineIn]);
+    if (canDineIn) setOrderType("DINE_IN");
+    else if (canTakeaway) setOrderType("TAKEAWAY");
+  }, [canDineIn, canTakeaway]);
 
   // ── Live bill from the server (POST /orders/quote) ──────────────────────
   // The SAME pricing the order is stored with (orderService.priceOrderDraft):
@@ -115,9 +131,10 @@ export default function CartPage() {
   // Guests order with no name, phone or login (the server never required them).
   const canPlace = useMemo(() => {
     if (cart.itemCount === 0) return false;
-    if (orderType === "DINE_IN" && !table.isDineIn) return false;
+    if (orderType === "DINE_IN" && !canDineIn) return false;
+    if (orderType === "TAKEAWAY" && !canTakeaway) return false;
     return true;
-  }, [cart.itemCount, orderType, table.isDineIn]);
+  }, [cart.itemCount, orderType, canDineIn, canTakeaway]);
 
   const handlePlace = async () => {
     if (!canPlace || placing) return;
@@ -181,13 +198,42 @@ export default function CartPage() {
   }
 
   // Why the button is disabled — shown right above it so it's never a mystery.
-  const blocker = orderType === "DINE_IN" && !table.isDineIn ? "Scan your table's QR code for dine-in" : null;
+  const blocker = !canDineIn && !canTakeaway
+    ? (table.isDineIn ? "Ordering from the table is switched off right now — please ask a waiter." : "Takeaway orders are switched off right now — please ask at the counter.")
+    : orderType === "DINE_IN" && !table.isDineIn ? "Scan your table's QR code for dine-in" : null;
 
   return (
     <>
       <div className="page-h">
         <button type="button" className="back" onClick={() => nav(-1)}><Icon name="back" />Back</button>
-        <h2>Your order{table.isDineIn ? ` · ${table.tableLabel}` : ""}</h2>
+        <h2>Your order</h2>
+      </div>
+
+      {/* ── CUS-04: the ONE place the cart shows table / order type ── */}
+      <div className="card order-type-top">
+        {orderType === "DINE_IN" && canDineIn ? (
+          <>
+            <TableBadge onClear={() => setOrderType("TAKEAWAY")} />
+            <p className="muted small" style={{ margin: "8px 0 0" }}>
+              Not your table? Tap ✕ to switch to takeaway.
+            </p>
+          </>
+        ) : canTakeaway ? (
+          <>
+            <div className="opt is-on" style={{ margin: 0 }}>
+              <span className="ic">🛍️</span>
+              <span><b>Takeaway</b><span className="muted small">You'll collect this order at the restaurant</span></span>
+            </div>
+            {table.isDineIn && !services.dineIn && (
+              <p className="muted small" style={{ margin: "8px 0 0" }}>Dine-in ordering is switched off right now, so this order is takeaway.</p>
+            )}
+            {!table.isDineIn && services.dineIn && (
+              <p className="muted small" style={{ margin: "8px 0 0" }}>Eating here? Scan the QR code on your table to order for dine-in.</p>
+            )}
+          </>
+        ) : (
+          <p className="small danger" style={{ margin: 0 }}>{blocker}</p>
+        )}
       </div>
 
       {/* ── Items ── */}
@@ -222,29 +268,6 @@ export default function CartPage() {
           <button type="button" className="btn btn-ghost sm" onClick={askLogin}>Log in</button>
         </div>
       )}
-
-      {/* ── Order type ── */}
-      <div className="card">
-        <div className="card-title">Order type</div>
-        {table.isDineIn ? (
-          <>
-            <TableBadge onClear={() => setOrderType("TAKEAWAY")} />
-            <p className="muted small" style={{ marginTop: 8 }}>
-              Ordering for dine-in at your scanned table. Not your table? Tap ✕ above to switch to takeaway.
-            </p>
-          </>
-        ) : (
-          <>
-            <div className="opt is-on" style={{ margin: "8px 0" }}>
-              <span className="ic">🛍️</span>
-              <span><b>Takeaway</b><span className="muted small">You'll collect this order at the restaurant</span></span>
-            </div>
-            <p className="muted small">
-              For dine-in, scan the QR code on your table before ordering — we don't accept manually-entered table numbers, to make sure your order reaches the right table.
-            </p>
-          </>
-        )}
-      </div>
 
       {/* ── Coupon — guests see it; only logged-in customers can apply ── */}
       {coupon ? (
@@ -333,7 +356,7 @@ export default function CartPage() {
       <p className="muted small center" style={{ marginTop: 10 }}>
         {payFirst
           ? "Your order is sent to the restaurant once your payment succeeds. Unpaid orders are cancelled after 15 minutes."
-          : "The restaurant accepts your order first. Once it's placed you can still change it for a few minutes."}
+          : "Changed your mind? You can change this order for a few minutes after placing it — it goes to the kitchen after that."}
       </p>
 
       {couponOpen && (

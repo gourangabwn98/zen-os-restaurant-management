@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import toast from "react-hot-toast";
 import { getSocket } from "../services/socketService.js";
 import { playNotificationSound } from "../utils/notificationSound.js";
+import { t } from "../i18n/index.jsx";
 
 /** New customer order (awaiting confirmation) → toast + sound (staff room
  * broadcast from the backend), same as the admin panel. Also warns when a
@@ -17,15 +18,15 @@ export function useOrderNotifications(enabled) {
 
     const onNewOrder = (payload) => {
       playNotificationSound();
-      toast(`🔔 New order ${payload?.order?.orderId || ""}${payload?.order?.tableNo ? ` · Table ${payload.order.tableNo}` : ""} — needs confirmation`, { duration: 5000 });
+      toast(`🔔 ${t("New order {id}", { id: payload?.order?.orderId || "" })}${payload?.order?.tableNo ? ` · ${t("Table {n}", { n: payload.order.tableNo })}` : ""} — ${t("needs confirmation")}`, { duration: 5000 });
     };
     const onCancelled = (payload) => {
-      toast(`❌ Order ${payload?.order?.orderId || ""} cancelled`);
+      toast(`❌ ${t("Order {id} cancelled", { id: payload?.order?.orderId || "" })}`);
     };
 
     const onNeedsAttention = (payload) => {
       playNotificationSound();
-      toast.error(`⚠️ Order ${payload?.order?.orderId || ""} couldn't start preparing — ${payload?.reason || "please check it"}`, { duration: 8000 });
+      toast.error(`⚠️ ${t("Order {id} couldn't go to the kitchen", { id: payload?.order?.orderId || "" })} — ${payload?.reason || t("please check it")}`, { duration: 8000 });
     };
 
     socket.on("order:new", onNewOrder);

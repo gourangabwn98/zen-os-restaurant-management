@@ -4,6 +4,8 @@ import toast from "react-hot-toast";
 import { sendEmployeeOTP, verifyEmployeeOTP } from "../services/authService.js";
 import { useAppState } from "../context/AppState.jsx";
 import { AMBER, TEXT_MUTED, BORDER } from "../theme.js";
+import { t, LanguageToggle } from "../i18n/index.jsx";
+import { BRAND } from "../brand.js";
 
 export default function LoginPage() {
   const nav = useNavigate();
@@ -18,39 +20,39 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (timer <= 0) return;
-    const id = setInterval(() => setTimer((t) => t - 1), 1000);
+    const id = setInterval(() => setTimer((n) => n - 1), 1000);
     return () => clearInterval(id);
   }, [timer]);
 
   const handleSend = async () => {
-    if (phone.length !== 10) return toast.error("Enter a valid 10-digit phone number");
+    if (phone.length !== 10) return toast.error(t("Enter a valid 10-digit phone number"));
     setLoading(true);
     try {
       const { data } = await sendEmployeeOTP(phone);
       setStaffName(data.staffName || "");
       setStep("otp");
       setTimer(120);
-      toast.success(`OTP sent to +91 ${phone}`);
+      toast.success(t("OTP sent to +91 {phone}", { phone }));
     } catch (err) {
-      toast.error(err.response?.data?.message || "Couldn't send OTP");
+      toast.error(err.response?.data?.message || t("Couldn't send OTP"));
     } finally { setLoading(false); }
   };
 
   const handleVerify = async () => {
-    if (otp.length !== 6) return toast.error("Enter the 6-digit OTP");
+    if (otp.length !== 6) return toast.error(t("Enter the 6-digit OTP"));
     setLoading(true);
     try {
       const { data } = await verifyEmployeeOTP(phone, otp);
       if (data.role !== "chef" && data.role !== "admin") {
-        toast.error("This account isn't registered as kitchen staff. Ask your admin to check your role.");
+        toast.error(t("This account isn't registered as kitchen staff. Ask your admin to check your role."));
         setLoading(false);
         return;
       }
       auth.login(data);
-      toast.success(`Welcome, ${data.name || "Chef"}!`);
+      toast.success(t("Welcome, {name}!", { name: data.name || t("Chef") }));
       nav("/board", { replace: true });
     } catch (err) {
-      toast.error(err.response?.data?.message || "Wrong OTP — try again");
+      toast.error(err.response?.data?.message || t("Wrong OTP — try again"));
     } finally { setLoading(false); }
   };
 
@@ -60,12 +62,15 @@ export default function LoginPage() {
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", padding: 24 }}>
       <div style={{ textAlign: "center", marginBottom: 28 }}>
-        <div style={{ fontSize: 44 }}>🍳</div>
+        {/* GLB-01: Hotel KHOAI mark + wordmark (src/brand.js) */}
+        <img src={BRAND.mark} alt={BRAND.name} width="72" height="72" style={{ display: "block", margin: "0 auto 10px", borderRadius: "50%" }} />
+        <img src={BRAND.wordmark} alt="" style={{ display: "block", margin: "0 auto 4px", height: 30, width: "auto" }} />
+        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 2, color: TEXT_MUTED, textTransform: "uppercase", marginBottom: 12 }}>{BRAND.name} · {t("Kitchen")}</div>
         <div style={{ fontWeight: 800, fontSize: 20, marginTop: 8 }}>
-          {step === "phone" ? "Kitchen Login" : `Hi ${staffName || "there"}, verify your number`}
+          {step === "phone" ? t("Kitchen login") : t("Hi {name}, verify your number", { name: staffName || t("there") })}
         </div>
         <div style={{ fontSize: 12.5, color: TEXT_MUTED, marginTop: 4 }}>
-          {step === "phone" ? "Enter your registered kitchen staff phone number" : `Code sent to +91 ${phone}`}
+          {step === "phone" ? t("Enter your registered kitchen staff phone number") : t("Code sent to +91 {phone}", { phone })}
         </div>
       </div>
 
@@ -79,7 +84,7 @@ export default function LoginPage() {
               placeholder="98765 43210" style={{ ...inputStyle, flex: 1 }}
             />
           </div>
-          <Btn onClick={handleSend} loading={loading}>Send OTP →</Btn>
+          <Btn onClick={handleSend} loading={loading}>{t("Send OTP")} →</Btn>
         </>
       ) : (
         <>
@@ -98,15 +103,16 @@ export default function LoginPage() {
               boxSizing: "border-box", marginBottom: 18, background: "#161a22", color: "#fff",
             }}
           />
-          <Btn id="verify-btn" onClick={handleVerify} loading={loading}>Verify & Continue ✓</Btn>
+          <Btn id="verify-btn" onClick={handleVerify} loading={loading}>{t("Verify & continue")} ✓</Btn>
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14 }}>
-            <button onClick={handleBack} style={linkBtn}>← Change number</button>
+            <button onClick={handleBack} style={linkBtn}>← {t("Change number")}</button>
             <button onClick={handleResend} disabled={timer > 0} style={{ ...linkBtn, color: timer > 0 ? TEXT_MUTED : AMBER }}>
-              {timer > 0 ? `Resend in ${Math.floor(timer / 60)}:${String(timer % 60).padStart(2, "0")}` : "Resend OTP"}
+              {timer > 0 ? t("Resend in {time}", { time: `${Math.floor(timer / 60)}:${String(timer % 60).padStart(2, "0")}` }) : t("Resend OTP")}
             </button>
           </div>
         </>
       )}
+      <LanguageToggle style={{ marginTop: 22 }} />
     </div>
   );
 }
@@ -117,7 +123,7 @@ const Btn = ({ children, onClick, loading, id }) => (
     background: loading ? "#b8863f" : AMBER, color: "#111", fontWeight: 800, fontSize: 14.5,
     cursor: loading ? "not-allowed" : "pointer",
   }}>
-    {loading ? "Please wait…" : children}
+    {loading ? t("Please wait…") : children}
   </button>
 );
 

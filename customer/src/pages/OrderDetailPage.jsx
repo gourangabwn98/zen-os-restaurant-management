@@ -6,9 +6,9 @@ import { initiatePhonePePayment, getPhonePePaymentStatus } from "../services/pay
 import { getRestaurantProfile } from "../services/restaurantService.js";
 import { subscribeToOrder } from "../services/socketService.js";
 import StatusStepper from "../components/StatusStepper.jsx";
-import WaiterCallCard from "../components/WaiterCallCard.jsx";
 import RateOrderCard from "../components/RateOrderCard.jsx";
-import EditOrderSheet from "../components/EditOrderSheet.jsx";
+import { useAppState } from "../context/AppState.jsx";
+import { canEditOrder } from "../hooks/useOrderEdit.js";
 import { Loader, ErrorState } from "../components/StateViews.jsx";
 import Button from "../components/ui/Button.jsx";
 import Icon from "../components/ui/Icon.jsx";
@@ -24,9 +24,6 @@ function KitchenCountdown({ at }) {
   if (!left) return <>Starting preparation…</>;
   return <>Starts preparing in <b style={{ fontVariantNumeric: "tabular-nums" }}>{Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}</b></>;
 }
-
-// Order statuses during which a dine-in customer can call a waiter.
-const CALLABLE = ["PENDING_CONFIRMATION", "CONFIRMED", "PREPARING", "READY", "DELIVERED"];
 
 /** "Pay within 12:34" — counts down to a pay-first order's deadline. */
 function PayDeadline({ deadline }) {
@@ -52,7 +49,15 @@ export default function OrderDetailPage() {
   const [cancelling, setCancelling] = useState(false);
   const [payBusy, setPayBusy] = useState(false);
   const [showBill, setShowBill] = useState(false);
-  const [editing, setEditing] = useState(false);
+  const [startingEdit, setStartingEdit] = useState(false);
+  const { orderEdit } = useAppState();
+
+  // ORD-02: change the order in the real menu (edit mode — see useOrderEdit).
+  const startEdit = async () => {
+    setStartingEdit(true);
+    try { await orderEdit.start(order); nav("/menu"); }
+    finally { setStartingEdit(false); }
+  };
 
   const load = useCallback(() => {
     setError(null);
@@ -174,19 +179,21 @@ export default function OrderDetailPage() {
         <StatusStepper status={order.status} />
       </div>
 
-      {/* ── Placed: can still be changed until it starts preparing ── */}
-      {order.status === "CONFIRMED" && !order.stockDeducted && (
+      {/* ── ORD-01: held — can still be changed until it goes to the kitchen ── */}
+      {["PENDING_CONFIRMATION", "CONFIRMED"].includes(order.status) && !order.stockDeducted && (
         <div className="card">
           <div className="card-title">Want to change something?</div>
           <p className="small" style={{ margin: "4px 0 12px", lineHeight: 1.5 }}>
-            {order.autoPrepareAt ? <KitchenCountdown at={order.autoPrepareAt} /> : "It will start preparing shortly"}
+            {order.status === "CONFIRMED" && order.autoPrepareAt
+              ? <KitchenCountdown at={order.autoPrepareAt} />
+              : "Nothing has gone to the kitchen yet"}
             {" "}— until then you can add, remove or change items.
           </p>
           {order.paymentStatus === "PAID" ? (
             <p className="muted small">This order is already paid — ask a waiter if you need to change it.</p>
-          ) : (
-            <Button variant="ghost" onClick={() => setEditing(true)}>✎ Change order</Button>
-          )}
+          ) : canEditOrder(order) ? (
+            <Button variant="ghost" onClick={startEdit} disabled={startingEdit}>{startingEdit ? "Opening the menu…" : "✎ Change order / add items"}</Button>
+          ) : null}
         </div>
       )}
 
@@ -212,7 +219,7 @@ export default function OrderDetailPage() {
         {order.paymentMethod === "Cash" && order.paymentStatus !== "PAID" && order.status !== "CANCELLED" && (
           <p className="muted small" style={{ marginTop: 10, lineHeight: 1.5 }}>
             {order.orderType === "DINE_IN"
-              ? "💡 To pay, tap “Call waiter” below — your waiter will come to your table to collect cash, UPI or card."
+              ? "💡 To pay, tap “Call waiter” — your waiter will come to your table to collect cash, UPI or card."
               : "💡 Pay at the counter when you collect your order."}
           </p>
         )}
@@ -242,15 +249,7 @@ export default function OrderDetailPage() {
       {/* ── Rate the meal (once paid) ── */}
       {order.paymentStatus === "PAID" && order.status !== "CANCELLED" && <RateOrderCard orderId={order._id} />}
 
-      {/* ── Call waiter (dine-in) ── */}
-      {order.orderType === "DINE_IN" && CALLABLE.includes(order.status) && (
-        <WaiterCallCard
-          orderId={order._id}
-          reason={order.paymentStatus !== "PAID" && order.paymentMethod === "Cash"
-            ? "Ready to pay, or need anything? A waiter will come to your table."
-            : undefined}
-        />
-      )}
+      {/* Call waiter: the floating button (components/CallWaiterFab.jsx) — CUS-06/07. */}
 
       {/* ── Bill ── */}
       <div className="card bill">
@@ -275,10 +274,6 @@ export default function OrderDetailPage() {
           </div>
         )}
       </div>
-
-      {editing && order.status === "CONFIRMED" && (
-        <EditOrderSheet order={order} onClose={() => setEditing(false)} onSaved={(o) => setOrder(o)} />
-      )}
 
       {canCancel && (
         <Button variant="danger" onClick={handleCancel} disabled={cancelling} style={{ marginTop: 4 }}>

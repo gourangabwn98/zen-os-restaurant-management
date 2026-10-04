@@ -6,6 +6,7 @@ import { disconnectSocket } from "../services/socketService.js";
 import DutyPanel from "../components/DutyPanel.jsx";
 import LeaveRequestCard from "../components/LeaveRequestCard.jsx";
 import { CARD, BORDER, TEXT_MUTED, AMBER } from "../theme.js";
+import { t, LanguageToggle } from "../i18n/index.jsx";
 
 export default function ProfilePage() {
   const nav = useNavigate();
@@ -22,12 +23,18 @@ export default function ProfilePage() {
 
   return (
     <div style={{ padding: 20, maxWidth: 480, margin: "0 auto" }}>
-      <button onClick={() => nav("/board")} style={{ background: "none", border: "none", color: TEXT_MUTED, fontSize: 14, marginBottom: 16, cursor: "pointer" }}>← Board</button>
+      <button onClick={() => nav("/board")} style={{ background: "none", border: "none", color: TEXT_MUTED, fontSize: 14, marginBottom: 16, cursor: "pointer" }}>← {t("Board")}</button>
 
       <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 22, textAlign: "center" }}>
         <div style={{ fontSize: 40 }}>🧑‍🍳</div>
-        <div style={{ fontSize: 20, fontWeight: 800, marginTop: 8 }}>Welcome {auth.user?.name}</div>
-        <div style={{ fontSize: 12.5, color: TEXT_MUTED, marginTop: 2, textTransform: "uppercase" }}>Role: {auth.user?.role}</div>
+        <div style={{ fontSize: 20, fontWeight: 800, marginTop: 8 }}>{t("Welcome {name}", { name: auth.user?.name || "" })}</div>
+        <div style={{ fontSize: 12.5, color: TEXT_MUTED, marginTop: 2, textTransform: "uppercase" }}>{t("Role")}: {t(auth.user?.role || "chef")}</div>
+      </div>
+
+      {/* GLB-04 — English / বাংলা */}
+      <div style={{ marginTop: 18, background: CARD, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 16 }}>
+        <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10 }}>{t("Language")}</div>
+        <LanguageToggle />
       </div>
 
       <div style={{ marginTop: 18 }}>
@@ -35,15 +42,15 @@ export default function ProfilePage() {
       </div>
 
       <div style={{ marginTop: 18, background: CARD, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 20 }}>
-        <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 14 }}>Today's Statistics</div>
+        <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 14 }}>{t("Today's statistics")}</div>
         {!stats ? (
-          <div style={{ color: TEXT_MUTED, fontSize: 13 }}>Loading…</div>
+          <div style={{ color: TEXT_MUTED, fontSize: 13 }}>{t("Loading…")}</div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-            <Stat label="Prepared Today" value={stats.preparedToday} highlight />
-            <Stat label="Preparing" value={stats.preparing} />
-            <Stat label="Ready" value={stats.ready} />
-            <Stat label="Completed" value={stats.completedToday} />
+            <Stat label={t("Cooked today")} value={stats.preparedToday} highlight />
+            <Stat label={t("Cooking")} value={stats.preparing} />
+            <Stat label={t("Ready to deliver")} value={stats.ready} />
+            <Stat label={t("Completed")} value={stats.completedToday} />
           </div>
         )}
       </div>
@@ -56,7 +63,7 @@ export default function ProfilePage() {
         marginTop: 20, width: "100%", padding: 14, borderRadius: 12, border: "none",
         background: "#ef4444", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer",
       }}>
-        Sign Out
+        {t("Sign out")}
       </button>
     </div>
   );

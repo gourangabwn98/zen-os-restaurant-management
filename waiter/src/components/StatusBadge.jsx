@@ -1,11 +1,14 @@
 import { AMBER, GREEN, RED, ACCENT } from "../theme.js";
+import { t } from "../i18n/index.jsx";
 
+// DSH-04 floor vocabulary: Placed (held) → Cooking → Ready to deliver →
+// Served/Eating → Completed (bill settled).
 export const STATUS_LABEL = {
   PENDING_CONFIRMATION: "Awaiting confirmation",
   CONFIRMED: "Placed",
-  PREPARING: "Preparing",
-  READY: "Ready",
-  DELIVERED: "Delivered",
+  PREPARING: "Cooking",
+  READY: "Ready to deliver",
+  DELIVERED: "Served",
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
 };
@@ -33,7 +36,7 @@ export default function StatusBadge({ status, style }) {
       padding: "4px 10px", borderRadius: 20, whiteSpace: "nowrap", boxShadow: `0 0 10px ${c}30`, ...style,
     }}>
       <span style={{ width: 6, height: 6, borderRadius: "50%", background: c, boxShadow: `0 0 6px ${c}` }} />
-      {STATUS_LABEL[status] || status}
+      {t(STATUS_LABEL[status] || status)}
     </span>
   );
 }

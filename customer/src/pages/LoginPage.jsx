@@ -7,6 +7,7 @@ import { firebaseVerify } from "../services/authService.js";
 import { useAppState } from "../context/AppState.jsx";
 import Button from "../components/ui/Button.jsx";
 import Icon from "../components/ui/Icon.jsx";
+import { BRAND } from "../brand.js";
 
 export default function LoginPage() {
   const nav = useNavigate();
@@ -86,7 +87,12 @@ export default function LoginPage() {
       </button>
 
       <div className="welcome" style={{ marginBottom: 18 }}>
-        <div className="tno" aria-hidden="true">{step === "phone" ? "🍽️" : "🔐"}</div>
+        {/* CUS-01: the restaurant's own logo on both login steps (src/brand.js) */}
+        <div className="auth-brand">
+          <img src={BRAND.mark} alt={BRAND.name} width="72" height="72" />
+          <img src={BRAND.wordmark} alt="" className="auth-word" height="34" />
+          <span className="auth-name">{BRAND.name}</span>
+        </div>
         <h3 style={{ fontSize: 24, fontWeight: 850, letterSpacing: "-.02em" }}>
           {step === "phone" ? "Log in to order" : "Verify your number"}
         </h3>

@@ -1,28 +1,27 @@
 import { useEffect, useRef, useState } from "react";
 import Icon from "./ui/Icon.jsx";
 
-const offerBig = (c) => (c.discountType === "PERCENT" ? `${c.discountValue}% OFF` : `₹${c.discountValue} OFF`);
-const validTill = (c) => {
-  const d = new Date(c.endsAt);
-  return `Valid till ${d.toLocaleDateString([], { day: "numeric", month: "short" })}, ${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
-};
+/** CUS-02 — the large auto-scrolling Home hero (reference ".hero"). Every
+ * slide comes from real data; nothing is hard-coded:
+ *   1. configured promotions — every active admin banner (its link kept),
+ *   2. Today's Special / Chef's Picks / Fast Available — items the admin
+ *      flagged in Menu items (MNU-05/04/03), up to 3 each,
+ *   3. Best Seller — real top sellers (GET /api/menu/best-sellers),
+ *   4. only when none of the above exist: an intro slide (CTA → menu).
+ * Coupons have their own poster rail under the hero (CUS-03). */
+const MAX_PER_GROUP = 3;
 
-/** Home hero carousel (reference ".hero"). Slides, in order:
- *  1. intro slide (CTA → full menu),
- *  2. every active admin banner as a full-bleed photo slide (its link kept),
- *  3. "Best Seller" — real top sellers (GET /api/menu/best-sellers), Add CTA,
- *  4. "Today's Offer" — coupons live right now (GET /api/coupons; the server
- *     only returns ones inside their start/end time), CTA → Offers,
- *  5. only when there are no banners and no sales yet: "Chef's pick". */
-export default function BannerCarousel({ banners, picks = [], bestSellers = [], offers = [], tableLabel, onBrowse, onAdd, onOffer }) {
+export default function BannerCarousel({ banners, specials = [], chefsPicks = [], fastItems = [], bestSellers = [], tableLabel, onBrowse, onAdd }) {
   const active = (banners || []).filter((b) => b.active && b.imageUrl);
+  const itemSlides = (list, pill, kind) => list.slice(0, MAX_PER_GROUP).map((it) => ({ kind, item: it, pill }));
   const slides = [
-    { kind: "intro", img: bestSellers.find((b) => b.image)?.image || picks[0]?.image },
     ...active.map((b) => ({ kind: "banner", ...b })),
-    ...bestSellers.slice(0, 4).map((it) => ({ kind: "best", item: it })),
-    ...offers.slice(0, 4).map((c) => ({ kind: "offer", coupon: c })),
-    ...(active.length || bestSellers.length ? [] : picks.slice(0, 2).map((it) => ({ kind: "item", item: it }))),
+    ...itemSlides(specials, "Today's Special", "special"),
+    ...itemSlides(chefsPicks, "Chef's Pick", "chef"),
+    ...itemSlides(fastItems, "Fast Available", "fast"),
+    ...itemSlides(bestSellers, "Best Seller", "best"),
   ];
+  if (!slides.length) slides.push({ kind: "intro" });
 
   const [rawSlide, setSlide] = useState(0);
   const touchX = useRef(null);
@@ -59,28 +58,11 @@ export default function BannerCarousel({ banners, picks = [], bestSellers = [], 
               </div>
             );
           }
-          if (s.kind === "offer") {
-            const c = s.coupon;
-            return (
-              <div key={`o${i}`} className="slide offer" aria-hidden={hidden}>
-                <div style={{ minWidth: 0 }}>
-                  <span className="pill">Today's Offer</span>
-                  <h2>{c.title}</h2>
-                  <p>{c.description || (c.minOrderAmount ? `On orders above ₹${c.minOrderAmount}` : "On your whole order")} · {validTill(c)}</p>
-                  <button type="button" className="btn-cta" tabIndex={hidden ? -1 : 0} onClick={() => onOffer?.(c)}>
-                    Use code {c.code}<i><Icon name="arrow" /></i>
-                  </button>
-                </div>
-                <div className="img"><span className="offer-big">{offerBig(c)}</span></div>
-              </div>
-            );
-          }
           const item = s.item;
-          const pill = s.kind === "best" ? "Best Seller" : item ? "Chef's pick" : tableLabel ? `${tableLabel} · Dine-in` : "Hot & fresh";
           return (
-            <div key={`s${i}`} className="slide" aria-hidden={hidden}>
+            <div key={`s${i}`} className={`slide${s.kind ? ` k-${s.kind}` : ""}`} aria-hidden={hidden}>
               <div style={{ minWidth: 0 }}>
-                <span className="pill">{pill}</span>
+                <span className="pill">{item ? s.pill : tableLabel ? `${tableLabel} · Dine-in` : "Hot & fresh"}</span>
                 <h2>{item ? item.name : <>Crave it?<br />We’ll cook it.</>}</h2>
                 <p>{item ? (item.description || item.category) : "Order from your phone. Straight to the kitchen — no waiting for the menu."}</p>
                 <button type="button" className="btn-cta" tabIndex={hidden ? -1 : 0} onClick={() => (item ? onAdd(item) : onBrowse())}>
@@ -88,7 +70,7 @@ export default function BannerCarousel({ banners, picks = [], bestSellers = [], 
                 </button>
               </div>
               <div className="img">
-                {(item?.image || s.img) ? <img src={item?.image || s.img} alt="" /> : <span className="emo">🍔</span>}
+                {item?.image ? <img src={item.image} alt="" /> : <span className="emo">🍽️</span>}
               </div>
             </div>
           );

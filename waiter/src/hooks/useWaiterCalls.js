@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 import { getSocket } from "../services/socketService.js";
 import { getMyCalls, acknowledgeCall, resolveCall } from "../services/waiterCallService.js";
 import { playNotificationSound } from "../utils/notificationSound.js";
+import { t } from "../i18n/index.jsx";
 
 const LIVE = ["OPEN", "ACKNOWLEDGED"];
 
@@ -30,7 +31,7 @@ export function useWaiterCalls(enabled) {
     const onNew = ({ call } = {}) => {
       if (!call) return;
       playNotificationSound();
-      toast(`🛎️ Table ${call.tableNo} is calling${call.attempt === 2 ? " again" : ""}`, { duration: 6000 });
+      toast(`🛎️ ${call.attempt === 2 ? t("Table {n} is calling again", { n: call.tableNo }) : t("Table {n} is calling", { n: call.tableNo })}`, { duration: 6000 });
       setCalls((p) => [...p.filter((c) => c._id !== call._id), call]);
     };
     const onUpdated = ({ call } = {}) => {
@@ -40,7 +41,7 @@ export function useWaiterCalls(enabled) {
         if (!LIVE.includes(call.status)) return p.filter((c) => c._id !== call._id);
         // Someone else took it — let them have it.
         if (call.status === "ACKNOWLEDGED" && !mine.current.has(call._id)) {
-          if (had && call.acknowledgedBy?.name) toast(`${call.acknowledgedBy.name} is taking table ${call.tableNo}`);
+          if (had && call.acknowledgedBy?.name) toast(t("{name} is taking table {n}", { name: call.acknowledgedBy.name, n: call.tableNo }));
           return p.filter((c) => c._id !== call._id);
         }
         return had ? p.map((c) => (c._id === call._id ? call : c)) : p;
@@ -72,7 +73,7 @@ export function useWaiterCalls(enabled) {
       setCalls((p) => p.map((c) => (c._id === call._id ? data.call : c)));
     } catch (err) {
       mine.current.delete(call._id);
-      toast.error(err.response?.data?.message || "Couldn't take this call");
+      toast.error(err.response?.data?.message || t("Couldn't take this call"));
       setCalls((p) => p.filter((c) => c._id !== call._id));
     }
   };
@@ -80,9 +81,9 @@ export function useWaiterCalls(enabled) {
   const done = async (call) => {
     try {
       await resolveCall(call._id);
-      toast.success(`Table ${call.tableNo} attended`);
+      toast.success(t("Table {n} attended", { n: call.tableNo }));
     } catch (err) {
-      toast.error(err.response?.data?.message || "Couldn't close this call");
+      toast.error(err.response?.data?.message || t("Couldn't close this call"));
     } finally {
       mine.current.delete(call._id);
       setCalls((p) => p.filter((c) => c._id !== call._id));

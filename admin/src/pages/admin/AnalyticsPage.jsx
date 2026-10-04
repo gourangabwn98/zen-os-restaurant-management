@@ -30,6 +30,7 @@ import RevenueChart from "./insights/RevenueChart.jsx";
 import DishChart from "./insights/DishChart.jsx";
 import TopDishes from "./insights/TopDishes.jsx";
 import MiniCards from "./insights/MiniCards.jsx";
+import Ebitda from "./insights/Ebitda.jsx";
 import "./insights/insights.css";
 
 const LEAD = {
@@ -241,7 +242,10 @@ export default function AnalyticsPage({ onNavigate }) {
               </div>
             </div>
           </div>
-        ) : (
+        ) : null}
+        {/* INS-01 / INS-02 — operating profit and where the money went out */}
+        <Ebitda data={data} periodLabel={periodLabel} prevLabel={PREV_LABEL[period]} />
+        {mode === "simple" ? null : (
           <>
             <div className="ins-row2">
               <Ladder ladder={view.ladder} data={data} periodLabel={periodLabel} delta={view.delta} prevLabel={PREV_LABEL[period]} />

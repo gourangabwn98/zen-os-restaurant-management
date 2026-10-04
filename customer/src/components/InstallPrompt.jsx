@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { installOffer, subscribeInstall, runInstall, dismissInstall } from "../services/installPrompt.js";
+import { BRAND } from "../brand.js";
 
 /** First QR visit: a small, dismissible "Install the app" card at the top —
  * never blocks ordering, appears a few seconds after landing, and only when
@@ -22,9 +23,10 @@ export default function InstallPrompt() {
 
   return (
     <div className="install-card" role="dialog" aria-label="Install the app">
-      <img src="/icons/icon-192.png" alt="" width="40" height="40" />
+      {/* CUS-01: Hotel KHOAI logo, never a blank/generic icon */}
+      <img src={BRAND.mark} alt={BRAND.name} width="40" height="40" />
       <div className="grow">
-        <b>Add our app to your phone</b>
+        <b>Add {BRAND.name} to your phone</b>
         <span>{offer === "ios"
           ? <>Tap <b>Share</b> <span aria-hidden="true">⎋</span> then <b>Add to Home Screen</b> — order faster next time.</>
           : "Order faster next time, straight from your home screen."}</span>

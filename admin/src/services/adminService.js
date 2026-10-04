@@ -31,8 +31,10 @@ export const updateTable = (tableNo, d) =>
   api.put(`/admin/tables/${tableNo}`, d);
 export const deleteTable = (tableNo) => api.delete(`/admin/tables/${tableNo}`);
 export const getTakeawayQR = () => api.get("/admin/tables/takeaway-qr");
-export const regenerateQR = (tableNo) =>
-  api.post(`/admin/tables/${tableNo}/regenerate-qr`);
+// TBL-01: { keepToken: true } rebuilds a stale link (wrong/old customer URL)
+// without invalidating the table's token; omit it to issue a new token.
+export const regenerateQR = (tableNo, opts = {}) =>
+  api.post(`/admin/tables/${tableNo}/regenerate-qr`, opts);
 
 //for chef
 
@@ -91,6 +93,10 @@ export const modifyOrderItems = (id, items, revision) => api.patch(`/orders/${id
 
 // ── Payment verification (Phase 4) ────────────────────────────────────────
 export const updateOrderPayment = (id, body) => api.patch(`/admin/orders/${id}/payment`, body);
+// BIL-01/BIL-02 — the billing workflow: settle bills (records the payment when
+// it isn't yet; a served order completes as a result) / reopen a settled bill.
+export const settleOrders = (orderIds, paymentMethod) => api.post("/admin/orders/settle", { orderIds, paymentMethod });
+export const reopenOrderBill = (id) => api.post(`/admin/orders/${id}/reopen-bill`);
 
 // ── Table sessions / clearing (Phase 4) ───────────────────────────────────
 export const getOpenTableSessions = () => api.get("/admin/table-sessions");
@@ -108,6 +114,8 @@ export const getEmployees        = (params) => api.get("/admin/employees", { par
 export const addEmployee         = (body) => api.post("/admin/employees", body);
 export const editEmployee        = (id, body) => api.put(`/admin/employees/${id}`, body);
 export const setEmployeeStatus   = (id, status) => api.patch(`/admin/employees/${id}/status`, { status });
+// EMP-01 — the manager sets On shift / On break / Off shift for someone.
+export const setEmployeeShift    = (id, state) => api.patch(`/admin/employees/${id}/shift`, { state });
 export const getEmployeeStats    = (id, { from, to } = {}) =>
   api.get(`/admin/employees/${id}/stats`, { params: { from: from || undefined, to: to || undefined } });
 export const getEmployeePerformance = (params) => api.get("/admin/employees/performance", { params });
@@ -142,4 +150,5 @@ export const cancelWaitlistEntry= (id) => api.post(`/admin/waitlist/${id}/cancel
 export const previewCombinedBill  = (tableNo, orderIds) => api.post("/admin/combined-bill/preview", { tableNo, orderIds });
 export const printCombinedBill    = (tableNo, orderIds, requestKey) => api.post("/admin/combined-bill/print", { tableNo, orderIds, requestKey });
 export const paySelectedOrders    = (tableNo, orderIds, paymentMethod) => api.post("/admin/combined-bill/pay", { tableNo, orderIds, paymentMethod });
-export const completeSelectedOrders = (tableNo, orderIds) => api.post("/admin/combined-bill/complete", { tableNo, orderIds });
+// BIL-01: "settle selected" (the route kept its old name) — never a hand completion.
+export const completeSelectedOrders = (tableNo, orderIds, paymentMethod) => api.post("/admin/combined-bill/complete", { tableNo, orderIds, paymentMethod });

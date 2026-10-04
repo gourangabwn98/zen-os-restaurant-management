@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   getOrder, confirmOrder, rejectOrder, updateOrderStatus, addItemsToOrder,
-  updateOrderPayment, getCombinedBill, printBill, modifyOrderItems,
+  updateOrderPayment, getCombinedBill, printBill, modifyOrderItems, settleOrders,
 } from "../services/orderService.js";
 import { getMenu, getMenuCategories } from "../services/menuService.js";
 import StatusBadge, { statusColor } from "../components/StatusBadge.jsx";
@@ -13,22 +13,28 @@ import Chip from "../components/ui/Chip.jsx";
 import QtyStepper, { AddButton } from "../components/ui/QtyStepper.jsx";
 import { Loader, ErrorState, EmptyState } from "../components/StateViews.jsx";
 import { ACCENT, GREEN, AMBER, RED, TEXT_MUTED, TEXT_FAINT, GLASS_BORDER, GLASS_BG } from "../theme.js";
+import { t, N_, tn, localName } from "../i18n/index.jsx";
+import { STATUS_LABEL } from "../components/StatusBadge.jsx";
 
+// DSH-04: the floor steps a waiter drives. Kitchen marks Ready; the waiter
+// taps Served (→ Eating). Completed is NOT here — it follows from settling
+// the bill (BIL-02), never a button on the order.
 const NEXT_STATUS = {
   CONFIRMED: "PREPARING",
   PREPARING: "READY",
   READY: "DELIVERED",
-  DELIVERED: "COMPLETED",
 };
 const NEXT_LABEL = {
-  CONFIRMED: "Start Preparing",
-  PREPARING: "Mark Ready",
-  READY: "Mark Delivered",
-  DELIVERED: "Mark Completed",
+  CONFIRMED: N_("Send to kitchen now"),
+  PREPARING: N_("Mark ready"),
+  READY: N_("Served"),
 };
 const STAGES = ["CONFIRMED", "PREPARING", "READY", "DELIVERED", "COMPLETED"];
+// Bill can be settled once the order is accepted (server: billingService.SETTLEABLE).
+const SETTLEABLE = ["CONFIRMED", "PREPARING", "READY", "DELIVERED"];
+const billSettled = (o) => (o.billStatus ? o.billStatus === "SETTLED" : o.status === "COMPLETED");
 
-const PAYMENT_LABEL = { PENDING_VERIFICATION: "Pending verification", PAID: "Paid", FAILED: "Failed" };
+const PAYMENT_LABEL = { PENDING_VERIFICATION: N_("Pending verification"), PAID: N_("Paid"), FAILED: N_("Failed") };
 const paymentColor = (s) => (s === "PAID" ? GREEN : s === "FAILED" ? RED : AMBER);
 
 const lineId = (it) => String(it.menuItem?._id ?? it.menuItem);
@@ -36,12 +42,12 @@ const lineId = (it) => String(it.menuItem?._id ?? it.menuItem);
 /** "Starts preparing in 2:42" for a Placed order (it can still be changed). */
 function SendCountdown({ order }) {
   const [now, setNow] = useState(() => Date.now());
-  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
-  if (order.sendError) return <span style={{ color: RED }}>Couldn&rsquo;t start preparing automatically — {order.sendError}</span>;
-  if (!order.autoPrepareAt) return <span>Start preparing when ready</span>;
+  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
+  if (order.sendError) return <span style={{ color: RED }}>{t("Couldn't start preparing automatically")} — {order.sendError}</span>;
+  if (!order.autoPrepareAt) return <span>{t("Start preparing when ready")}</span>;
   const left = Math.max(0, Math.ceil((new Date(order.autoPrepareAt).getTime() - now) / 1000));
-  if (!left) return <span>Starting preparation…</span>;
-  return <span>Starts preparing in <b style={{ fontVariantNumeric: "tabular-nums" }}>{Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}</b> — can still be changed</span>;
+  if (!left) return <span>{t("Starting preparation…")}</span>;
+  return <span>{t("Goes to the kitchen in")} <b style={{ fontVariantNumeric: "tabular-nums" }}>{Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}</b> — {t("can still be changed")}</span>;
 }
 
 export default function OrderDetailPage() {
@@ -63,23 +69,23 @@ export default function OrderDetailPage() {
 
   const load = useCallback(() => {
     setError(null);
-    getOrder(id).then((r) => setOrder(r.data)).catch(() => setError("Couldn't load this order"));
+    getOrder(id).then((r) => setOrder(r.data)).catch(() => setError(t("Couldn't load this order")));
   }, [id]);
 
   useEffect(() => { load(); const iv = setInterval(load, 10000); return () => clearInterval(iv); }, [load]);
 
   const handleConfirm = async () => {
     setBusy(true);
-    try { await confirmOrder(id); toast.success("Order accepted — it starts preparing shortly"); load(); }
-    catch (err) { toast.error(err.response?.data?.message || "Couldn't accept the order"); }
+    try { await confirmOrder(id); toast.success(t("Order accepted — it goes to the kitchen when the change window ends")); load(); }
+    catch (err) { toast.error(err.response?.data?.message || t("Couldn't accept the order")); }
     finally { setBusy(false); }
   };
 
   const handleReject = async () => {
-    if (!window.confirm("Cancel this order?")) return;
+    if (!window.confirm(t("Cancel this order?"))) return;
     setBusy(true);
-    try { await rejectOrder(id, "Cancelled by waiter"); toast.success("Order cancelled"); load(); }
-    catch (err) { toast.error(err.response?.data?.message || "Couldn't cancel"); }
+    try { await rejectOrder(id, "Cancelled by waiter"); toast.success(t("Order cancelled")); load(); }
+    catch (err) { toast.error(err.response?.data?.message || t("Couldn't cancel")); }
     finally { setBusy(false); }
   };
 
@@ -87,15 +93,29 @@ export default function OrderDetailPage() {
     const next = NEXT_STATUS[order.status];
     if (!next) return;
     setBusy(true);
-    try { await updateOrderStatus(id, next); toast.success(`→ ${next}`); load(); }
-    catch (err) { toast.error(err.response?.data?.message || "Couldn't update status"); }
+    try { await updateOrderStatus(id, next); toast.success(`→ ${t(STATUS_LABEL[next] || next)}`); load(); }
+    catch (err) { toast.error(err.response?.data?.message || t("Couldn't update status")); }
+    finally { setBusy(false); }
+  };
+
+  // BIL-01/02: settle the bill — collects the payment if it isn't recorded
+  // yet. The server completes the order if it has been served.
+  const handleSettle = async (paymentMethod) => {
+    setBusy(true);
+    try {
+      const { data } = await settleOrders([id], paymentMethod);
+      const why = data?.rejected?.[0]?.reason;
+      if (why) toast.error(why);
+      else toast.success(data?.completed?.length ? t("Bill settled — order completed") : t("Bill settled"));
+      load();
+    } catch (err) { toast.error(err.response?.data?.message || t("Couldn't settle the bill")); }
     finally { setBusy(false); }
   };
 
   const handlePayment = async (paymentStatus) => {
     setBusy(true);
-    try { await updateOrderPayment(id, { paymentStatus }); toast.success(`Payment marked ${PAYMENT_LABEL[paymentStatus]}`); load(); }
-    catch (err) { toast.error(err.response?.data?.message || "Couldn't update payment"); }
+    try { await updateOrderPayment(id, { paymentStatus }); toast.success(t("Payment marked {s}", { s: t(PAYMENT_LABEL[paymentStatus]) })); load(); }
+    catch (err) { toast.error(err.response?.data?.message || t("Couldn't update payment")); }
     finally { setBusy(false); }
   };
 
@@ -139,10 +159,10 @@ export default function OrderDetailPage() {
 
   const submitAddItems = async () => {
     const items = Object.entries(addQtys).filter(([, q]) => q > 0).map(([menuItemId, qty]) => ({ menuItemId, qty }));
-    if (items.length === 0) return toast.error("Pick at least one item");
+    if (items.length === 0) return toast.error(t("Pick at least one item"));
     setBusy(true);
     try {
-      if (order.status === "CONFIRMED") {
+      if (order.status === "CONFIRMED" || order.status === "PENDING_CONFIRMATION") {
         const merged = new Map((order.items || []).map((it) => [lineId(it), { menuItemId: lineId(it), qty: it.qty, notes: it.notes || "" }]));
         for (const it of items) {
           const ex = merged.get(it.menuItemId);
@@ -152,10 +172,10 @@ export default function OrderDetailPage() {
       } else {
         await addItemsToOrder(id, items);
       }
-      toast.success("Items added");
+      toast.success(t("Items added"));
       setShowAdd(false); setAddQtys({});
       load();
-    } catch (err) { toast.error(err.response?.data?.message || "Couldn't add items"); }
+    } catch (err) { toast.error(err.response?.data?.message || t("Couldn't add items")); }
     finally { setBusy(false); }
   };
 
@@ -165,15 +185,15 @@ export default function OrderDetailPage() {
   const changeQty = (mid, d) => setEditLines((p) => p.map((l) => (l.menuItemId === mid ? { ...l, qty: Math.max(1, Math.min(99, l.qty + d)) } : l)));
   const removeLine = (mid) => setEditLines((p) => p.filter((l) => l.menuItemId !== mid));
   const saveEdit = async () => {
-    if (!editLines.length) return toast.error("An order needs at least one item — cancel it instead");
+    if (!editLines.length) return toast.error(t("An order needs at least one item — cancel it instead"));
     setBusy(true);
     try {
       await modifyOrderItems(id, editLines.map(({ menuItemId, qty, notes }) => ({ menuItemId, qty, notes })), order.revision ?? 0);
-      toast.success("Order updated");
+      toast.success(t("Order updated"));
       setEditLines(null);
       load();
     } catch (err) {
-      toast.error(err.response?.data?.message || "Couldn't update the order");
+      toast.error(err.response?.data?.message || t("Couldn't update the order"));
       load();
     } finally { setBusy(false); }
   };
@@ -182,7 +202,7 @@ export default function OrderDetailPage() {
     try {
       const { data } = await getCombinedBill({ orderIds: id });
       setBill(data);
-    } catch (err) { toast.error(err.response?.data?.message || "Couldn't generate bill"); }
+    } catch (err) { toast.error(err.response?.data?.message || t("Couldn't generate bill")); }
   };
 
   // Payment QR is uploaded by the admin (Profile → Payment) and comes back
@@ -191,27 +211,28 @@ export default function OrderDetailPage() {
     try {
       const { data } = await getCombinedBill({ orderIds: id }); // fresh — items/total may have changed
       setBill(data);
-      if (!data.paymentQr) return toast.error("No payment QR yet — admin can add one in Profile → Payment");
+      if (!data.paymentQr) return toast.error(t("No payment QR yet — admin can add one in Profile → Payment"));
       setShowQr(true);
-    } catch (err) { toast.error(err.response?.data?.message || "Couldn't load the payment QR"); }
+    } catch (err) { toast.error(err.response?.data?.message || t("Couldn't load the payment QR")); }
   };
 
   const handlePrint = async () => {
-    try { await printBill(id); toast.success("Sent to printer"); }
-    catch { toast.error("Couldn't reach the printer"); }
+    try { await printBill(id); toast.success(t("Sent to printer")); }
+    catch { toast.error(t("Couldn't reach the printer")); }
   };
 
   if (error) return <ErrorState message={error} onRetry={load} />;
-  if (!order) return <Loader label="Loading order…" />;
+  if (!order) return <Loader label={t("Loading order…")} />;
 
   const isPending = order.status === "PENDING_CONFIRMATION";
   const canAdvance = !!NEXT_STATUS[order.status];
-  // A delivered order can only be completed once it's marked Paid (the
-  // server enforces the same rule — this just explains it up front).
-  const needsPayment = order.status === "DELIVERED" && order.paymentStatus !== "PAID";
-  // Items can only change while the order is Placed (before its KOT prints).
+  const settled = billSettled(order);
+  const canSettle = !settled && SETTLEABLE.includes(order.status);
+  // ORD-01: items can change while the order is held — awaiting acceptance
+  // or Placed — i.e. before its KOT prints.
   const isPlaced = order.status === "CONFIRMED" && !order.stockDeducted;
-  const canAddItems = isPlaced;
+  const isHeld = (isPending || order.status === "CONFIRMED") && !order.stockDeducted;
+  const canAddItems = isHeld;
   const stageIdx = STAGES.indexOf(order.status);
 
   return (
@@ -220,7 +241,7 @@ export default function OrderDetailPage() {
         <div>
           <div style={{ fontSize: 22, fontWeight: 800, color: "#fff", letterSpacing: -0.4 }}>{order.orderId}</div>
           <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 2 }}>
-            {order.orderType === "DINE_IN" ? `Dine-in · Table ${order.tableNo}` : "Takeaway"} · {order.source}
+            {order.orderType === "DINE_IN" ? `${t("Dine-in")} · ${t("Table {n}", { n: order.tableNo })}` : t("Takeaway")} · {order.source}
           </div>
         </div>
         <StatusBadge status={order.status} />
@@ -249,11 +270,11 @@ export default function OrderDetailPage() {
         <GlassCard style={{ padding: "14px 16px" }}>
           {(editLines || order.items || []).map((it, i) => (
             <div key={editLines ? it.menuItemId : i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "5px 0", fontSize: 13.5, color: "#fff" }}>
-              <span style={{ flex: 1, minWidth: 0 }}>{it.name}{editLines ? "" : ` × ${it.qty}`}{it.notes ? <span style={{ color: TEXT_FAINT }}> · "{it.notes}"</span> : ""}</span>
+              <span style={{ flex: 1, minWidth: 0 }}>{localName(it)}{editLines ? "" : ` × ${it.qty}`}{it.notes ? <span style={{ color: TEXT_FAINT }}> · "{it.notes}"</span> : ""}</span>
               {editLines ? (
                 <>
                   <QtyStepper qty={it.qty} onDec={() => changeQty(it.menuItemId, -1)} onInc={() => changeQty(it.menuItemId, 1)} />
-                  <button type="button" onClick={() => removeLine(it.menuItemId)} aria-label={`Remove ${it.name}`}
+                  <button type="button" onClick={() => removeLine(it.menuItemId)} aria-label={t("Remove {name}", { name: it.name })}
                     style={{ background: "none", border: 0, color: RED, fontSize: 16, cursor: "pointer", padding: "0 4px" }}>✕</button>
                 </>
               ) : (
@@ -263,12 +284,12 @@ export default function OrderDetailPage() {
           ))}
           {editLines && (
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-              <PrimaryButton disabled={busy} variant="outline" onClick={() => setEditLines(null)} style={{ flex: 1, padding: "10px", fontSize: 13 }}>Discard</PrimaryButton>
-              <PrimaryButton disabled={busy || !editLines.length} onClick={saveEdit} style={{ flex: 1, padding: "10px", fontSize: 13 }}>Save changes</PrimaryButton>
+              <PrimaryButton disabled={busy} variant="outline" onClick={() => setEditLines(null)} style={{ flex: 1, padding: "10px", fontSize: 13 }}>{t("Discard")}</PrimaryButton>
+              <PrimaryButton disabled={busy || !editLines.length} onClick={saveEdit} style={{ flex: 1, padding: "10px", fontSize: 13 }}>{t("Save changes")}</PrimaryButton>
             </div>
           )}
           <div style={{ borderTop: `1px dashed ${GLASS_BORDER}`, marginTop: 8, paddingTop: 8, display: "flex", justifyContent: "space-between", alignItems: "baseline", fontWeight: 800, color: "#fff" }}>
-            <span style={{ fontSize: 14 }}>Total</span>
+            <span style={{ fontSize: 14 }}>{t("Total")}</span>
             <span style={{ color: ACCENT, fontSize: 23, fontVariantNumeric: "tabular-nums", letterSpacing: -0.4 }}>₹{order.total}</span>
           </div>
         </GlassCard>
@@ -278,19 +299,31 @@ export default function OrderDetailPage() {
       <div style={{ margin: "0 16px 14px" }}>
         <GlassCard style={{ padding: "14px 16px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ fontSize: 12, color: TEXT_MUTED }}>Payment · {order.paymentMethod}</div>
+            <div style={{ fontSize: 12, color: TEXT_MUTED }}>{t("Payment")} · {t(order.paymentMethod)}</div>
             <span style={{ fontSize: 12, fontWeight: 800, color: paymentColor(order.paymentStatus) }}>
-              {PAYMENT_LABEL[order.paymentStatus] || order.paymentStatus}
+              {t(PAYMENT_LABEL[order.paymentStatus] || order.paymentStatus)}
             </span>
           </div>
-          {order.paymentStatus !== "PAID" && (
-            <div style={{ marginTop: 12 }}>
-              <PrimaryButton disabled={busy} onClick={() => handlePayment("PAID")} variant="success" style={{ width: "100%", padding: "10px", fontSize: 12.5 }}>Mark Paid</PrimaryButton>
-              {needsPayment && (
-                <div style={{ fontSize: 11.5, color: AMBER, marginTop: 8, textAlign: "center" }}>
-                  Payment required — mark this order Paid to complete it
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+            <div style={{ fontSize: 12, color: TEXT_MUTED }}>{t("Bill")}</div>
+            <span style={{ fontSize: 12, fontWeight: 800, color: settled ? GREEN : AMBER }}>{settled ? t("Settled") : t("Open")}</span>
+          </div>
+          {canSettle && (
+            <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+              {order.paymentStatus === "PAID" ? (
+                <PrimaryButton disabled={busy} onClick={() => handleSettle()} variant="success" style={{ width: "100%", padding: "10px", fontSize: 12.5 }}>{t("Settle bill")} · ₹{order.total}</PrimaryButton>
+              ) : (
+                <div style={{ display: "flex", gap: 8 }}>
+                  <PrimaryButton disabled={busy} onClick={() => handleSettle("Cash")} variant="success" style={{ flex: 1, padding: "10px", fontSize: 12.5 }}>{t("Cash · settle")}</PrimaryButton>
+                  <PrimaryButton disabled={busy} onClick={() => handleSettle("Online")} variant="success" style={{ flex: 1, padding: "10px", fontSize: 12.5 }}>{t("Online · settle")}</PrimaryButton>
                 </div>
               )}
+              {order.paymentStatus !== "PAID" && (
+                <button type="button" disabled={busy} onClick={() => handlePayment("PAID")} style={{ ...outlineBtn, padding: 9 }}>{t("Mark paid only (settle later)")}</button>
+              )}
+              <div style={{ fontSize: 11.5, color: TEXT_FAINT, textAlign: "center" }}>
+                {order.status === "DELIVERED" ? t("Settling completes this order and frees the table.") : t("Settling now records the bill — the order completes once it is served.")}
+              </div>
             </div>
           )}
         </GlassCard>
@@ -300,58 +333,60 @@ export default function OrderDetailPage() {
       <div style={{ margin: "0 16px", display: "flex", flexDirection: "column", gap: 10 }}>
         {isPending && (
           <div style={{ display: "flex", gap: 10 }}>
-            <PrimaryButton disabled={busy} onClick={handleConfirm} variant="success" style={{ flex: 1 }}>✓ Accept order</PrimaryButton>
-            <PrimaryButton disabled={busy} onClick={handleReject} variant="danger" style={{ flex: 1 }}>✕ Cancel</PrimaryButton>
+            <PrimaryButton disabled={busy} onClick={handleConfirm} variant="success" style={{ flex: 1 }}>✓ {t("Accept order")}</PrimaryButton>
+            <PrimaryButton disabled={busy} onClick={handleReject} variant="danger" style={{ flex: 1 }}>✕ {t("Cancel")}</PrimaryButton>
           </div>
         )}
 
-        {isPlaced && (
+        {isHeld && (
           <>
-            <div style={{ fontSize: 12.5, color: order.sendError ? RED : AMBER, textAlign: "center" }}>
-              <SendCountdown order={order} />
-            </div>
+            {isPlaced && (
+              <div style={{ fontSize: 12.5, color: order.sendError ? RED : AMBER, textAlign: "center" }}>
+                <SendCountdown order={order} />
+              </div>
+            )}
             {!editLines && (
-              <PrimaryButton disabled={busy} variant="outline" onClick={startEdit}>✎ Change quantities</PrimaryButton>
+              <PrimaryButton disabled={busy} variant="outline" onClick={startEdit}>✎ {t("Change quantities")}</PrimaryButton>
             )}
           </>
         )}
 
         {canAdvance && (
-          <PrimaryButton disabled={busy || needsPayment} onClick={handleAdvance}>
-            {needsPayment ? "Mark Paid to complete" : NEXT_LABEL[order.status]}
+          <PrimaryButton disabled={busy} onClick={handleAdvance}>
+            {t(NEXT_LABEL[order.status])}
           </PrimaryButton>
         )}
 
         {canAddItems && (
-          <PrimaryButton disabled={busy} onClick={openAddItems} variant="outline">+ Add Items</PrimaryButton>
+          <PrimaryButton disabled={busy} onClick={openAddItems} variant="outline">+ {t("Add items")}</PrimaryButton>
         )}
 
         <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={handleBill} style={outlineBtn}>🧾 Generate Bill</button>
-          <button onClick={handlePrint} style={outlineBtn}>🖨️ Print Bill</button>
+          <button onClick={handleBill} style={outlineBtn}>🧾 {t("Generate bill")}</button>
+          <button onClick={handlePrint} style={outlineBtn}>🖨️ {t("Print bill")}</button>
         </div>
-        <button onClick={handleShowQr} style={{ ...outlineBtn, width: "100%" }}>📱 Payment QR</button>
+        <button onClick={handleShowQr} style={{ ...outlineBtn, width: "100%" }}>📱 {t("Payment QR")}</button>
       </div>
 
       {bill && (
         <div style={{ margin: "14px 16px" }}>
           <GlassCard style={{ padding: "16px" }}>
-            <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 10, color: "#fff" }}>Bill</div>
+            <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 10, color: "#fff" }}>{t("Bill")}</div>
             {(bill.mergedItems || []).map((it, i) => (
               <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "3px 0", color: "#fff" }}>
-                <span>{it.name} × {it.qty}</span><span>₹{it.price * it.qty}</span>
+                <span>{localName(it)} × {it.qty}</span><span>₹{it.price * it.qty}</span>
               </div>
             ))}
             <div style={{ borderTop: `1px dashed ${GLASS_BORDER}`, marginTop: 8, paddingTop: 8 }}>
-              <Row label="Subtotal" value={`₹${bill.subtotal}`} />
-              {bill.discount > 0 && <Row label="Coupon discount" value={`−₹${bill.discount}`} />}
-              {bill.tax > 0 && <Row label="GST" value={`₹${bill.tax}`} />}
-              {bill.serviceCharge > 0 && <Row label="Service Charge" value={`₹${bill.serviceCharge}`} />}
-              <Row label="Grand Total" value={`₹${bill.grandTotal}`} bold />
+              <Row label={t("Subtotal")} value={`₹${bill.subtotal}`} />
+              {bill.discount > 0 && <Row label={t("Coupon discount")} value={`−₹${bill.discount}`} />}
+              {bill.tax > 0 && <Row label={t("GST")} value={`₹${bill.tax}`} />}
+              {bill.serviceCharge > 0 && <Row label={t("Service charge")} value={`₹${bill.serviceCharge}`} />}
+              <Row label={t("Grand total")} value={`₹${bill.grandTotal}`} bold />
             </div>
             {bill.paymentQr && (
               <div style={{ textAlign: "center", marginTop: 14, paddingTop: 12, borderTop: `1px dashed ${GLASS_BORDER}` }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#fff", marginBottom: 8, letterSpacing: 1 }}>SCAN TO PAY</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#fff", marginBottom: 8, letterSpacing: 1 }}>{t("SCAN TO PAY")}</div>
                 <img src={bill.paymentQr} alt="Payment QR" onClick={() => setShowQr(true)}
                   style={{ width: 160, height: 160, objectFit: "contain", background: "#fff", borderRadius: 10, padding: 6, cursor: "zoom-in" }} />
                 {bill.upiId && <div style={{ fontSize: 11.5, color: "rgba(255,255,255,0.7)", marginTop: 6 }}>UPI: {bill.upiId}</div>}
@@ -364,12 +399,12 @@ export default function OrderDetailPage() {
       {showQr && bill?.paymentQr && (
         <div onClick={() => setShowQr(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 110,
           display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20, gap: 12 }}>
-          <div style={{ color: "#fff", fontWeight: 800, fontSize: 16 }}>Scan to pay</div>
+          <div style={{ color: "#fff", fontWeight: 800, fontSize: 16 }}>{t("Scan to pay")}</div>
           <img src={bill.paymentQr} alt="Payment QR"
             style={{ width: "min(80vw, 320px)", height: "min(80vw, 320px)", objectFit: "contain", background: "#fff", borderRadius: 14, padding: 10 }} />
           <div style={{ color: "#fff", fontWeight: 800, fontSize: 22 }}>₹{bill.grandTotal}</div>
           {bill.upiId && <div style={{ color: "rgba(255,255,255,0.75)", fontSize: 13 }}>UPI: {bill.upiId}</div>}
-          <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 12 }}>Tap anywhere to close · Mark Paid once received</div>
+          <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 12 }}>{t("Tap anywhere to close · Mark Paid once received")}</div>
         </div>
       )}
 
@@ -385,8 +420,8 @@ export default function OrderDetailPage() {
             </div>
 
             <div style={{ padding: "10px 16px 0", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
-              <div style={{ fontWeight: 800, fontSize: 15, color: "#fff" }}>Add Items</div>
-              <button onClick={() => setShowAdd(false)} aria-label="Close" style={{
+              <div style={{ fontWeight: 800, fontSize: 15, color: "#fff" }}>{t("Add items")}</div>
+              <button onClick={() => setShowAdd(false)} aria-label={t("Close")} style={{
                 width: 32, height: 32, borderRadius: "50%", border: `1px solid ${GLASS_BORDER}`,
                 background: GLASS_BG, color: "#fff", fontSize: 14, cursor: "pointer",
               }}>✕</button>
@@ -395,7 +430,7 @@ export default function OrderDetailPage() {
             <div style={{ padding: "12px 16px 0", flexShrink: 0 }}>
               <input
                 value={menuSearch} onChange={(e) => setMenuSearch(e.target.value)}
-                placeholder="Search menu…"
+                placeholder={t("Search menu…")}
                 style={{
                   width: "100%", padding: "11px 15px", borderRadius: 14, border: `1px solid ${GLASS_BORDER}`,
                   fontSize: 14, boxSizing: "border-box", background: GLASS_BG, color: "#fff", fontFamily: "inherit",
@@ -405,7 +440,7 @@ export default function OrderDetailPage() {
 
             {menuCategories.length > 0 && (
               <div className="hide-scrollbar" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "10px 16px", flexShrink: 0 }}>
-                <Chip active={!menuCategory} onClick={() => setMenuCategory("")}>All</Chip>
+                <Chip active={!menuCategory} onClick={() => setMenuCategory("")}>{t("All")}</Chip>
                 {menuCategories.map((c) => (
                   <Chip key={c.category} active={menuCategory === c.category} onClick={() => setMenuCategory(c.category)}>{c.category}</Chip>
                 ))}
@@ -413,8 +448,8 @@ export default function OrderDetailPage() {
             )}
 
             <div style={{ padding: "4px 16px 16px", overflowY: "auto" }}>
-              {menuItems === null && <Loader label="Loading menu…" />}
-              {menuItems !== null && groupedAddItems.length === 0 && <EmptyState icon="🔎" title="No items found" />}
+              {menuItems === null && <Loader label={t("Loading menu…")} />}
+              {menuItems !== null && groupedAddItems.length === 0 && <EmptyState icon="🔎" title={t("No items found")} />}
               {groupedAddItems.map(([cat, catItems]) => (
                 <div key={cat} style={{ marginBottom: 10 }}>
                   <div style={{ fontSize: 12, fontWeight: 800, color: "#fff", letterSpacing: 0.3, padding: "10px 2px 6px" }}>{cat}</div>
@@ -425,8 +460,8 @@ export default function OrderDetailPage() {
                       return (
                         <GlassCard key={it._id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", opacity: outOfStock ? 0.5 : 1 }}>
                           <div style={{ minWidth: 0 }}>
-                            <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff" }}>{it.name}</div>
-                            <div style={{ fontSize: 12, color: TEXT_FAINT, marginTop: 2 }}>₹{it.price}{outOfStock ? " · Out of stock" : ""}</div>
+                            <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff" }}>{localName(it)}</div>
+                            <div style={{ fontSize: 12, color: TEXT_FAINT, marginTop: 2 }}>₹{it.price}{outOfStock ? ` · ${t("Out of stock")}` : ""}</div>
                           </div>
                           {!outOfStock && (
                             qty > 0
@@ -444,7 +479,7 @@ export default function OrderDetailPage() {
             {addItemCount > 0 && (
               <div style={{ padding: "10px 16px", borderTop: `1px solid ${GLASS_BORDER}`, flexShrink: 0, paddingBottom: "calc(10px + env(safe-area-inset-bottom))" }}>
                 <PrimaryButton disabled={busy} onClick={submitAddItems} style={{ width: "100%" }}>
-                  {busy ? "Adding…" : `Add ${addItemCount} item${addItemCount > 1 ? "s" : ""} to Order`}
+                  {busy ? t("Adding…") : tn(addItemCount, "Add {n} item to order", "Add {n} items to order")}
                 </PrimaryButton>
               </div>
             )}

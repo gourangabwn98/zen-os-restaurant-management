@@ -17,6 +17,17 @@ export const adjustInventoryItem = (id, data) => api.patch(`/admin/inventory/ite
 export const getPurchases      = () => api.get("/admin/inventory/purchases");
 export const getPurchaseById   = (id) => api.get(`/admin/inventory/purchases/${id}`);
 export const createPurchase    = (data) => api.post("/admin/inventory/purchases", data);
+// INV-01/02 — bill photo (stored + a best-effort bill-number/date guess).
+export const uploadPurchaseBillPhoto = (file) => {
+  const fd = new FormData();
+  fd.append("file", file);
+  return api.post("/admin/inventory/purchases/bill-photo", fd);
+};
+// INV-06/07 — money still owed (Owner's Pocket / supplier credit) and paying it back.
+export const getPayables          = () => api.get("/admin/inventory/payables");
+export const settlePurchasePayable = (id, source) => api.post(`/admin/inventory/purchases/${id}/settle-payable`, { source });
+// Money that left the drawer / bank for purchases in a period (Close the day, Insights).
+export const getCashOut = (params) => api.get("/admin/inventory/cash-out", { params });
 
 // ── Stock Movements (ledger) ──────────────────────────────────────────────
 export const getStockMovements = (params) => api.get("/admin/inventory/movements", { params });

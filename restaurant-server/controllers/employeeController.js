@@ -1,9 +1,11 @@
 // controllers/employeeController.js
 import {
   createEmployee, updateEmployee, setEmployeeStatus, listEmployees,
-  getEmployeeTodayStats, getEmployeePerformance, getWaiterOrderActivity, EMPLOYEE_ROLES,
+  getEmployeeTodayStats, getEmployeePerformance, getWaiterOrderActivity, EMPLOYEE_ROLES, listCustomRoles,
 } from "../services/employeeService.js";
-import { getMySummaryForRange } from "../services/attendanceService.js";
+import { getMySummaryForRange, setEmployeeShift, shiftStateOf } from "../services/attendanceService.js";
+import { buildActor } from "../services/orderService.js";
+import { emitAttendanceUpdated } from "../sockets/socket.js";
 import { getRoleFromUser } from "../services/orderService.js";
 import { resolveTimezone } from "../utils/menuSchedule.js";
 
@@ -15,8 +17,8 @@ const restaurantTz = async (models) =>
 export const addEmployee = async (req, res) => {
   try {
     const { User } = req.models;
-    const { name, phone, address, role } = req.body;
-    const employee = await createEmployee({ User, name, phone, address, role });
+    const { name, phone, address, role, jobTitle } = req.body;
+    const employee = await createEmployee({ User, name, phone, address, role, jobTitle });
     res.status(201).json({ employee });
   } catch (err) {
     res.status(err.statusCode || 500).json({ message: err.message });
@@ -28,7 +30,15 @@ export const getEmployees = async (req, res) => {
     const { User } = req.models;
     const { role, search, status } = req.query;
     const employees = await listEmployees({ User, role, search, status });
-    res.json({ employees, categories: EMPLOYEE_ROLES });
+    // EMP-01: each person's current shift state (from their open session, if any).
+    const open = await req.models.AttendanceSession.find({ employee: { $in: employees.map((e) => e._id) }, status: "OPEN" })
+      .select("employee status presenceStatus managed").lean();
+    const byEmp = new Map(open.map((s) => [String(s.employee), s]));
+    res.json({
+      employees: employees.map((e) => ({ ...e.toObject(), shiftState: shiftStateOf(byEmp.get(String(e._id))) })),
+      categories: EMPLOYEE_ROLES,
+      customRoles: await listCustomRoles({ User }), // EMP-03
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -49,8 +59,8 @@ export const getEmployeeById = async (req, res) => {
 export const editEmployee = async (req, res) => {
   try {
     const { User } = req.models;
-    const { name, address, role, hr } = req.body;
-    const employee = await updateEmployee({ User, id: req.params.id, name, address, role, hr });
+    const { name, address, role, jobTitle, hr } = req.body;
+    const employee = await updateEmployee({ User, id: req.params.id, name, address, role, jobTitle, hr });
     res.json({ employee });
   } catch (err) {
     res.status(err.statusCode || 500).json({ message: err.message });
@@ -134,5 +144,26 @@ export const getMyDashboard = async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+};
+
+// ── PATCH /api/admin/employees/:id/shift  { state } — EMP-01 ─────────────────
+// The manager sets On Shift / On Break / Off Shift for someone (fallback for
+// staff who forget, or have no app). Same session rules as self-service.
+export const setShift = async (req, res) => {
+  try {
+    const { User, AttendanceSession } = req.models;
+    const employee = await User.findOne({ _id: req.params.id, role: { $in: EMPLOYEE_ROLES }, status: { $ne: "Inactive" } });
+    if (!employee) return res.status(404).json({ message: "Employee not found" });
+    const r = await setEmployeeShift({ AttendanceSession, employee, state: req.body?.state, actor: buildActor(req.user) });
+    if (r.changed) {
+      emitAttendanceUpdated(req.tenantKey, {
+        action: `MANAGER_${r.state}`, session: r.session,
+        employee: { _id: employee._id, name: employee.name, role: employee.role },
+      });
+    }
+    res.json({ state: r.state, changed: r.changed, session: r.session });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message });
   }
 };

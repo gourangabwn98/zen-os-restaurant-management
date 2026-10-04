@@ -8,12 +8,19 @@
 
 import { buildActor } from "../services/orderService.js";
 import {
-  recordPurchase, recordWastage, adjustStock,
+  recordPurchase, recordWastage, adjustStock, settlePurchasePayable, listOpenPayables,
   computeInventoryOverview, computeMenuItemStockStatus,
   listRecipesWithCost, saveRecipe,
 } from "../services/inventoryService.js";
 import { classifyStockLevel } from "../utils/inventoryConstants.js";
 import { emitInventoryAlert } from "../sockets/socket.js";
+import { cleanSupplierInput } from "../utils/supplierInput.js";
+import { cashOutBySource } from "../utils/purchaseBill.js";
+import { extractDocumentText } from "../utils/purchaseImportExtract.js";
+import { extractDocumentMeta } from "../utils/purchaseImportParser.js";
+import { sniffFileType } from "../middleware/importUploadMiddleware.js";
+import cloudinary from "../config/cloudinary.js";
+import { Readable } from "stream";
 
 const withLevel = (item) => ({
   ...item,
@@ -40,26 +47,29 @@ export const getOverview = async (req, res) => {
 export const getSuppliers = async (req, res) => {
   try {
     const { Supplier } = req.models;
-    const suppliers = await Supplier.find().sort({ name: 1 });
+    const suppliers = await Supplier.find().sort({ name: 1 }).populate("suppliedItems.inventoryItem", "name nameBn unit");
     res.json({ suppliers });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
+// INV-01/11..14 — validated fields only; creatable inline from Record Purchase.
 export const createSupplier = async (req, res) => {
   try {
     const { Supplier } = req.models;
-    const supplier = await Supplier.create(req.body);
+    const supplier = await Supplier.create(cleanSupplierInput(req.body));
     res.status(201).json({ supplier });
-  } catch (err) { res.status(400).json({ message: err.message }); }
+  } catch (err) { res.status(err.statusCode || 400).json({ message: err.message }); }
 };
 
 export const updateSupplier = async (req, res) => {
   try {
     const { Supplier } = req.models;
-    const supplier = await Supplier.findByIdAndUpdate(req.params.id, req.body, { returnDocument: "after" });
+    const supplier = await Supplier.findByIdAndUpdate(
+      req.params.id, { $set: cleanSupplierInput(req.body, { partial: true }) }, { returnDocument: "after", runValidators: true },
+    );
     if (!supplier) return res.status(404).json({ message: "Supplier not found" });
     res.json({ supplier });
-  } catch (err) { res.status(400).json({ message: err.message }); }
+  } catch (err) { res.status(err.statusCode || 400).json({ message: err.message }); }
 };
 
 export const deleteSupplier = async (req, res) => {
@@ -186,7 +196,8 @@ export const createPurchase = async (req, res) => {
     const actor = buildActor(req.user);
     let purchase;
     await session.withTransaction(async () => {
-      purchase = await recordPurchase({ models: req.models, body: req.body, actor, session });
+      // strict: the Record Purchase form — bill date + time and Paid/Credit required.
+      purchase = await recordPurchase({ models: req.models, body: req.body, actor, session, strict: true });
     });
     res.status(201).json({ purchase });
   } catch (err) {
@@ -194,6 +205,72 @@ export const createPurchase = async (req, res) => {
   } finally {
     session.endSession();
   }
+};
+
+// ═══════════════════════ Bill photo (INV-05 → INV-02) ═══════════════════════
+// The photo is kept (it's the purchase's proof), and its text is read to
+// suggest the supplier's bill number / date. A failed or slow read never
+// loses the photo — the user just types the number.
+const BILL_PHOTO_OCR_MS = 20_000;
+const uploadBillPhoto = (buffer) => new Promise((resolve, reject) => {
+  const stream = cloudinary.uploader.upload_stream(
+    { folder: "khoai-purchase-bills", resource_type: "image", transformation: [{ width: 1800, height: 1800, crop: "limit", quality: "auto" }] },
+    (err, result) => (err ? reject(err) : resolve(result.secure_url)),
+  );
+  Readable.from(buffer).pipe(stream);
+});
+
+export const uploadPurchaseBillPhoto = async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: "No photo uploaded" });
+    const type = sniffFileType(req.file.buffer);
+    if (!type || type === "application/pdf") return res.status(400).json({ message: "Upload a JPG, PNG or WEBP photo of the bill" });
+    const billPhoto = await uploadBillPhoto(req.file.buffer);
+    let guess = { billNumberGuess: "", billDateGuess: null, totalGuess: null, ocr: "unavailable" };
+    try {
+      const extraction = await Promise.race([
+        extractDocumentText(req.file.buffer, type),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), BILL_PHOTO_OCR_MS)),
+      ]);
+      const meta = extractDocumentMeta(extraction.rawText || "");
+      guess = {
+        billNumberGuess: meta.invoiceNumberGuess || "",
+        billDateGuess: meta.purchaseDateGuess || null,
+        totalGuess: meta.totalAmountGuess ?? null,
+        ocr: "done",
+      };
+    } catch { /* keep the photo; the number is typed by hand */ }
+    res.status(201).json({ billPhoto, ...guess });
+  } catch (err) { res.status(err.statusCode || 500).json({ message: err.message || "Couldn't save the photo" }); }
+};
+
+// ═══════════════════════ Payables (INV-06/07) ═══════════════════════════════
+export const getPayables = async (req, res) => {
+  try { res.json(await listOpenPayables({ models: req.models })); }
+  catch (err) { res.status(err.statusCode || 500).json({ message: err.message }); }
+};
+
+// POST /purchases/:id/settle-payable  { source: "CASH_DRAWER" | "BANK_UPI" }
+export const settlePayable = async (req, res) => {
+  try {
+    const purchase = await settlePurchasePayable({ models: req.models, purchaseId: req.params.id, source: req.body?.source, actor: buildActor(req.user) });
+    res.json({ purchase });
+  } catch (err) { res.status(err.statusCode || 500).json({ message: err.message }); }
+};
+
+// GET /cash-out?from&to — money that left the drawer / bank for purchases
+// and payable pay-backs (Close the day, Insights). Owner's Pocket isn't
+// business money out until it is repaid.
+export const getCashOut = async (req, res) => {
+  try {
+    const from = req.query.from ? new Date(req.query.from) : null;
+    const to = req.query.to ? new Date(req.query.to) : null;
+    if ((from && Number.isNaN(from.getTime())) || (to && Number.isNaN(to.getTime()))) return res.status(400).json({ message: "Invalid date" });
+    const range = { ...(from && { $gte: from }), ...(to && { $lte: to }) };
+    const filter = from || to ? { $or: [{ purchaseDate: range }, { "payable.settledAt": range }] } : {};
+    const purchases = await req.models.StockPurchase.find(filter).select("totalCost purchaseDate paymentType paymentSource payable").lean();
+    res.json({ from, to, ...cashOutBySource(purchases, { from, to }) });
+  } catch (err) { res.status(err.statusCode || 500).json({ message: err.message }); }
 };
 
 // ═══════════════════════════════ Stock Movements (ledger) ═══════════════════
@@ -256,7 +333,8 @@ export const createWastage = async (req, res) => {
     let log, item;
     await session.withTransaction(async () => {
       log = await recordWastage({ models: req.models, body: req.body, actor, session });
-      item = await req.models.InventoryItem.findById(log.inventoryItem).session(session);
+      // INV-08: hand-typed waste has no stock item to re-check.
+      item = log.inventoryItem ? await req.models.InventoryItem.findById(log.inventoryItem).session(session) : null;
     });
     if (item) maybeAlert(req, item.toObject());
     res.status(201).json({ log });

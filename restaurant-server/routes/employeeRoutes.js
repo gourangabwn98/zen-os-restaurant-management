@@ -1,7 +1,7 @@
 import express from "express";
 import {
   addEmployee, getEmployees, getEmployeeById, editEmployee,
-  toggleEmployeeStatus, getEmployeeStatsById, getPerformanceReport, getMyDashboard, getMyActivity,
+  toggleEmployeeStatus, getEmployeeStatsById, getPerformanceReport, getMyDashboard, getMyActivity, setShift,
 } from "../controllers/employeeController.js";
 import { protect } from "../middleware/authMiddleware.js";
 import { requireAdmin, requireEmployee } from "../middleware/rbac.js";
@@ -43,6 +43,7 @@ router.patch("/leave/:leaveId", decide);
 router.get("/:id",              getEmployeeById);
 router.put("/:id",              editEmployee);
 router.patch("/:id/status",     toggleEmployeeStatus);
+router.patch("/:id/shift",      setShift); // EMP-01 — manager sets On Shift / On Break / Off Shift
 router.get("/:id/stats",        getEmployeeStatsById);
 router.get("/:id/reviews",      getReviews);
 router.get("/:id/pay",          getPay);

@@ -83,31 +83,45 @@ export function useMenu({ search = "", diet = "all" } = {}) {
     return diet === "nonveg" ? items.filter((it) => it.tag !== "Veg") : items;
   }, [items, diet]);
 
-  // Categories in first-appearance order (the order the API returns them),
-  // each with a disc image: category image → item categoryImage → first item photo.
+  // MNU-01: one item, every category it belongs to (`categoryList`, worked
+  // out by the server: primary + extra + Fast Available / Chef's Picks /
+  // Today's Special / data-driven ones). It's the same item object in each
+  // section, so cart quantities and price can never differ between them.
+  // MNU-02: sections follow the admin's saved category order (GET
+  // /menu/categories is sorted by it); anything unknown keeps API order after.
   const grouped = useMemo(() => {
     if (!visible) return [];
     const map = new Map();
     for (const it of visible) {
-      const c = it.category || "Other";
-      if (!map.has(c)) map.set(c, []);
-      map.get(c).push(it);
+      const cats = it.categoryList?.length ? it.categoryList : [it.category || "Other"];
+      for (const c of cats) {
+        if (!map.has(c)) map.set(c, []);
+        map.get(c).push(it);
+      }
     }
-    return [...map.entries()];
-  }, [visible]);
+    const rank = new Map(categories.map((c, i) => [c.category, i]));
+    return [...map.entries()].sort((a, b) => (rank.get(a[0]) ?? 1e6) - (rank.get(b[0]) ?? 1e6));
+  }, [visible, categories]);
+
+  /** MNU-06: the category's icon key (server: own pick → smart default → name guess). */
+  const categoryIcon = useCallback((name) => categories.find((x) => x.category === name)?.icon || "plate", [categories]);
+  /** Bengali name an admin gave the category, if any (display only). */
+  const categoryMeta = useCallback((name) => categories.find((x) => x.category === name) || null, [categories]);
 
   // Returns an image URL, else the category's emoji placeholder (legacy
   // `image` values like "🍔"), else "". Emoji must never reach an <img src>.
   const categoryImage = useCallback((name) => {
     const c = categories.find((x) => x.category === name);
-    const inCat = (items || []).filter((m) => m.category === name);
+    // Built-in (smart) categories show their own picture or their icon, not a random dish.
+    if (c?.kind === "SMART") return isImageUrl(c.categoryImageUrl) ? c.categoryImageUrl : "";
+    const inCat = (items || []).filter((m) => (m.categoryList || [m.category]).includes(name));
     const url = [c?.categoryImageUrl, c?.categoryImage, ...inCat.map((m) => m.categoryImage), ...inCat.map((m) => m.image)]
       .find(isImageUrl);
     if (url) return url;
     return [c?.categoryImage, ...inCat.map((m) => m.categoryImage)].find((v) => typeof v === "string" && v.trim()) || "";
   }, [categories, items]);
 
-  return { items: visible, grouped, loading, error, reload: load, categoryImage };
+  return { items: visible, grouped, loading, error, reload: load, categoryImage, categoryIcon, categoryMeta };
 }
 
 export const isImageUrl = (s) => typeof s === "string" && /^(https?:\/\/|data:image\/|blob:|\/)/i.test(s);

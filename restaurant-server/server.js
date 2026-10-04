@@ -21,6 +21,8 @@ import { sweepStaleAttendanceSessions } from "./services/attendanceService.js";
 import { runDueOffers } from "./services/notificationService.js";
 import { runPayFirstTick } from "./services/payFirstService.js";
 import { autoSendDueOrders } from "./services/orderService.js";
+import { ensureSmartCategories } from "./services/smartCategoryService.js";
+import { BRAND_NAME } from "./utils/brand.js";
 
 import authRoutes    from "./routes/authRoutes.js";
 import menuRoutes    from "./routes/menuRoutes.js";
@@ -127,7 +129,7 @@ app.get("/api/test-whatsapp/:phone", async (req, res) => {
     items: [{ name: "Cold Coffee", qty: 1, price: 60 }],
     subtotal: 60, tax: 0, serviceCharge: 0, discount: 0, total: 60,
     paymentMethod: "Cash", paymentStatus: "PAID", tableNo: 3,
-  }, "Ad's Cafe");
+  }, BRAND_NAME);
   res.json({ message: "WhatsApp test sent to +91" + req.params.phone });
 });
 
@@ -145,6 +147,10 @@ connectDB().then(() => {
 ╚══════════════════════════════════════════════════════╝
     `);
     warmUpOcr(); // background — see utils/purchaseImportExtract.js
+    // MNU-03/04/05/07 built-in categories (idempotent; never overwrites admin edits).
+    getDB(process.env.MONGO_URI)
+      .then((conn) => ensureSmartCategories({ models: getModels(conn) }))
+      .catch((err) => console.error("smart categories setup failed:", err.message));
     startAttendanceHeartbeatSweep();
     startScheduledOfferTick();
     startPayFirstTick();

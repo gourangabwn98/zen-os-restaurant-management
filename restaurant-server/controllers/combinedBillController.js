@@ -4,11 +4,11 @@
 import {
   previewCombinedBill, printCombinedBill, markSelectedPaid, completeSelected,
 } from "../services/combinedBillService.js";
-import { transitionOrderStatusTx, buildActor, getRoleFromUser } from "../services/orderService.js";
+import { buildActor, getRoleFromUser } from "../services/orderService.js";
+import { settleBills } from "../services/billingService.js";
+import { emitSettlement } from "./billingController.js";
 import { canSetPaymentStatus } from "../utils/orderStateMachine.js";
-import {
-  emitBillPrint, emitPaymentStatusChanged, emitOrderStatusChanged, emitTableCleared, emitTableFreed,
-} from "../sockets/socket.js";
+import { emitBillPrint, emitPaymentStatusChanged } from "../sockets/socket.js";
 
 const fail = (res, err) => res.status(err.statusCode || 500).json({ message: err.message });
 
@@ -38,19 +38,20 @@ export const paySelected = async (req, res) => {
   } catch (err) { fail(res, err); }
 };
 
-// POST /api/admin/combined-bill/complete  { tableNo, orderIds }
+// POST /api/admin/combined-bill/complete  { tableNo, orderIds, paymentMethod? }
+// BIL-01/BIL-02: settles the selected bills (services/billingService.js);
+// served orders complete as a result — never by hand.
 export const completeSelectedOrders = async (req, res) => {
   try {
-    const { completed, alreadyCompleted, rejected, changed } = await completeSelected({
-      req, body: req.body || {}, transition: transitionOrderStatusTx,
+    const r = await completeSelected({
+      req, body: req.body || {}, settle: settleBills,
+      actor: buildActor(req.user), role: getRoleFromUser(req.user),
     });
-    for (const r of changed) {
-      emitOrderStatusChanged(req.tenantKey, r.order, r.previousStatus);
-      if (r.closedTableSession) {
-        emitTableCleared(req.tenantKey, r.closedTableSession);
-        if (r.freedTable) emitTableFreed(req.tenantKey, { tableNo: r.freedTable.tableNo, seats: r.freedTable.seats, suggestedEntry: r.suggestedEntry });
-      }
-    }
-    res.json({ completed, alreadyCompleted, rejected });
+    emitSettlement(req.tenantKey, r);
+    res.json({
+      settled: r.settled, alreadySettled: r.alreadySettled, completed: r.completed, rejected: r.rejected,
+      // kept for older admin builds that read these names
+      alreadyCompleted: r.alreadySettled,
+    });
   } catch (err) { fail(res, err); }
 };

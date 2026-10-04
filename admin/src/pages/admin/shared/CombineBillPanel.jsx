@@ -20,13 +20,11 @@ import { statusKind } from "./statusKind.js";
 import { customerName } from "./customerName.js";
 import { t, tn, fmtNum, localName } from "../../../i18n/core.js";
 import "./combineBill.css";
+import { ORDER_STATUS_LABEL } from "./statusLabels.js";
 
 // Same rule as the server (COMBINABLE): accepted and still on the table.
 const COMBINABLE = ["CONFIRMED", "PREPARING", "READY", "DELIVERED"];
-const STATUS_TEXT = {
-  PENDING_CONFIRMATION: "Pending confirmation", CONFIRMED: "Placed", PREPARING: "Preparing",
-  READY: "Ready", DELIVERED: "Delivered", COMPLETED: "Completed", CANCELLED: "Cancelled",
-};
+const STATUS_TEXT = ORDER_STATUS_LABEL; // shared floor words (DSH-04)
 const reasonFor = (o) => (o.status === "PENDING_CONFIRMATION" ? "Accept it first" : o.status === "CANCELLED" ? "Cancelled" : "Can't be combined");
 const money = (n) => `₹${fmtNum(Number(n) || 0, { maximumFractionDigits: 2 })}`;
 const storeKey = (tableNo) => `combineBill:${tableNo}`;
@@ -85,7 +83,8 @@ export default function CombineBillPanel({ tableNo, orders, onExit, onRefresh })
   const totals = preview?.totals;
   const ready = ids.length > 0 && !!totals && !previewErr;
   const unpaidCount = (preview?.orders || []).filter((o) => o.paymentStatus !== "PAID").length;
-  const completable = (preview?.orders || []).filter((o) => o.paymentStatus === "PAID" && o.status === "DELIVERED").length;
+  // BIL-02: paid bills can be settled (served ones complete as a result).
+  const settleable = (preview?.orders || []).filter((o) => o.paymentStatus === "PAID").length;
 
   const run = async (kind, fn) => {
     if (busy) return;
@@ -110,13 +109,16 @@ export default function CombineBillPanel({ tableNo, orders, onExit, onRefresh })
     onRefresh?.();
   });
 
-  const complete = () => {
-    if (!window.confirm(t("Complete {n} selected orders? Completed orders leave the table.", { n: ids.length }))) return;
+  // BIL-01/02 — settle the selected PAID bills. A served order completes as a
+  // result (and leaves the table); one still cooking completes when served.
+  const settle = () => {
+    if (!window.confirm(t("Settle the bills of {n} selected orders? Served orders complete and leave the table.", { n: ids.length }))) return;
     run("complete", async () => {
       const { data } = await completeSelectedOrders(tableNo, ids);
       report([
-        data.completed.length ? t("{n} orders completed", { n: data.completed.length }) : "",
-        data.alreadyCompleted.length ? t("{n} already completed", { n: data.alreadyCompleted.length }) : "",
+        data.settled?.length ? t("{n} bills settled", { n: data.settled.length }) : "",
+        data.completed?.length ? t("{n} orders completed", { n: data.completed.length }) : "",
+        data.alreadySettled?.length ? t("{n} already settled", { n: data.alreadySettled.length }) : "",
       ], data.rejected);
       onRefresh?.();
     });
@@ -196,9 +198,9 @@ export default function CombineBillPanel({ tableNo, orders, onExit, onRefresh })
               ✓ {t("Mark Selected as Paid")}
             </button>
           )}
-          <button type="button" className="zc-btn sm" disabled={!ready || !!busy || completable === 0} onClick={complete}
-            title={ready && completable === 0 ? t("Only paid orders that were served (Delivered) can be completed") : undefined}>
-            {busy === "complete" ? t("Saving…") : t("Complete Selected Orders")}
+          <button type="button" className="zc-btn sm" disabled={!ready || !!busy || settleable === 0} onClick={settle}
+            title={ready && settleable === 0 ? t("Mark the selected orders paid first, then settle their bills") : undefined}>
+            {busy === "complete" ? t("Saving…") : t("Settle Selected Bills")}
           </button>
           <button type="button" className="zc-btn sm ghost" disabled={!ids.length || !!busy} onClick={clear}>{t("Clear Selection")}</button>
         </div>

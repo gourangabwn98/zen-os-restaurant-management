@@ -10,11 +10,15 @@
 import { revenueOrderMatch } from "./insightsService.js";
 import { zonedInstant } from "./offerStatsService.js";
 
-export const EMPLOYEE_ROLES = ["waiter", "chef"]; // extensible — add new categories here only
+// "staff" = EMP-03's "Other": a custom job (jobTitle) with no app login.
+export const EMPLOYEE_ROLES = ["waiter", "chef", "staff"]; // extensible — add new categories here only
+
+/** EMP-03: a custom role name — trimmed, single-spaced, Title-ish as typed. */
+export const cleanJobTitle = (v) => String(v ?? "").trim().replace(/\s+/g, " ").slice(0, 40);
 
 const PHONE_RE = /^[6-9]\d{9}$/; // Indian mobile numbers, matching the OTP flow already in place
 
-export const validateEmployeeInput = ({ name, phone, role }) => {
+export const validateEmployeeInput = ({ name, phone, role, jobTitle }) => {
   if (!name || !name.trim()) {
     const err = new Error("Employee name is required"); err.statusCode = 400; throw err;
   }
@@ -24,10 +28,13 @@ export const validateEmployeeInput = ({ name, phone, role }) => {
   if (!EMPLOYEE_ROLES.includes(role)) {
     const err = new Error(`Category must be one of: ${EMPLOYEE_ROLES.join(", ")}`); err.statusCode = 400; throw err;
   }
+  if (role === "staff" && !cleanJobTitle(jobTitle)) {
+    const err = new Error("Type the role for \"Other\" (e.g. Cashier, Helper)"); err.statusCode = 400; throw err;
+  }
 };
 
-export const createEmployee = async ({ User, name, phone, address, role }) => {
-  validateEmployeeInput({ name, phone, role });
+export const createEmployee = async ({ User, name, phone, address, role, jobTitle }) => {
+  validateEmployeeInput({ name, phone, role, jobTitle });
   const cleanPhone = String(phone).trim();
 
   // Uniqueness among ACTIVE accounts only — a deactivated ex-employee's old
@@ -44,6 +51,7 @@ export const createEmployee = async ({ User, name, phone, address, role }) => {
     phone: cleanPhone,
     address: address?.trim() || "",
     role,
+    jobTitle: role === "staff" ? cleanJobTitle(jobTitle) : "",
     isAdmin: false,
     status: "Active",
     isVerified: false, // becomes true the first time they successfully log in via OTP
@@ -100,7 +108,7 @@ export const cleanHrInput = (input = {}) => {
   return out;
 };
 
-export const updateEmployee = async ({ User, id, name, address, role, hr }) => {
+export const updateEmployee = async ({ User, id, name, address, role, jobTitle, hr }) => {
   const employee = await User.findOne({ _id: id, role: { $in: EMPLOYEE_ROLES } });
   if (!employee) { const err = new Error("Employee not found"); err.statusCode = 404; throw err; }
 
@@ -111,6 +119,13 @@ export const updateEmployee = async ({ User, id, name, address, role, hr }) => {
       const err = new Error(`Category must be one of: ${EMPLOYEE_ROLES.join(", ")}`); err.statusCode = 400; throw err;
     }
     employee.role = role;
+  }
+  if (jobTitle !== undefined || role !== undefined) {
+    const title = jobTitle !== undefined ? cleanJobTitle(jobTitle) : employee.jobTitle;
+    if (employee.role === "staff" && !title) {
+      const err = new Error("Type the role for \"Other\" (e.g. Cashier, Helper)"); err.statusCode = 400; throw err;
+    }
+    employee.jobTitle = employee.role === "staff" ? title : "";
   }
   if (hr && typeof hr === "object") {
     const clean = cleanHrInput(hr);
@@ -143,6 +158,14 @@ export const listEmployees = async ({ User, role, search, status }) => {
     filter.$or = [{ name: re }, { phone: re }];
   }
   return User.find(filter).sort({ createdAt: -1 }).select("-otp -otpExpiry -password");
+};
+
+/** EMP-03: every custom role used so far — offered again for the next hire. */
+export const listCustomRoles = async ({ User }) => {
+  const titles = await User.distinct("jobTitle", { role: "staff", jobTitle: { $nin: ["", null] } });
+  const seen = new Map();
+  for (const t of titles) { const k = t.toLowerCase(); if (!seen.has(k)) seen.set(k, t); }
+  return [...seen.values()].sort((a, b) => a.localeCompare(b));
 };
 
 // ── Statistics ──────────────────────────────────────────────────────────────

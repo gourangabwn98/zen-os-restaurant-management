@@ -10,6 +10,22 @@
 // IMPORTANT: if the Firebase project ever changes, update BOTH this file
 // and customer/.env — they must always match.
 // ─────────────────────────────────────────────────────────────────────────────
+// GLB-02 — bump on every branding change. A changed worker file is what makes
+// browsers install the new version; on activate it deletes every Cache
+// Storage entry this origin holds (none are used for the app shell, but an
+// older build or a browser extension may have left some) and takes control
+// at once, so no old Eddie's/AD's/Zen OS asset can be served from a cache.
+const SW_VERSION = "hotel-khoai-2026-10-04";
+self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (event) => {
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+    await self.clients.claim();
+  })());
+});
+void SW_VERSION;
+
 importScripts("https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js");
 importScripts("https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js");
 
@@ -47,8 +63,8 @@ messaging.onBackgroundMessage((payload) => {
   const body = lines.join("\n");
   return self.registration.showNotification(title, {
     body,
-    icon: d.icon || "/icons/icon-192.png",
-    badge: "/icons/badge-96.png",
+    icon: d.icon || "/brand/khoai-v2/icon-192.png",
+    badge: "/brand/khoai-v2/hk-badge-96.png",
     tag: d.id ? `offer-${d.id}` : undefined, // a re-delivered push replaces, never duplicates
     data: { url: d.url || "/notifications" },
   });

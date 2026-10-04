@@ -2,15 +2,16 @@ import { useEffect, useState, useCallback } from "react";
 import toast from "react-hot-toast";
 import { getMyLeave, requestMyLeave, cancelMyLeave } from "../services/kitchenService.js";
 import { CARD, BORDER, TEXT_MUTED, AMBER } from "../theme.js";
+import { t, tn, N_, getLang } from "../i18n/index.jsx";
 
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const tomorrow = () => { const d = new Date(); d.setDate(d.getDate() + 1); return ymd(d); };
-const fmt = (d) => new Date(d).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
+const fmt = (d) => new Date(d).toLocaleDateString(getLang() === "bn" ? "bn-IN" : "en-IN", { weekday: "short", day: "numeric", month: "short" });
 const STATUS = {
-  PENDING: { label: "Waiting for approval", color: AMBER },
-  APPROVED: { label: "Approved", color: "#34d399" },
-  DECLINED: { label: "Declined", color: "#f87171" },
-  CANCELLED: { label: "Withdrawn", color: TEXT_MUTED },
+  PENDING: { label: N_("Waiting for approval"), color: AMBER },
+  APPROVED: { label: N_("Approved"), color: "#34d399" },
+  DECLINED: { label: N_("Declined"), color: "#f87171" },
+  CANCELLED: { label: N_("Withdrawn"), color: TEXT_MUTED },
 };
 const input = {
   width: "100%", boxSizing: "border-box", padding: "10px 12px", borderRadius: 10,
@@ -32,44 +33,45 @@ export default function LeaveRequestCard() {
     setBusy(true);
     try {
       await requestMyLeave(f);
-      toast.success("Leave request sent");
+      toast.success(t("Leave request sent"));
       setOpen(false); setF({ from: tomorrow(), to: tomorrow(), reason: "" });
       load();
-    } catch (err) { toast.error(err.response?.data?.message || "Couldn't send the request"); }
+    } catch (err) { toast.error(err.response?.data?.message || t("Couldn't send the request")); }
     finally { setBusy(false); }
   };
   const withdraw = async (id) => {
-    try { await cancelMyLeave(id); toast.success("Request withdrawn"); load(); }
-    catch (err) { toast.error(err.response?.data?.message || "Couldn't withdraw"); }
+    try { await cancelMyLeave(id); toast.success(t("Request withdrawn")); load(); }
+    catch (err) { toast.error(err.response?.data?.message || t("Couldn't withdraw")); }
   };
 
   const recent = (data?.leaves || []).slice(0, 5);
   return (
     <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-        <div style={{ fontWeight: 800, fontSize: 14 }}>Leave</div>
-        {data && <div style={{ fontSize: 12, color: TEXT_MUTED }}>Paid leave left this month: <b style={{ color: "#fff" }}>{data.balance.paidLeft}</b></div>}
+        <div style={{ fontWeight: 800, fontSize: 14 }}>{t("Leave")}</div>
+        {/* EMP-02: running balance — unused leave carries forward */}
+        {data && <div style={{ fontSize: 12, color: TEXT_MUTED }}>{t("Leave balance")}: <b style={{ color: "#fff" }}>{data.balance.balance ?? data.balance.paidLeft}</b></div>}
       </div>
 
       {!open ? (
         <button type="button" onClick={() => setOpen(true)} style={{
           marginTop: 14, width: "100%", padding: 12, borderRadius: 12, border: "none",
           background: AMBER, color: "#111", fontWeight: 800, fontSize: 14, cursor: "pointer",
-        }}>Request leave</button>
+        }}>{t("Request leave")}</button>
       ) : (
         <form onSubmit={send} style={{ marginTop: 14, display: "grid", gap: 10 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <label style={{ fontSize: 12, color: TEXT_MUTED }}>From
+            <label style={{ fontSize: 12, color: TEXT_MUTED }}>{t("From")}
               <input type="date" style={input} min={ymd(new Date())} value={f.from} onChange={(e) => setF({ ...f, from: e.target.value, to: f.to < e.target.value ? e.target.value : f.to })} required />
             </label>
-            <label style={{ fontSize: 12, color: TEXT_MUTED }}>To
+            <label style={{ fontSize: 12, color: TEXT_MUTED }}>{t("To")}
               <input type="date" style={input} min={f.from} value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} required />
             </label>
           </div>
-          <input style={input} placeholder="Reason (optional)" maxLength={300} value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} />
+          <input style={input} placeholder={t("Reason (optional)")} maxLength={300} value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} />
           <div style={{ display: "flex", gap: 10 }}>
-            <button type="button" onClick={() => setOpen(false)} style={{ flex: 1, padding: 12, borderRadius: 12, border: `1px solid ${BORDER}`, background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Cancel</button>
-            <button type="submit" disabled={busy} style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: AMBER, color: "#111", fontWeight: 800, cursor: "pointer", opacity: busy ? 0.6 : 1 }}>{busy ? "Sending…" : "Send request"}</button>
+            <button type="button" onClick={() => setOpen(false)} style={{ flex: 1, padding: 12, borderRadius: 12, border: `1px solid ${BORDER}`, background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>{t("Cancel")}</button>
+            <button type="submit" disabled={busy} style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: AMBER, color: "#111", fontWeight: 800, cursor: "pointer", opacity: busy ? 0.6 : 1 }}>{busy ? t("Sending…") : t("Send request")}</button>
           </div>
         </form>
       )}
@@ -79,13 +81,13 @@ export default function LeaveRequestCard() {
           {recent.map((l) => (
             <div key={l._id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "10px 0", borderTop: `1px solid ${BORDER}` }}>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 700 }}>{fmt(l.from)}{l.days > 1 ? ` – ${fmt(l.to)}` : ""} · {l.days} day{l.days > 1 ? "s" : ""}</div>
+                <div style={{ fontSize: 13.5, fontWeight: 700 }}>{fmt(l.from)}{l.days > 1 ? ` – ${fmt(l.to)}` : ""} · {tn(l.days, "{n} day", "{n} days")}</div>
                 <div style={{ fontSize: 12, color: STATUS[l.status]?.color || TEXT_MUTED, marginTop: 2 }}>
-                  {STATUS[l.status]?.label || l.status}{l.status === "APPROVED" ? (l.paid ? " · paid" : " · unpaid") : ""}
+                  {t(STATUS[l.status]?.label || l.status)}{l.status === "APPROVED" ? ` · ${t("paid")}` : l.status === "DECLINED" ? ` · ${t("loss of pay")}` : ""}
                 </div>
               </div>
               {l.status === "PENDING" && (
-                <button type="button" onClick={() => withdraw(l._id)} style={{ border: "none", background: "none", color: AMBER, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Withdraw</button>
+                <button type="button" onClick={() => withdraw(l._id)} style={{ border: "none", background: "none", color: AMBER, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>{t("Withdraw")}</button>
               )}
             </div>
           ))}

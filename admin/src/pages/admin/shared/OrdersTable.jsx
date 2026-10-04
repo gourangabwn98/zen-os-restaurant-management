@@ -9,11 +9,10 @@ import {
   updateOrderStatus, confirmOrder, rejectOrder, updateOrderPayment,
 } from "../../../services/adminService";
 
-// Canonical status machine (Phase 1). READY/DELIVERED/COMPLETED/CANCELLED
-// are reachable from the dropdown; CONFIRMED has its own dedicated button
-// below since confirming is a distinct, higher-stakes action (it deducts
-// stock and creates the KOT job) rather than a routine dropdown pick.
-const NEXT_STATUS_OPTIONS = ["PREPARING", "READY", "DELIVERED", "COMPLETED", "CANCELLED"];
+// Canonical status machine. PREPARING/READY/DELIVERED/CANCELLED are reachable
+// from the dropdown; CONFIRMED has its own button below. COMPLETED is not —
+// settling the bill completes a served order (BIL-02, DSH-03).
+const NEXT_STATUS_OPTIONS = ["PREPARING", "READY", "DELIVERED", "CANCELLED"];
 
 const PAYMENT_OPTIONS = MANUAL_PAYMENT_STATUSES; // FAILED is never set by hand
 const PAYMENT_LABEL = { PENDING_VERIFICATION: N_("Pending"), PAID: N_("Paid"), FAILED: N_("Failed") };

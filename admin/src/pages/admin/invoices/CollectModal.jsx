@@ -31,14 +31,14 @@ export default function CollectModal({ o, initialMode, onClose, onRecord }) {
   // Portalled after the bill drawer, so it always sits on top of it.
   return createPortal(
     <Modal
-      title={t("Collect payment")}
+      title={t("Collect & settle")}
       sub={`${o.orderId} · ${custName(o) || t("Walk-in guest")} · ${tableLabel(o)}`}
       onClose={onClose}
       width={460}
       footer={<>
         <button type="button" className="zc-btn ghost" onClick={onClose}>{t("Cancel")}</button>
         <button type="button" className="zc-btn good" disabled={!ok || busy} onClick={record}>
-          {busy ? t("Saving…") : t("Record {amount} {method}", { amount: money(total), method: t(mode === "Cash" ? "cash" : "online") })}
+          {busy ? t("Saving…") : t("Settle · {amount} {method}", { amount: money(total), method: t(mode === "Cash" ? "cash" : "online") })}
         </button>
       </>}
     >

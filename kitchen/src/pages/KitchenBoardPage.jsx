@@ -1,6 +1,6 @@
 // src/pages/KitchenBoardPage.jsx
 // ─────────────────────────────────────────────────────────────────────────────
-// Zen OS "Kitchen display" — migrated to the shared design system
+// Kitchen display — the shared design system
 // (design-reference/zen-os-design-reference.html → "Kitchen display" screen):
 // dark violet ticket cards, a live clock, and tickets that turn red once
 // they've run past a target time — instead of the previous flat navy board.
@@ -29,6 +29,8 @@ import {
   VOID, CARD_2, EDGE, EDGE_HI, VIOLET, LIVE, WAIT, READY_C, STOP,
   T1, T2, T3, GRAD_BTN, GRAD_CARD, GRAD_BG, R_CARD, R_CTL,
 } from "../theme.js";
+import { t, tn, N_, localName } from "../i18n/index.jsx";
+import { BRAND } from "../brand.js";
 
 const SOUND_PREF_KEY = "kitchenSoundEnabled";
 const loadSoundPref = () => {
@@ -44,17 +46,19 @@ const OVER_TARGET_MIN = 15;
 // Orders reach the kitchen when they start preparing — that is when the KOT
 // prints (the server only lists PREPARING/READY here; a Placed order can
 // still change, so it isn't shown yet).
+// DSH-04 words: the kitchen marks food ready → "Ready to deliver" (the waiter
+// then serves it; it leaves this board once served).
 const COLUMNS = [
-  { status: "PREPARING", label: "Preparing", dot: WAIT, action: { to: "READY", label: "✓ Mark ready" } },
-  { status: "READY",     label: "Ready", dot: READY_C, action: null },
+  { status: "PREPARING", label: N_("Cooking"), dot: WAIT, action: { to: "READY", label: N_("Mark ready") } },
+  { status: "READY",     label: N_("Ready to deliver"), dot: READY_C, action: null },
 ];
 
 // live-updating clock + elapsed-time source, ticking once a second
 function useNow() {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
   }, []);
   return now;
 }
@@ -118,13 +122,13 @@ function KitchenTicket({ order, now, busy, onStartPreparing, onAdvance, action, 
 
   let tone, value, label;
   if (column === "READY") {
-    tone = "ready"; value = "—"; label = "ready";
+    tone = "ready"; value = "—"; label = t("ready");
   } else if (urgent || overTarget) {
-    tone = "stop"; value = `${elapsedMin}m`; label = urgent ? "URGENT" : "over target";
+    tone = "stop"; value = `${elapsedMin}m`; label = urgent ? t("URGENT") : t("over target");
   } else if (column === "PREPARING") {
-    tone = "wait"; value = `${elapsedMin}m`; label = "cooking";
+    tone = "wait"; value = `${elapsedMin}m`; label = t("cooking");
   } else {
-    tone = "live"; value = `${elapsedMin}m`; label = "waiting";
+    tone = "live"; value = `${elapsedMin}m`; label = t("waiting");
   }
   const toneColor = { live: LIVE, wait: WAIT, ready: READY_C, stop: STOP }[tone];
   const borderColor = tone === "stop" ? `${STOP}8C` : tone === "wait" ? `${WAIT}66` : EDGE_HI;
@@ -141,7 +145,7 @@ function KitchenTicket({ order, now, busy, onStartPreparing, onAdvance, action, 
       }}>
         <div>
           <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-.02em", color: T1 }}>
-            {order.tableNo ? `Table ${order.tableNo}` : "Takeaway"}
+            {order.tableNo ? t("Table {n}", { n: order.tableNo }) : t("Takeaway")}
           </div>
           <div style={{ fontSize: 10.5, color: T3 }}>{order.orderId}{order.waiterName ? ` · ${order.waiterName}` : ""}</div>
         </div>
@@ -159,30 +163,30 @@ function KitchenTicket({ order, now, busy, onStartPreparing, onAdvance, action, 
               fontSize: 12, fontWeight: 700, background: "rgba(255,255,255,.09)", color: "#fff", flex: "none",
             }}>{it.qty}</span>
             <span style={{ flex: 1, fontWeight: 500, lineHeight: 1.35, color: T1 }}>
-              {it.name}
+              {localName(it)}
               {it.notes && <em style={{ display: "block", fontStyle: "normal", fontSize: 11, color: WAIT, fontWeight: 600 }}>{it.notes}</em>}
             </span>
           </div>
         ))}
         {order.notes && (
           <div style={{ marginTop: 8, padding: "8px 10px", background: `${WAIT}1A`, borderRadius: 8, fontSize: 12, color: WAIT, fontWeight: 600 }}>
-            Note: {order.notes}
+            {t("Note")}: {order.notes}
           </div>
         )}
 
         {column === "CONFIRMED" && (
           <button disabled={busy} onClick={onStartPreparing} style={ticketBtn(WAIT)}>
-            {busy ? "…" : "▶ Start preparing"}
+            {busy ? "…" : `▶ ${t("Start preparing")}`}
           </button>
         )}
         {action && column === "PREPARING" && (
           <button disabled={busy} onClick={() => onAdvance(action.to)} style={ticketBtn(READY_C)}>
-            {busy ? "…" : action.label}
+            {busy ? "…" : `✓ ${t(action.label)}`}
           </button>
         )}
         {column === "READY" && (
           <div style={{ marginTop: 12, textAlign: "center", fontSize: 11.5, color: T3, fontStyle: "italic" }}>
-            Waiting for waiter to deliver
+            {t("Waiting for the waiter to serve it")}
           </div>
         )}
       </div>
@@ -250,7 +254,7 @@ export default function KitchenBoardPage() {
         const played = kotJob.priority === "URGENT" ? playUrgentOrderAlert() : playNewOrderAlert();
         if (!played) setNeedsUnlock(true);
       }
-      toast(`🔔 New order ${kotJob.orderId || ""}`, { duration: 3000 });
+      toast(`🔔 ${t("New order {id}", { id: kotJob.orderId || "" })}`, { duration: 3000 });
     };
 
     const onStatusChanged = (payload) => {
@@ -300,7 +304,7 @@ export default function KitchenBoardPage() {
       await updateKitchenOrderStatus(order._id, "PREPARING");
       upsertOrderSilently({ ...order, status: "PREPARING" });
     } catch (err) {
-      toast.error(err.response?.data?.message || "Couldn't update");
+      toast.error(err.response?.data?.message || t("Couldn't update"));
     } finally { setBusyId(null); }
   };
 
@@ -310,7 +314,7 @@ export default function KitchenBoardPage() {
       await updateKitchenOrderStatus(order._id, toStatus);
       if (toStatus === "READY") upsertOrderSilently({ ...order, status: "READY" });
     } catch (err) {
-      toast.error(err.response?.data?.message || "Couldn't update");
+      toast.error(err.response?.data?.message || t("Couldn't update"));
     } finally { setBusyId(null); }
   };
 
@@ -323,20 +327,17 @@ export default function KitchenBoardPage() {
   const clockStr = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).replace(/^0/, "");
 
   return (
-    <div style={{ minHeight: "100vh", background: GRAD_BG, color: T1, fontFamily: "'DM Sans', sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: GRAD_BG, color: T1, fontFamily: "'DM Sans', 'Noto Sans Bengali', sans-serif" }}>
       <header style={{
         display: "flex", alignItems: "center", gap: 14, padding: "14px 24px",
         borderBottom: `1px solid ${EDGE}`, position: "sticky", top: 0, background: VOID, zIndex: 10,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-          <div style={{
-            width: 30, height: 30, borderRadius: 9, display: "grid", placeItems: "center", flex: "none",
-            fontWeight: 800, fontSize: 13, color: "#fff", background: GRAD_BTN,
-            boxShadow: `0 6px 18px -4px ${VIOLET}B3, inset 0 1px 0 rgba(255,255,255,.28)`,
-          }}>🍳</div>
+          {/* GLB-01/02: Hotel KHOAI, from src/brand.js — never another restaurant's name */}
+          <img src={BRAND.mark} alt="" width="32" height="32" style={{ borderRadius: "50%", flex: "none" }} />
           <div>
-            <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-.02em" }}>Kitchen</div>
-            <div style={{ fontSize: 11, color: T3, marginTop: -2 }}>Ad's Cafe</div>
+            <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-.02em" }}>{t("Kitchen")}</div>
+            <div style={{ fontSize: 11, color: T3, marginTop: -2 }}>{auth.user?.restaurantName || BRAND.name}</div>
           </div>
         </div>
 
@@ -344,19 +345,19 @@ export default function KitchenBoardPage() {
         {dutyStatus && (
           <Link to="/profile" style={{ textDecoration: "none" }}>
             <Tag tone={dutyStatus === "ONLINE" ? "ready" : dutyStatus === "BREAK" ? "wait" : "stop"}>
-              {dutyStatus === "ONLINE" ? "On Duty" : dutyStatus === "BREAK" ? "On Break" : "Off Duty"}
+              {dutyStatus === "ONLINE" ? t("On duty") : dutyStatus === "BREAK" ? t("On break") : t("Off duty")}
             </Tag>
           </Link>
         )}
-        <Tag tone={connected ? "ready" : "stop"}>{connected ? "Connected" : "Reconnecting…"}</Tag>
-        <span style={{ fontSize: 12.5, color: T2 }}>{auth.user?.name}{auth.user?.name ? " · " : ""}{auth.user?.role || "chef"}</span>
+        <Tag tone={connected ? "ready" : "stop"}>{connected ? t("Connected") : t("Reconnecting…")}</Tag>
+        <span style={{ fontSize: 12.5, color: T2 }}>{auth.user?.name}{auth.user?.name ? " · " : ""}{t(auth.user?.role || "chef")}</span>
         <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-.03em", fontVariantNumeric: "tabular-nums" }}>{clockStr}</div>
 
-        <Link to="/profile" style={headerBtn}>👤 Profile</Link>
+        <Link to="/profile" style={headerBtn}>👤 {t("Profile")}</Link>
         <button onClick={toggleSound} style={{ ...headerBtn, background: soundOn ? `${READY_C}26` : CARD_2, color: soundOn ? READY_C : T2, borderColor: soundOn ? `${READY_C}55` : EDGE }}>
-          {soundOn ? "🔊 Sound on" : "🔇 Sound off"}
+          {soundOn ? `🔊 ${t("Sound on")}` : `🔇 ${t("Sound off")}`}
         </button>
-        <button onClick={handleLogout} style={{ ...headerBtn, color: STOP, borderColor: `${STOP}55` }}>Sign out</button>
+        <button onClick={handleLogout} style={{ ...headerBtn, color: STOP, borderColor: `${STOP}55` }}>{t("Sign out")}</button>
       </header>
 
       {needsUnlock && (
@@ -364,9 +365,9 @@ export default function KitchenBoardPage() {
           display: "flex", justifyContent: "center", alignItems: "center", gap: 16, padding: "10px 20px",
           background: `${WAIT}26`, color: WAIT, fontSize: 13.5, fontWeight: 600, borderBottom: `1px solid ${WAIT}44`,
         }}>
-          <span>Tap to enable kitchen alert sounds on this device</span>
+          <span>{t("Tap to enable kitchen alert sounds on this device")}</span>
           <button onClick={handleEnableSound} style={{ padding: "9px 16px", borderRadius: R_CTL, border: "none", background: WAIT, color: "#111", fontWeight: 800, cursor: "pointer" }}>
-            Enable kitchen sound
+            {t("Enable kitchen sound")}
           </button>
         </div>
       )}
@@ -379,15 +380,15 @@ export default function KitchenBoardPage() {
             <div key={col.status}>
               <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 13 }}>
                 <span style={{ width: 9, height: 9, borderRadius: "50%", background: col.dot, boxShadow: `0 0 10px ${col.dot}` }} />
-                <span style={{ fontSize: 14, fontWeight: 700 }}>{col.label}</span>
+                <span style={{ fontSize: 14, fontWeight: 700 }}>{t(col.label)}</span>
                 <span style={{ fontSize: 12, color: T3 }}>
-                  {colOrders.length} ticket{colOrders.length === 1 ? "" : "s"}{col.status === "READY" && colOrders.length > 0 ? " · waiter alerted" : ""}
+                  {tn(colOrders.length, "{n} ticket", "{n} tickets")}{col.status === "READY" && colOrders.length > 0 ? ` · ${t("waiter alerted")}` : ""}
                 </span>
               </div>
               <div style={{ display: "grid", gap: 12 }}>
                 {colOrders.length === 0 && (
                   <div style={{ textAlign: "center", padding: "40px 10px", color: T3, fontSize: 13, border: `1px dashed ${EDGE}`, borderRadius: R_CARD }}>
-                    No tickets
+                    {t("No tickets")}
                   </div>
                 )}
                 {colOrders.map((o) => (

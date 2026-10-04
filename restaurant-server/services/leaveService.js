@@ -2,8 +2,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Staff leave. Waiters/chefs request it from their own app (source SELF,
 // PENDING); the owner approves or declines it on the Employees page, or
-// records leave directly (source ADMIN, APPROVED). Paid vs unpaid is decided
-// on approval — unpaid days are deducted in services/payService.js.
+// records leave directly (source ADMIN, APPROVED).
+//
+// EMP-02 — pay keys off APPROVAL, never off the remaining balance:
+//   APPROVED                      → paid, even beyond the carried-forward balance
+//   DECLINED, or PENDING on a day
+//   that has already passed       → absconding: LOP (loss of pay) for those days
+// Each employee earns RestaurantProfile.staffPolicy.paidLeavePerMonth (4) per
+// month; unused leave carries forward as a running balance with no cap
+// (leaveBalance). Unpaid days are deducted in services/payService.js.
 // Every status change is ONE atomic conditional update on status: PENDING,
 // never check-then-save.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -65,7 +72,7 @@ export const recordLeave = async ({ StaffLeave, employeeId, from: fromStr, to: t
   return StaffLeave.create({
     employee: employeeId, from, to, days,
     reason: String(reason || "").trim().slice(0, 300),
-    status: "APPROVED", paid: !!paid, source: "ADMIN",
+    status: "APPROVED", paid: true, source: "ADMIN", // EMP-02: approved ⇒ paid
     requestedBy: actor, decidedBy: actor, decidedAt: new Date(),
   });
 };
@@ -74,7 +81,8 @@ export const recordLeave = async ({ StaffLeave, employeeId, from: fromStr, to: t
 export const decideLeave = async ({ StaffLeave, leaveId, decision, paid, actor }) => {
   if (!["APPROVED", "DECLINED"].includes(decision)) fail("decision must be APPROVED or DECLINED", 400);
   const set = { status: decision, decidedBy: actor, decidedAt: new Date() };
-  if (decision === "APPROVED") set.paid = !!paid;
+  set.paid = decision === "APPROVED"; // EMP-02: pay follows approval, not a separate pick
+  void paid;
   const updated = await StaffLeave.findOneAndUpdate({ _id: leaveId, status: "PENDING" }, { $set: set }, { returnDocument: "after" });
   if (updated) return updated;
   const exists = await StaffLeave.findById(leaveId);
@@ -93,18 +101,42 @@ export const cancelOwnLeave = async ({ StaffLeave, leaveId, employeeId }) => {
   return updated;
 };
 
-/** Approved leave days that fall inside [monthStart, monthEnd], split paid/unpaid (pure). */
-export const leaveDaysInRange = (leaves, monthStart, monthEnd) => {
+/**
+ * Leave days inside [monthStart, monthEnd] (pure), EMP-02 rule:
+ *   paid   = APPROVED days (always paid, whatever the balance)
+ *   unpaid = LOP: DECLINED days, plus PENDING days that are already past
+ *            (absent without approval) — they turn paid if approved later.
+ */
+export const leaveDaysInRange = (leaves, monthStart, monthEnd, now = new Date()) => {
   let paid = 0, unpaid = 0;
+  const today = new Date(now); today.setHours(0, 0, 0, 0);
   for (const l of leaves) {
-    if (l.status !== "APPROVED") continue;
+    if (!["APPROVED", "DECLINED", "PENDING"].includes(l.status)) continue;
     const from = new Date(Math.max(new Date(l.from), monthStart));
-    const to = new Date(Math.min(new Date(l.to), monthEnd));
+    let to = new Date(Math.min(new Date(l.to), monthEnd));
+    if (l.status === "PENDING") to = new Date(Math.min(to, today.getTime() - 1)); // only days already gone
     if (to < from) continue;
     const n = daysBetween(new Date(from.setHours(0, 0, 0, 0)), new Date(to.setHours(0, 0, 0, 0)));
-    if (l.paid) paid += n; else unpaid += n;
+    if (l.status === "APPROVED") paid += n; else unpaid += n;
   }
   return { paid, unpaid };
+};
+
+/** Whole months from `start`'s month through `now`'s month, inclusive. */
+const monthsInclusive = (start, now) =>
+  Math.max(0, (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth()) + 1);
+
+/**
+ * EMP-02 running balance (pure): perMonth × months since joining (carried
+ * forward, never reset, no cap) − approved leave days taken. May go
+ * negative: approved leave beyond the balance is still paid.
+ */
+export const leaveBalance = ({ joinedAt, createdAt, perMonth = 4, leaves = [], now = new Date() }) => {
+  const start = new Date(joinedAt || createdAt || now);
+  const months = monthsInclusive(start, now);
+  const earned = months * Math.max(0, Number(perMonth) || 0);
+  const taken = leaves.filter((l) => l.status === "APPROVED").reduce((s, l) => s + (Number(l.days) || 0), 0);
+  return { perMonth, months, earned, taken, balance: earned - taken };
 };
 
 export const listLeaves = ({ StaffLeave, employeeId }) =>

@@ -3,6 +3,7 @@ import { getMyActivity } from "../services/authService.js";
 import { Loader, ErrorState } from "../components/StateViews.jsx";
 import { ACCENT, GREEN, AMBER, RED, TEXT_MUTED, TEXT_FAINT, GLASS_BG, GLASS_BORDER, NAV_HEIGHT } from "../theme.js";
 import { RANGE_PRESETS, toDateInput, formatDuration } from "../utils/dateRange.js";
+import { t } from "../i18n/index.jsx";
 
 const TODAY_STR = toDateInput(new Date());
 
@@ -17,7 +18,7 @@ export default function ActivityPage() {
     setError(null);
     getMyActivity({ from, to })
       .then(({ data }) => setData(data))
-      .catch(() => setError("Couldn't load activity"));
+      .catch(() => setError(t("Couldn't load activity")));
   }, [from, to]);
 
   useEffect(() => { setData(null); load(); }, [load]);
@@ -30,14 +31,15 @@ export default function ActivityPage() {
   const handleFrom = (v) => { setPreset(""); setFrom(v); if (to < v) setTo(v); };
   const handleTo   = (v) => { setPreset(""); setTo(v); if (from > v) setFrom(v); };
 
-  const rangeLabel = RANGE_PRESETS.find((p) => p.key === preset)?.label ?? (from === to ? from : `${from} → ${to}`);
+  const presetLabel = RANGE_PRESETS.find((p) => p.key === preset)?.label;
+  const rangeLabel = presetLabel ? t(presetLabel) : (from === to ? from : `${from} → ${to}`);
 
   if (error) return <ErrorState message={error} onRetry={load} />;
 
   return (
     <div style={{ paddingBottom: NAV_HEIGHT + 30 }}>
-      <div style={{ padding: "20px 16px 4px", fontSize: 25, fontWeight: 800, color: "#fff", letterSpacing: -0.5 }}>Activity</div>
-      <div style={{ padding: "4px 16px", fontSize: 12, color: TEXT_FAINT }}>Your orders, collection, and duty time — {rangeLabel}.</div>
+      <div style={{ padding: "20px 16px 4px", fontSize: 25, fontWeight: 800, color: "#fff", letterSpacing: -0.5 }}>{t("Activity")}</div>
+      <div style={{ padding: "4px 16px", fontSize: 12, color: TEXT_FAINT }}>{t("Your orders, collection, and duty time — {range}.", { range: rangeLabel })}</div>
 
       <div className="hide-scrollbar" style={{ display: "flex", gap: 6, overflowX: "auto", padding: "14px 16px 4px" }}>
         {RANGE_PRESETS.map((p) => (
@@ -51,41 +53,41 @@ export default function ActivityPage() {
               color: preset === p.key ? "#fff" : TEXT_MUTED,
             }}
           >
-            {p.label}
+            {t(p.label)}
           </button>
         ))}
       </div>
 
       <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "6px 16px 16px" }}>
         <input type="date" value={from} max={to} onChange={(e) => handleFrom(e.target.value)} style={dateInputStyle} />
-        <span style={{ color: TEXT_FAINT, fontSize: 12 }}>to</span>
+        <span style={{ color: TEXT_FAINT, fontSize: 12 }}>{t("to")}</span>
         <input type="date" value={to} min={from} max={TODAY_STR} onChange={(e) => handleTo(e.target.value)} style={dateInputStyle} />
       </div>
 
       {!data ? (
-        <Loader label="Loading activity…" />
+        <Loader label={t("Loading activity…")} />
       ) : (
         <>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: "0 16px 16px" }}>
-            <StatTile label="My Orders" value={data.orders.ordersCount} />
-            <StatTile label="My Collection" value={`₹${data.orders.collection}`} accent={GREEN} />
-            <StatTile label="Online Timing" value={formatDuration(data.duty.workingSeconds)} />
-            <StatTile label="Break Timing" value={formatDuration(data.duty.breakSeconds)} accent={AMBER} />
+            <StatTile label={t("My orders")} value={data.orders.ordersCount} />
+            <StatTile label={t("My collection")} value={`₹${data.orders.collection}`} accent={GREEN} />
+            <StatTile label={t("Time on duty")} value={formatDuration(data.duty.workingSeconds)} />
+            <StatTile label={t("Break time")} value={formatDuration(data.duty.breakSeconds)} accent={AMBER} />
           </div>
 
-          <Section title="Unpaid Orders" count={data.orders.unpaidCount}>
+          <Section title={t("Unpaid orders")} count={data.orders.unpaidCount}>
             {data.orders.unpaidOrders.length === 0
-              ? <EmptyRow text="No unpaid orders in this range" />
+              ? <EmptyRow text={t("No unpaid orders in this range")} />
               : data.orders.unpaidOrders.map((o) => (
-                  <OrderLine key={o._id} order={o} tint={RED} dateField="confirmedAt" sub={o.tableNo ? `Table ${o.tableNo}` : o.orderType} />
+                  <OrderLine key={o._id} order={o} tint={RED} dateField="confirmedAt" sub={o.tableNo ? t("Table {n}", { n: o.tableNo }) : t(o.orderType)} />
                 ))}
           </Section>
 
-          <Section title="Cancelled Orders" count={data.orders.cancelledCount}>
+          <Section title={t("Cancelled orders")} count={data.orders.cancelledCount}>
             {data.orders.cancelledOrders.length === 0
-              ? <EmptyRow text="No cancelled orders in this range" />
+              ? <EmptyRow text={t("No cancelled orders in this range")} />
               : data.orders.cancelledOrders.map((o) => (
-                  <OrderLine key={o._id} order={o} tint={TEXT_MUTED} dateField="cancelledAt" sub={o.cancelReason || (o.tableNo ? `Table ${o.tableNo}` : o.orderType)} />
+                  <OrderLine key={o._id} order={o} tint={TEXT_MUTED} dateField="cancelledAt" sub={o.cancelReason || (o.tableNo ? t("Table {n}", { n: o.tableNo }) : t(o.orderType))} />
                 ))}
           </Section>
         </>

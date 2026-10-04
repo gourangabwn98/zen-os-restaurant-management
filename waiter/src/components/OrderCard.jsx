@@ -1,6 +1,7 @@
 import StatusBadge, { statusColor } from "./StatusBadge.jsx";
 import GlassCard from "./ui/GlassCard.jsx";
 import { ACCENT, ACCENT_SOFT, TEXT_FAINT, TEXT_MUTED } from "../theme.js";
+import { t, localName } from "../i18n/index.jsx";
 
 export default function OrderCard({ order, onClick, style }) {
   // Same rule as the admin table map / order rail: the card itself is
@@ -21,15 +22,15 @@ export default function OrderCard({ order, onClick, style }) {
               {order.source}
             </span>
             <span style={{ fontSize: 10.5, color: TEXT_MUTED }}>
-              {order.tableNo ? `Table ${order.tableNo}` : "Takeaway"}
+              {order.tableNo ? t("Table {n}", { n: order.tableNo }) : t("Takeaway")}
             </span>
           </div>
           <div style={{ fontSize: 12, color: TEXT_FAINT, marginTop: 6 }}>
-            {(order.items || []).slice(0, 3).map((i) => `${i.name} ×${i.qty}`).join(", ")}
-            {order.items?.length > 3 ? ` +${order.items.length - 3} more` : ""}
+            {(order.items || []).slice(0, 3).map((i) => `${localName(i)} ×${i.qty}`).join(", ")}
+            {order.items?.length > 3 ? ` ${t("+{n} more", { n: order.items.length - 3 })}` : ""}
           </div>
           <div style={{ fontSize: 10.5, color: TEXT_FAINT, marginTop: 4 }}>
-            {order.guestName || order.user?.name || "Guest"} ·{" "}
+            {order.guestName || order.user?.name || t("Guest")} ·{" "}
             {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           </div>
         </div>

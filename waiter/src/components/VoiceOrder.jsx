@@ -5,6 +5,7 @@
 // recognition mishears, so every line can be corrected first. Mirrors the
 // admin app's VoiceOrder, restyled for this app's bottom-sheet layout.
 import { useEffect, useMemo, useState } from "react";
+import { t } from "../i18n/index.jsx";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition.js";
 import { suggestFromTranscript } from "../utils/voiceOrder.js";
 import PrimaryButton from "./ui/PrimaryButton.jsx";
@@ -66,8 +67,8 @@ export default function VoiceOrder({ menu, onAdd, onSearch }) {
       <button
         type="button" onClick={listening ? stop : listen}
         aria-pressed={listening}
-        aria-label={listening ? "Stop listening" : "Speak the order"}
-        title="Speak the order — e.g. “2 chicken biryani and 1 cold coffee”"
+        aria-label={listening ? t("Stop listening") : t("Speak the order")}
+        title={t("Speak the order — e.g. “2 chicken biryani and 1 cold coffee”")}
         style={{
           flexShrink: 0, width: 44, height: 44, borderRadius: 14, cursor: "pointer", fontSize: 18,
           border: `1px solid ${listening ? "rgba(248,113,113,0.6)" : GLASS_BORDER}`,
@@ -80,7 +81,7 @@ export default function VoiceOrder({ menu, onAdd, onSearch }) {
       {open && (
         <div onClick={close} style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(0,0,0,0.55)" }}>
           <div
-            role="dialog" aria-label="Voice order" onClick={(e) => e.stopPropagation()}
+            role="dialog" aria-label={t("Voice order")} onClick={(e) => e.stopPropagation()}
             style={{
               position: "absolute", left: 10, right: 10, bottom: NAV_HEIGHT + 8, maxHeight: "70vh", overflowY: "auto",
               background: "rgba(16,14,26,0.97)", backdropFilter: "blur(20px)", border: `1px solid ${GLASS_BORDER}`,
@@ -89,21 +90,21 @@ export default function VoiceOrder({ menu, onAdd, onSearch }) {
           >
             <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
               <b style={{ flex: 1, fontSize: 15, color: "#fff" }}>🎤 Voice order</b>
-              <button type="button" onClick={close} aria-label="Close" style={{
+              <button type="button" onClick={close} aria-label={t("Close")} style={{
                 border: "none", background: "none", color: TEXT_MUTED, fontSize: 18, cursor: "pointer",
               }}>✕</button>
             </div>
 
             {listening && (
               <div aria-live="polite" style={{ fontSize: 13.5, color: TEXT_MUTED, marginBottom: 10 }}>
-                <span style={{ color: RED, fontWeight: 800 }}>● Listening…</span>{" "}
-                {interim || transcript || "say e.g. “2 chicken biryani and 1 cold coffee”"}
+                <span style={{ color: RED, fontWeight: 800 }}>● {t("Listening…")}</span>{" "}
+                {interim || transcript || t("say e.g. “2 chicken biryani and 1 cold coffee”")}
               </div>
             )}
             {error && <div role="alert" style={{ fontSize: 12.5, color: RED, marginBottom: 10 }}>{error}</div>}
 
             {!listening && transcript && (
-              <div style={{ fontSize: 12, color: TEXT_FAINT, marginBottom: 10 }}>Heard: “{transcript}”</div>
+              <div style={{ fontSize: 12, color: TEXT_FAINT, marginBottom: 10 }}>{t("Heard")}: “{transcript}”</div>
             )}
 
             {!listening && rows.length > 0 && (
@@ -116,10 +117,10 @@ export default function VoiceOrder({ menu, onAdd, onSearch }) {
                   }}>
                     {r.matches.length ? (
                       <>
-                        <input type="checkbox" checked={r.include} aria-label={`Include ${r.phrase}`}
+                        <input type="checkbox" checked={r.include} aria-label={t("Include {phrase}", { phrase: r.phrase })}
                           onChange={(e) => update(r.key, { include: e.target.checked })}
                           style={{ width: 18, height: 18, accentColor: ACCENT, flexShrink: 0 }} />
-                        <select value={r.pick} aria-label={`Menu item for “${r.phrase}”`}
+                        <select value={r.pick} aria-label={t("Menu item for “{phrase}”", { phrase: r.phrase })}
                           onChange={(e) => update(r.key, { pick: e.target.value, include: true })}
                           style={{
                             flex: 1, minWidth: 0, padding: "8px 6px", borderRadius: 10, fontSize: 13,
@@ -138,12 +139,12 @@ export default function VoiceOrder({ menu, onAdd, onSearch }) {
                     ) : (
                       <>
                         <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: TEXT_MUTED }}>
-                          No menu match for “{r.phrase}”
+                          {t("No menu match for “{phrase}”", { phrase: r.phrase })}
                         </span>
                         <button type="button" onClick={() => { onSearch(r.phrase); close(); }} style={{
                           border: `1px solid ${GLASS_BORDER}`, background: GLASS_BG, color: ACCENT,
                           borderRadius: 10, padding: "7px 12px", fontWeight: 700, fontSize: 12.5, cursor: "pointer",
-                        }}>Search</button>
+                        }}>{t("Search")}</button>
                       </>
                     )}
                   </div>
@@ -152,14 +153,14 @@ export default function VoiceOrder({ menu, onAdd, onSearch }) {
             )}
 
             {!listening && transcript && rows.length === 0 && (
-              <div style={{ fontSize: 13, color: TEXT_MUTED }}>Couldn&rsquo;t pick out any items — try again.</div>
+              <div style={{ fontSize: 13, color: TEXT_MUTED }}>{t("Couldn't pick out any items — try again.")}</div>
             )}
 
             {!listening && (
               <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                <PrimaryButton variant="outline" onClick={listen} style={{ padding: "12px 14px" }}>🎤 Again</PrimaryButton>
+                <PrimaryButton variant="outline" onClick={listen} style={{ padding: "12px 14px" }}>🎤 {t("Again")}</PrimaryButton>
                 <PrimaryButton onClick={addAll} disabled={!addCount} style={{ flex: 1, padding: "12px 14px" }}>
-                  Add {addCount || ""} item{addCount === 1 ? "" : "s"}
+                  {addCount ? (addCount === 1 ? t("Add {n} item", { n: addCount }) : t("Add {n} items", { n: addCount })) : t("Add items")}
                 </PrimaryButton>
               </div>
             )}

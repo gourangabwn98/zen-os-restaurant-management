@@ -40,6 +40,7 @@
 //   employee:attendance:updated { action, session, employee }  → staff room
 //   waiter_call:new / waiter_call:updated { call }  → the rung waiters' own user rooms
 //   waiter_call:updated { state }                    → the calling customer's order room
+//   waiter_call:activity { event, call }             → staff room, silent (admin notification panel)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Server } from "socket.io";
@@ -479,4 +480,9 @@ export const emitWaiterCall = (tenantKey, { event, staffCall, userIds = [], orde
     emit(rooms.user(tenantKey, id), event, { call: staffCall });
   }
   if (orderId && customerState) emit(rooms.order(tenantKey, orderId), "waiter_call:updated", { state: customerState });
+  // NTF-02: a SILENT copy for the admin/POS notification panel. A different
+  // event name, so it never rings anyone — the waiter app doesn't listen to it
+  // (rings stay on the targeted waiters' own rooms, above). Staff room only
+  // (already trusted with table/customer names); never the kitchen room.
+  if (staffCall) emit(rooms.staff(tenantKey), "waiter_call:activity", { event, call: staffCall });
 };

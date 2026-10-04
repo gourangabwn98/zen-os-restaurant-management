@@ -15,15 +15,16 @@ import { PageHeader, Loader, EmptyState, Badge } from "./shared/index.js";
 import ErrorState from "./shared/ErrorState.jsx";
 import EmployeeForm from "./employees/EmployeeForm.jsx";
 import EmployeeProfile from "./employees/EmployeeProfile.jsx";
-import { ROLE_LABEL, DUTY_LABEL, initials, fmtDuration, count } from "./employees/shared.js";
+import { DUTY_LABEL, initials, fmtDuration, count, roleText } from "./employees/shared.js";
 import { t, N_, tn, fmtTime, fmtNum, fmtDate } from "../../i18n/core.js";
 import "./employees/employees.css";
 
-const STAFF_ROLES = ["waiter", "chef"];
+const STAFF_ROLES = ["waiter", "chef", "staff"];
 const ROLE_FILTERS = [
   { key: "", label: N_("All") },
   { key: "waiter", label: N_("Waiters") },
   { key: "chef", label: N_("Chefs") },
+  { key: "staff", label: N_("Others") },
 ];
 const DUTY_FILTER_LABEL = { on: N_("On duty now"), worked: N_("Worked today") };
 
@@ -40,6 +41,7 @@ export default function EmployeesPage() {
   const [dutyFilter, setDutyFilter] = useState(""); // "" | on | worked
   const [selectedId, setSelectedId] = useState(null);
   const [formFor, setFormFor] = useState(null); // null | "new" | employee
+  const [customRoles, setCustomRoles] = useState([]); // EMP-03 job titles already in use
   const profileRef = useRef(null);
   const listRef = useRef(null);
 
@@ -49,6 +51,7 @@ export default function EmployeesPage() {
     try {
       const { data } = await getEmployees({});
       setEmployees(data.employees || []);
+      setCustomRoles(data.customRoles || []);
       setLoadError(false);
     } catch {
       setLoadError(true);
@@ -187,7 +190,8 @@ export default function EmployeesPage() {
   const stripOn = (key) => (key === "on" ? dutyFilter === "on" : key === "orders" ? dutyFilter === "worked" : false);
 
   const subLine = employees
-    ? `${tn(employees.length, "{n} person", "{n} people")} · ${tn(employees.filter((e) => e.role === "waiter").length, "{n} waiter", "{n} waiters")} · ${tn(employees.filter((e) => e.role === "chef").length, "{n} chef", "{n} chefs")}`
+    ? [tn(employees.length, "{n} person", "{n} people"), tn(employees.filter((e) => e.role === "waiter").length, "{n} waiter", "{n} waiters"), tn(employees.filter((e) => e.role === "chef").length, "{n} chef", "{n} chefs"),
+      ...(employees.some((e) => e.role === "staff") ? [tn(employees.filter((e) => e.role === "staff").length, "{n} other", "{n} others")] : [])].join(" · ")
     : t("Waiters and kitchen staff — created here, log in with their own phone + OTP");
 
   return (
@@ -270,7 +274,7 @@ export default function EmployeesPage() {
                           >
                             <span className={`emp-av ${e.role}`}>{initials(e.name)}</span>
                             <span style={{ minWidth: 0 }}>
-                              <span className="nm"><span>{e.name}</span><Badge label={ROLE_LABEL[e.role] || e.role} kind="vio" dot={false} /></span>
+                              <span className="nm"><span>{e.name}</span><Badge label={roleText(e)} kind="vio" dot={false} /></span>
                               <span className="sub">
                                 {inactive ? <span>{t("Inactive")}</span> : (
                                   <>
@@ -353,6 +357,7 @@ export default function EmployeesPage() {
       {formFor && (
         <EmployeeForm
           employee={formFor === "new" ? null : formFor}
+          customRoles={customRoles}
           onClose={() => setFormFor(null)}
           onSaved={handleSaved}
         />

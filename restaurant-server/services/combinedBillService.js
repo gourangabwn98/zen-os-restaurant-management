@@ -23,7 +23,6 @@ import { roundMoney } from "../utils/recipeCost.js";
 const pick = (list, v) => { if (!list.includes(v)) throw new Error(`combinedBillService: unknown enum ${v}`); return v; };
 const CANCELLED = pick(ORDER_STATUSES, "CANCELLED");
 const COMPLETED = pick(ORDER_STATUSES, "COMPLETED");
-const DELIVERED = pick(ORDER_STATUSES, "DELIVERED");
 const PAID = pick(PAYMENT_STATUSES, "PAID");
 const DINE_IN = pick(ORDER_TYPES, "DINE_IN");
 export const COMBINABLE = ["CONFIRMED", "PREPARING", "READY", "DELIVERED"].map((s) => pick(ORDER_STATUSES, s));
@@ -188,31 +187,30 @@ export const markSelectedPaid = async ({ models, body, canPay }) => {
   return { paid, alreadyPaid, rejected, changed };
 };
 
-/** "Complete Selected Orders" — the normal completion rule for every order:
- * served (DELIVERED) and PAID → COMPLETED, through the existing
- * transitionOrderStatusTx (atomic, table session close, events). The admin
- * "any status" override is NOT used here, so a bulk click can never skip the
- * kitchen or complete an unpaid bill. */
-export const completeSelected = async ({ req, body, transition }) => {
+/** "Settle Selected" (BIL-01/BIL-02) — settles the ticked orders' bills
+ * through the billing workflow (services/billingService.js settleBills): a
+ * not-yet-paid order needs `paymentMethod` (it's collected now); a served
+ * order is completed right after; one still cooking stays cooking and
+ * completes when it's served. Nobody completes an order by hand any more.
+ * `settle` is billingService.settleBills (injected to keep this module free
+ * of the order-service import chain in tests). */
+export const completeSelected = async ({ req, body, settle, actor, role }) => {
   const { orders, rejected } = await resolveSelection({ models: req.models, body });
-  const completed = [], alreadyCompleted = [], changed = [];
-  for (const o of orders) {
-    if (o.paymentStatus !== PAID) { rejected.push({ id: String(o._id), orderId: o.orderId, reason: "Not paid yet" }); continue; }
-    if (o.status !== DELIVERED) { rejected.push({ id: String(o._id), orderId: o.orderId, reason: "Not served yet (mark Delivered first)" }); continue; }
-    try {
-      const result = await transition({ req, orderId: o._id, toStatus: COMPLETED, note: "Completed with combined bill" });
-      completed.push(o.orderId); changed.push({ ...result, previousStatus: o.status });
-    } catch (err) {
-      const now = await req.models.Order.findById(o._id).select("status").lean();
-      if (now?.status === COMPLETED) alreadyCompleted.push(o.orderId);
-      else rejected.push({ id: String(o._id), orderId: o.orderId, reason: err.message });
-    }
+  if (!orders.length) {
+    const done = rejected.filter((r) => r.reason === "Already completed");
+    return { settled: [], alreadySettled: done.map((r) => r.orderId), completed: [], rejected: rejected.filter((r) => r.reason !== "Already completed"), changed: [], completions: [] };
   }
+  const r = await settle({
+    models: req.models, orderIds: orders.map((o) => String(o._id)), paymentMethod: body.paymentMethod || undefined, actor, role,
+  });
   // Ids that were already COMPLETED at selection time come back as rejected
-  // "Already completed" from resolveSelection — report them as done instead.
-  const done = rejected.filter((r) => r.reason === "Already completed");
+  // "Already completed" from resolveSelection — their bills are settled.
+  const done = rejected.filter((x) => x.reason === "Already completed");
   return {
-    completed, alreadyCompleted: [...alreadyCompleted, ...done.map((r) => r.orderId)],
-    rejected: rejected.filter((r) => r.reason !== "Already completed"), changed,
+    settled: r.settled,
+    alreadySettled: [...r.alreadySettled, ...done.map((x) => x.orderId)],
+    completed: r.completions.map((c) => c.order.orderId),
+    rejected: [...rejected.filter((x) => x.reason !== "Already completed"), ...r.rejected],
+    changed: r.changed, completions: r.completions,
   };
 };

@@ -147,10 +147,28 @@
 .zd-tb .a { font-weight: 600; font-size: 13.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .zd-tb.free { border-style: dashed; background: transparent; opacity: .75; }
 .zd-tb.free .s { color: var(--zd-faint); }
-.zd-tb.eating, .zd-tb.cooking { border-color: var(--zd-busy-line); }
-.zd-tb.cooking .s { color: var(--zd-accent-ink); }
-.zd-tb.long, .zd-tb.bill { border-color: var(--zd-amber); background: var(--zd-amber-bg); }
-.zd-tb.long .s, .zd-tb.bill .s { color: var(--zd-amber); }
+/* DSH-04 — one look per floor state (model.FLOOR_STATE_OF) */
+.zd-tb.placed { border-color: var(--zd-accent2); border-style: dotted; }
+.zd-tb.placed .s { color: var(--zd-accent-ink); }
+.zd-tb.cooking { border-color: var(--zd-amber); background: var(--zd-amber-bg); }
+.zd-tb.cooking .s { color: var(--zd-amber); font-weight: 600; }
+.zd-tb.ready { border-color: var(--zd-green); background: var(--zd-green-s); }
+.zd-tb.ready .s { color: var(--zd-green); font-weight: 700; }
+.zd-tb.eating { border-color: var(--zd-busy-line); }
+.zd-tb.eating .s { color: var(--zd-accent-ink); }
+.zd-tb.completed { border-style: dashed; background: transparent; }
+.zd-tb.completed .s { color: var(--zd-faint); }
+.zd-tb.long .s2 { color: var(--zd-amber); }
+/* DSH-02 — table detail view */
+.zd-flow { list-style: none; display: flex; gap: 6px; padding: 0; margin: 0 0 14px; flex-wrap: wrap; }
+.zd-flow li { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--zd-faint);
+  padding: 5px 10px; border-radius: 999px; border: 1px solid var(--zd-line); }
+.zd-flow li .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--zd-line2); }
+.zd-flow li.done { color: var(--zd-muted); }
+.zd-flow li.done .dot { background: var(--zd-green); }
+.zd-flow li.on { color: var(--zd-text); border-color: var(--zd-accent2); background: var(--zd-accent-soft); font-weight: 700; }
+.zd-flow li.on .dot { background: var(--zd-accent2); box-shadow: 0 0 0 3px var(--zd-accent-soft); }
+.zd-mrow.current { box-shadow: inset 3px 0 0 var(--zd-accent2); }
 .zd-fl-leg { display: flex; gap: 6px 14px; flex-wrap: wrap; margin-top: 12px; font-size: 12.5px; color: var(--zd-faint); }
 .zd-fl-leg span { display: inline-flex; align-items: center; gap: 6px; }
 .zd-fl-leg i { width: 12px; height: 12px; border-radius: 4px; border: 1.5px solid var(--c); display: inline-block; }

@@ -1,8 +1,9 @@
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useAppState } from "../context/AppState.jsx";
 import { useRestaurantProfile } from "../hooks/useRestaurantProfile.js";
 import Icon from "./ui/Icon.jsx";
 import TableBadge from "./TableBadge.jsx";
+import { displayName } from "../brand.js";
 
 const greeting = () => {
   const h = new Date().getHours();
@@ -14,6 +15,8 @@ export default function Topbar() {
   const { auth, table, cart, favorites } = useAppState();
   const profile = useRestaurantProfile();
   const first = (auth.user?.name || "").split(" ")[0];
+  // CUS-04: the cart shows table / order type once, in its own top block.
+  const onCart = useLocation().pathname === "/cart";
 
   return (
     <header className="topbar">
@@ -23,8 +26,8 @@ export default function Topbar() {
 
       <div className="hello">
         <small>Hi{first ? `, ${first}` : ""}! {greeting()} 👋</small>
-        <h1>{table.isDineIn ? table.tableLabel : (profile?.restaurantName || "Fresh. Hot.")}</h1>
-        <TableBadge compact />
+        <h1>{table.isDineIn ? table.tableLabel : displayName(profile)}</h1>
+        {!onCart && <TableBadge compact />}
       </div>
 
       <Link

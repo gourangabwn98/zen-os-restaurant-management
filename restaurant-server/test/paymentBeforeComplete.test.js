@@ -1,7 +1,8 @@
 // test/paymentBeforeComplete.test.js
 // ─────────────────────────────────────────────────────────────────────────────
-// Nobody (waiter or admin) can complete an order until it is PAID, and
-// nobody sets FAILED by hand (utils/orderStateMachine.js). No DB — fake
+// Nobody (waiter or admin) completes an order by hand — completion follows
+// bill settlement (BIL-02) — and nobody sets FAILED by hand
+// (utils/orderStateMachine.js). No DB — fake
 // models. Run with:
 //   node test/paymentBeforeComplete.test.js
 // ─────────────────────────────────────────────────────────────────────────────
@@ -50,36 +51,31 @@ await test("rule table: nobody marks FAILED by hand; waiter sets PAID only; admi
   assert.equal(canSetPaymentStatus("BOGUS", "admin"), false);
 });
 
-await test("waiter completing an unpaid delivered order is rejected (400)", async () => {
-  const { req } = fakeReq({ role: "waiter", order: { _id: "o1", status: "DELIVERED", paymentStatus: "PENDING_VERIFICATION" } });
-  await assert.rejects(
-    transitionOrderStatusTx({ req, orderId: "o1", toStatus: "COMPLETED" }),
-    (e) => e.statusCode === 400 && /Paid/.test(e.message),
-  );
-});
-
-await test("waiter completing a paid order succeeds, with PAID in the atomic filter", async () => {
-  const { req, calls } = fakeReq({ role: "waiter", order: { _id: "o1", status: "DELIVERED", paymentStatus: "PAID" } });
-  const { order } = await transitionOrderStatusTx({ req, orderId: "o1", toStatus: "COMPLETED" });
-  assert.equal(order.status, "COMPLETED");
-  assert.equal(calls.filter.paymentStatus, "PAID");
-});
-
-await test("admin completing an unpaid order is rejected too (even jumping from READY)", async () => {
-  for (const from of ["DELIVERED", "READY"]) {
-    const { req } = fakeReq({ role: "admin", order: { _id: "o1", status: from, paymentStatus: "PENDING_VERIFICATION" } });
+// BIL-02 / DSH-03: nobody completes an order by hand any more — paid or not,
+// waiter or admin. Completion is the billing workflow's outcome
+// (services/billingService.js → orderService.completeServedSettledOrder).
+await test("waiter can't complete by hand — paid or unpaid (400)", async () => {
+  for (const paymentStatus of ["PENDING_VERIFICATION", "PAID"]) {
+    const { req, calls } = fakeReq({ role: "waiter", order: { _id: "o1", status: "DELIVERED", paymentStatus } });
     await assert.rejects(
       transitionOrderStatusTx({ req, orderId: "o1", toStatus: "COMPLETED" }),
-      (e) => e.statusCode === 400 && /Paid/.test(e.message), from,
+      (e) => e.statusCode === 400 && /settling its bill/.test(e.message), paymentStatus,
     );
+    assert.equal(calls.filter, null, "nothing was written");
   }
 });
 
-await test("admin completing a paid order succeeds, with PAID in the atomic filter", async () => {
-  const { req, calls } = fakeReq({ role: "admin", order: { _id: "o1", status: "DELIVERED", paymentStatus: "PAID" } });
-  const { order } = await transitionOrderStatusTx({ req, orderId: "o1", toStatus: "COMPLETED" });
-  assert.equal(order.status, "COMPLETED");
-  assert.equal(calls.filter.paymentStatus, "PAID");
+await test("admin override can't complete by hand either — from DELIVERED or READY (400)", async () => {
+  for (const from of ["DELIVERED", "READY"]) {
+    for (const paymentStatus of ["PENDING_VERIFICATION", "PAID"]) {
+      const { req, calls } = fakeReq({ role: "admin", order: { _id: "o1", status: from, paymentStatus } });
+      await assert.rejects(
+        transitionOrderStatusTx({ req, orderId: "o1", toStatus: "COMPLETED" }),
+        (e) => e.statusCode === 400 && /settling its bill/.test(e.message), `${from}/${paymentStatus}`,
+      );
+      assert.equal(calls.filter, null);
+    }
+  }
 });
 
 await test("waiter READY→DELIVERED needs no payment", async () => {

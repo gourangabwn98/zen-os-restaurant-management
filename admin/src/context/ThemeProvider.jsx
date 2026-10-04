@@ -1,14 +1,15 @@
 // src/context/ThemeProvider.jsx
-// Owns the light/dark/system preference for the admin panel.
+// Owns the Light / Dark preference for the admin panel (GLB-05 — there is no
+// Auto/System mode any more).
 //
-//   mode       — the user's stored choice: "light" | "dark" | "system"
-//   effective  — what is actually painted: "light" | "dark"
+//   mode       — the user's stored choice: "light" | "dark"
+//   effective  — what is painted (same as mode; kept for existing callers)
 //   setMode(m) — change it; writes localStorage + (when signed in) the backend
 //
-// First paint is handled by the inline script in index.html so there is no
-// flash; this provider then keeps <html data-theme> in sync with React state,
-// follows the OS while mode === "system", and — once logged in — adopts the
-// server's saved themePreference (User.themePreference, PATCH /api/auth/theme).
+// A value saved by an older build ("system") is converted ONCE to whatever
+// the device was showing at that moment and saved back — so nobody's screen
+// changes look on upgrade, and it never flips by itself afterwards.
+// First paint is handled by the inline script in index.html (same rule).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ThemeContext, THEME_MODES, THEME_STORAGE_KEY } from "./themeContext.js";
 import { useAuth } from "../hooks/useAuth.js";
@@ -19,12 +20,18 @@ const matchDark = () =>
   typeof window.matchMedia === "function" &&
   window.matchMedia("(prefers-color-scheme: dark)").matches;
 
+/** Legacy "system" (or nothing saved) → the look the device shows right now. */
+const resolveLegacy = () => (matchDark() ? "dark" : "light");
+
 const readStoredMode = () => {
   try {
     const v = localStorage.getItem(THEME_STORAGE_KEY);
-    return THEME_MODES.includes(v) ? v : "system";
+    if (THEME_MODES.includes(v)) return v;
+    const fixed = resolveLegacy();
+    localStorage.setItem(THEME_STORAGE_KEY, fixed); // migrate once
+    return fixed;
   } catch {
-    return "system";
+    return "dark";
   }
 };
 
@@ -39,11 +46,8 @@ const writeStoredMode = (mode) => {
 export function ThemeProvider({ children }) {
   const { user } = useAuth();
   const [mode, setModeState] = useState(readStoredMode);
-  const [systemDark, setSystemDark] = useState(matchDark);
   const hydratedForToken = useRef(null);
-
-  // `effective` is derived, never stored — no setState-in-effect.
-  const effective = mode === "system" ? (systemDark ? "dark" : "light") : mode;
+  const effective = mode;
 
   // paint it (DOM write only)
   useEffect(() => {
@@ -51,15 +55,6 @@ export function ThemeProvider({ children }) {
       document.documentElement.dataset.theme = effective;
     }
   }, [effective]);
-
-  // track the OS setting; the handler (not an effect) is what calls setState
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = (e) => setSystemDark(e.matches);
-    mq.addEventListener?.("change", onChange);
-    return () => mq.removeEventListener?.("change", onChange);
-  }, []);
 
   const setMode = useCallback(
     (next) => {
@@ -90,6 +85,9 @@ export function ThemeProvider({ children }) {
         if (THEME_MODES.includes(pref) && pref !== readStoredMode()) {
           setModeState(pref);
           writeStoredMode(pref);
+        } else if (pref === "system") {
+          // Saved by an older build — keep what this device shows, and save it.
+          updateThemePreference(readStoredMode()).catch(() => {});
         }
       })
       .catch(() => {

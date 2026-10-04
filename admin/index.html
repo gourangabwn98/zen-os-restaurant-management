@@ -2,21 +2,24 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.webp" />
+    <!-- GLB-01/02: versioned brand assets (src/brand.js) -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/brand/khoai-v2/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="64x64" href="/brand/khoai-v2/favicon-64.png" />
+    <link rel="apple-touch-icon" href="/brand/khoai-v2/apple-touch-icon.png" />
+    <meta name="application-name" content="Hotel KHOAI – Admin" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Hotel খোয়াই · Admin</title>
+    <title>Hotel KHOAI – Admin</title>
 
     <!-- Resolve the theme before first paint so there is no light/dark flash.
          Keep in sync with src/context/ThemeProvider.jsx (same storage key). -->
     <script>
       (function () {
         try {
-          var m = localStorage.getItem("adsCafeTheme") || "system";
-          var dark =
-            m === "dark" ||
-            (m === "system" &&
-              window.matchMedia &&
-              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          // GLB-05: light | dark only. An old "system" (or nothing saved)
+          // resolves to what the device shows now — ThemeProvider saves it.
+          var m = localStorage.getItem("adsCafeTheme");
+          var dark = m === "dark" || ((m !== "light") &&
+            window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
           document.documentElement.dataset.theme = dark ? "dark" : "light";
         } catch (e) {
           document.documentElement.dataset.theme = "dark";

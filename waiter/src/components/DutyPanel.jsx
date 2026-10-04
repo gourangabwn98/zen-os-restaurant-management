@@ -7,11 +7,12 @@ import { useState, useEffect } from "react";
 import { useAppState } from "../context/AppState.jsx";
 import { GREEN, AMBER, RED, EASE_SNAP } from "../theme.js";
 import { formatDuration } from "../utils/dateRange.js";
+import { t, N_ } from "../i18n/index.jsx";
 
 const STATUS_META = {
-  ONLINE:  { color: GREEN, label: "On duty" },
-  BREAK:   { color: AMBER, label: "On break" },
-  OFFLINE: { color: RED,   label: "Off duty" },
+  ONLINE:  { color: GREEN, label: N_("On duty") },
+  BREAK:   { color: AMBER, label: N_("On break") },
+  OFFLINE: { color: RED,   label: N_("Off duty") },
 };
 
 // Working/break seconds so far, computed client-side between server
@@ -50,7 +51,7 @@ export default function DutyPanel() {
 
   const handleToggle = () => {
     if (session) {
-      if (!window.confirm("End your duty for today?")) return;
+      if (!window.confirm(t("End your duty for today?"))) return;
       end();
     } else {
       start();
@@ -62,10 +63,10 @@ export default function DutyPanel() {
       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
         <span style={{ width: 8, height: 8, borderRadius: "50%", background: meta.color, boxShadow: `0 0 8px ${meta.color}`, flexShrink: 0 }} />
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 800, fontSize: 12.5, color: "#E8ECF2" }}>{meta.label}</div>
+          <div style={{ fontWeight: 800, fontSize: 12.5, color: "#E8ECF2" }}>{t(meta.label)}</div>
           {timeLabel && (
             <div style={{ fontSize: 10.5, color: "#9AA4B2", fontVariantNumeric: "tabular-nums" }}>
-              {presenceStatus === "BREAK" ? "Break · " : "Working · "}{timeLabel}
+              {presenceStatus === "BREAK" ? `${t("Break")} · ` : `${t("Working")} · `}{timeLabel}
             </div>
           )}
         </div>
@@ -73,10 +74,10 @@ export default function DutyPanel() {
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
         {presenceStatus === "ONLINE" && (
-          <button onClick={startBreak} disabled={busy} style={miniBtn}>Break</button>
+          <button onClick={startBreak} disabled={busy} style={miniBtn}>{t("Break")}</button>
         )}
         {presenceStatus === "BREAK" && (
-          <button onClick={endBreak} disabled={busy} style={miniBtn}>Resume</button>
+          <button onClick={endBreak} disabled={busy} style={miniBtn}>{t("Resume")}</button>
         )}
         <Switch on={!!session} disabled={busy} color={meta.color} onClick={handleToggle} />
       </div>
@@ -87,7 +88,7 @@ export default function DutyPanel() {
 function Switch({ on, onClick, disabled, color }) {
   return (
     <button
-      type="button" onClick={onClick} disabled={disabled} aria-pressed={on} aria-label={on ? "End duty" : "Start duty"}
+      type="button" onClick={onClick} disabled={disabled} aria-pressed={on} aria-label={on ? t("End duty") : t("Start duty")}
       style={{
         width: 46, height: 26, borderRadius: 999, border: "none", padding: 0, position: "relative", flexShrink: 0,
         background: on ? color : "rgba(255,255,255,0.16)", cursor: disabled ? "not-allowed" : "pointer",

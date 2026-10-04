@@ -1,8 +1,9 @@
 // src/pages/admin/dashboard/AttentionModal.jsx
-// Detail behind a "Needs your attention" item: the exact orders / tables /
-// printer state the line was counted from, with the action that clears each
-// one right there (record a payment, accept / reject an order, settle an
-// invoice). Stock items keep using the shared StockAlertsModal.
+// Detail behind a "Needs your attention" item: the exact orders / printer
+// state the line was counted from. Operational actions (accept / reject an
+// order) happen right here; money never does — unpaid and open bills link to
+// Invoices, the one billing workflow (BIL-01, DSH-03). Stock items keep using
+// the shared StockAlertsModal.
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { Modal } from "../inventory/invUI.jsx";
@@ -43,8 +44,8 @@ function OrderRow({ o, typeLabel, statusKey, children }) {
 }
 
 export default function AttentionModal({
-  item, pendingTables, printer, typeLabel, statusKey,
-  onMarkPaid, onAccept, onReject, onInvoiceStatusChange, onNavigate, onClose,
+  item, printer, typeLabel, statusKey,
+  onAccept, onReject, onNavigate, onClose,
 }) {
   const [busy, setBusy] = useState(null); // order / invoice id being updated
   const run = async (id, fn) => {
@@ -63,13 +64,8 @@ export default function AttentionModal({
       : t("All settled.");
     body = list.length === 0
       ? <div className="zd-mempty">{t("Every one of these orders is now paid.")}</div>
-      : list.map((o) => (
-        <OrderRow key={o._id} o={o} typeLabel={typeLabel} statusKey={statusKey}>
-          <button type="button" className="zd-opt good" disabled={busy === o._id} onClick={() => run(o._id, () => onMarkPaid(o, "Cash"))}>{t("Paid · Cash")}</button>
-          <button type="button" className="zd-opt good" disabled={busy === o._id} onClick={() => run(o._id, () => onMarkPaid(o, "Online"))}>{t("Paid · Online")}</button>
-        </OrderRow>
-      ));
-    footer = <button type="button" className="zc-btn" onClick={() => go("orders")}>{t("Open Orders")} →</button>;
+      : list.map((o) => <OrderRow key={o._id} o={o} typeLabel={typeLabel} statusKey={statusKey} />);
+    footer = <button type="button" className="zc-btn" onClick={() => go("invoices")}>{t("Collect in Invoices")} →</button>;
   } else if (item.kind === "confirm") {
     const list = item.orders;
     title = t("Orders waiting for confirmation");
@@ -83,27 +79,14 @@ export default function AttentionModal({
         </OrderRow>
       ));
     footer = <button type="button" className="zc-btn" onClick={() => go("orders")}>{t("Open Orders")} →</button>;
-  } else if (item.kind === "invoices") {
-    title = t("Tables with an invoice pending");
-    sub = pendingTables.length
-      ? `${tn(pendingTables.length, "{n} table", "{n} tables")} · ${money(pendingTables.reduce((s, tb) => s + tb.amount, 0))}`
-      : t("All settled.");
-    body = pendingTables.length === 0
-      ? <div className="zd-mempty">{t("No invoices are pending now.")}</div>
-      : pendingTables.map((tb) => (
-        <div className="zd-mgroup" key={tb.tableNo}>
-          <div className="zd-mgroup-h">
-            <b>{t("Table {n}", { n: fmtNum(tb.tableNo) })}</b>
-            <span className="zd-mamt">{money(tb.amount)}</span>
-          </div>
-          {tb.orders.map((o) => <OrderRow key={o._id} o={o} typeLabel={typeLabel} statusKey={statusKey} />)}
-          <div className="zd-opts" style={{ marginTop: 10 }}>
-            <button type="button" className="zd-opt good" disabled={busy === tb.invoice._id} onClick={() => run(tb.invoice._id, () => onInvoiceStatusChange(tb.invoice._id, "completed"))}>{t("Mark paid")}</button>
-            <button type="button" className="zd-opt bad" disabled={busy === tb.invoice._id} onClick={() => run(tb.invoice._id, () => onInvoiceStatusChange(tb.invoice._id, "cancelled"))}>{t("Cancel")}</button>
-          </div>
-        </div>
-      ));
-    footer = <button type="button" className="zc-btn" onClick={() => go("invoices")}>{t("Open Invoices")} →</button>;
+  } else if (item.kind === "settle") {
+    const list = item.orders || [];
+    title = t("Served orders with the bill open");
+    sub = list.length ? `${tn(list.length, "{n} order", "{n} orders")} · ${money(total(list))}` : t("All settled.");
+    body = list.length === 0
+      ? <div className="zd-mempty">{t("Every served order is settled.")}</div>
+      : list.map((o) => <OrderRow key={o._id} o={o} typeLabel={typeLabel} statusKey={statusKey} />);
+    footer = <button type="button" className="zc-btn" onClick={() => go("invoices")}>{t("Settle in Invoices")} →</button>;
   } else if (item.kind === "printerOff" || item.kind === "printerFailed") {
     const q = printer?.queue || {};
     title = t("Printer");

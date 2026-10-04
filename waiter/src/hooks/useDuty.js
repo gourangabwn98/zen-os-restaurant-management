@@ -12,6 +12,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import toast from "react-hot-toast";
 import { getMyDuty, startDuty, startBreak, endBreak, endDuty } from "../services/dutyService.js";
 import { getSocket } from "../services/socketService.js";
+import { t } from "../i18n/index.jsx";
 
 const HEARTBEAT_INTERVAL_MS = 30000;
 
@@ -50,10 +51,10 @@ export function useDuty(isLoggedIn) {
     try {
       const { data } = await fn();
       setSession(data.session);
-      toast.success(successMsg);
+      toast.success(t(successMsg));
       return true;
     } catch (err) {
-      toast.error(err.response?.data?.message || "Couldn't update duty status");
+      toast.error(err.response?.data?.message || t("Couldn't update duty status"));
       return false;
     } finally {
       setBusy(false);

@@ -7,6 +7,7 @@ import {
   getSuppliers, createSupplier, updateSupplier, deleteSupplier,
   getItems, getItemById, createItem, updateItem, deleteItem, adjustItemStock,
   getPurchases, getPurchaseById, createPurchase,
+  uploadPurchaseBillPhoto, getPayables, settlePayable, getCashOut,
   getMovements,
   getLowStock,
   getWastage, createWastage,
@@ -37,6 +38,12 @@ router.patch("/items/:id/adjust", requireStaff, adjustItemStock);
 router.get("/purchases",        requireStaff, getPurchases);
 router.get("/purchases/:id",    requireStaff, getPurchaseById);
 router.post("/purchases",       requireStaff, createPurchase);
+// INV-05 — photo of the supplier's bill (kept as proof; its number is read to suggest INV-02).
+router.post("/purchases/bill-photo", requireStaff, importUploadSingle("file"), uploadPurchaseBillPhoto);
+// INV-06/07 — what's still owed to the owner (Owner's Pocket) and suppliers (Credit).
+router.get("/payables",         requireAdmin, getPayables);
+router.post("/purchases/:id/settle-payable", requireAdmin, settlePayable);
+router.get("/cash-out",         requireStaff, getCashOut);
 
 // Purchase import (PDF/image → extracted lines → reviewed → recordPurchase).
 // Admin-only: importing can create new InventoryItem definitions, which is
@@ -64,7 +71,8 @@ router.delete("/recipes/:id",              requireAdmin, deleteRecipe);
 
 // Suppliers — structural config, admin only.
 router.get("/suppliers",        requireStaff, getSuppliers);
-router.post("/suppliers",       requireAdmin, createSupplier);
+// INV-01: a new supplier can be added inline while recording a purchase (staff).
+router.post("/suppliers",       requireStaff, createSupplier);
 router.put("/suppliers/:id",    requireAdmin, updateSupplier);
 router.delete("/suppliers/:id", requireAdmin, deleteSupplier);
 

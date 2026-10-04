@@ -44,10 +44,11 @@ export function LanguageProvider({ children }) {
 
   return (
     <LangContext.Provider value={{ lang, setLang }}>
-      {/* key: remount on switch so every screen — including memoised parts
-          and module-level label maps — re-reads the new language. Pages keep
-          their place because AdminLayout stores the open page outside React. */}
-      {ready ? <div key={lang} style={{ display: "contents" }}>{children}</div> : null}
+      {/* GLB-04: NO remount on switch — a remount threw away half-filled
+          forms, selections and open dialogs. App.jsx subscribes to the
+          language instead, so the whole tree re-renders in place (module-level
+          label maps are N_() keys translated at render time). */}
+      {ready ? children : null}
     </LangContext.Provider>
   );
 }

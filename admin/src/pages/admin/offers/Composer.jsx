@@ -5,6 +5,7 @@
 // in utils/pricing.js) and a review step before anything is saved. Saving
 // goes through the existing coupon create/update API; the push (if ticked)
 // goes out at the start time — the existing couponOfferService rule.
+import TimePicker from "../../../components/TimePicker.jsx";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { checkOffer } from "../../../services/couponService.js";
@@ -247,8 +248,8 @@ export default function Composer({ form, setForm, editing, coupons, stats, savin
                       onChange={(e) => setForm((f) => ({ ...f, startAt: `${e.target.value}T${(f.startAt || "").slice(11, 16) || "00:00"}` }))} />
                   </label>
                   <label className="ofr-l">{t("Start time")}
-                    <input type="time" className="zc-input" value={(form.startAt || "").slice(11, 16)} aria-label={t("Start time")}
-                      onChange={(e) => setForm((f) => ({ ...f, startAt: `${(f.startAt || "").slice(0, 10) || toDateInput(today)}T${e.target.value || "00:00"}` }))} />
+                    <TimePicker value={(form.startAt || "").slice(11, 16)} ariaLabel={t("Start time")}
+                      onChange={(v) => setForm((f) => ({ ...f, startAt: `${(f.startAt || "").slice(0, 10) || toDateInput(today)}T${v || "00:00"}` }))} />
                   </label>
                 </div>
               )}
@@ -264,7 +265,7 @@ export default function Composer({ form, setForm, editing, coupons, stats, savin
                   <input id="of-end" type="date" className="zc-input" value={form.end} min={start ? toDateInput(start) : undefined} aria-invalid={!!errors.dates} aria-label={t("End date")} onChange={set("end")} />
                 </label>
                 <label className="ofr-l">{t("End time")}
-                  <input type="time" className="zc-input" value={form.endTime || "23:59"} aria-invalid={!!errors.dates} aria-label={t("End time")} onChange={(e) => setForm((f) => ({ ...f, endTime: e.target.value || "23:59" }))} />
+                  <TimePicker value={form.endTime || "23:59"} ariaLabel={t("End time")} step={1} onChange={(v) => setForm((f) => ({ ...f, endTime: v || "23:59" }))} />
                 </label>
               </div>
               <div className={errors.dates ? "ofr-err" : "ofr-hint"}>{errors.dates || (form.end ? t("Works until {when}.", { when: fmtWhen(endAt(form)) }) : t("Pick the last day and time customers can use it."))}</div>

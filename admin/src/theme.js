@@ -1,4 +1,4 @@
-// src/theme.js — Ad's Cafe theme constants
+// src/theme.js — Admin/POS theme constants
 // ─────────────────────────────────────────────────────────────────────────────
 // Every value here is a reference to a CSS custom property defined in
 // src/theme/tokens.css, so inline styles that use these constants follow the
@@ -6,13 +6,11 @@
 // src/theme/surfaces.css, or the raw var(--token) names, for new code.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Branding.  TODO(Ad's Cafe): fill the contact/support fields with real values.
-export const BRAND_NAME    = "Ad's Cafe";
-export const BRAND_VERSION = "v1.0";
-export const BRAND_MAKER   = "TODO: operator / company name";
-export const SUPPORT_EMAIL = "TODO: support@adscafe.example";
-export const SUPPORT_PHONE = "TODO: +91 00000 00000";
-export const SUPPORT_WEB   = "TODO: https://adscafe.example";
+// Branding lives in src/brand.js (GLB-01) — these two are kept as aliases
+// for older imports so nothing can drift back to another restaurant's name.
+import { BRAND } from "./brand.js";
+export const BRAND_NAME    = BRAND.name;
+export const BRAND_VERSION = BRAND.version;
 export const STORAGE_KEY   = "adminUser";
 
 // ── Background layers ────────────────────────────────────────────────────────

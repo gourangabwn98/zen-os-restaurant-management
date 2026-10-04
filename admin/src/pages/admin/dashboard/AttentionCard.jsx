@@ -1,5 +1,5 @@
 // src/pages/admin/dashboard/AttentionCard.jsx
-// Every alert in one list (stock, printer, pending invoices, orders waiting to
+// Every alert in one list (stock, printer, bills to settle, orders waiting to
 // be confirmed, unpaid bills from earlier days), most serious first, each with
 // a one-tap button to the screen that fixes it.
 import Ico from "./icons.jsx";
@@ -25,9 +25,9 @@ function describe(a) {
       tag: t("Printer"), text: tn(a.count, "{n} print job failed", "{n} print jobs failed"),
       detail: t("Check the printer and its paper"), btn: t("View details"),
     };
-    case "invoices": return {
-      tag: t("Payment due"), text: tn(a.count, "{n} table has an invoice pending", "{n} tables have an invoice pending"),
-      detail: t("Collect payment and mark it paid"), btn: t("Review"),
+    case "settle": return {
+      tag: t("Bills to settle"), text: tn(a.count, "{n} served order still has its bill open", "{n} served orders still have their bill open"),
+      detail: t("Settle them in Invoices — that completes the order"), btn: t("Open Invoices"),
     };
     case "confirm": return {
       tag: t("New orders"), text: tn(a.count, "{n} customer order is waiting for confirmation", "{n} customer orders are waiting for confirmation"),

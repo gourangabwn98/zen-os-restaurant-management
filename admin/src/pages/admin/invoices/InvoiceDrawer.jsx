@@ -6,17 +6,16 @@ import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import Badge from "../shared/Badge.jsx";
 import { t, tn, N_, fmtNum, fmtDate, fmtTime, localName } from "../../../i18n/core.js";
-import { billState, custName, custPhone, money, lineTotal, daysOld, billText, waLink, tableLabel, printPdf } from "./model.js";
+import { ORDER_STATUS_LABEL } from "../shared/statusLabels.js";
+import { billState, isSettled, needsSettle, custName, custPhone, money, lineTotal, daysOld, billText, waLink, tableLabel, printPdf } from "./model.js";
 
-const STATUS_LABEL = {
-  AWAITING_PAYMENT: N_("Awaiting payment"), PENDING_CONFIRMATION: N_("Pending"), CONFIRMED: N_("Placed"),
-  PREPARING: N_("Preparing"), READY: N_("Ready"), DELIVERED: N_("Delivered"), COMPLETED: N_("Completed"), CANCELLED: N_("Cancelled"),
-};
+const STATUS_LABEL = ORDER_STATUS_LABEL; // shared floor words (DSH-04)
 const STATE_DOT = { COMPLETED: "var(--ready)", CANCELLED: "var(--stop)", DELIVERED: "var(--ready)" };
 
 export function StateBadge({ o }) {
   const st = billState(o);
-  if (st === "paid") return <Badge label={o.paymentMethod === "Online" ? N_("Paid · Online") : N_("Paid · Cash")} kind="ready" />;
+  if (st === "paid" && !isSettled(o)) return <Badge label={N_("Paid · bill open")} kind="live" />;
+  if (st === "paid") return <Badge label={o.paymentMethod === "Online" ? N_("Settled · Online") : N_("Settled · Cash")} kind="ready" />;
   if (st === "checkUpi") return <Badge label={N_("Check UPI")} kind="vio" dot={false} />;
   if (st === "cancelled") return <Badge label={o.paymentStatus === "PAID" ? N_("Cancelled · was paid") : N_("Cancelled")} kind="done" />;
   return <Badge label={N_("Unpaid")} kind="wait" />;
@@ -53,7 +52,7 @@ function PrintableBill({ o, restaurantName }) {
   );
 }
 
-export default function InvoiceDrawer({ o, restaurantName, busy, onClose, onCollect, onPrint, onPaymentChange }) {
+export default function InvoiceDrawer({ o, restaurantName, busy, onClose, onCollect, onPrint, onPaymentChange, onSettle, onReopenBill }) {
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -66,6 +65,7 @@ export default function InvoiceDrawer({ o, restaurantName, busy, onClose, onColl
   const phone = custPhone(o);
   const history = (o.statusHistory || []).filter((h) => h.status);
   const age = daysOld(o.createdAt);
+  const settled = isSettled(o);
 
   return createPortal(
     <div className="inv-drawer-scrim" onClick={onClose}>
@@ -119,7 +119,14 @@ export default function InvoiceDrawer({ o, restaurantName, busy, onClose, onColl
               <div><span>{t("PhonePe transaction")}</span><b>{o.payment.phonepeTransactionId}</b></div>
             )}
           </div>
-          {st !== "cancelled" && (
+          {/* A settled bill's payment is fixed — reopen the bill to correct it (BIL-02). */}
+          {st !== "cancelled" && settled && (
+            <div className="inv-dr-acts" style={{ marginTop: 10, alignItems: "center" }}>
+              <span className="inv-hint" style={{ flex: 1 }}>{t("Bill settled{when}", { when: o.billSettledAt ? ` · ${fmtTime(o.billSettledAt)}` : "" })}{o.billSettledBy?.name ? ` · ${o.billSettledBy.name}` : ""}</span>
+              {onReopenBill && <button type="button" className="zc-btn sm ghost" disabled={busy} onClick={() => onReopenBill(o)}>{t("Reopen bill")}</button>}
+            </div>
+          )}
+          {st !== "cancelled" && !settled && (
             <div className="inv-dr-acts" style={{ marginTop: 10 }}>
               {["Cash", "Online"].map((m) => (
                 <button key={m} type="button" className={`zc-btn sm${(o.paymentMethod || "Cash") === m ? " pri" : " ghost"}`}
@@ -159,10 +166,20 @@ export default function InvoiceDrawer({ o, restaurantName, busy, onClose, onColl
           <button type="button" className="zc-btn sm" onClick={printPdf}>PDF</button>
         </div>
 
-        {(st === "unpaid" || st === "checkUpi") && (
+        {(st === "unpaid" || st === "checkUpi") && !settled && (
           <button type="button" className="zc-btn pri block" disabled={busy} onClick={() => onCollect(o)}>
-            {st === "checkUpi" ? t("Check UPI {amount}", { amount: money(o.total) }) : t("Collect {amount}", { amount: money(o.total) })}
+            {st === "checkUpi" ? t("Check UPI & settle {amount}", { amount: money(o.total) }) : t("Collect & settle {amount}", { amount: money(o.total) })}
           </button>
+        )}
+        {needsSettle(o) && onSettle && (
+          <button type="button" className="zc-btn pri block" disabled={busy} onClick={() => onSettle(o)}>
+            ✓ {t("Settle bill {amount}", { amount: money(o.total) })}
+          </button>
+        )}
+        {!settled && st !== "cancelled" && (
+          <p className="inv-hint" style={{ margin: 0 }}>
+            {o.status === "DELIVERED" ? t("Settling completes this order and frees the table.") : t("Settle now (e.g. paid at the counter) — it completes when it is served.")}
+          </p>
         )}
       </aside>
       <PrintableBill o={o} restaurantName={restaurantName} />

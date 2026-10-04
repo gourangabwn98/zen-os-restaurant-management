@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 
 import { useAuth } from "./hooks/useAuth";
+import { useLang } from "./hooks/useLang.js";
 
 // import LoginPage from "./pages/auth/LoginPage";
 import AdminLayout from "./pages/admin/AdminLayout";
@@ -31,6 +32,9 @@ function ProtectedAdmin({ children }) {
 }
 
 export default function App() {
+  // GLB-04: subscribing here re-renders every screen in the new language
+  // without unmounting anything (forms, route, open orders stay as they are).
+  useLang();
   return (
     <BrowserRouter>
       <Toaster position="top-center" />

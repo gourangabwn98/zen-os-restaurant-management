@@ -91,11 +91,16 @@ const run = async () => {
     assert.equal(r.code, 400);
   });
 
-  await test("full happy-path chain is walkable by staff", () => {
-    const chain = ["PENDING_CONFIRMATION", "CONFIRMED", "PREPARING", "READY", "DELIVERED", "COMPLETED"];
+  await test("full happy-path chain is walkable by staff up to Served; billing completes it", () => {
+    const chain = ["PENDING_CONFIRMATION", "CONFIRMED", "PREPARING", "READY", "DELIVERED"];
     for (let i = 0; i < chain.length - 1; i++) {
       const r = validateTransition(chain[i], chain[i + 1], "admin");
       assert.equal(r.ok, true, `${chain[i]} -> ${chain[i + 1]} should be ok`);
+    }
+    // BIL-02 / DSH-03: COMPLETED is a billing outcome — "system" only.
+    assert.equal(validateTransition("DELIVERED", "COMPLETED", "system").ok, true);
+    for (const role of ["admin", "waiter", "chef", "customer"]) {
+      assert.equal(validateTransition("DELIVERED", "COMPLETED", role).ok, false, role);
     }
   });
 

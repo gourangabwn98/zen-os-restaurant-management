@@ -190,6 +190,45 @@ export const endDuty = async ({ AttendanceSession, employeeId }) => {
   return updated;
 };
 
+// ── EMP-01: the manager sets someone's shift state ─────────────────────────
+export const SHIFT_STATES = ["ON_SHIFT", "ON_BREAK", "OFF_SHIFT"];
+
+/** Pure: the session's state in the manager's words. */
+export const shiftStateOf = (session) =>
+  !session || session.status !== "OPEN" ? "OFF_SHIFT" : session.presenceStatus === "BREAK" ? "ON_BREAK" : "ON_SHIFT";
+
+/**
+ * On Shift / On Break / Off Shift for an employee who forgot to (or can't)
+ * update it themselves. Reuses the self-service transitions, so the session
+ * rules (one open session, break bookkeeping, working time) stay identical;
+ * the session is marked `managed` so the heartbeat sweep never auto-closes it.
+ * Returns { session, state, changed }.
+ */
+export const setEmployeeShift = async ({ AttendanceSession, employee, state, actor }) => {
+  if (!SHIFT_STATES.includes(state)) {
+    const err = new Error("state must be ON_SHIFT, ON_BREAK or OFF_SHIFT"); err.statusCode = 400; throw err;
+  }
+  const employeeId = employee._id;
+  let open = await AttendanceSession.findOne({ employee: employeeId, status: "OPEN" });
+  const before = shiftStateOf(open);
+  if (before === state) return { session: open, state, changed: false };
+
+  if (state === "OFF_SHIFT") {
+    const closed = await endDuty({ AttendanceSession, employeeId });
+    await AttendanceSession.updateOne({ _id: closed._id }, { $set: { changedBy: actor } });
+    return { session: closed, state, changed: true };
+  }
+  if (!open) {
+    const role = employee.isAdmin ? "admin" : employee.role;
+    open = (await startDuty({ AttendanceSession, employeeId, role, employeeName: employee.name })).session;
+  }
+  await AttendanceSession.updateOne({ _id: open._id }, { $set: { managed: true, changedBy: actor } });
+  if (state === "ON_BREAK" && shiftStateOf(open) !== "ON_BREAK") open = await startBreak({ AttendanceSession, employeeId });
+  if (state === "ON_SHIFT" && shiftStateOf(open) === "ON_BREAK") open = await endBreak({ AttendanceSession, employeeId });
+  const fresh = await AttendanceSession.findOne({ employee: employeeId, status: "OPEN" });
+  return { session: fresh || open, state, changed: true };
+};
+
 /** Called on the `employee:attendance:heartbeat` socket event — one cheap
  * single-field conditional update, never a per-second write. Best-effort:
  * a stray heartbeat after the session already closed is a silent no-op. */
@@ -209,7 +248,8 @@ export const recordHeartbeat = async ({ AttendanceSession, employeeId }) => {
  * double-closing or overwriting fresher data. */
 export const sweepStaleAttendanceSessions = async ({ AttendanceSession, graceMs = DEFAULT_HEARTBEAT_GRACE_MS, now = new Date() }) => {
   const staleThreshold = new Date(now.getTime() - graceMs);
-  const candidates = await AttendanceSession.find({ status: "OPEN", lastSeenAt: { $lt: staleThreshold } });
+  // A manager-set shift (EMP-01) has no app sending heartbeats — leave it open.
+  const candidates = await AttendanceSession.find({ status: "OPEN", managed: { $ne: true }, lastSeenAt: { $lt: staleThreshold } });
 
   const closed = [];
   for (const doc of candidates) {
@@ -270,7 +310,7 @@ export const getMySummaryForRange = async ({ AttendanceSession, employeeId, from
 
 // ── Admin reads ──────────────────────────────────────────────────────────────
 
-const EMPLOYEE_ROLES_ALL = ["admin", "waiter", "chef"];
+const EMPLOYEE_ROLES_ALL = ["admin", "waiter", "chef", "staff"];
 
 /** Live board: every active employee + their today status, grouped by role
  * on the frontend (kept flat here — filtering/grouping is a display

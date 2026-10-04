@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import PrimaryButton from "./ui/PrimaryButton.jsx";
 import { AMBER, GREEN, TEXT_MUTED, GLASS_BORDER, SHADOW_GLASS, BLUR, BG_SECONDARY } from "../theme.js";
+import { t } from "../i18n/index.jsx";
 
 const mmss = (ms) => {
   const s = Math.max(0, Math.ceil(ms / 1000));
@@ -17,7 +18,7 @@ export default function WaiterCallBanner({ calls, now, mine, onMyWay, done }) {
   if (!calls.length) return null;
 
   return (
-    <div role="region" aria-label="Tables calling" style={{
+    <div role="region" aria-label={t("Tables calling")} style={{
       position: "sticky", top: 0, zIndex: 50, padding: "10px 12px 4px",
       background: BG_SECONDARY, backdropFilter: BLUR,
     }}>
@@ -33,14 +34,14 @@ export default function WaiterCallBanner({ calls, now, mine, onMyWay, done }) {
               <button type="button" onClick={() => nav(`/order/${c.order}`)}
                 style={{ flex: 1, minWidth: 0, textAlign: "left", background: "none", border: 0, padding: 0, color: "#fff", cursor: "pointer" }}>
                 <div style={{ fontWeight: 800, fontSize: 15 }}>
-                  Table {c.tableNo} {taken ? "— you're on the way" : c.attempt === 2 ? "is calling again" : "is calling"}
+                  {taken ? t("Table {n} — you're on the way", { n: c.tableNo }) : c.attempt === 2 ? t("Table {n} is calling again", { n: c.tableNo }) : t("Table {n} is calling", { n: c.tableNo })}
                 </div>
                 <div style={{ fontSize: 12, color: TEXT_MUTED, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {c.orderNumber ? `Order ${c.orderNumber}` : ""}{c.customerName ? ` · ${c.customerName}` : ""}
+                  {c.orderNumber ? t("Order {id}", { id: c.orderNumber }) : ""}{c.customerName ? ` · ${c.customerName}` : ""}
                 </div>
               </button>
               {!taken && (
-                <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 800, color: AMBER }} aria-label="Time left">
+                <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 800, color: AMBER }} aria-label={t("Time left")}>
                   {mmss(new Date(c.expiresAt).getTime() - now)}
                 </span>
               )}
@@ -48,12 +49,12 @@ export default function WaiterCallBanner({ calls, now, mine, onMyWay, done }) {
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
               {!taken && (
                 <PrimaryButton onClick={() => onMyWay(c)} style={{ flex: 1, padding: "10px", fontSize: 13 }}>
-                  On my way
+                  {t("On my way")}
                 </PrimaryButton>
               )}
               <PrimaryButton variant={taken ? "success" : "outline"} onClick={() => done(c)}
                 style={{ flex: 1, padding: "10px", fontSize: 13, borderColor: GLASS_BORDER }}>
-                Done ✓
+                {t("Done")} ✓
               </PrimaryButton>
             </div>
           </div>

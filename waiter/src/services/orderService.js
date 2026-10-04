@@ -18,6 +18,9 @@ export const addItemsToOrder   = (id, items) => api.post(`/admin/orders/${id}/ad
 // order's current revision — 409 if someone else changed it first.
 export const modifyOrderItems  = (id, items, revision) => api.patch(`/orders/${id}/items`, { items, revision });
 export const updateOrderPayment = (id, body) => api.patch(`/admin/orders/${id}/payment`, body);
+// BIL-01/BIL-02 — settle bills (records the payment when not yet paid);
+// a served order is completed by the server as a result, never by hand.
+export const settleOrders = (orderIds, paymentMethod) => api.post("/admin/orders/settle", { orderIds, paymentMethod });
 
 // ── Billing ────────────────────────────────────────────────────────────────
 export const getCombinedBill = (params) => api.get("/admin/orders/combined-bill", { params });

@@ -5,7 +5,7 @@
 import { EMPLOYEE_ROLES } from "../services/employeeService.js";
 import { buildActor } from "../services/orderService.js";
 import { listEmployeeReviews, markLookedInto, reviewSummaryByEmployee, LOOKED_INTO_NOTES, REVIEW_TAGS } from "../services/reviewService.js";
-import { requestLeave, recordLeave, decideLeave, cancelOwnLeave, listLeaves, leaveDaysInRange } from "../services/leaveService.js";
+import { requestLeave, recordLeave, decideLeave, cancelOwnLeave, listLeaves, leaveDaysInRange, leaveBalance } from "../services/leaveService.js";
 import { getEmployeePay, recordAdvance, markSalaryPaid, teamPaySummary, monthRange, PAY_METHODS } from "../services/payService.js";
 import { uploadToCloudinary } from "../middleware/uploadMiddleware.js";
 
@@ -21,7 +21,7 @@ const findStaff = async (User, id) => {
 };
 const getPolicy = async (RestaurantProfile) => {
   const p = await RestaurantProfile.findOne().select("staffPolicy").lean();
-  return { paidLeavePerMonth: p?.staffPolicy?.paidLeavePerMonth ?? 1, salaryDay: p?.staffPolicy?.salaryDay ?? 5 };
+  return { paidLeavePerMonth: p?.staffPolicy?.paidLeavePerMonth ?? 4, salaryDay: p?.staffPolicy?.salaryDay ?? 5 };
 };
 
 // ── Team summary (strip + list flags) ── GET /admin/employees/hr/summary?month=
@@ -104,15 +104,27 @@ export const paySalary = send(async (req, res) => {
 });
 
 // ── Leave (admin) ──
+// EMP-02: this month's paid / LOP days + the carried-forward running balance.
 const leaveView = async (models, employeeId) => {
-  const { StaffLeave, RestaurantProfile } = models;
-  const [leaves, policy] = await Promise.all([listLeaves({ StaffLeave, employeeId }), getPolicy(RestaurantProfile)]);
+  const { StaffLeave, RestaurantProfile, User } = models;
+  const [leaves, policy, emp, allApproved] = await Promise.all([
+    listLeaves({ StaffLeave, employeeId }),
+    getPolicy(RestaurantProfile),
+    User.findById(employeeId).select("hr.joinedAt createdAt").lean(),
+    StaffLeave.find({ employee: employeeId, status: "APPROVED" }).select("status days").lean(),
+  ]);
   const { start, end, key } = monthRange();
   const used = leaveDaysInRange(leaves, start, end);
+  const running = leaveBalance({ joinedAt: emp?.hr?.joinedAt, createdAt: emp?.createdAt, perMonth: policy.paidLeavePerMonth, leaves: allApproved });
   return {
     leaves,
     month: key,
-    balance: { allowance: policy.paidLeavePerMonth, paidUsed: used.paid, unpaidUsed: used.unpaid, paidLeft: Math.max(0, policy.paidLeavePerMonth - used.paid) },
+    balance: {
+      allowance: policy.paidLeavePerMonth, paidUsed: used.paid, unpaidUsed: used.unpaid,
+      // Running, carried-forward balance (may be negative; approved leave stays paid).
+      earned: running.earned, taken: running.taken, balance: running.balance, months: running.months,
+      paidLeft: running.balance,
+    },
   };
 };
 

@@ -9,6 +9,9 @@ import { Modal } from "../inventory/invUI.jsx";
 import { t } from "../../../i18n/core.js";
 import { ROLE_LABEL } from "./shared.js";
 
+// EMP-03 — common jobs offered for "Other"; anything else can be typed.
+const SUGGESTED_JOBS = ["Cashier", "Cleaner", "Dishwasher", "Helper", "Manager", "Delivery", "Security"];
+
 const Field = ({ label, hint, children }) => (
   <label style={{ display: "block", marginBottom: 14 }}>
     <span style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: "var(--text-2)", marginBottom: 6 }}>{label}</span>
@@ -17,27 +20,30 @@ const Field = ({ label, hint, children }) => (
   </label>
 );
 
-export default function EmployeeForm({ employee, onClose, onSaved }) {
+export default function EmployeeForm({ employee, customRoles = [], onClose, onSaved }) {
   const isEdit = !!employee;
   const [name, setName] = useState(employee?.name || "");
   const [phone, setPhone] = useState(employee?.phone || "");
   const [address, setAddress] = useState(employee?.address || "");
   const [role, setRole] = useState(employee?.role || "waiter");
+  const [jobTitle, setJobTitle] = useState(employee?.jobTitle || "");
+  const jobChoices = [...new Set([...customRoles, ...SUGGESTED_JOBS])];
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e) => {
     e?.preventDefault();
     if (!name.trim()) return toast.error(t("Enter employee name"));
     if (!isEdit && !/^[6-9]\d{9}$/.test(phone)) return toast.error(t("Enter a valid 10-digit phone number"));
+    if (role === "staff" && !jobTitle.trim()) return toast.error(t("Type the job, e.g. Cashier"));
     setSaving(true);
     try {
       let saved;
       if (isEdit) {
-        ({ data: { employee: saved } = {} } = await editEmployee(employee._id, { name, address, role }));
+        ({ data: { employee: saved } = {} } = await editEmployee(employee._id, { name, address, role, jobTitle: role === "staff" ? jobTitle.trim() : "" }));
         toast.success(t("Employee updated"));
       } else {
-        ({ data: { employee: saved } = {} } = await addEmployee({ name, phone, address, role }));
-        toast.success(t("{name} added as {role}", { name, role: t(ROLE_LABEL[role]) }));
+        ({ data: { employee: saved } = {} } = await addEmployee({ name, phone, address, role, jobTitle: role === "staff" ? jobTitle.trim() : undefined }));
+        toast.success(t("{name} added as {role}", { name, role: role === "staff" ? jobTitle.trim() : t(ROLE_LABEL[role]) }));
       }
       onSaved(saved);
     } catch (err) {
@@ -48,7 +54,7 @@ export default function EmployeeForm({ employee, onClose, onSaved }) {
   return (
     <Modal
       title={isEdit ? t("Edit Employee") : t("Add Employee")}
-      sub={isEdit ? undefined : t("Waiters and kitchen staff — created here, log in with their own phone + OTP")}
+      sub={isEdit ? undefined : t("Waiters and kitchen staff log in with their own phone + OTP. Other staff are kept for attendance and pay only.")}
       onClose={onClose}
       width={460}
       footer={
@@ -78,8 +84,16 @@ export default function EmployeeForm({ employee, onClose, onSaved }) {
           <select className="zc-select" value={role} onChange={(e) => setRole(e.target.value)}>
             <option value="waiter">{t("Waiter")}</option>
             <option value="chef">{t("Chef")}</option>
+            <option value="staff">{t("Other (type the job)")}</option>
           </select>
         </Field>
+        {role === "staff" && (
+          <Field label={t("Job")} hint={t("No app login for this role — attendance, leave and pay are managed here.")}>
+            <input className="zc-input" list="emp-jobs" value={jobTitle} maxLength={40}
+              onChange={(e) => setJobTitle(e.target.value)} placeholder={t("e.g. Cashier")} />
+            <datalist id="emp-jobs">{jobChoices.map((j) => <option key={j} value={j} />)}</datalist>
+          </Field>
+        )}
       </form>
     </Modal>
   );

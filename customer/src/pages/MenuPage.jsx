@@ -16,7 +16,7 @@ import Button from "../components/ui/Button.jsx";
 export default function MenuPage() {
   const { state } = useLocation();
   const { cart, filters } = useAppState();
-  const { grouped, loading, error, reload, categoryImage, items } = useMenu({ search: filters.search, diet: filters.diet });
+  const { grouped, loading, error, reload, categoryImage, categoryIcon, items } = useMenu({ search: filters.search, diet: filters.diet });
   const [openItem, setOpenItem] = useState(null);
 
   const handleAdd = (item, qty = 1, notes = "") => {
@@ -39,7 +39,7 @@ export default function MenuPage() {
 
       {names.length > 0 && (
         <CategoryTiles
-          names={names} active={activeCat} onPick={filters.setCategory} imageFor={categoryImage}
+          names={names} active={activeCat} onPick={filters.setCategory} imageFor={categoryImage} iconFor={categoryIcon}
         />
       )}
 

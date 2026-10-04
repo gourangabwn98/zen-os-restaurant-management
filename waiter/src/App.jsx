@@ -13,7 +13,7 @@ import OrderDetailPage from "./pages/OrderDetailPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
 import ActivityPage from "./pages/ActivityPage.jsx";
 import { BG_PRIMARY } from "./theme.js";
-//test
+import { LanguageProvider, useLang } from "./i18n/index.jsx";
 
 function RequireAuth({ children }) {
   const { auth } = useAppState();
@@ -22,6 +22,9 @@ function RequireAuth({ children }) {
 }
 
 function Shell() {
+  // GLB-04: re-render every screen in place when the language changes —
+  // nothing remounts, so a half-built order and the open screen are kept.
+  useLang();
   const { pathname } = useLocation();
   const { auth } = useAppState();
   useOrderNotifications(auth.isLoggedIn);
@@ -50,11 +53,13 @@ function Shell() {
 
 export default function App() {
   return (
+    <LanguageProvider>
     <AppStateProvider>
       <BrowserRouter>
         <Toaster position="top-center" toastOptions={{ style: { fontFamily: "'DM Sans',sans-serif", fontSize: 14 }, duration: 2500 }} />
         <Shell />
       </BrowserRouter>
     </AppStateProvider>
+    </LanguageProvider>
   );
 }

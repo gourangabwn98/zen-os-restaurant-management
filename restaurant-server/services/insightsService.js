@@ -251,11 +251,55 @@ const sumBy = async (Model, match, field) => {
 
 const range = (field, from, to) => ({ [field]: { $gte: from, $lte: to } });
 
+// ── Purchases by who paid (INV-06/07 → INS-01/02) ───────────────────────────
+// Purchases are a real cost whoever paid for them. WHO paid decides only the
+// cash picture: drawer / bank money left the business; Owner's Pocket is a
+// loan the business owes back; Credit is owed to the supplier. Paying either
+// back later is settling a debt, never a second expense.
+export const FUNDING_KEYS = ["CASH_DRAWER", "BANK_UPI", "OWNER_POCKET", "CREDIT", "NOT_RECORDED"];
+
+/** Pure: aggregate rows [{ _id: { type, source }, amount, count }] → per-funding totals. */
+export const purchasesByFunding = (rows = []) => {
+  const out = Object.fromEntries(FUNDING_KEYS.map((k) => [k, { amount: 0, count: 0 }]));
+  let total = 0, count = 0;
+  for (const r of rows) {
+    const key = r._id?.type === "CREDIT" ? "CREDIT"
+      : r._id?.type === "PAID" && FUNDING_KEYS.includes(r._id?.source) ? r._id.source
+      : "NOT_RECORDED";
+    out[key].amount = roundMoney(out[key].amount + (r.amount || 0));
+    out[key].count += r.count || 0;
+    total += r.amount || 0; count += r.count || 0;
+  }
+  return { total: roundMoney(total), count, byFunding: out };
+};
+
+/**
+ * INS-01 EBITDA from recorded figures only (pure).
+ *   net sales  = item sales − discounts + service charge   (GST excluded: it's the government's)
+ *   − food & supplies bought in the period (all purchases, whoever paid)
+ *   − staff pay paid out (salaries + advances)
+ *   = EBITDA (before interest, tax, depreciation, amortisation)
+ * Rent, gas, power and other overheads aren't recorded in the app, so they
+ * are not in it — the UI says so. Waste of stocked items is already inside
+ * purchases (not subtracted twice); waste of non-stock items is shown aside.
+ */
+export const computeEbitda = ({ orders = {}, purchases = { total: 0 }, staffPay = { amount: 0 } }) => {
+  const netSales = roundMoney((orders.subtotal || 0) - (orders.discount || 0) + (orders.serviceCharge || 0));
+  const supplies = roundMoney(purchases.total || 0);
+  const staff = roundMoney(staffPay.amount || 0);
+  const ebitda = roundMoney(netSales - supplies - staff);
+  return {
+    netSales, supplies, staff, ebitda,
+    margin: netSales > 0 ? Math.round((ebitda / netSales) * 1000) / 10 : null,
+    gst: roundMoney(orders.tax || 0),
+  };
+};
+
 /** Money figures for one period (used for the selected AND the previous one). */
 const periodMoney = async ({ models, from, to, tz }) => {
-  const { Order, WastageLog, StaffPay } = models;
+  const { Order, WastageLog, StaffPay, StockPurchase } = models;
   const match = revenueOrderMatch({ from, to });
-  const [sales, series, wastage, payRows] = await Promise.all([
+  const [sales, series, wastage, payRows, purchaseRows, manualWaste, settledRows] = await Promise.all([
     computeSalesBreakdown({ models, from, to }),
     Order.aggregate([
       { $match: match },
@@ -266,8 +310,24 @@ const periodMoney = async ({ models, from, to, tz }) => {
     ]),
     sumBy(WastageLog, range("wastageDate", from, to), "costImpact"),
     StaffPay ? StaffPay.aggregate([{ $match: range("createdAt", from, to) }, { $group: { _id: "$type", amount: { $sum: "$amount" }, count: { $sum: 1 } } }]) : [],
+    StockPurchase ? StockPurchase.aggregate([
+      { $match: range("purchaseDate", from, to) },
+      { $group: { _id: { type: "$paymentType", source: "$paymentSource" }, amount: { $sum: "$totalCost" }, count: { $sum: 1 } } },
+    ]) : [],
+    sumBy(WastageLog, { ...range("wastageDate", from, to), inventoryItem: null }, "costImpact"),
+    StockPurchase ? StockPurchase.aggregate([
+      { $match: range("payable.settledAt", from, to) },
+      { $group: { _id: { to: "$payable.to", source: "$payable.settledSource" }, amount: { $sum: "$payable.amount" }, count: { $sum: 1 } } },
+    ]) : [],
   ]);
   const pay = Object.fromEntries(payRows.map((r) => [r._id, { amount: roundMoney(r.amount), count: r.count }]));
+  const purchases = purchasesByFunding(purchaseRows);
+  const settled = { ownerRepaid: 0, supplierPaid: 0 };
+  for (const r of settledRows) {
+    if (r._id?.to === "OWNER") settled.ownerRepaid = roundMoney(settled.ownerRepaid + r.amount);
+    else if (r._id?.to === "SUPPLIER") settled.supplierPaid = roundMoney(settled.supplierPaid + r.amount);
+  }
+  const staffPayTotal = roundMoney((pay.ADVANCE?.amount || 0) + (pay.SALARY?.amount || 0));
   return {
     sales,
     series: series.map((r) => ({ d: r._id.d, h: r._id.h, revenue: roundMoney(r.revenue), orders: r.orders }))
@@ -276,8 +336,13 @@ const periodMoney = async ({ models, from, to, tz }) => {
     staffPay: {
       advances: pay.ADVANCE || { amount: 0, count: 0 },
       salaries: pay.SALARY || { amount: 0, count: 0 },
-      amount: roundMoney((pay.ADVANCE?.amount || 0) + (pay.SALARY?.amount || 0)),
+      amount: staffPayTotal,
     },
+    // INS-01 / INS-02
+    purchases,
+    payablesSettled: settled,
+    manualWaste,
+    ebitda: computeEbitda({ orders: sales.orders, purchases, staffPay: { amount: staffPayTotal } }),
   };
 };
 
@@ -285,7 +350,8 @@ export const computeInsightsOverview = async ({ models, from, to, prevFrom, prev
   const { Order, StaffReview, Coupon } = models;
   const match = revenueOrderMatch({ from, to });
 
-  const [current, previous, split, customerRows, cancelled, reviews, couponUse, coupons] = await Promise.all([
+  const { StockPurchase } = models;
+  const [current, previous, split, customerRows, cancelled, reviews, couponUse, coupons, openPayables] = await Promise.all([
     periodMoney({ models, from, to, tz }),
     prevFrom && prevTo ? periodMoney({ models, from: prevFrom, to: prevTo, tz }) : null,
     Order.aggregate([
@@ -310,6 +376,11 @@ export const computeInsightsOverview = async ({ models, from, to, prevFrom, prev
       { $sort: { bills: -1 } },
     ]),
     Coupon ? Coupon.find({ isActive: true, endsAt: { $gte: now } }, { code: 1, title: 1, startsAt: 1, endsAt: 1 }).sort({ startsAt: 1 }).limit(5).lean() : [],
+    // Still owed right now (not period-bound): to the owner and to suppliers.
+    StockPurchase ? StockPurchase.aggregate([
+      { $match: { "payable.settledAt": null, "payable.to": { $in: ["OWNER", "SUPPLIER"] } } },
+      { $group: { _id: "$payable.to", amount: { $sum: "$payable.amount" }, count: { $sum: 1 } } },
+    ]) : [],
   ]);
 
   // Was each identified customer here (a paid bill) before this period?
@@ -338,6 +409,10 @@ export const computeInsightsOverview = async ({ models, from, to, prevFrom, prev
     split: { type: rows(s.type), method: rows(s.method) },
     customers: summariseCustomers(customerRows, priorKeys),
     cancelled,
+    openPayables: {
+      owner: { amount: roundMoney(openPayables.find((r) => r._id === "OWNER")?.amount || 0), count: openPayables.find((r) => r._id === "OWNER")?.count || 0 },
+      suppliers: { amount: roundMoney(openPayables.find((r) => r._id === "SUPPLIER")?.amount || 0), count: openPayables.find((r) => r._id === "SUPPLIER")?.count || 0 },
+    },
     reviews: rv ? { count: rv.count, avg: Math.round((rv.total / rv.count) * 10) / 10, complaints: rv.complaints } : { count: 0, avg: null, complaints: 0 },
     offers: {
       used: couponUse.map((c) => ({ code: c._id, bills: c.bills, discount: roundMoney(c.discount), revenue: roundMoney(c.revenue) })),

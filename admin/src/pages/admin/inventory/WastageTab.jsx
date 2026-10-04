@@ -12,6 +12,9 @@ import { formatQty } from "../../../utils/units.js";
 const PERIODS = [["7", N_("Last 7 days")], ["30", N_("Last 30 days")], ["all", N_("All time")]];
 const REASON_KIND = { Spoilage: "stop", Expired: "stop", Damaged: "wait", Accident: "wait", Other: "done" };
 
+// INV-08: a hand-typed (not stocked) item has only its name.
+const wName = (l) => (l.inventoryItem ? localName(l.inventoryItem) : l.itemName) || "—";
+
 export default function WastageTab({ version, open }) {
   const [logs, setLogs] = useState(null);
   const [error, setError] = useState(false);
@@ -32,7 +35,7 @@ export default function WastageTab({ version, open }) {
     const top = Object.entries(byReason).sort((a, b) => b[1] - a[1])[0];
     return {
       total: list.reduce((s, l) => s + Number(l.costImpact || 0), 0),
-      items: new Set(list.map((l) => l.inventoryItem?._id)).size,
+      items: new Set(list.map((l) => l.inventoryItem?._id || `n:${(l.itemName || "").toLowerCase()}`)).size,
       byReason, top,
     };
   }, [logs]);
@@ -40,7 +43,7 @@ export default function WastageTab({ version, open }) {
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (logs || []).filter((l) => (reason === "All" || l.reason === reason)
-      && (!q || [l.inventoryItem?.name, l.inventoryItem?.nameBn, l.notes].some((v) => (v || "").toLowerCase().includes(q))));
+      && (!q || [l.inventoryItem?.name, l.inventoryItem?.nameBn, l.itemName, l.notes, l.reasonText].some((v) => (v || "").toLowerCase().includes(q))));
   }, [logs, search, reason]);
 
   if (error) return <ErrorBox onRetry={load} what={N_("wastage logs")} />;
@@ -89,9 +92,9 @@ export default function WastageTab({ version, open }) {
                   {rows.map((l) => (
                     <tr key={l._id}>
                       <td className="nw" style={{ color: "var(--text-2)", fontSize: 11.5 }}>{fmtDateTime(l.wastageDate || l.createdAt)}</td>
-                      <td style={{ fontWeight: 600 }}>{localName(l.inventoryItem) || "—"}</td>
-                      <td className="num" style={{ color: "var(--text-2)" }}>{formatQty(l.quantity, l.inventoryItem?.unit)}</td>
-                      <td><span className={`zc-tag ${REASON_KIND[l.reason] || "done"}`}><i />{t(l.reason)}</span></td>
+                      <td style={{ fontWeight: 600 }}>{wName(l)}{!l.inventoryItem && <span className="ivt-hint"> · {t("not stocked")}</span>}</td>
+                      <td className="num" style={{ color: "var(--text-2)" }}>{formatQty(l.quantity, l.unit || l.inventoryItem?.unit)}</td>
+                      <td><span className={`zc-tag ${REASON_KIND[l.reason] || "done"}`}><i />{l.reason === "Other" && l.reasonText ? l.reasonText : t(l.reason)}</span></td>
                       <td style={{ color: "var(--text-3)", fontSize: 11.5 }}>{l.notes || "—"}</td>
                       <td style={{ color: "var(--text-3)", fontSize: 11.5 }}>{l.recordedBy?.name || "—"}</td>
                       <td className="money neg">{money(l.costImpact)}</td>
@@ -105,13 +108,13 @@ export default function WastageTab({ version, open }) {
                 <div key={l._id} className="ivt-ocard">
                   <div className="top">
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 600 }}>{localName(l.inventoryItem) || "—"} · {formatQty(l.quantity, l.inventoryItem?.unit)}</div>
+                      <div style={{ fontWeight: 600 }}>{wName(l)} · {formatQty(l.quantity, l.unit || l.inventoryItem?.unit)}</div>
                       <div className="ivt-hint">{fmtDateTime(l.wastageDate || l.createdAt)}{l.recordedBy?.name ? ` · ${l.recordedBy.name}` : ""}</div>
                     </div>
                     <b className="tnum" style={{ color: "var(--stop-ink)", flex: "none" }}>{money(l.costImpact)}</b>
                   </div>
                   <div className="meta">
-                    <span className={`zc-tag ${REASON_KIND[l.reason] || "done"}`}><i />{t(l.reason)}</span>
+                    <span className={`zc-tag ${REASON_KIND[l.reason] || "done"}`}><i />{l.reason === "Other" && l.reasonText ? l.reasonText : t(l.reason)}</span>
                     {l.notes && <span className="ivt-hint">{l.notes}</span>}
                   </div>
                 </div>

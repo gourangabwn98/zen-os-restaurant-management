@@ -38,3 +38,20 @@ export const classifyStockLevel = (currentStock, reorderLevel, criticalLevel) =>
   if (reorderLevel != null && currentStock <= reorderLevel) return "LOW";
   return "OK";
 };
+
+// ── Purchases & suppliers (Hotel KHOAI change round) ────────────────────────
+// INV-02 — where a purchase's bill number came from. SYSTEM = nothing was
+// provided, so the server made one (prefixed SYSTEM_BILL_PREFIX) — always
+// shown as "System-generated", never passed off as a supplier number.
+export const BILL_NUMBER_SOURCES = ["SUPPLIER", "PHOTO", "MANUAL", "SYSTEM"];
+export const SYSTEM_BILL_PREFIX = "AUTO-"; // owner to confirm the marker (open question)
+// INV-06/07
+export const PURCHASE_PAYMENT_TYPES = ["PAID", "CREDIT"];
+export const PAYMENT_SOURCES = ["CASH_DRAWER", "BANK_UPI", "OWNER_POCKET"];
+// Owner's Pocket → the business owes the OWNER; Credit → owes the SUPPLIER.
+export const PAYABLE_PARTIES = ["OWNER", "SUPPLIER"];
+// Paying a payable back comes from the business's own money only.
+export const SETTLE_SOURCES = ["CASH_DRAWER", "BANK_UPI"];
+// INV-13 / INV-14
+export const AUTO_ORDER_PREFERENCES = ["ASK_FIRST", "ONE_TAP", "SEND_LINK"];
+export const CREDIT_PREFERENCES = ["GIVES_CREDIT", "UPFRONT", "OTHER"];

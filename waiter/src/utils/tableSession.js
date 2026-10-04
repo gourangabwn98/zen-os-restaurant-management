@@ -16,10 +16,10 @@ export const ACTIVE_STATUSES = ["PENDING_CONFIRMATION", "CONFIRMED", "PREPARING"
 
 export const STATUS_META = {
   PENDING_CONFIRMATION: { label: "Needs confirmation", color: "#F5B83D" },
-  CONFIRMED:             { label: "Order placed",       color: "#6AA8FF" },
-  PREPARING:             { label: "Preparing",          color: "#FF9152" },
-  READY:                 { label: "Ready to serve",     color: "#3DD68C" },
-  DELIVERED:             { label: "Served",             color: "#9AA4B2" },
+  CONFIRMED:             { label: "Order placed",       color: "#6AA8FF" }, // held — not cooking yet (ORD-01)
+  PREPARING:             { label: "Cooking",            color: "#FF9152" },
+  READY:                 { label: "Ready to deliver",   color: "#3DD68C" },
+  DELIVERED:             { label: "Eating",             color: "#9AA4B2" },
 };
 
 // Most-urgent-first. A table with several active orders is colored/labeled
@@ -27,6 +27,7 @@ export const STATUS_META = {
 // whichever status happens to be the most common among them.
 const STATUS_PRIORITY = ["PENDING_CONFIRMATION", "READY", "CONFIRMED", "PREPARING", "DELIVERED"];
 
+// Labels are English keys — translated where they render (src/i18n).
 export const PAYMENT_META = {
   due:  { label: "PAYMENT DUE", color: "#FF8A8A", bg: "rgba(255,107,107,.16)" },
   paid: { label: "PAID",        color: "#5FE3A1", bg: "rgba(61,214,140,.16)" },

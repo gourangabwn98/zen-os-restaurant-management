@@ -1,18 +1,16 @@
 // src/pages/admin/dashboard/FloorCard.jsx
-// Live floor map. Tap a table to see its open orders, move them along the
-// state machine, and mark a pending invoice paid / cancelled — the same
-// actions the old table map offered.
+// "On the floor now" — DSH-04/05. Each table shows the state of its CURRENT
+// order (model.floorTables): Placed → Cooking → Ready to Deliver → Eating →
+// Completed. Tapping a table opens its Table Detail View (DSH-02). The
+// Dashboard is operational only: no completing, no billing here (DSH-03,
+// BIL-01) — bills are settled in Invoices.
 import { useState } from "react";
 import Ico from "./icons.jsx";
-import Badge from "../shared/Badge.jsx";
-import { needsPaidFirst, PAID_FIRST_HINT } from "../shared/paymentRules.js";
-import { t, N_, fmtNum, localName } from "../../../i18n/core.js";
-import { customerName } from "../shared/customerName.js";
+import TableDetailView from "./TableDetailView.jsx";
+import { FLOOR_LABEL } from "./floorLabels.js";
+import { t, fmtNum } from "../../../i18n/core.js";
 
 const money = (n) => `₹${fmtNum(Math.round(n || 0))}`;
-const STATE_LABEL = {
-  free: N_("Free"), eating: N_("Eating"), cooking: N_("Cooking"), long: N_("Long stay"), bill: N_("Bill pending"),
-};
 const duration = (minutes) => {
   const h = Math.floor(minutes / 60), m = minutes % 60;
   return h
@@ -20,9 +18,9 @@ const duration = (minutes) => {
     : t("{m}m", { m: fmtNum(m) });
 };
 
-export default function FloorCard({ tables, tablesLoaded, nextStatus, statusLabel, statusKey, onStatusChange, onInvoiceStatusChange, onNavigate }) {
+export default function FloorCard({ tables, tablesLoaded, onStatusChange, onNavigate, statusKey, typeLabel }) {
   const [active, setActive] = useState(null);
-  const busy = tables.filter((tb) => tb.state !== "free").length;
+  const busy = tables.filter((tb) => tb.state !== "free" && tb.state !== "completed").length;
   const sel = active != null ? tables.find((tb) => tb.tableNo === active) : null;
 
   return (
@@ -50,83 +48,35 @@ export default function FloorCard({ tables, tablesLoaded, nextStatus, statusLabe
               <button
                 type="button"
                 key={tb.tableNo}
-                className={`zd-tb ${tb.state}`}
-                aria-pressed={active === tb.tableNo}
-                onClick={() => setActive(active === tb.tableNo ? null : tb.tableNo)}
+                className={`zd-tb ${tb.state}${tb.longStay ? " long" : ""}`}
+                onClick={() => setActive(tb.tableNo)}
+                aria-label={`${t("Table {n}", { n: fmtNum(tb.tableNo) })} · ${t(FLOOR_LABEL[tb.state])}`}
               >
                 <span className="top">
                   <b>{t("T{n}", { n: fmtNum(tb.tableNo) })}</b>
                   {tb.amount > 0 && <span className="a">{money(tb.amount)}</span>}
                 </span>
-                <span className="s">{t(STATE_LABEL[tb.state])}</span>
-                {tb.state !== "free" && <span className="s2">{duration(tb.minutes)}</span>}
+                <span className="s">{t(FLOOR_LABEL[tb.state])}</span>
+                {tb.orders.length > 0 && <span className="s2">{duration(tb.minutes)}{tb.longStay ? ` · ${t("long stay")}` : ""}</span>}
               </button>
             ))}
           </div>
           <div className="zd-fl-leg">
-            <span><i style={{ "--c": "var(--zd-busy-line)" }} />{t("Eating")} / {t("Cooking")}</span>
-            <span><i style={{ "--c": "var(--zd-amber)" }} />{t("Long stay")} / {t("Bill pending")}</span>
-            <span><i className="d" style={{ "--c": "var(--zd-line2)" }} />{t("Free")}</span>
+            <span><i style={{ "--c": "var(--zd-accent2)" }} />{t("Order placed")}</span>
+            <span><i style={{ "--c": "var(--zd-amber)" }} />{t("Cooking")}</span>
+            <span><i style={{ "--c": "var(--zd-green)" }} />{t("Ready to Deliver")}</span>
+            <span><i style={{ "--c": "var(--zd-busy-line)" }} />{t("Eating")}</span>
+            <span><i className="d" style={{ "--c": "var(--zd-line2)" }} />{t("Free")} / {t("Completed")}</span>
           </div>
         </>
       )}
 
       {sel && (
-        <div className={`zd-tdetail${sel.billPending ? " warn" : ""}`}>
-          <div className="zd-tdetail-h">
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <b>{t("Table {n}", { n: fmtNum(sel.tableNo) })}</b>
-              {sel.billPending && <span className="zd-chip zd-c-amber">{t("Invoice pending")}</span>}
-            </div>
-            <button type="button" className="zd-x" onClick={() => setActive(null)} aria-label={t("Close")}><Ico id="close" size={16} /></button>
-          </div>
-
-          {sel.orders.length === 0 ? (
-            <div className="zd-hint" style={{ textAlign: "center", padding: "12px 0" }}>{t("This table is free — no active order")}</div>
-          ) : sel.orders.map((o) => {
-            const next = nextStatus[o.status] || [];
-            return (
-              <div className="zd-tord" key={o._id}>
-                <div>
-                  <div className="zd-cap">{o.orderId} · {customerName(o) || t("Guest")}</div>
-                  {o.items?.map((item, i) => (
-                    <div className="zd-item" key={i}>
-                      <span><span className="zd-qty">{fmtNum(item.qty)}</span>{localName(item)}</span>
-                      <span className="tnum">{money(item.price * item.qty)}</span>
-                    </div>
-                  ))}
-                  <div className="zd-total"><span>{t("Total")}</span><span className="tnum">{money(o.total)}</span></div>
-                </div>
-                <div>
-                  <div className="zd-cap">{t("Update order")}</div>
-                  <div style={{ marginBottom: 8 }}><Badge label={o.status} format={statusKey} /></div>
-                  <div className="zd-opts">
-                    {next.map((s) => {
-                      const blocked = needsPaidFirst(o, s);
-                      return (
-                        <button
-                          type="button" key={s} className="zd-opt" disabled={blocked}
-                          title={blocked ? t(PAID_FIRST_HINT) : undefined}
-                          onClick={() => { if (!blocked) onStatusChange(o._id, s); }}
-                        >
-                          {statusLabel(s)}
-                        </button>
-                      );
-                    })}
-                    {next.length === 0 && <span className="zd-hint">{t("No further changes")}</span>}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-
-          {sel.invoice && sel.billPending && (
-            <div className="zd-opts" style={{ marginTop: 12 }}>
-              <button type="button" className="zd-opt good" onClick={() => { onInvoiceStatusChange(sel.invoice._id, "completed"); setActive(null); }}>{t("Mark paid")}</button>
-              <button type="button" className="zd-opt bad" onClick={() => { onInvoiceStatusChange(sel.invoice._id, "cancelled"); setActive(null); }}>{t("Cancel")}</button>
-            </div>
-          )}
-        </div>
+        <TableDetailView
+          table={sel} onClose={() => setActive(null)}
+          onStatusChange={onStatusChange} onNavigate={onNavigate}
+          statusKey={statusKey} typeLabel={typeLabel}
+        />
       )}
     </div>
   );

@@ -7,13 +7,14 @@ import toast from "react-hot-toast";
 import { getMyDuty, startDuty, startBreak, endBreak, endDuty } from "../services/dutyService.js";
 import { getSocket } from "../services/socketService.js";
 import { CARD, BORDER, TEXT_MUTED, GREEN, AMBER, RED } from "../theme.js";
+import { t, N_ } from "../i18n/index.jsx";
 
 const HEARTBEAT_INTERVAL_MS = 30000;
 
 const STATUS_META = {
-  ONLINE:  { color: GREEN, label: "ONLINE", dot: "🟢" },
-  BREAK:   { color: AMBER, label: "ON BREAK", dot: "🟡" },
-  OFFLINE: { color: RED,   label: "OFF DUTY", dot: "🔴" },
+  ONLINE:  { color: GREEN, label: N_("On duty"), dot: "🟢" },
+  BREAK:   { color: AMBER, label: N_("On break"), dot: "🟡" },
+  OFFLINE: { color: RED,   label: N_("Off duty"), dot: "🔴" },
 };
 
 const fmtDuration = (totalSeconds) => {
@@ -84,9 +85,9 @@ export default function DutyPanel() {
     try {
       const { data } = await fn();
       setSession(data.session);
-      toast.success(label);
+      toast.success(t(label));
     } catch (err) {
-      toast.error(err.response?.data?.message || "Couldn't update duty status");
+      toast.error(err.response?.data?.message || t("Couldn't update duty status"));
     } finally {
       setBusy(false);
     }
@@ -101,8 +102,8 @@ export default function DutyPanel() {
   return (
     <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <div style={{ fontWeight: 800, fontSize: 14 }}>My Duty</div>
-        <div style={{ fontSize: 13, fontWeight: 800, color: meta.color }}>{meta.dot} {meta.label}</div>
+        <div style={{ fontWeight: 800, fontSize: 14 }}>{t("My duty")}</div>
+        <div style={{ fontSize: 13, fontWeight: 800, color: meta.color }}>{meta.dot} {t(meta.label)}</div>
       </div>
 
       {session ? (
@@ -111,38 +112,38 @@ export default function DutyPanel() {
             <div style={{ fontSize: 18, fontWeight: 800 }}>
               {status === "BREAK" ? fmtTime((session.breaks || []).find((b) => !b.endedAt)?.startedAt) : fmtTime(session.loginAt)}
             </div>
-            <div style={{ fontSize: 10.5, color: TEXT_MUTED, marginTop: 4 }}>{status === "BREAK" ? "Break started" : "Started"}</div>
+            <div style={{ fontSize: 10.5, color: TEXT_MUTED, marginTop: 4 }}>{status === "BREAK" ? t("Break started") : t("Started")}</div>
           </div>
           <div style={{ textAlign: "center", padding: "12px 8px", background: "#0f1218", borderRadius: 12 }}>
             <div style={{ fontSize: 18, fontWeight: 800 }}>{fmtDuration(workingSeconds)}</div>
-            <div style={{ fontSize: 10.5, color: TEXT_MUTED, marginTop: 4 }}>Working</div>
+            <div style={{ fontSize: 10.5, color: TEXT_MUTED, marginTop: 4 }}>{t("Working")}</div>
           </div>
         </div>
       ) : (
         <div style={{ fontSize: 12.5, color: TEXT_MUTED, marginBottom: 16 }}>
-          You're not on duty. Start your shift to begin tracking attendance.
+          {t("You're not on duty. Start your shift to begin tracking attendance.")}
         </div>
       )}
 
       <div style={{ display: "flex", gap: 10 }}>
         {!session && (
           <button style={btnStyle(GREEN, "#0b0d12")} disabled={busy} onClick={() => act(startDuty, "Duty started")}>
-            Start Duty
+            {t("Start duty")}
           </button>
         )}
         {session?.presenceStatus === "ONLINE" && (
           <>
             <button style={btnStyle("#0f1218", AMBER)} disabled={busy} onClick={() => act(startBreak, "Break started")}>
-              Start Break
+              {t("Start break")}
             </button>
             <button style={btnStyle("#0f1218", RED)} disabled={busy} onClick={() => act(endDuty, "Duty ended")}>
-              End Duty
+              {t("End duty")}
             </button>
           </>
         )}
         {session?.presenceStatus === "BREAK" && (
           <button style={btnStyle(GREEN, "#0b0d12")} disabled={busy} onClick={() => act(endBreak, "Back on duty")}>
-            Resume Duty
+            {t("Resume duty")}
           </button>
         )}
       </div>

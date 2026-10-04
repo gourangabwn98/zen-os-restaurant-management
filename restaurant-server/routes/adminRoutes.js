@@ -13,6 +13,7 @@ import {
 } from "../controllers/attendanceController.js";
 import { objectIdParam } from "../middleware/validateIds.js";
 import { previewCombined, printCombined, paySelected, completeSelectedOrders } from "../controllers/combinedBillController.js";
+import { settleOrders, reopenOrderBill } from "../controllers/billingController.js";
 
 const router = express.Router();
 // Malformed ids → 404, never a CastError 500 (middleware/validateIds.js).
@@ -34,6 +35,10 @@ router.put("/orders/:id/status",     requireStaff, requireWaiterOnDuty, updateOr
 router.patch("/orders/:id/payment",  requireStaff, requireWaiterOnDuty, updateOrderPayment);
 router.post("/orders/:id/add-items", requireStaff, requireWaiterOnDuty, addItemsToOrder);
 router.post("/orders/:id/print-bill",requireStaff, printBill);
+// BIL-01/BIL-02 — billing workflow: settle bills (records payment if needed,
+// completes served orders) and admin-only reopen of a mistaken settlement.
+router.post("/orders/settle",        requireStaff, requireWaiterOnDuty, settleOrders);
+router.post("/orders/:id/reopen-bill", requireAdmin, reopenOrderBill);
 
 // Admin only — account/user management
 // Admin → Insights: revenue by item/category, making cost, gross profit.

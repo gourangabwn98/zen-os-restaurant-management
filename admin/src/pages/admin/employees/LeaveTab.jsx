@@ -1,6 +1,8 @@
 // src/pages/admin/employees/LeaveTab.jsx
 // Requests come from the Waiter / Kitchen apps ("Request leave"); the owner
-// approves (paid or unpaid) or declines them here, or records leave directly.
+// approves or declines them here, or records leave directly.
+// EMP-02: leave builds up at the policy's days per month (carried forward);
+// approved leave is paid, declined leave is loss of pay (LOP).
 import { useEffect, useState, useCallback } from "react";
 import toast from "react-hot-toast";
 import { getEmployeeLeave, addEmployeeLeave, decideEmployeeLeave } from "../../../services/adminService.js";
@@ -27,7 +29,7 @@ export default function LeaveTab({ employee, policy, onChanged }) {
   const [busy, setBusy] = useState(null);
   const [formOpen, setFormOpen] = useState(false);
   const today = toDateInput(new Date());
-  const [f, setF] = useState({ from: today, to: today, paid: false, reason: "" });
+  const [f, setF] = useState({ from: today, to: today, reason: "" });
 
   const load = useCallback(() => {
     setError(false);
@@ -35,13 +37,13 @@ export default function LeaveTab({ employee, policy, onChanged }) {
   }, [employee._id]);
   useEffect(() => { load(); }, [load]);
 
-  const decide = async (leave, decision, paid) => {
+  const decide = async (leave, decision) => {
     setBusy(leave._id);
     try {
-      await decideEmployeeLeave(leave._id, { decision, paid });
+      await decideEmployeeLeave(leave._id, { decision });
       toast.success(decision === "APPROVED"
         ? t("Leave approved for {name}", { name: employee.name })
-        : t("Leave declined for {name}", { name: employee.name }));
+        : t("Leave declined for {name} — loss of pay", { name: employee.name }));
       load(); onChanged?.();
     } catch (err) { toast.error(err.response?.data?.message || t("Update failed")); }
     finally { setBusy(null); }
@@ -52,7 +54,7 @@ export default function LeaveTab({ employee, policy, onChanged }) {
     try {
       await addEmployeeLeave(employee._id, f);
       toast.success(t("Leave recorded"));
-      setFormOpen(false); setF({ from: today, to: today, paid: false, reason: "" });
+      setFormOpen(false); setF({ from: today, to: today, reason: "" });
       load(); onChanged?.();
     } catch (err) { toast.error(err.response?.data?.message || t("Update failed")); }
     finally { setBusy(null); }
@@ -69,14 +71,15 @@ export default function LeaveTab({ employee, policy, onChanged }) {
       <div className="emp-grid2">
         <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
           <div className="zc-panel emp-panel">
-            <h4>{t("This month")}</h4>
-            <div className="emp-kv"><span>{t("Paid leave left")}</span><b>{t("{n} of {m}", { n: fmtNum(balance.paidLeft), m: fmtNum(balance.allowance) })}</b></div>
-            <div className="emp-kv"><span>{t("Paid leave taken")}</span><b>{tn(balance.paidUsed, "{n} day", "{n} days")}</b></div>
-            <div className="emp-kv"><span>{t("Unpaid leave taken")}</span><b>{tn(balance.unpaidUsed, "{n} day", "{n} days")}</b></div>
+            <h4>{t("Leave balance")} <small>{t("{n} days a month, carried forward", { n: fmtNum(balance.allowance) })}</small></h4>
+            <div className="emp-kv"><span>{t("Leave left")}</span><b style={balance.balance < 0 ? { color: "var(--stop-ink)" } : { color: "var(--ready-ink)" }}>{tn(balance.balance, "{n} day", "{n} days")}</b></div>
+            <div className="emp-kv"><span>{t("Earned so far")}</span><b>{tn(balance.earned, "{n} day", "{n} days")} <small className="emp-hint">· {tn(balance.months, "{n} month", "{n} months")}</small></b></div>
+            <div className="emp-kv"><span>{t("Taken (approved)")}</span><b>{tn(balance.taken, "{n} day", "{n} days")}</b></div>
+            <div className="emp-kv"><span>{t("This month")}</span><b>{t("{a} paid · {b} loss of pay", { a: fmtNum(balance.paidUsed), b: fmtNum(balance.unpaidUsed) })}</b></div>
           </div>
 
           {pending.map((l) => {
-            const coversPaid = balance.paidLeft >= l.days;
+            const covered = balance.balance >= l.days;
             return (
               <div key={l._id} className="zc-panel emp-panel emp-req">
                 <h4>{t("Request")}: {range(l)} · {tn(l.days, "{n} day", "{n} days")}</h4>
@@ -84,16 +87,13 @@ export default function LeaveTab({ employee, policy, onChanged }) {
                 <p className="emp-hint" style={{ margin: "4px 0 0" }}>
                   {t("Sent from the staff app")} · {fmtDate(l.createdAt, { day: "numeric", month: "short" })}
                   {" · "}
-                  {coversPaid
-                    ? t("Paid leave left covers it")
-                    : balance.paidLeft > 0
-                      ? t("Only {n} paid day left — the rest would be unpaid", { n: fmtNum(balance.paidLeft) })
-                      : t("No paid leave left this month — this would be unpaid")}
+                  {covered
+                    ? t("Leave left covers it")
+                    : t("Goes {n} days past the leave left — still paid if you approve", { n: fmtNum(l.days - Math.max(0, balance.balance)) })}
                 </p>
                 <div className="emp-actrow">
-                  {coversPaid && <button type="button" className="zc-btn sm good" disabled={busy === l._id} onClick={() => decide(l, "APPROVED", true)}>{t("Approve as paid")}</button>}
-                  <button type="button" className={`zc-btn sm${coversPaid ? " ghost" : " good"}`} disabled={busy === l._id} onClick={() => decide(l, "APPROVED", false)}>{t("Approve unpaid")}</button>
-                  <button type="button" className="zc-btn sm ghost" disabled={busy === l._id} onClick={() => decide(l, "DECLINED")}>{t("Decline")}</button>
+                  <button type="button" className="zc-btn sm good" disabled={busy === l._id} onClick={() => decide(l, "APPROVED")}>{t("Approve (paid)")}</button>
+                  <button type="button" className="zc-btn sm ghost" disabled={busy === l._id} onClick={() => decide(l, "DECLINED")}>{t("Decline (loss of pay)")}</button>
                 </div>
               </div>
             );
@@ -104,16 +104,10 @@ export default function LeaveTab({ employee, policy, onChanged }) {
             <button type="button" className="zc-btn sm ghost" style={{ alignSelf: "flex-start" }} onClick={() => setFormOpen(true)}>+ {t("Record leave")}</button>
           ) : (
             <form className="zc-panel emp-panel" onSubmit={record}>
-              <h4>{t("Record leave")} <small>{t("Approved straight away")}</small></h4>
+              <h4>{t("Record leave")} <small>{t("Approved and paid straight away")}</small></h4>
               <div className="emp-form3">
                 <label><span>{t("From")}</span><input className="zc-input" type="date" value={f.from} onChange={(e) => setF({ ...f, from: e.target.value, to: f.to < e.target.value ? e.target.value : f.to })} required /></label>
                 <label><span>{t("To")}</span><input className="zc-input" type="date" value={f.to} min={f.from} onChange={(e) => setF({ ...f, to: e.target.value })} required /></label>
-                <label><span>{t("Pay")}</span>
-                  <select className="zc-select" value={f.paid ? "paid" : "unpaid"} onChange={(e) => setF({ ...f, paid: e.target.value === "paid" })}>
-                    <option value="unpaid">{t("Unpaid")}</option>
-                    <option value="paid">{t("Paid")}</option>
-                  </select>
-                </label>
               </div>
               <input className="zc-input" placeholder={t("Reason (optional)")} value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} style={{ marginTop: 10 }} />
               <div className="emp-actrow">
@@ -135,6 +129,7 @@ export default function LeaveTab({ employee, policy, onChanged }) {
               <b style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
                 <Badge label={STATUS[l.status].label} kind={STATUS[l.status].kind} />
                 {l.status === "APPROVED" && <Badge label={l.paid ? N_("Paid") : N_("Unpaid")} kind={l.paid ? "ready" : "wait"} dot={false} />}
+                {l.status === "DECLINED" && <Badge label={N_("Loss of pay")} kind="stop" dot={false} />}
               </b>
             </div>
           ))}

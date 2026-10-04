@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
+import { ORDER_STATUS_LABEL } from "./shared/statusLabels.js";
 import toast from "react-hot-toast";
 import {
-  getAllOrders, getRestaurantProfile, updateOrderStatus,
+  getAllOrders, getRestaurantProfile, updateOrderStatus, settleOrders, reopenOrderBill,
   getAllTables, printOrderBill, confirmOrder, rejectOrder, modifyOrderItems,
 } from "../../services/adminService.js";
 import { placeOrder, newIdempotencyKey } from "../../services/orderService.js";
@@ -12,7 +13,7 @@ import CombinedBillModal from "./shared/CombinedBillModal.jsx";
 import CombineBillPanel from "./shared/CombineBillPanel.jsx";
 import VoiceOrder from "./shared/VoiceOrder.jsx";
 import { statusKind } from "./shared/statusKind.js";
-import { MANUAL_PAYMENT_STATUSES, needsPaidFirst, PAID_FIRST_HINT } from "./shared/paymentRules.js";
+import { MANUAL_PAYMENT_STATUSES, needsPaidFirst, canPickStatus, isBillSettled, canSettleBill, PAID_FIRST_HINT } from "./shared/paymentRules.js";
 import ErrorState from "./shared/ErrorState.jsx";
 import EmptyState from "./shared/EmptyState.jsx";
 import { getMenu, getCategories } from "../../services/menuService.js";
@@ -71,7 +72,8 @@ const ACTIVE_ORDER_STATUSES = ["PENDING_CONFIRMATION","CONFIRMED","PREPARING","R
 // only ever the order's starting point, not something to switch back to) —
 // nor AWAITING_PAYMENT (only a verified online payment moves an order out of
 // it; see utils/paymentMode.js on the server).
-const ALL_STATUSES = STATUSES.filter(s => s !== "All" && s !== "PENDING_CONFIRMATION" && s !== "AWAITING_PAYMENT");
+// Statuses a person may pick by hand — never COMPLETED (BIL-02: settling the bill completes a served order).
+const ALL_STATUSES = STATUSES.filter(s => s !== "All" && s !== "PENDING_CONFIRMATION" && s !== "AWAITING_PAYMENT" && canPickStatus(s));
 const PAYMENT_STATUSES = ["All","PAID","PENDING_VERIFICATION"];
 const ORDER_TYPES = ["All","DINE_IN","TAKEAWAY"];
 
@@ -115,11 +117,12 @@ const formatDuration = (ms) => {
 const durationKind = (mins) => (mins >= 90 ? "stop" : mins >= 45 ? "wait" : "done");
 
 // ── Display formatters (keep raw values for logic, format only for text) ───
+// Status words: shared/statusLabels.js (DSH-04 floor vocabulary).
 // CONFIRMED is shown to staff as "Placed" — the raw enum value is untouched
 // (see restaurant-server/utils/orderStateMachine.js), this is display-only.
 // The English label is the dictionary key, so t() translates it in bn mode.
 const formatStatus = (s="") =>
-  t(s === "CONFIRMED" ? "Placed" : s.replace(/_/g," ").toLowerCase().replace(/\b\w/g, c => c.toUpperCase()));
+  t(ORDER_STATUS_LABEL[s] || s.replace(/_/g," ").toLowerCase().replace(/\b\w/g, c => c.toUpperCase()));
 const formatPayment = (s) => t({ PAID:"Paid", PENDING_VERIFICATION:"Pending", FAILED:"Failed" }[s] || formatStatus(s));
 const formatOrderType = (s) => t({ DINE_IN:"Dine In", TAKEAWAY:"Takeaway", All:"All" }[s] || formatStatus(s));
 
@@ -324,15 +327,17 @@ const EditOrderItemsModal = ({ order, onClose, onSaved, onAddMore }) => {
 };
 
 // ── OrderDetailModal — full history of one order (reference "Order detail") ───
-const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onCombinedBill, onPrint, onAddItems, onEditItems, onConfirm, onReject, actionBusy }) => {
+const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onCombinedBill, onPrint, onAddItems, onEditItems, onConfirm, onReject, onSettle, onReopenBill, actionBusy }) => {
   if (!order) return null;
   const isPending = order.status === "PENDING_CONFIRMATION";
   const displayName  = customerName(order) || t("Guest");
   const displayPhone = order.guestPhone || order.user?.phone || null;
   const subtotal     = order.subtotal ?? order.items?.reduce((s,i)=>s+i.price*i.qty,0) ?? 0;
-  // Items can only change while Placed and before its KOT exists.
+  // ORD-01: items can change while the order is held — awaiting acceptance or
+  // Placed — i.e. before its KOT exists.
   const isPlaced     = order.status === "CONFIRMED" && !order.stockDeducted;
-  const canAddItems  = isPlaced;
+  const canAddItems  = (isPlaced || isPending) && !order.stockDeducted;
+  const settled      = isBillSettled(order);
   const canCancel    = ["PENDING_CONFIRMATION","CONFIRMED","PREPARING"].includes(order.status);
   const placedAt     = fmtDateTime(order.createdAt);
   const timeline     = Array.isArray(order.statusHistory) ? order.statusHistory : [];
@@ -452,12 +457,36 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
           </div>
 
           {/* controls — status / payment / method (all preserved) */}
-          <DLabel>{t("Update order status")}</DLabel>
-          {order.status === "DELIVERED" && order.paymentStatus !== "PAID" && (
-            <div style={{ fontSize:11.5, color:"var(--wait-ink)", marginBottom:8 }}>
-              💳 {t("Payment required — mark it Paid below to complete this order.")}
+          {/* BIL-01/02 — the bill: settled here (or in Invoices), never by a status pick */}
+          {order.status !== "CANCELLED" && order.status !== "AWAITING_PAYMENT" && (
+            <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap", padding:"12px 14px", marginBottom:18, borderRadius:12,
+              border:`1px solid ${settled ? "var(--ready-line, var(--edge))" : "var(--wait-line, var(--edge))"}`,
+              background: settled ? "var(--ready-fill)" : "var(--wait-fill)" }}>
+              <div style={{ flex:1, minWidth:160 }}>
+                <div style={{ fontSize:12.5, fontWeight:700, color: settled ? "var(--ready-ink)" : "var(--wait-ink)" }}>
+                  {settled ? t("Bill settled") : t("Bill open")}
+                </div>
+                <div style={{ fontSize:11.5, color:T2, marginTop:2 }}>
+                  {settled ? t("The order is completed once it has been served.")
+                    : order.status === "DELIVERED" ? t("Settling completes this order and frees the table.")
+                    : t("Settle now (e.g. paid at the counter) — it completes when it is served.")}
+                </div>
+              </div>
+              {!settled && canSettleBill(order) && onSettle && (order.paymentStatus === "PAID" ? (
+                <button type="button" className="zc-btn pri" disabled={actionBusy} onClick={()=>onSettle(order)}>✓ {t("Settle bill")}</button>
+              ) : (
+                <>
+                  <button type="button" className="zc-btn pri" disabled={actionBusy} onClick={()=>onSettle(order, "Cash")}>💵 {t("Cash · settle")}</button>
+                  <button type="button" className="zc-btn pri" disabled={actionBusy} onClick={()=>onSettle(order, "Online")}>📱 {t("Online · settle")}</button>
+                </>
+              ))}
+              {settled && onReopenBill && (
+                <button type="button" className="zc-btn ghost" disabled={actionBusy} onClick={()=>onReopenBill(order)}>{t("Reopen bill")}</button>
+              )}
             </div>
           )}
+
+          <DLabel>{t("Update order status")}</DLabel>
           <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:16 }}>
             {ALL_STATUSES.filter(s => s !== order.status).map(s => {
               const st = STATUS_STYLE[s] || DEFAULT_STATUS_STYLE;
@@ -478,8 +507,10 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
             {MANUAL_PAYMENT_STATUSES.map(s => {
               const st = PAY_STYLE[s] || DEFAULT_STATUS_STYLE;
               const active = order.paymentStatus === s;
+              // A settled bill's payment is fixed until the bill is reopened.
               return (
-                <button key={s} type="button" className="op-chip" onClick={()=>!active && onPaymentChange(order._id, { paymentStatus:s })}
+                <button key={s} type="button" className="op-chip" disabled={settled && !active} title={settled ? t("Reopen the bill to change its payment") : undefined}
+                  onClick={()=>!active && !settled && onPaymentChange(order._id, { paymentStatus:s })}
                   style={{ padding:"6px 14px", borderRadius:20, fontSize:12, fontWeight:600, font:"inherit", cursor:active?"default":"pointer",
                     border:`1px solid ${st.line}`, background:active?st.bg:"transparent", color:st.color, opacity:active?1:0.55 }}>
                   {active ? "✓ " : ""}{formatPayment(s)}
@@ -2238,8 +2269,35 @@ export default function OrdersPage() {
   const rangeStats={ count: allResult.summary?.billedCount || 0, amount: allResult.summary?.billedAmount || 0 };
 
   const handleStatusChange=async(id,newStatus)=>{
-    try{ await updateOrderStatus(id,newStatus); patchOrder(id,{ status:newStatus }); toast.success(`→ ${formatStatus(newStatus)}`); }
+    try{
+      const { data } = await updateOrderStatus(id,newStatus);
+      // The server's word wins — "Served" on a settled bill completes it.
+      const status = data?.status || newStatus;
+      patchOrder(id,{ status, billStatus: data?.billStatus });
+      toast.success(`→ ${formatStatus(status)}`);
+    }
     catch(e){ toast.error(e?.response?.data?.message || t("Update failed")); }
+  };
+
+  // BIL-01/02: settle a bill from the order (the same billing workflow as Invoices).
+  const handleSettle=async(order, paymentMethod)=>{
+    setActionBusy(true);
+    try{
+      const { data } = await settleOrders([order._id], paymentMethod);
+      const why = data?.rejected?.[0]?.reason;
+      if (why) { toast.error(why); return; }
+      const updated = data?.orders?.[0];
+      if (updated) patchOrder(order._id, { status: updated.status, paymentStatus: updated.paymentStatus, paymentMethod: updated.paymentMethod, billStatus: updated.billStatus });
+      toast.success(data?.completed?.length ? t("Bill settled — order completed") : t("Bill settled"));
+    } catch(e){ toast.error(e?.response?.data?.message || t("Couldn't settle the bill")); }
+    finally{ setActionBusy(false); }
+  };
+  const handleReopenBill=async(order)=>{
+    if (!window.confirm(t("Reopen the bill of {id}? The order itself stays as it is.", { id: order.orderId }))) return;
+    setActionBusy(true);
+    try{ const { data } = await reopenOrderBill(order._id); patchOrder(order._id, { billStatus: data?.order?.billStatus || "OPEN" }); toast.success(t("Bill reopened")); }
+    catch(e){ toast.error(e?.response?.data?.message || t("Couldn't reopen the bill")); }
+    finally{ setActionBusy(false); }
   };
 
   // ── Confirm / Reject a PENDING_CONFIRMATION order ─────────────────────────
@@ -2943,6 +3001,8 @@ export default function OrdersPage() {
           onEditItems={(o) => { setShowEditItems(o._id); setExpanded(null); }}
           onConfirm={handleConfirm}
           onReject={handleReject}
+          onSettle={handleSettle}
+          onReopenBill={handleReopenBill}
           actionBusy={actionBusy}
         />
       )}

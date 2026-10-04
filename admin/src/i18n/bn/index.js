@@ -13,8 +13,9 @@ import customers from "./customers.js";
 import marketing from "./marketing.js";
 import settings from "./settings.js";
 import kitchen from "./kitchen.js";
+import khoai from "./khoai.js";
 
 export default {
   ...common, ...login, ...dashboard, ...orders, ...tables, ...menu, ...inventory,
-  ...insights, ...staff, ...customers, ...marketing, ...settings, ...kitchen,
+  ...insights, ...staff, ...customers, ...marketing, ...settings, ...kitchen, ...khoai,
 };

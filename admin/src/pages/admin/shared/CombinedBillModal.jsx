@@ -4,12 +4,14 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // import { PRIMARY } from "../../../theme.js";
+import { ORDER_STATUS_LABEL } from "./statusLabels.js";
 import { useState, useEffect, useRef } from "react";
 import toast from "react-hot-toast";
 import api from "../../../services/api.js";
 import { PRIMARY } from "../../../theme.js";
 import { t, tn, N_, fmtNum, localName } from "../../../i18n/core.js";
 import { customerName } from "./customerName.js";
+import { waLink } from "../invoices/model.js";
 
 const PINK  = PRIMARY;
 const CARD  = "#16132a";
@@ -35,8 +37,7 @@ const STATUS_STYLE = {
   CANCELLED: { bg:"rgba(239,68,68,0.15)",   color:"#f87171" },
 };
 const STATUS_LABEL = {
-  PENDING_CONFIRMATION: N_("Pending confirmation"), CONFIRMED: N_("Placed"), PREPARING: N_("Preparing"),
-  READY: N_("Ready"), DELIVERED: N_("Delivered"), COMPLETED: N_("Completed"), CANCELLED: N_("Cancelled"),
+  ...ORDER_STATUS_LABEL, // shared floor words (DSH-04)
 };
 const fmt = (n) => fmtNum(Math.round(n||0));
 
@@ -111,6 +112,15 @@ export default function CombinedBillModal({ mode, value, onClose, onPaymentChang
 
   if (!bill) return null;
 
+  // Mockup parity: "Send on WhatsApp" — the bill as text, to the guest's number when known.
+  const waPhone = bill.orders.map((o) => o.guestPhone || o.user?.phone).find(Boolean) || "";
+  const waText = [
+    bill.restaurantName ? `*${bill.restaurantName}*` : "",
+    t("Combined Bill"),
+    ...bill.orders.map((o) => `${o.orderId}: ${(o.items || []).map((i) => `${fmtNum(i.qty)} × ${localName(i)}`).join(", ")} — ₹${fmt(o.total)}`),
+    `${t("Total")}: ₹${fmt(bill.grandTotal)}`,
+  ].filter(Boolean).join("\n");
+
   const allPaid = bill.orders.every(o => o.paymentStatus === "PAID");
   const paidTotal = bill.orders.filter(o=>o.paymentStatus==="PAID").reduce((s,o)=>s+Number(o.total||0),0);
   const dueTotal  = bill.grandTotal - paidTotal;
@@ -145,6 +155,10 @@ export default function CombinedBillModal({ mode, value, onClose, onPaymentChang
               border:`1px solid ${BDR}`, background:CARD2, color:T2, cursor:"pointer", fontSize:12 }}>
               🖨️ {t("Print")}
             </button>
+            <a href={waLink(waPhone, waText)} target="_blank" rel="noopener noreferrer" style={{ padding:"7px 14px", borderRadius:20,
+              border:`1px solid ${BDR}`, background:CARD2, color:T2, fontSize:12, textDecoration:"none" }}>
+              {t("Send on WhatsApp")}
+            </a>
             <button onClick={onClose} style={{ width:30, height:30, borderRadius:"50%",
               border:`1px solid ${BDR}`, background:CARD2, cursor:"pointer", color:T2, fontSize:14,
               display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>

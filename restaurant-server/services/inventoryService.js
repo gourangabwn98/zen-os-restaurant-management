@@ -7,7 +7,12 @@
 // utils/recipeCost.js.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { classifyStockLevel, STOCK_UNITS } from "../utils/inventoryConstants.js";
+import { classifyStockLevel, STOCK_UNITS, WASTAGE_REASONS } from "../utils/inventoryConstants.js";
+import {
+  resolveBillNumber, systemBillNumber, validateBillDateTime, normalizePurchaseLines, paymentPlan,
+} from "../utils/purchaseBill.js";
+import { zonedInstant } from "./offerStatsService.js";
+import { resolveTimezone } from "../utils/menuSchedule.js";
 import { convertQuantity, toBaseUnit, roundQty, normalizeUnit, areUnitsCompatible } from "../utils/units.js";
 import {
   computeRecipeCost, ingredientSource, stockIngredientIds, INGREDIENT_SOURCES,
@@ -297,43 +302,127 @@ const consumeFromBatchesFIFO = async ({ InventoryBatch, inventoryItemId, qty, se
 };
 
 // ── Purchases ────────────────────────────────────────────────────────────
-export const recordPurchase = async ({ models, body, actor, session }) => {
-  const { StockPurchase, InventoryItem, StockLedger, InventoryBatch } = models;
-  const { supplier, items, invoiceNumber, purchaseDate, notes } = body;
+const escapeRegex = (v) => String(v).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const ymdIn = (date, tz) => {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" })
+    .formatToParts(date).map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}`;
+};
 
-  if (!Array.isArray(items) || !items.length) {
-    const err = new Error("Purchase must include at least one item");
-    err.statusCode = 400;
+/**
+ * INV-04: a typed-in line → a stock item. An item with that name (any case)
+ * is reused; otherwise one is created from the line (unit as entered, or
+ * pcs), so the item master fills itself as goods arrive.
+ */
+const stockItemForManualLine = async ({ InventoryItem, line, session }) => {
+  const existing = await InventoryItem.findOne({ name: { $regex: `^${escapeRegex(line.name)}$`, $options: "i" } }).session(session || null);
+  if (existing) return existing;
+  try {
+    const [created] = await InventoryItem.create(
+      [{ name: line.name, unit: line.unit || "pcs", costPrice: line.costPrice, currentStock: 0 }],
+      { session },
+    );
+    return created;
+  } catch (err) {
+    if (err?.code === 11000) return InventoryItem.findOne({ name: line.name }).session(session || null);
     throw err;
   }
+};
 
-  let totalCost = 0;
-  for (const it of items) {
-    if (!it.inventoryItem || !(it.quantity > 0) || !(it.costPrice >= 0)) {
-      const err = new Error("Each purchase line needs inventoryItem, quantity > 0, costPrice >= 0");
-      err.statusCode = 400;
-      throw err;
-    }
-    totalCost += it.quantity * it.costPrice;
+/**
+ * Record Purchase (Hotel KHOAI INV-01..07 — rules in utils/purchaseBill.js).
+ * @param strict  true for the Record Purchase form: bill date + time and
+ *                Paid/Credit are required. The bill-import flow (older) may
+ *                send a plain purchaseDate and no payment details.
+ */
+export const recordPurchase = async ({ models, body, actor, session, strict = false, now = new Date() }) => {
+  const { StockPurchase, InventoryItem, StockLedger, InventoryBatch, Counter, RestaurantProfile, Supplier } = models;
+  const { supplier, notes } = body;
+  const lines = normalizePurchaseLines(body.items);
+
+  // Timezone for the bill's date/time (restaurant time, never the server's).
+  const prof = RestaurantProfile ? await RestaurantProfile.findOne().select("timezone").lean() : null;
+  const tz = resolveTimezone(prof?.timezone);
+  const toInstant = (y, m, d, h, mi) => new Date(zonedInstant(y, m, d, h, tz).getTime() + mi * 60000);
+
+  // INV-03
+  let purchaseDate, billDate = "", billTime = "";
+  if (strict || body.billDate || body.billTime) {
+    purchaseDate = validateBillDateTime(body, { now, toInstant });
+    billDate = body.billDate; billTime = body.billTime;
+  } else {
+    purchaseDate = body.purchaseDate ? new Date(body.purchaseDate) : now;
+    if (Number.isNaN(purchaseDate.getTime())) throw httpError("Invalid purchase date");
   }
+
+  if (supplier && Supplier && !(await Supplier.exists({ _id: supplier }))) throw httpError("That supplier no longer exists — refresh and pick again", 404);
+
+  // Resolve every line to a stock item, converting a line entered in another
+  // compatible unit (2 kg of an item stocked in g) — rate is per the line's unit.
+  const resolved = [];
+  for (const line of lines) {
+    let stockItem = null;
+    if (line.manual) stockItem = await stockItemForManualLine({ InventoryItem, line, session });
+    else if (line.unit) {
+      stockItem = await InventoryItem.findById(line.inventoryItem).session(session || null);
+      if (!stockItem) throw httpError("A stock item on this purchase no longer exists — refresh and try again", 404);
+    }
+    let qty = line.quantity, unitCost = line.costPrice;
+    if (stockItem && line.unit && line.unit !== stockItem.unit) {
+      qty = convertQuantity(line.quantity, line.unit, stockItem.unit);
+      unitCost = money(line.amount / qty);
+    }
+    resolved.push({
+      ...line,
+      inventoryItem: stockItem ? stockItem._id : line.inventoryItem,
+      name: line.name || stockItem?.name || "",
+      unit: line.unit || stockItem?.unit || "",
+      stockQty: qty, stockUnitCost: unitCost,
+    });
+  }
+  const totalCost = money(resolved.reduce((sum, l) => sum + l.amount, 0));
+
+  // INV-06/07
+  const pay = paymentPlan(body, totalCost, { required: strict });
+
+  // INV-02 — supplier's number, else a clearly marked system one.
+  const typed = resolveBillNumber({ billNumber: body.billNumber ?? body.invoiceNumber, billNumberSource: body.billNumberSource });
+  let invoiceNumber = typed?.number || "", billNumberSource = typed?.source;
+  if (!typed && Counter) {
+    const day = billDate || ymdIn(purchaseDate, tz);
+    const c = await Counter.findOneAndUpdate(
+      { _id: `purchaseBill:${day}` }, { $inc: { seq: 1 } },
+      { upsert: true, returnDocument: "after", session },
+    );
+    invoiceNumber = systemBillNumber(day, c.seq);
+    billNumberSource = "SYSTEM";
+  }
+
+  const billPhoto = typeof body.billPhoto === "string" && /^https:\/\//i.test(body.billPhoto) ? body.billPhoto : "";
 
   const [purchase] = await StockPurchase.create(
     [{
       supplier: supplier || null,
-      items,
-      totalCost: money(totalCost),
-      invoiceNumber: invoiceNumber || "",
-      purchaseDate: purchaseDate || new Date(),
+      items: resolved.map(({ inventoryItem, name, unit, manual, quantity, costPrice, amount, batchNo, expiryDate }) =>
+        ({ inventoryItem, name, unit, manual, quantity, costPrice, amount, batchNo, expiryDate })),
+      totalCost,
+      invoiceNumber,
+      billNumberSource,
+      purchaseDate,
+      billDate, billTime, billPhoto,
       notes: notes || "",
+      paymentType: pay.paymentType,
+      paymentSource: pay.paymentSource,
+      payable: pay.payable,
       createdBy: actor,
     }],
     { session }
   );
 
-  for (const it of items) {
+  for (const it of resolved) {
     const updated = await InventoryItem.findByIdAndUpdate(
       it.inventoryItem,
-      { $inc: { currentStock: it.quantity }, $set: { costPrice: it.costPrice } },
+      { $inc: { currentStock: it.stockQty }, $set: { costPrice: it.stockUnitCost } },
       { returnDocument: "after", session }
     );
     if (!updated) continue;
@@ -342,7 +431,7 @@ export const recordPurchase = async ({ models, body, actor, session }) => {
       [{
         inventoryItem: updated._id,
         type: "PURCHASE",
-        quantity: it.quantity,
+        quantity: it.stockQty,
         balanceAfter: updated.currentStock,
         relatedPurchase: purchase._id,
         reason: invoiceNumber ? `Purchase (${invoiceNumber})` : "Purchase",
@@ -356,8 +445,8 @@ export const recordPurchase = async ({ models, body, actor, session }) => {
         [{
           inventoryItem: updated._id,
           batchNo: it.batchNo || "",
-          quantity: it.quantity,
-          costPrice: it.costPrice,
+          quantity: it.stockQty,
+          costPrice: it.stockUnitCost,
           expiryDate: it.expiryDate || null,
           purchase: purchase._id,
         }],
@@ -369,20 +458,81 @@ export const recordPurchase = async ({ models, body, actor, session }) => {
   return purchase;
 };
 
+/**
+ * INV-07 / INV-06 — pay back what a purchase still owes (the owner for
+ * Owner's Pocket, the supplier for Credit), from the cash drawer or bank.
+ * Atomic and conditional: settles once, a second click is a 409.
+ */
+export const settlePurchasePayable = async ({ models, purchaseId, source, actor, now = new Date() }) => {
+  const { StockPurchase } = models;
+  if (!["CASH_DRAWER", "BANK_UPI"].includes(source)) throw httpError("Pay it back from the Cash Drawer or Bank/UPI");
+  const updated = await StockPurchase.findOneAndUpdate(
+    { _id: purchaseId, "payable.to": { $in: ["OWNER", "SUPPLIER"] }, "payable.settledAt": null },
+    { $set: { "payable.settledAt": now, "payable.settledSource": source, "payable.settledBy": actor } },
+    { returnDocument: "after" },
+  );
+  if (!updated) {
+    const p = await StockPurchase.findById(purchaseId).select("payable").lean();
+    if (!p) throw httpError("Purchase not found", 404);
+    throw httpError(p.payable ? "This has already been paid back" : "Nothing is owed on this purchase", 409);
+  }
+  return updated;
+};
+
+/** Open payables: owed to the owner (Owner's Pocket) and to suppliers (Credit). */
+export const listOpenPayables = async ({ models }) => {
+  const rows = await models.StockPurchase.find({ "payable.settledAt": null, "payable.to": { $in: ["OWNER", "SUPPLIER"] } })
+    .sort({ purchaseDate: 1 }).populate("supplier", "name phone").lean();
+  const sum = (list) => money(list.reduce((s, p) => s + (p.payable?.amount || 0), 0));
+  const owner = rows.filter((p) => p.payable.to === "OWNER");
+  const suppliers = rows.filter((p) => p.payable.to === "SUPPLIER");
+  return { owner, suppliers, ownerTotal: sum(owner), supplierTotal: sum(suppliers) };
+};
+
 // ── Wastage ──────────────────────────────────────────────────────────────
+/**
+ * INV-08..10: waste of a stock item (deducted, converted from the unit it
+ * was weighed in) or of something not stocked (name only — logged for loss
+ * reporting, no stock to move). Reason "Other" needs its free text.
+ */
 export const recordWastage = async ({ models, body, actor, session }) => {
   const { WastageLog, InventoryItem, StockLedger } = models;
-  const { inventoryItem, quantity, reason, notes, wastageDate } = body;
+  const { inventoryItem, notes, wastageDate } = body;
+  const quantity = Number(body.quantity);
+  const unit = body.unit ? String(body.unit) : "";
+  const reason = body.reason || "Other";
+  const reasonText = String(body.reasonText ?? "").trim().slice(0, 200);
 
-  if (!inventoryItem || !(quantity > 0)) {
-    const err = new Error("inventoryItem and quantity > 0 are required");
-    err.statusCode = 400;
-    throw err;
+  if (!(quantity > 0)) throw httpError("Quantity must be more than 0");
+  if (unit && !STOCK_UNITS.includes(unit)) throw httpError(`Unknown unit "${unit}"`);
+  if (!WASTAGE_REASONS.includes(reason)) throw httpError(`Reason must be one of: ${WASTAGE_REASONS.join(", ")}`);
+  if (reason === "Other" && !reasonText) throw httpError("Write the reason for \"Others\"");
+
+  // INV-08 — not a stock item: name, quantity + unit, optional cost.
+  if (!inventoryItem) {
+    const itemName = String(body.itemName ?? "").trim().replace(/\s+/g, " ").slice(0, 80);
+    if (!itemName) throw httpError("Pick a stock item or type the item name");
+    if (!unit) throw httpError("Choose the unit (pcs, kg, …)");
+    const cost = body.cost === undefined || body.cost === "" ? 0 : Number(body.cost);
+    if (!(cost >= 0)) throw httpError("Cost must be 0 or more");
+    const [log] = await WastageLog.create(
+      [{ inventoryItem: null, itemName, quantity, unit, reason, reasonText, costImpact: money(cost), notes: notes || "", recordedBy: actor, wastageDate: wastageDate || new Date() }],
+      { session },
+    );
+    return log;
+  }
+
+  // INV-09 — weighed in another compatible unit than the item is stocked in.
+  let stockQty = quantity;
+  if (unit) {
+    const item = await InventoryItem.findById(inventoryItem).session(session || null);
+    if (!item) throw httpError("Stock item not found", 404);
+    if (unit !== item.unit) stockQty = convertQuantity(quantity, unit, item.unit);
   }
 
   const updated = await InventoryItem.findOneAndUpdate(
-    { _id: inventoryItem, currentStock: { $gte: quantity } },
-    { $inc: { currentStock: -quantity } },
+    { _id: inventoryItem, currentStock: { $gte: stockQty } },
+    { $inc: { currentStock: -stockQty } },
     { returnDocument: "after", session }
   );
   if (!updated) {
@@ -391,12 +541,12 @@ export const recordWastage = async ({ models, body, actor, session }) => {
     throw err;
   }
 
-  const costImpact = money(quantity * (updated.costPrice || 0));
+  const costImpact = money(stockQty * (updated.costPrice || 0));
 
   const [log] = await WastageLog.create(
     [{
-      inventoryItem: updated._id, quantity, reason: reason || "Other",
-      costImpact, notes: notes || "", recordedBy: actor,
+      inventoryItem: updated._id, itemName: updated.name || "", quantity, unit: unit || updated.unit || "",
+      reason, reasonText, costImpact, notes: notes || "", recordedBy: actor,
       wastageDate: wastageDate || new Date(),
     }],
     { session }
@@ -406,10 +556,10 @@ export const recordWastage = async ({ models, body, actor, session }) => {
     [{
       inventoryItem: updated._id,
       type: "WASTAGE",
-      quantity: -quantity,
+      quantity: -stockQty,
       balanceAfter: updated.currentStock,
       relatedWastage: log._id,
-      reason: reason || "Wastage",
+      reason: reason === "Other" ? reasonText : reason,
       createdBy: actor,
     }],
     { session }

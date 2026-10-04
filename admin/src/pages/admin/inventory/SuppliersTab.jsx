@@ -1,7 +1,9 @@
 // src/pages/admin/inventory/SuppliersTab.jsx — Inventory → Suppliers.
-// "Buys" = active stock items naming this supplier as default; "Purchased" =
-// the stored totalCost of every purchase recorded against them. No dues /
-// credit figure — the purchase model has no paid/unpaid field.
+// "Buys" = what the supplier supplies (INV-12: stock items and/or typed
+// names), else the stock items naming them as default; "Purchased" = the
+// stored totalCost of every purchase recorded against them; "Owed" = their
+// unpaid credit bills (INV-06). INV-13 re-order preference and INV-14 payment
+// terms are stored on the supplier; the terms pick Record Purchase's default.
 import { useEffect, useState, useCallback, useMemo } from "react";
 import toast from "react-hot-toast";
 import { getSuppliers, createSupplier, updateSupplier, deleteSupplier, getPurchases } from "../../../services/inventoryService.js";
@@ -10,7 +12,22 @@ import { inp, label, money, fmtDate } from "./invKit.js";
 import EmptyState from "../shared/EmptyState.jsx";
 import { t, tn, N_, localName } from "../../../i18n/core.js";
 
-const emptySupplier = { name: "", phone: "", email: "", address: "", gstNumber: "", notes: "" };
+const emptySupplier = {
+  name: "", phone: "", email: "", address: "", gstNumber: "", notes: "",
+  suppliedItems: [], autoOrderPreference: "ASK_FIRST", creditPreference: "UPFRONT", creditTerms: "",
+};
+// restaurant-server/utils/inventoryConstants.js AUTO_ORDER_PREFERENCES / CREDIT_PREFERENCES
+const AUTO_ORDER = [
+  { id: "ASK_FIRST", label: N_("Ask me first"), hint: N_("Show me a re-order list to check before anything is sent") },
+  { id: "ONE_TAP", label: N_("One tap"), hint: N_("A ready re-order I send with one tap") },
+  { id: "SEND_LINK", label: N_("Send link"), hint: N_("Send the supplier a WhatsApp list to confirm") },
+];
+const CREDIT = [
+  { id: "GIVES_CREDIT", label: N_("Gives credit") },
+  { id: "UPFRONT", label: N_("Pay on delivery") },
+  { id: "OTHER", label: N_("Other terms") },
+];
+const suppliedName = (x) => (x.inventoryItem ? localName(x.inventoryItem) : x.name);
 
 export default function SuppliersTab({ items = [], version, refresh }) {
   const [suppliers, setSuppliers] = useState([]);
@@ -48,6 +65,7 @@ export default function SuppliersTab({ items = [], version, refresh }) {
       s.bills += 1;
       const d = new Date(p.purchaseDate || p.createdAt);
       if (!s.last || d > s.last) s.last = d;
+      if (p.payable?.to === "SUPPLIER" && !p.payable.settledAt) s.owed = (s.owed || 0) + Number(p.payable.amount || 0);
     });
     return m;
   }, [items, purchases]);
@@ -55,7 +73,11 @@ export default function SuppliersTab({ items = [], version, refresh }) {
   const openNew = () => { setEditing(null); setForm(emptySupplier); setShowForm(true); };
   const openEdit = (s) => {
     setEditing(s);
-    setForm({ name: s.name, phone: s.phone || "", email: s.email || "", address: s.address || "", gstNumber: s.gstNumber || "", notes: s.notes || "" });
+    setForm({
+      name: s.name, phone: s.phone || "", email: s.email || "", address: s.address || "", gstNumber: s.gstNumber || "", notes: s.notes || "",
+      suppliedItems: (s.suppliedItems || []).map((x) => ({ inventoryItem: x.inventoryItem?._id || x.inventoryItem || null, name: x.name || "", label: suppliedName(x) })),
+      autoOrderPreference: s.autoOrderPreference || "ASK_FIRST", creditPreference: s.creditPreference || "UPFRONT", creditTerms: s.creditTerms || "",
+    });
     setShowForm(true);
   };
 
@@ -63,8 +85,9 @@ export default function SuppliersTab({ items = [], version, refresh }) {
     if (!form.name.trim()) return toast.error(t("Supplier name is required"));
     setSaving(true);
     try {
-      if (editing) { await updateSupplier(editing._id, form); toast.success(t("Supplier updated")); }
-      else { await createSupplier(form); toast.success(t("Supplier added")); }
+      const body = { ...form, suppliedItems: form.suppliedItems.map(({ inventoryItem, name }) => ({ inventoryItem, name })) };
+      if (editing) { await updateSupplier(editing._id, body); toast.success(t("Supplier updated")); }
+      else { await createSupplier(body); toast.success(t("Supplier added")); }
       setShowForm(false);
       reload();
     } catch (err) { toast.error(err.response?.data?.message || t("Save failed")); }
@@ -104,6 +127,24 @@ export default function SuppliersTab({ items = [], version, refresh }) {
     </>
   );
 
+  const buysText = (s, st) => {
+    const names = (s.suppliedItems || []).length ? s.suppliedItems.map(suppliedName) : (st?.items || []).map((i) => localName(i));
+    return names.length ? `${names.slice(0, 3).join(", ")}${names.length > 3 ? ` +${names.length - 3}` : ""}` : "—";
+  };
+  const [supDraft, setSupDraft] = useState("");
+  const addSupplied = (entry) => setForm((f) => {
+    const key = (x) => x.inventoryItem || `n:${(x.name || "").toLowerCase()}`;
+    if (f.suppliedItems.some((x) => key(x) === key(entry))) return f;
+    return { ...f, suppliedItems: [...f.suppliedItems, entry] };
+  });
+  const addTyped = () => {
+    const v = supDraft.trim();
+    if (!v) return;
+    const match = items.find((i) => i.name.toLowerCase() === v.toLowerCase() || (i.nameBn || "") === v);
+    addSupplied(match ? { inventoryItem: match._id, name: "", label: localName(match) } : { inventoryItem: null, name: v, label: v });
+    setSupDraft("");
+  };
+
   if (loading) return <Loading />;
   if (error) return <ErrorBox onRetry={load} what={N_("suppliers")} />;
 
@@ -138,9 +179,9 @@ export default function SuppliersTab({ items = [], version, refresh }) {
                         </td>
                         <td style={{ color: "var(--text-2)" }}>{s.phone || "—"}</td>
                         <td style={{ color: "var(--text-2)", fontSize: 11.5, maxWidth: 260 }}>
-                          {st?.items.length ? `${st.items.slice(0, 3).map((i) => localName(i)).join(", ")}${st.items.length > 3 ? ` +${st.items.length - 3}` : ""}` : "—"}
+                          {buysText(s, st)}
                         </td>
-                        <td className="num">{spent(st)}</td>
+                        <td className="num">{spent(st)}{st?.owed ? <div className="ivt-hint" style={{ color: "var(--wait-ink)" }}>{t("owed {amount}", { amount: money(st.owed) })}</div> : null}</td>
                         <td style={{ color: "var(--text-2)" }}>{st?.last ? fmtDate(st.last) : "—"}</td>
                         <td><span className={`zc-tag ${s.status === "Active" ? "ready" : "stop"}`}><i />{t(s.status)}</span></td>
                         <td>{actions(s)}</td>
@@ -195,6 +236,51 @@ export default function SuppliersTab({ items = [], version, refresh }) {
             </div>
             <div><label style={label}>{t("Address")}</label><input style={inp} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></div>
             <div><label style={label}>{t("GST number")}</label><input style={inp} value={form.gstNumber} onChange={(e) => setForm({ ...form, gstNumber: e.target.value })} /></div>
+            <div>
+              <label style={label}>{t("Items they supply")}</label>
+              <div style={{ display: "flex", gap: 6 }}>
+                <input style={inp} list="sup-stock-items" value={supDraft} placeholder={t("Type or pick an item, then Add")}
+                  onChange={(e) => setSupDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTyped(); } }} />
+                <button type="button" className="zc-btn" onClick={addTyped}>{t("Add")}</button>
+              </div>
+              <datalist id="sup-stock-items">
+                {items.filter((i) => i.status === "Active").map((i) => <option key={i._id} value={i.name} />)}
+              </datalist>
+              {form.suppliedItems.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                  {form.suppliedItems.map((x, i) => (
+                    <span key={`${x.inventoryItem || x.name}-${i}`} className="zc-tag vio sq" style={{ gap: 6 }}>
+                      {x.label || x.name}{!x.inventoryItem && <small style={{ opacity: 0.7 }}> · {t("not stocked")}</small>}
+                      <button type="button" aria-label={t("Remove {name}", { name: x.label || x.name })} style={{ background: "none", border: 0, cursor: "pointer", color: "inherit", padding: 0 }}
+                        onClick={() => setForm((f) => ({ ...f, suppliedItems: f.suppliedItems.filter((_, j) => j !== i) }))}>✕</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              <span style={label}>{t("When stock runs low")}</span>
+              <div className="ivt-opts" role="radiogroup" aria-label={t("When stock runs low")}>
+                {AUTO_ORDER.map((o) => (
+                  <button key={o.id} type="button" role="radio" aria-checked={form.autoOrderPreference === o.id}
+                    className={form.autoOrderPreference === o.id ? "on" : ""} onClick={() => setForm({ ...form, autoOrderPreference: o.id })}>{t(o.label)}</button>
+                ))}
+              </div>
+              <div className="ivt-hint" style={{ marginTop: 5 }}>{t(AUTO_ORDER.find((o) => o.id === form.autoOrderPreference)?.hint || "")}</div>
+            </div>
+            <div>
+              <span style={label}>{t("Payment terms")}</span>
+              <div className="ivt-opts" role="radiogroup" aria-label={t("Payment terms")}>
+                {CREDIT.map((o) => (
+                  <button key={o.id} type="button" role="radio" aria-checked={form.creditPreference === o.id}
+                    className={form.creditPreference === o.id ? "on" : ""} onClick={() => setForm({ ...form, creditPreference: o.id })}>{t(o.label)}</button>
+                ))}
+              </div>
+              <input style={{ ...inp, marginTop: 8 }} maxLength={200} value={form.creditTerms}
+                placeholder={t("e.g. pay within 15 days")} aria-label={t("Payment terms details")}
+                onChange={(e) => setForm({ ...form, creditTerms: e.target.value })} />
+              <div className="ivt-hint" style={{ marginTop: 5 }}>{form.creditPreference === "GIVES_CREDIT" ? t("Record Purchase starts on Credit for this supplier.") : t("Record Purchase starts on Paid for this supplier.")}</div>
+            </div>
             <div><label style={label}>{t("Notes")}</label><input style={inp} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>
           </div>
         </Modal>

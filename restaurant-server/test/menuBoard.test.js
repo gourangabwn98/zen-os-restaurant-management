@@ -293,7 +293,11 @@ const run = async () => {
     const r = await mergeCategory({ models, db, id: "x", intoId: "y" });
     assert.deepEqual(r, { from: "Extra", into: "Extras", itemsMoved: 2 });
     assert.deepEqual(seen[0], ["move", { category: "Extra" }, { $set: { category: "Extras" } }, true]);
-    assert.deepEqual(seen[1], ["del", { _id: "x", name: "Extra" }, true]);
+    // MNU-01: extra listings move into the target too, all in the transaction.
+    assert.deepEqual(seen[1], ["move", { categories: "Extra" }, { $addToSet: { categories: "Extras" } }, true]);
+    assert.deepEqual(seen[2], ["move", { categories: "Extra" }, { $pull: { categories: "Extra" } }, true]);
+    assert.deepEqual(seen[3], ["move", { category: "Extras", categories: "Extras" }, { $pull: { categories: "Extras" } }, true]);
+    assert.deepEqual(seen[4], ["del", { _id: "x", name: "Extra" }, true]);
     await rejectsWith(() => mergeCategory({ models, db, id: "x", intoId: "x" }), 400);
     await rejectsWith(() => mergeCategory({ models, db, id: "x", intoId: "z" }), 404);
   });

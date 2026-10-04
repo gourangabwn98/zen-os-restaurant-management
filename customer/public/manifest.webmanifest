@@ -1,15 +1,16 @@
 {
-  "name": "Zen OS — Order",
-  "short_name": "Order",
-  "description": "Browse the menu, order from your table and get offer notifications.",
+  "id": "/",
+  "name": "Hotel KHOAI",
+  "short_name": "Hotel KHOAI",
+  "description": "Browse the Hotel KHOAI menu, order from your table and get offer notifications.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#FFEFE0",
   "theme_color": "#FFEFE0",
   "icons": [
-    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "/brand/khoai-v2/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/brand/khoai-v2/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/brand/khoai-v2/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }

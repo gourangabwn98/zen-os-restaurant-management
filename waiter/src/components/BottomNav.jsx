@@ -2,6 +2,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAppState } from "../context/AppState.jsx";
 import { ACCENT, ACCENT_GRADIENT, ACCENT_SOFT, GLASS_BG, GLASS_BORDER, TEXT_FAINT, NAV_HEIGHT, EASE_SNAP } from "../theme.js";
+import { t as tr, N_ } from "../i18n/index.jsx";
 
 // Minimal line icons (stroke="currentColor") instead of emoji — emoji render
 // inconsistently across OS/fonts and read as "default app", not the premium
@@ -30,10 +31,10 @@ const ActivityIcon = ({ size = 19 }) => (
 );
 
 const TABS = [
-  { to: "/tables",   label: "Tables",   Icon: TablesIcon, end: true },
-  { to: "/orders",   label: "Orders",   Icon: OrdersIcon },
-  { to: "/profile",  label: "Profile",  Icon: ProfileIcon },
-  { to: "/activity", label: "Activity", Icon: ActivityIcon },
+  { to: "/tables",   label: N_("Tables"),   Icon: TablesIcon, end: true },
+  { to: "/orders",   label: N_("Orders"),   Icon: OrdersIcon },
+  { to: "/profile",  label: N_("Profile"),  Icon: ProfileIcon },
+  { to: "/activity", label: N_("Activity"), Icon: ActivityIcon },
 ];
 
 export default function BottomNav() {
@@ -45,7 +46,7 @@ export default function BottomNav() {
   const dutyGated = auth.user?.role === "waiter" && !duty.onDuty;
 
   const handleNewOrder = () => {
-    if (dutyGated) return toast.error("You must be ON DUTY to perform this action.");
+    if (dutyGated) return toast.error(tr("You must be ON DUTY to perform this action."));
     nav("/new-order");
   };
 
@@ -71,8 +72,8 @@ export default function BottomNav() {
             animation: dutyGated ? "none" : "pulseGlow 2.4s ease-in-out infinite",
             opacity: dutyGated ? 0.7 : 1,
           }}
-          aria-label={dutyGated ? "New order — start your duty first" : "New order"}
-          title={dutyGated ? "Start your duty first" : "New order"}
+          aria-label={dutyGated ? tr("New order — start your duty first") : tr("New order")}
+          title={dutyGated ? tr("Start your duty first") : tr("New order")}
         >
           +
         </button>
@@ -110,7 +111,7 @@ export default function BottomNav() {
                 }}>
                   <t.Icon />
                 </span>
-                {t.label}
+                {tr(t.label)}
               </>
             )}
           </NavLink>

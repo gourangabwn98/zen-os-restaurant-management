@@ -1,4 +1,5 @@
 import { STATUS_META, PAYMENT_META, formatElapsed, elapsedKind, elapsedMinutes } from "../utils/tableSession.js";
+import { t, tn } from "../i18n/index.jsx";
 
 const BORDER_NEUTRAL = "#1F2733";
 const TEXT_MUTED = "#9AA4B2";
@@ -38,7 +39,7 @@ function PaymentPill({ state }) {
       display: "inline-flex", alignItems: "center", fontSize: 8.5, fontWeight: 700, letterSpacing: 0.2,
       color: meta.color, background: meta.bg, padding: "3px 7px", borderRadius: 999, whiteSpace: "nowrap", flexShrink: 0,
     }}>
-      {meta.label}
+      {t(meta.label)}
     </span>
   );
 }
@@ -54,8 +55,8 @@ export function OccupiedTableCard({ classified, active, onClick, style, classNam
   const elapsed = formatElapsed(mins);
   const kind = elapsedKind(mins);
 
-  const ariaLabel = `Table ${table.tableNo}, ${meta.label}, ${orderCount} order${orderCount === 1 ? "" : "s"}, ₹${total}${
-    payment ? `, ${PAYMENT_META[payment].label}` : ""
+  const ariaLabel = `${t("Table {n}", { n: table.tableNo })}, ${t(meta.label)}, ${tn(orderCount, "{n} order", "{n} orders")}, ₹${total}${
+    payment ? `, ${t(PAYMENT_META[payment].label)}` : ""
   }`;
 
   return (
@@ -76,7 +77,7 @@ export function OccupiedTableCard({ classified, active, onClick, style, classNam
       <div className="card-band" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: `${meta.color}1F` }}>
         <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 9.5, fontWeight: 700, color: meta.color, minWidth: 0 }}>
           <Dot color={meta.color} />
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{meta.label}</span>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t(meta.label)}</span>
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 9.5, color: TEXT_MUTED, flexShrink: 0 }}>
           <ReceiptIcon /> {orderCount}
@@ -86,7 +87,7 @@ export function OccupiedTableCard({ classified, active, onClick, style, classNam
       <div className="card-mid" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div style={{ minWidth: 0 }}>
           <div className="card-table-no" style={{ fontFamily: FONT_HEAD, fontWeight: 800, lineHeight: 1 }}>T{table.tableNo}</div>
-          <div style={{ fontSize: 9.5, color: TEXT_MUTED, marginTop: 4, whiteSpace: "nowrap" }}>{table.seats} seats</div>
+          <div style={{ fontSize: 9.5, color: TEXT_MUTED, marginTop: 4, whiteSpace: "nowrap" }}>{tn(table.seats, "{n} seat", "{n} seats")}</div>
         </div>
         {elapsed && (
           <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -94,7 +95,7 @@ export function OccupiedTableCard({ classified, active, onClick, style, classNam
               <ClockIcon />
               <span style={{ fontFamily: FONT_MONO, fontWeight: 600, fontSize: 11.5, whiteSpace: "nowrap" }}>{elapsed}</span>
             </div>
-            <div style={{ fontSize: 8.5, color: TEXT_MUTED, marginTop: 2, whiteSpace: "nowrap" }}>seated</div>
+            <div style={{ fontSize: 8.5, color: TEXT_MUTED, marginTop: 2, whiteSpace: "nowrap" }}>{t("seated")}</div>
           </div>
         )}
       </div>
@@ -116,7 +117,7 @@ export function FreeTableCard({ table, onClick, style, className }) {
     <button
       type="button"
       onClick={onClick}
-      aria-label={`Table ${table.tableNo}, Free, ${table.seats} seats`}
+      aria-label={`${t("Table {n}", { n: table.tableNo })}, ${t("Free")}, ${tn(table.seats, "{n} seat", "{n} seats")}`}
       className={`pressable card-free ${className || ""}`.trim()}
       style={{
         display: "flex", flexDirection: "column", textAlign: "left", cursor: "pointer",
@@ -130,20 +131,20 @@ export function FreeTableCard({ table, onClick, style, className }) {
         position: "absolute", top: 8, right: 8, fontSize: 8, fontWeight: 800, letterSpacing: 0.3,
         color: "#3DD68C", border: "1px solid rgba(61,214,140,.5)", borderRadius: 999, padding: "2px 6px",
       }}>
-        FREE
+        {t("FREE")}
       </span>
 
       <div className="card-table-no" style={{ fontFamily: FONT_HEAD, fontWeight: 800, lineHeight: 1, color: "rgba(232,236,242,0.55)" }}>
         T{table.tableNo}
       </div>
-      <div style={{ fontSize: 9.5, color: TEXT_MUTED, marginTop: 4, marginBottom: 10, whiteSpace: "nowrap" }}>{table.seats} seats</div>
+      <div style={{ fontSize: 9.5, color: TEXT_MUTED, marginTop: 4, marginBottom: 10, whiteSpace: "nowrap" }}>{tn(table.seats, "{n} seat", "{n} seats")}</div>
 
       <div style={{
         marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
         padding: "7px 6px", borderRadius: 10, border: `1px solid ${BORDER_NEUTRAL}`, background: "rgba(255,255,255,0.03)",
         fontSize: 10, fontWeight: 700, color: TEXT_MAIN, whiteSpace: "nowrap",
       }}>
-        <PlusIcon /> Start order
+        <PlusIcon /> {t("Start order")}
       </div>
     </button>
   );

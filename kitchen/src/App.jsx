@@ -4,6 +4,7 @@ import { AppStateProvider, useAppState } from "./context/AppState.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
 import KitchenBoardPage from "./pages/KitchenBoardPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
+import { LanguageProvider, useLang } from "./i18n/index.jsx";
 
 function RequireAuth({ children }) {
   const { auth } = useAppState();
@@ -12,6 +13,7 @@ function RequireAuth({ children }) {
 }
 
 function Shell() {
+  useLang(); // GLB-04: re-render in place on a language switch (no remount)
   const { auth } = useAppState();
   return (
     <Routes>
@@ -25,11 +27,13 @@ function Shell() {
 
 export default function App() {
   return (
+    <LanguageProvider>
     <AppStateProvider>
       <BrowserRouter>
         <Toaster position="top-center" toastOptions={{ style: { fontFamily: "'DM Sans',sans-serif", fontSize: 14 }, duration: 2500 }} />
         <Shell />
       </BrowserRouter>
     </AppStateProvider>
+    </LanguageProvider>
   );
 }

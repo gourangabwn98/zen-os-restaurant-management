@@ -1,7 +1,10 @@
 // src/pages/admin/InvoicesPage.jsx — Admin → Operations → Invoices
 // ─────────────────────────────────────────────────────────────────────────────
-// Three views over real orders (an invoice = a billable order: COMPLETED or
-// PAID, the rule this page has always used):
+// Three views over real orders (an invoice = a billable order: settled, paid,
+// or served and waiting for its bill — invoices/model.js isInvoice).
+// BIL-01/02: this is where bills are SETTLED ("Collect & settle" records the
+// payment and settles in one step; a served order then completes and its
+// table frees). Nothing here sets an order status by hand.
 //   All invoices   period + status filters, Billed = Received + To collect +
 //                  Check UPI, rows grouped by day, bill drawer, Collect
 //   Customer dues  every unpaid bill across all dates, bulk "mark paid"
@@ -10,12 +13,14 @@
 // Header "Your accountant" menu (invoices/AccountantMenu.jsx) makes the CA /
 // bank reports (Excel + PDF) and the owner summary.
 // Amounts are the order's stored subtotal / discount / serviceCharge / tax /
-// total — never re-priced here. Payments go through the existing
+// total — never re-priced here. Settling goes through POST /admin/orders/settle
+// (atomic, server-validated); a payment-method fix on an open bill still uses
 // PATCH /admin/orders/:id/payment; printing through the existing print service.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useMemo, useCallback } from "react";
 import toast from "react-hot-toast";
-import { getAllOrders, updateOrderPayment, printOrderBill, getRestaurantProfile } from "../../services/adminService.js";
+import { getAllOrders, updateOrderPayment, printOrderBill, getRestaurantProfile, settleOrders, reopenOrderBill } from "../../services/adminService.js";
+import { getCashOut } from "../../services/inventoryService.js";
 import { PageHeader, Loader, EmptyState } from "./shared/index.js";
 import ErrorState from "./shared/ErrorState.jsx";
 import InvoiceDrawer, { StateBadge } from "./invoices/InvoiceDrawer.jsx";
@@ -23,7 +28,7 @@ import CollectModal from "./invoices/CollectModal.jsx";
 import DuesView from "./invoices/DuesView.jsx";
 import CloseDayView from "./invoices/CloseDayView.jsx";
 import {
-  isInvoice, isVoid, isNotBilledYet, billState, custName, custPhone, money, totalsOf, groupByDay, daysOld,
+  isInvoice, isVoid, isNotBilledYet, billState, needsSettle, custName, custPhone, money, totalsOf, groupByDay, daysOld,
   periodRange, ymd, billText, waLink, tableLabel,
 } from "./invoices/model.js";
 import AccountantMenu from "./invoices/AccountantMenu.jsx";
@@ -108,7 +113,14 @@ export default function InvoicesPage() {
 
   useEffect(() => { setOrders(null); setShown(PAGE_ROWS); loadPeriod(); }, [loadPeriod]);
   useEffect(() => { if (tab === "dues" && dues === null) loadDues(); }, [tab, dues, loadDues]);
-  const openCloseDay = () => { setToday(null); loadToday(); setTab("close"); };
+  // Close the day: purchases paid from the drawer / bank today (INV-06, BIL-01).
+  const [cashOut, setCashOut] = useState(null);
+  const openCloseDay = () => {
+    setToday(null); loadToday(); setTab("close");
+    const { from, to } = periodRange("today");
+    setCashOut(null);
+    getCashOut({ from: from.toISOString(), to: to.toISOString() }).then((r) => setCashOut(r.data || null)).catch(() => setCashOut(null));
+  };
   useEffect(() => {
     getRestaurantProfile().then((r) => setProfile(r.data?.data || r.data || null)).catch(() => {});
     // The tab badge needs the dues count even before the tab is opened.
@@ -134,7 +146,32 @@ export default function InvoicesPage() {
       throw e;
     } finally { setBusyId(null); }
   };
-  const recordPayment = (o, method) => handlePaymentChange(o._id, { paymentStatus: "PAID", paymentMethod: method });
+  // BIL-01/02: collect (if unpaid) and settle in one server call.
+  const settle = async (o, method) => {
+    setBusyId(o._id);
+    try {
+      const { data } = await settleOrders([o._id], method);
+      const why = data?.rejected?.[0]?.reason;
+      if (why) { toast.error(t(why)); throw new Error(why); }
+      const u = data?.orders?.[0];
+      if (u) patchEverywhere(o._id, { status: u.status, paymentStatus: u.paymentStatus, paymentMethod: u.paymentMethod, billStatus: u.billStatus, billSettledAt: u.billSettledAt, billSettledBy: u.billSettledBy, statusHistory: u.statusHistory });
+      toast.success(data?.completed?.length ? t("Bill settled — order completed") : t("Bill settled"));
+    } catch (e) {
+      if (e?.response) toast.error(e.response.data?.message || t("Couldn't settle the bill"));
+      throw e;
+    } finally { setBusyId(null); }
+  };
+  const recordPayment = (o, method) => settle(o, method);
+  const handleReopen = async (o) => {
+    if (!window.confirm(t("Reopen the bill of {id}? The order itself stays as it is.", { id: o.orderId }))) return;
+    setBusyId(o._id);
+    try {
+      const { data } = await reopenOrderBill(o._id);
+      patchEverywhere(o._id, { billStatus: data?.order?.billStatus || "OPEN", billSettledAt: null, billSettledBy: null });
+      toast.success(t("Bill reopened"));
+    } catch (e) { toast.error(e?.response?.data?.message || t("Couldn't reopen the bill")); }
+    finally { setBusyId(null); }
+  };
   const handlePrint = async (o) => {
     try { await printOrderBill(o._id); toast.success(t("Bill sent to printer ✓")); }
     catch (e) { toast.error(e?.response?.data?.message || t("Printer not running")); }
@@ -185,6 +222,7 @@ export default function InvoicesPage() {
 
   const rowActions = (o) => {
     const st = billState(o);
+    if (needsSettle(o)) return <button type="button" className="zc-btn sm pri" disabled={busyId === o._id} onClick={() => settle(o).catch(() => {})}>✓ {t("Settle")}</button>;
     if (st === "unpaid") return <button type="button" className="zc-btn sm pri" onClick={() => setCollect({ o })}>{t("Collect {amount}", { amount: money(o.total) })}</button>;
     if (st === "checkUpi") return <button type="button" className="zc-btn sm" onClick={() => setCollect({ o, mode: "Online" })}>{t("Check {amount}", { amount: money(o.total) })}</button>;
     if (st === "paid") return (
@@ -387,7 +425,7 @@ export default function InvoicesPage() {
           orders={dues} error={duesError} onRetry={loadDues} restaurantName={restaurantName}
           onOpen={(o) => setOpenId(o._id)}
           onCollect={(o, mode) => setCollect({ o, mode })}
-          onMarkPaid={(o) => handlePaymentChange(o._id, { paymentStatus: "PAID" })}
+          onMarkPaid={(o) => settle(o, o.paymentMethod === "Online" ? "Online" : "Cash")}
         />
       )}
 
@@ -397,6 +435,7 @@ export default function InvoicesPage() {
           notBilled={todayNotBilled}
           error={todayError} onRetry={loadToday}
           restaurantName={restaurantName} ownerPhone={profile?.phone}
+          cashOut={cashOut}
           onOpen={(o) => setOpenId(o._id)}
         />
       )}
@@ -410,6 +449,8 @@ export default function InvoicesPage() {
           onCollect={(o) => setCollect({ o, mode: billState(o) === "checkUpi" ? "Online" : undefined })}
           onPrint={handlePrint}
           onPaymentChange={(id, data) => handlePaymentChange(id, data).catch(() => {})}
+          onSettle={(o) => settle(o).catch(() => {})}
+          onReopenBill={handleReopen}
         />
       )}
       {collect && (

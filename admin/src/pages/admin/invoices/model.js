@@ -5,8 +5,15 @@
 // bill. Canonical enums: restaurant-server/utils/orderStateMachine.js.
 import { t, N_, fmtNum, fmtDate, fmtTime, localName } from "../../../i18n/core.js";
 
-/** Same "billable order" rule the page has always used: completed OR paid. */
-export const isInvoice = (o) => o.status === "COMPLETED" || o.paymentStatus === "PAID";
+/** BIL-02: is the bill settled? (Orders from before billStatus: COMPLETED ⇒ settled.) */
+export const isSettled = (o) => (o.billStatus ? o.billStatus === "SETTLED" : o.status === "COMPLETED");
+/**
+ * A billable order: settled, paid, or served (DELIVERED — the guests have
+ * eaten and the bill is waiting to be settled). Cancelled ones are isVoid.
+ */
+export const isInvoice = (o) => o.status !== "CANCELLED" && (isSettled(o) || o.paymentStatus === "PAID" || o.status === "DELIVERED");
+/** Paid but the bill is still open — one tap settles it (completes it if served). */
+export const needsSettle = (o) => o.status !== "CANCELLED" && o.paymentStatus === "PAID" && !isSettled(o);
 /**
  * Cancelled orders — shown, but never counted as billed or received. This
  * includes a cancelled order that had been marked PAID: the system has no

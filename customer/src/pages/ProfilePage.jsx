@@ -24,7 +24,7 @@ export default function ProfilePage() {
       {auth.isLoggedIn ? <LoggedInView nav={nav} auth={auth} /> : <GuestView />}
       <AppearanceCard />
       <p className="muted small center" style={{ marginTop: 18 }}>
-        Powered by Zen OS ·{" "}
+        Powered by{" "}
         <a
           href="https://ezentix.com"
           target="_blank"

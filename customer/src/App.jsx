@@ -26,9 +26,9 @@ const CART_BAR_ROUTES = ["/", "/menu", "/offers", "/favorites", "/profile"];
 
 function Shell({ children }) {
   const { pathname } = useLocation();
-  const { auth, cart } = useAppState();
+  const { auth, cart, orderEdit } = useAppState();
   const chrome = !NO_CHROME_ROUTES.includes(pathname);
-  const showCartBar = chrome && cart.itemCount > 0 && CART_BAR_ROUTES.includes(pathname);
+  const showCartBar = chrome && (cart.itemCount > 0 || orderEdit.active) && CART_BAR_ROUTES.includes(pathname);
 
   // Refreshes a rotated FCM token silently for a customer who already
   // opted in on a previous visit — no re-prompt, no UI. Also surfaces a

@@ -3,7 +3,8 @@
 // The ways stock gets recorded, opened from the Inventory add bar, the stock
 // rows and the item drawer. Every one of them is a thin form over an EXISTING
 // endpoint — the server stays the authority for stock, cost and the ledger:
-//   PurchaseModal  POST  /admin/inventory/purchases     (recordPurchase: +stock, cost price, PURCHASE ledger row)
+//   PurchaseModal  POST  /admin/inventory/purchases     (recordPurchase: +stock, cost price, PURCHASE ledger row,
+//                  bill no./date/time/photo, Paid-from or Credit → payable)
 //   WastageModal   POST  /admin/inventory/wastage       (recordWastage: −stock, costImpact, WASTAGE ledger row)
 //   CountModal     PATCH /admin/inventory/items/:id/adjust  type PHYSICAL_COUNT (absolute value; server logs the difference)
 //   AdjustModal    PATCH /admin/inventory/items/:id/adjust  type MANUAL_ADJUSTMENT
@@ -14,11 +15,13 @@ import { useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import {
   createPurchase, createWastage, adjustInventoryItem, createInventoryItem, updateInventoryItem,
+  createSupplier, uploadPurchaseBillPhoto,
 } from "../../../services/inventoryService.js";
+import TimePicker from "../../../components/TimePicker.jsx";
 import { Modal } from "./invUI.jsx";
 import { money, num, WASTAGE_REASONS, STOCK_UNITS } from "./invKit.js";
-import { t, tn, fmtNum, localName } from "../../../i18n/core.js";
-import { unitLabel, formatQty } from "../../../utils/units.js";
+import { t, tn, N_, fmtNum, localName } from "../../../i18n/core.js";
+import { unitLabel, formatQty, compatibleUnits, conversionFactor } from "../../../utils/units.js";
 
 const errMsg = (err, fallback) => err?.response?.data?.message || fallback;
 const toYmd = (d) => {
@@ -29,22 +32,47 @@ const signed = (n, unit) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${fmtNum(Math.ab
 const activeFirst = (items) => items.filter((i) => i.status === "Active");
 
 // ═══════════════════════════════ Record purchase ═══════════════════════════════
+// Hotel KHOAI INV-01..07 (server rules: restaurant-server/utils/purchaseBill.js):
+//   supplier      pick, or add one right here (INV-01)
+//   bill number   the supplier's / read off the photo / your own; left empty the
+//                 server makes a clearly marked system one (INV-02)
+//   date + time   both required, never in the future (INV-03)
+//   lines         a stock item, or a new item typed by hand — name + unit; the
+//                 server links or creates the stock item (INV-04)
+//   photo         kept as proof; its text suggests the bill number (INV-05)
+//   payment       Paid (Cash drawer · Bank/UPI · Owner's pocket) or Credit — the
+//                 supplier's terms pick the default (INV-06/07/14)
 let lineUid = 0;
-const newLine = (inventoryItem = "", costPrice = "") => ({ key: ++lineUid, inventoryItem, quantity: "", costPrice, batchNo: "", expiryDate: "" });
+const newLine = (inventoryItem = "", costPrice = "", unit = "") =>
+  ({ key: ++lineUid, manual: false, inventoryItem, name: "", unit, quantity: "", costPrice, batchNo: "", expiryDate: "" });
+const nowHm = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+const PAY_SOURCES = [
+  { id: "CASH_DRAWER", label: N_("Cash drawer") },
+  { id: "BANK_UPI", label: N_("Bank / UPI") },
+  { id: "OWNER_POCKET", label: N_("Owner's pocket") },
+];
+const defaultPayFor = (s) => (s?.creditPreference === "GIVES_CREDIT" ? "CREDIT" : "PAID");
 
-export function PurchaseModal({ items, suppliers, prefill = [], onClose, onSaved, onImport }) {
+export function PurchaseModal({ items, suppliers, prefill = [], onClose, onSaved, onImport, onSupplierAdded }) {
   const byId = useMemo(() => new Map(items.map((i) => [i._id, i])), [items]);
   const choices = useMemo(() => activeFirst(items), [items]);
+  const [supList, setSupList] = useState(suppliers);
   const [supplier, setSupplier] = useState(() => {
     // Pre-pick the default supplier when every prefilled item shares one.
     const ids = [...new Set(prefill.map((id) => byId.get(id)?.supplier?._id).filter(Boolean))];
     return ids.length === 1 ? ids[0] : "";
   });
-  const [invoiceNumber, setInvoiceNumber] = useState("");
-  const [purchaseDate, setPurchaseDate] = useState(() => toYmd(new Date()));
+  const [newSup, setNewSup] = useState(null); // null | { name, phone, saving }
+  const [billNo, setBillNo] = useState("");
+  const [billNoSource, setBillNoSource] = useState("SUPPLIER");
+  const [billDate, setBillDate] = useState(() => toYmd(new Date()));
+  const [billTime, setBillTime] = useState(nowHm);
+  const [photo, setPhoto] = useState({ url: "", busy: false });
+  const [payType, setPayType] = useState(() => defaultPayFor(suppliers.find((s) => s._id === supplier)));
+  const [paySource, setPaySource] = useState("CASH_DRAWER");
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState(() => (prefill.length
-    ? prefill.map((id) => newLine(id, byId.get(id)?.costPrice ? String(byId.get(id).costPrice) : ""))
+    ? prefill.map((id) => newLine(id, byId.get(id)?.costPrice ? String(byId.get(id).costPrice) : "", byId.get(id)?.unit || ""))
     : [newLine()]));
   const [saving, setSaving] = useState(false);
 
@@ -53,31 +81,80 @@ export function PurchaseModal({ items, suppliers, prefill = [], onClose, onSaved
     const it = byId.get(id);
     // Rate starts at the item's current cost price (the last purchase's rate) — editable.
     setLines((prev) => prev.map((l) => (l.key === key
-      ? { ...l, inventoryItem: id, costPrice: l.costPrice !== "" ? l.costPrice : (it?.costPrice ? String(it.costPrice) : "") }
+      ? { ...l, inventoryItem: id, unit: it?.unit || "", costPrice: l.costPrice !== "" ? l.costPrice : (it?.costPrice ? String(it.costPrice) : "") }
       : l)));
   };
   const total = lines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.costPrice) || 0), 0);
 
-  const save = async () => {
-    const valid = lines.filter((l) => l.inventoryItem && Number(l.quantity) > 0 && l.costPrice !== "" && Number(l.costPrice) >= 0);
-    if (!valid.length) return toast.error(t("Add at least one valid line item"));
-    if (valid.length !== lines.filter((l) => l.inventoryItem || l.quantity || l.costPrice).length) {
-      return toast.error(t("Every line needs an item, a quantity above 0 and a rate"));
+  const chooseSupplier = (id) => {
+    setSupplier(id);
+    setPayType(defaultPayFor(supList.find((s) => s._id === id))); // INV-14
+  };
+  const addSupplier = async () => {
+    const name = newSup?.name?.trim();
+    if (!name) return toast.error(t("Supplier name is required"));
+    setNewSup((p) => ({ ...p, saving: true }));
+    try {
+      const { data } = await createSupplier({ name, phone: newSup.phone || "" });
+      const s = data?.supplier || data;
+      setSupList((p) => [...p, s]);
+      onSupplierAdded?.(s);
+      chooseSupplier(s._id);
+      setNewSup(null);
+      toast.success(t("Supplier added"));
+    } catch (err) {
+      toast.error(errMsg(err, t("Couldn't add the supplier")));
+      setNewSup((p) => (p ? { ...p, saving: false } : p));
     }
+  };
+
+  const uploadPhoto = async (file) => {
+    if (!file) return;
+    setPhoto({ url: "", busy: true });
+    try {
+      const { data } = await uploadPurchaseBillPhoto(file);
+      setPhoto({ url: data.billPhoto || "", busy: false });
+      // INV-05 → INV-02: a number read off the photo, only if none typed yet.
+      if (data.billNumberGuess && !billNo.trim()) { setBillNo(data.billNumberGuess); setBillNoSource("PHOTO"); }
+      if (data.billDateGuess && /^\d{4}-\d{2}-\d{2}/.test(data.billDateGuess)) {
+        const d = String(data.billDateGuess).slice(0, 10);
+        if (d <= toYmd(new Date())) setBillDate(d);
+      }
+      toast.success(data.billNumberGuess ? t("Photo saved — check the bill number we read") : t("Photo saved"));
+    } catch (err) {
+      setPhoto({ url: "", busy: false });
+      toast.error(errMsg(err, t("Couldn't upload the photo")));
+    }
+  };
+
+  const save = async () => {
+    const filled = lines.filter((l) => l.inventoryItem || l.name.trim() || l.quantity || l.costPrice);
+    const bad = filled.find((l) => (l.manual ? !l.name.trim() || !l.unit : !l.inventoryItem) || !(Number(l.quantity) > 0) || l.costPrice === "" || !(Number(l.costPrice) >= 0));
+    if (!filled.length) return toast.error(t("Add at least one valid line item"));
+    if (bad) return toast.error(t("Every line needs an item (or a typed name and unit), a quantity above 0 and a rate"));
+    if (!billDate || !billTime) return toast.error(t("Bill date and time are required"));
+    if (payType === "PAID" && !paySource) return toast.error(t("Choose where the money came from"));
     setSaving(true);
     try {
       await createPurchase({
         supplier: supplier || null,
-        invoiceNumber: invoiceNumber.trim(),
+        billNumber: billNo.trim(),
+        billNumberSource: billNo.trim() ? billNoSource : undefined,
+        billDate, billTime,
+        billPhoto: photo.url || undefined,
+        paymentType: payType,
+        paymentSource: payType === "PAID" ? paySource : undefined,
         notes,
-        // Today → let the server stamp "now"; a past bill date is sent as-is.
-        purchaseDate: purchaseDate && purchaseDate !== toYmd(new Date()) ? purchaseDate : undefined,
-        items: valid.map((l) => ({
-          inventoryItem: l.inventoryItem, quantity: Number(l.quantity), costPrice: Number(l.costPrice),
-          batchNo: l.batchNo || "", expiryDate: l.expiryDate || null,
-        })),
+        items: filled.map((l) => (l.manual
+          ? { name: l.name.trim(), unit: l.unit, quantity: Number(l.quantity), costPrice: Number(l.costPrice) }
+          : {
+            inventoryItem: l.inventoryItem, unit: l.unit || undefined, quantity: Number(l.quantity), costPrice: Number(l.costPrice),
+            batchNo: l.batchNo || "", expiryDate: l.expiryDate || null,
+          })),
       });
-      toast.success(t("Purchase recorded — stock updated"));
+      toast.success(payType === "CREDIT" || paySource === "OWNER_POCKET"
+        ? t("Purchase recorded — stock updated, added to money owed")
+        : t("Purchase recorded — stock updated"));
       onSaved();
     } catch (err) { toast.error(errMsg(err, t("Failed to record purchase"))); }
     finally { setSaving(false); }
@@ -88,57 +165,122 @@ export function PurchaseModal({ items, suppliers, prefill = [], onClose, onSaved
       title={t("Record purchase")}
       sub={t("Stock goes up by each line and the item's cost price becomes this rate. Every line is written to the stock history.")}
       onClose={onClose}
-      width={760}
+      width={800}
       footer={
         <>
           <span className="ivt-mfoot-l">{t("Total")}<b>{money(total)}</b></span>
           <button type="button" className="zc-btn" onClick={onClose}>{t("Cancel")}</button>
-          <button type="button" className="zc-btn pri" disabled={saving} onClick={save}>{saving ? t("Saving…") : t("Save purchase")}</button>
+          <button type="button" className="zc-btn pri" disabled={saving || photo.busy} onClick={save}>{saving ? t("Saving…") : t("Save purchase")}</button>
         </>
       }
     >
-      <div className="ivt-grid2" style={{ marginBottom: 14 }}>
-        <div>
-          <label className="ivt-fl" htmlFor="pm-sup">{t("Supplier")}</label>
-          <select id="pm-sup" className="zc-select" value={supplier} onChange={(e) => setSupplier(e.target.value)}>
+      {/* Supplier (INV-01) */}
+      <div style={{ marginBottom: 14 }}>
+        <label className="ivt-fl" htmlFor="pm-sup">{t("Supplier")}</label>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <select id="pm-sup" className="zc-select" style={{ flex: "1 1 220px" }} value={supplier} onChange={(e) => chooseSupplier(e.target.value)}>
             <option value="">— {t("none")} —</option>
-            {suppliers.filter((s) => s.status === "Active" || s._id === supplier).map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
+            {supList.filter((s) => s.status !== "Inactive" || s._id === supplier).map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
           </select>
+          {!newSup && <button type="button" className="zc-btn ghost" onClick={() => setNewSup({ name: "", phone: "" })}>＋ {t("New supplier")}</button>}
+        </div>
+        {newSup && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8, padding: 10, border: "1px dashed var(--edge)", borderRadius: 10 }}>
+            <input className="zc-input" style={{ flex: "2 1 180px" }} placeholder={t("Supplier name")} aria-label={t("Supplier name")} autoFocus
+              value={newSup.name} onChange={(e) => setNewSup((p) => ({ ...p, name: e.target.value }))} onKeyDown={(e) => e.key === "Enter" && addSupplier()} />
+            <input className="zc-input" style={{ flex: "1 1 130px" }} placeholder={t("Phone (optional)")} aria-label={t("Phone")} inputMode="tel"
+              value={newSup.phone} onChange={(e) => setNewSup((p) => ({ ...p, phone: e.target.value }))} />
+            <button type="button" className="zc-btn pri" disabled={newSup.saving} onClick={addSupplier}>{newSup.saving ? t("Saving…") : t("Add")}</button>
+            <button type="button" className="zc-btn ghost" onClick={() => setNewSup(null)}>{t("Cancel")}</button>
+          </div>
+        )}
+      </div>
+
+      {/* Bill number · date · time · photo (INV-02/03/05) */}
+      <div className="ivt-grid2" style={{ marginBottom: 6 }}>
+        <div>
+          <label className="ivt-fl" htmlFor="pm-inv">{t("Bill no.")} <small>({t("optional")})</small></label>
+          <input id="pm-inv" className="zc-input" value={billNo} maxLength={40}
+            onChange={(e) => { setBillNo(e.target.value); if (billNoSource === "PHOTO") setBillNoSource("SUPPLIER"); }} />
+          <div className="ivt-hint" style={{ marginTop: 5 }}>
+            {billNo.trim()
+              ? (billNoSource === "PHOTO" ? t("Read from the photo — check it") : (
+                <label style={{ display: "inline-flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+                  <input type="checkbox" checked={billNoSource === "MANUAL"} onChange={(e) => setBillNoSource(e.target.checked ? "MANUAL" : "SUPPLIER")} />
+                  {t("The bill had no number — this is my own")}
+                </label>
+              ))
+              : t("No number? Leave it empty — a system number (AUTO-…) is made and marked as system-generated.")}
+          </div>
         </div>
         <div className="ivt-grid2" style={{ gap: 8 }}>
           <div>
-            <label className="ivt-fl" htmlFor="pm-inv">{t("Bill no.")}</label>
-            <input id="pm-inv" className="zc-input" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
+            <label className="ivt-fl" htmlFor="pm-date">{t("Bill date")} *</label>
+            <input id="pm-date" type="date" className="zc-input" value={billDate} max={toYmd(new Date())} onChange={(e) => setBillDate(e.target.value)} />
           </div>
           <div>
-            <label className="ivt-fl" htmlFor="pm-date">{t("Bill date")}</label>
-            <input id="pm-date" type="date" className="zc-input" value={purchaseDate} max={toYmd(new Date())} onChange={(e) => setPurchaseDate(e.target.value)} />
+            <span className="ivt-fl">{t("Bill time")} *</span>
+            <TimePicker ariaLabel={t("Bill time")} value={billTime} onChange={setBillTime} step={1} />
           </div>
         </div>
       </div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", margin: "8px 0 14px" }}>
+        <label className="zc-btn ghost sm" style={{ cursor: photo.busy ? "wait" : "pointer" }}>
+          📷 {photo.url ? t("Replace bill photo") : t("Add bill photo")}
+          <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" hidden disabled={photo.busy}
+            onChange={(e) => { uploadPhoto(e.target.files?.[0]); e.target.value = ""; }} />
+        </label>
+        {photo.busy && <span className="ivt-hint">{t("Uploading and reading the bill…")}</span>}
+        {photo.url && !photo.busy && (
+          <>
+            <a href={photo.url} target="_blank" rel="noopener noreferrer"><img src={photo.url} alt={t("Bill photo")} style={{ height: 40, borderRadius: 6, border: "1px solid var(--edge)" }} /></a>
+            <button type="button" className="ivt-link" onClick={() => setPhoto({ url: "", busy: false })}>{t("Remove")}</button>
+          </>
+        )}
+      </div>
 
+      {/* Lines (INV-04) */}
       <table className="ivt-mtable stack">
         <thead>
-          <tr><th>{t("Item")}</th><th style={{ width: 110 }}>{t("Qty")}</th><th style={{ width: 120 }}>{t("Rate")}</th><th className="num" style={{ width: 100 }}>{t("Amount")}</th><th style={{ width: 30 }} /></tr>
+          <tr><th>{t("Item")}</th><th style={{ width: 150 }}>{t("Qty")}</th><th style={{ width: 120 }}>{t("Rate")}</th><th className="num" style={{ width: 100 }}>{t("Amount")}</th><th style={{ width: 30 }} /></tr>
         </thead>
         <tbody>
           {lines.map((l) => {
-            const it = byId.get(l.inventoryItem);
+            const it = l.manual ? null : byId.get(l.inventoryItem);
+            const units = l.manual ? STOCK_UNITS : it ? compatibleUnits(it.unit) : [];
             const amount = (Number(l.quantity) || 0) * (Number(l.costPrice) || 0);
             return [
               <tr key={l.key}>
                 <td className="wide" data-k={t("Item")}>
-                  <select className="zc-select" value={l.inventoryItem} onChange={(e) => pick(l.key, e.target.value)} aria-label={t("Item")}>
-                    <option value="">{t("Select item…")}</option>
-                    {choices.map((i) => <option key={i._id} value={i._id}>{localName(i)} ({formatQty(i.currentStock, i.unit)})</option>)}
-                  </select>
+                  {l.manual ? (
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <input className="zc-input" placeholder={t("Item name, e.g. Mustard oil")} aria-label={t("Item name")} value={l.name}
+                        onChange={(e) => update(l.key, { name: e.target.value })} />
+                      <button type="button" className="ivt-link" onClick={() => update(l.key, { manual: false, name: "", unit: "" })}>{t("Pick from stock")}</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <select className="zc-select" value={l.inventoryItem} onChange={(e) => pick(l.key, e.target.value)} aria-label={t("Item")}>
+                        <option value="">{t("Select item…")}</option>
+                        {choices.map((i) => <option key={i._id} value={i._id}>{localName(i)} ({formatQty(i.currentStock, i.unit)})</option>)}
+                      </select>
+                      <button type="button" className="ivt-link" style={{ whiteSpace: "nowrap" }} onClick={() => update(l.key, { manual: true, inventoryItem: "", unit: "pcs" })}>{t("Not in stock list?")}</button>
+                    </div>
+                  )}
                 </td>
-                <td data-k={`${t("Qty")}${it ? ` (${unitLabel(it.unit)})` : ""}`}>
-                  <input type="number" min="0" step="any" inputMode="decimal" className="zc-input" value={l.quantity}
-                    placeholder={it ? unitLabel(it.unit) : t("Qty")} aria-label={t("Quantity")}
-                    onChange={(e) => update(l.key, { quantity: e.target.value })} />
+                <td data-k={t("Qty")}>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <input type="number" min="0" step="any" inputMode="decimal" className="zc-input" value={l.quantity}
+                      placeholder={t("Qty")} aria-label={t("Quantity")} onChange={(e) => update(l.key, { quantity: e.target.value })} />
+                    {units.length > 0 && (
+                      <select className="zc-select" style={{ width: "auto" }} aria-label={t("Unit")} value={l.unit}
+                        onChange={(e) => update(l.key, { unit: e.target.value })}>
+                        {units.map((u) => <option key={u} value={u}>{unitLabel(u)}</option>)}
+                      </select>
+                    )}
+                  </div>
                 </td>
-                <td data-k={it ? t("Rate per {unit}", { unit: unitLabel(it.unit) }) : t("Rate")}>
+                <td data-k={l.unit ? t("Rate per {unit}", { unit: unitLabel(l.unit) }) : t("Rate")}>
                   <input type="number" min="0" step="any" inputMode="decimal" className="zc-input" value={l.costPrice}
                     placeholder="₹" aria-label={t("Rate")}
                     onChange={(e) => update(l.key, { costPrice: e.target.value })} />
@@ -148,6 +290,11 @@ export function PurchaseModal({ items, suppliers, prefill = [], onClose, onSaved
                   {lines.length > 1 && <button type="button" className="ivt-x" onClick={() => setLines((p) => p.filter((x) => x.key !== l.key))} aria-label={t("Remove line")}>✕</button>}
                 </td>
               </tr>,
+              l.manual && (
+                <tr key={`${l.key}-m`}>
+                  <td colSpan={5} className="wide"><div className="ivt-hint">{t("Added to your stock list as a new item (or matched to one with the same name).")}</div></td>
+                </tr>
+              ),
               it?.isBatchTracked && (
                 <tr key={`${l.key}-b`}>
                   <td colSpan={5} className="wide">
@@ -168,6 +315,31 @@ export function PurchaseModal({ items, suppliers, prefill = [], onClose, onSaved
         <button type="button" className="zc-btn ghost sm" onClick={() => setLines((p) => [...p, newLine()])}>＋ {t("Add line")}</button>
         {onImport && <button type="button" className="ivt-link" onClick={onImport}>{t("Have the bill as a photo or PDF? Import it instead")} →</button>}
       </div>
+
+      {/* Payment (INV-06/07) */}
+      <div style={{ marginTop: 16 }}>
+        <span className="ivt-fl">{t("Payment")} *</span>
+        <div className="ivt-opts" role="radiogroup" aria-label={t("Payment")}>
+          <button type="button" role="radio" aria-checked={payType === "PAID"} className={payType === "PAID" ? "on" : ""} onClick={() => setPayType("PAID")}>{t("Paid")}</button>
+          <button type="button" role="radio" aria-checked={payType === "CREDIT"} className={payType === "CREDIT" ? "on" : ""} onClick={() => setPayType("CREDIT")}>{t("Credit (pay later)")}</button>
+        </div>
+        {payType === "PAID" ? (
+          <>
+            <div className="ivt-opts" role="radiogroup" aria-label={t("Paid from")} style={{ marginTop: 8 }}>
+              {PAY_SOURCES.map((s) => (
+                <button key={s.id} type="button" role="radio" aria-checked={paySource === s.id} className={paySource === s.id ? "on" : ""}
+                  onClick={() => setPaySource(s.id)}>{t(s.label)}</button>
+              ))}
+            </div>
+            {paySource === "OWNER_POCKET" && (
+              <div className="ivt-hint" style={{ marginTop: 6 }}>{t("The owner lent this money — it is shown as owed to the owner until the business pays it back.")}</div>
+            )}
+          </>
+        ) : (
+          <div className="ivt-hint" style={{ marginTop: 6 }}>{t("Shown as owed to the supplier until you pay it back.")}</div>
+        )}
+      </div>
+
       <div style={{ marginTop: 14 }}>
         <label className="ivt-fl" htmlFor="pm-notes">{t("Notes")}</label>
         <input id="pm-notes" className="zc-input" value={notes} onChange={(e) => setNotes(e.target.value)} />
@@ -177,20 +349,32 @@ export function PurchaseModal({ items, suppliers, prefill = [], onClose, onSaved
 }
 
 // ═══════════════════════════════ Log wastage ═══════════════════════════════
+// INV-08 a stock item or something typed by hand (not stocked) · INV-09 any
+// compatible unit (weighed in g, stocked in kg) · INV-10 "Other" needs a reason.
 export function WastageModal({ items, prefillItem = "", onClose, onSaved }) {
   const choices = useMemo(() => activeFirst(items), [items]);
-  const [form, setForm] = useState({ inventoryItem: prefillItem, quantity: "", reason: "Spoilage", notes: "" });
+  const [form, setForm] = useState({
+    manual: false, inventoryItem: prefillItem, itemName: "", unit: items.find((i) => i._id === prefillItem)?.unit || "",
+    quantity: "", cost: "", reason: "Spoilage", reasonText: "", notes: "",
+  });
   const [saving, setSaving] = useState(false);
-  const it = items.find((i) => i._id === form.inventoryItem);
+  const it = form.manual ? null : items.find((i) => i._id === form.inventoryItem);
   const qty = Number(form.quantity) || 0;
-  const tooMuch = it && qty > Number(it.currentStock || 0);
+  const factor = it && form.unit ? conversionFactor(form.unit, it.unit) : 1;
+  const stockQty = qty * (factor || 1);
+  const tooMuch = it && stockQty > Number(it.currentStock || 0);
+  const units = form.manual ? STOCK_UNITS : it ? compatibleUnits(it.unit) : [];
 
   const save = async () => {
-    if (!form.inventoryItem || !(qty > 0)) return toast.error(t("Select an item and a quantity > 0"));
+    if (form.manual ? !form.itemName.trim() || !form.unit : !form.inventoryItem) return toast.error(t("Pick a stock item or type the item name"));
+    if (!(qty > 0)) return toast.error(t("Select an item and a quantity > 0"));
     if (tooMuch) return toast.error(t("Insufficient stock to record this wastage"));
+    if (form.reason === "Other" && !form.reasonText.trim()) return toast.error(t("Write the reason"));
     setSaving(true);
     try {
-      await createWastage({ ...form, quantity: qty });
+      await createWastage(form.manual
+        ? { itemName: form.itemName.trim(), unit: form.unit, quantity: qty, cost: form.cost === "" ? undefined : Number(form.cost), reason: form.reason, reasonText: form.reasonText, notes: form.notes }
+        : { inventoryItem: form.inventoryItem, unit: form.unit || undefined, quantity: qty, reason: form.reason, reasonText: form.reasonText, notes: form.notes });
       toast.success(t("Wastage recorded"));
       onSaved();
     } catch (err) { toast.error(errMsg(err, t("Failed to record wastage"))); }
@@ -212,20 +396,50 @@ export function WastageModal({ items, prefillItem = "", onClose, onSaved }) {
       <div style={{ display: "grid", gap: 14 }}>
         <div>
           <label className="ivt-fl" htmlFor="wm-item">{t("Item")}</label>
-          <select id="wm-item" className="zc-select" value={form.inventoryItem} onChange={(e) => setForm({ ...form, inventoryItem: e.target.value })}>
-            <option value="">{t("Select item…")}</option>
-            {choices.map((i) => <option key={i._id} value={i._id}>{localName(i)} ({t("{qty} in stock", { qty: formatQty(i.currentStock, i.unit) })})</option>)}
-          </select>
+          {form.manual ? (
+            <div style={{ display: "flex", gap: 6 }}>
+              <input id="wm-item" className="zc-input" value={form.itemName} placeholder={t("e.g. Leftover rice")}
+                onChange={(e) => setForm({ ...form, itemName: e.target.value })} />
+              <button type="button" className="ivt-link" style={{ whiteSpace: "nowrap" }} onClick={() => setForm({ ...form, manual: false, itemName: "", unit: "" })}>{t("Pick from stock")}</button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", gap: 6 }}>
+              <select id="wm-item" className="zc-select" value={form.inventoryItem}
+                onChange={(e) => setForm({ ...form, inventoryItem: e.target.value, unit: items.find((i) => i._id === e.target.value)?.unit || "" })}>
+                <option value="">{t("Select item…")}</option>
+                {choices.map((i) => <option key={i._id} value={i._id}>{localName(i)} ({t("{qty} in stock", { qty: formatQty(i.currentStock, i.unit) })})</option>)}
+              </select>
+              <button type="button" className="ivt-link" style={{ whiteSpace: "nowrap" }} onClick={() => setForm({ ...form, manual: true, inventoryItem: "", unit: "pcs" })}>{t("Not in stock list?")}</button>
+            </div>
+          )}
+          {form.manual && <div className="ivt-hint" style={{ marginTop: 5 }}>{t("Recorded as a loss only — no stock item to deduct.")}</div>}
         </div>
-        <div>
-          <label className="ivt-fl" htmlFor="wm-qty">{t("Quantity")} {it ? `(${unitLabel(it.unit)})` : ""}</label>
-          <input id="wm-qty" type="number" min="0" step="any" inputMode="decimal" className="zc-input" value={form.quantity}
-            onChange={(e) => setForm({ ...form, quantity: e.target.value })} />
-          {it && (
-            <div className="ivt-hint" style={{ marginTop: 5, color: tooMuch ? "var(--stop-ink)" : undefined }}>
-              {tooMuch
-                ? t("Only {qty} in stock", { qty: formatQty(it.currentStock, it.unit) })
-                : t("Cost impact about {amount} at the current cost price", { amount: money(qty * Number(it.costPrice || 0)) })}
+        <div className="ivt-grid2" style={{ gap: 8 }}>
+          <div>
+            <label className="ivt-fl" htmlFor="wm-qty">{t("Quantity")}</label>
+            <div style={{ display: "flex", gap: 4 }}>
+              <input id="wm-qty" type="number" min="0" step="any" inputMode="decimal" className="zc-input" value={form.quantity}
+                onChange={(e) => setForm({ ...form, quantity: e.target.value })} />
+              {units.length > 0 && (
+                <select className="zc-select" style={{ width: "auto" }} aria-label={t("Unit")} value={form.unit}
+                  onChange={(e) => setForm({ ...form, unit: e.target.value })}>
+                  {units.map((u) => <option key={u} value={u}>{unitLabel(u)}</option>)}
+                </select>
+              )}
+            </div>
+            {it && (
+              <div className="ivt-hint" style={{ marginTop: 5, color: tooMuch ? "var(--stop-ink)" : undefined }}>
+                {tooMuch
+                  ? t("Only {qty} in stock", { qty: formatQty(it.currentStock, it.unit) })
+                  : t("Cost impact about {amount} at the current cost price", { amount: money(stockQty * Number(it.costPrice || 0)) })}
+              </div>
+            )}
+          </div>
+          {form.manual && (
+            <div>
+              <label className="ivt-fl" htmlFor="wm-cost">{t("Cost (₹)")} <small>({t("optional")})</small></label>
+              <input id="wm-cost" type="number" min="0" step="any" inputMode="decimal" className="zc-input" value={form.cost}
+                onChange={(e) => setForm({ ...form, cost: e.target.value })} />
             </div>
           )}
         </div>
@@ -234,9 +448,14 @@ export function WastageModal({ items, prefillItem = "", onClose, onSaved }) {
           <div className="ivt-opts" role="group" aria-label={t("Reason")}>
             {WASTAGE_REASONS.map((r) => (
               <button key={r} type="button" className={form.reason === r ? "on" : ""} aria-pressed={form.reason === r}
-                onClick={() => setForm({ ...form, reason: r })}>{t(r)}</button>
+                onClick={() => setForm({ ...form, reason: r })}>{t(r === "Other" ? "Others" : r)}</button>
             ))}
           </div>
+          {form.reason === "Other" && (
+            <input className="zc-input" style={{ marginTop: 8 }} maxLength={200} autoFocus aria-label={t("Reason")}
+              placeholder={t("What happened? e.g. dropped on the floor")} value={form.reasonText}
+              onChange={(e) => setForm({ ...form, reasonText: e.target.value })} />
+          )}
         </div>
         <div>
           <label className="ivt-fl" htmlFor="wm-notes">{t("Notes")}</label>

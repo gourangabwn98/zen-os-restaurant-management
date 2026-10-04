@@ -70,7 +70,7 @@ await test("dates: inclusive days, no past start for staff, max 31, end ≥ star
   throwsStatus(() => validateRange(ymd(addDays(1)), ymd(addDays(40))), 400);
   throwsStatus(() => validateRange("2026-02-30", "2026-03-01", { allowPast: true }), 400);
 });
-await test("only APPROVED days inside the month count, split paid / unpaid", () => {
+await test("EMP-02: approved days are paid (whatever the old flag); declined + past pending days are LOP", () => {
   const start = new Date(2026, 8, 1), end = new Date(2026, 8, 30, 23, 59, 59);
   const leaves = [
     { status: "APPROVED", paid: true, from: new Date(2026, 8, 10), to: new Date(2026, 8, 10) },
@@ -78,7 +78,10 @@ await test("only APPROVED days inside the month count, split paid / unpaid", () 
     { status: "PENDING", paid: false, from: new Date(2026, 8, 5), to: new Date(2026, 8, 6) },
     { status: "DECLINED", paid: false, from: new Date(2026, 8, 7), to: new Date(2026, 8, 7) },
   ];
-  assert.deepEqual(leaveDaysInRange(leaves, start, end), { paid: 1, unpaid: 2 });
+  // approved: 1 + 2 (Sep part) = 3 paid; declined 1 + pending-already-past 2 = 3 LOP
+  assert.deepEqual(leaveDaysInRange(leaves, start, end, new Date(2026, 9, 4)), { paid: 3, unpaid: 3 });
+  // a pending request for days still ahead isn't LOP yet
+  assert.deepEqual(leaveDaysInRange(leaves, start, end, new Date(2026, 8, 1)), { paid: 3, unpaid: 1 });
   assert.equal(daysBetween(new Date(2026, 9, 1), new Date(2026, 9, 2)), 2);
 });
 await test("a request is decided once (atomic PENDING → …)", async () => {

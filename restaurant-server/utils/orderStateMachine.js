@@ -57,6 +57,21 @@ export const ORDER_STATUSES = [
 
 export const PAYMENT_STATUSES = ["PENDING_VERIFICATION", "PAID", "FAILED"];
 
+// BIL-02 — the bill's own lifecycle, separate from the operational `status`
+// above and from `paymentStatus` (money received). OPEN until the billing
+// workflow settles it (services/billingService.js — the only writer).
+// Orders saved before this field existed read as SETTLED when COMPLETED,
+// otherwise OPEN (effectiveBillStatus).
+export const BILL_STATUSES = ["OPEN", "SETTLED"];
+
+export const effectiveBillStatus = (order) =>
+  order?.billStatus || (order?.status === "COMPLETED" ? "SETTLED" : "OPEN");
+
+// Targets nobody may set by hand — not even an admin override. COMPLETED is
+// reached only when billing settles a served order (DSH-03/DSH-04, BIL-01):
+// orderService.completeServedSettledOrder, role "system".
+const SYSTEM_ONLY_TARGETS = ["COMPLETED"];
+
 export const ORDER_SOURCES = ["CUSTOMER", "WAITER", "ADMIN"];
 export const ORDER_TYPES   = ["DINE_IN", "TAKEAWAY", "ONLINE"];
 
@@ -89,8 +104,9 @@ const TRANSITION_ROLES = {
   "CONFIRMED->CANCELLED":            ["admin", "waiter"],
   "PREPARING->READY":                ["admin", "waiter", "chef"],
   "PREPARING->CANCELLED":            ["admin"], // once kitchen has started, only admin can void
-  "READY->DELIVERED":                ["admin", "waiter"],
-  "DELIVERED->COMPLETED":            ["admin", "waiter"],
+  "READY->DELIVERED":                ["admin", "waiter"], // waiter taps "Served" → Eating
+  // Bill settled in billing → Completed (services/billingService.js).
+  "DELIVERED->COMPLETED":            ["system"],
 };
 
 // Target statuses that require the order to be PAID first, per role. Nobody
@@ -100,7 +116,7 @@ const TRANSITION_ROLES = {
 // puts `paymentStatus: "PAID"` into its atomic update filter, so a payment
 // change racing the completion can't slip through.
 const PAYMENT_REQUIRED_INTO = {
-  COMPLETED: ["waiter", "admin"],
+  COMPLETED: ["waiter", "admin", "system"],
 };
 
 /** True when this role must see paymentStatus === "PAID" before this transition. */
@@ -155,6 +171,16 @@ export const validateTransition = (fromStatus, toStatus, role) => {
   }
   if (fromStatus === toStatus) {
     return { ok: false, code: 400, message: `Order is already "${toStatus}"` };
+  }
+
+  // Checked BEFORE the admin override: completing is a billing outcome, not
+  // a status anyone picks (an admin jump to COMPLETED used to skip billing).
+  if (SYSTEM_ONLY_TARGETS.includes(toStatus) && role !== "system") {
+    return {
+      ok: false,
+      code: 400,
+      message: "An order is completed by settling its bill in Invoices — it can't be set by hand",
+    };
   }
 
   // Admin override: any status -> any other (distinct, valid) status is

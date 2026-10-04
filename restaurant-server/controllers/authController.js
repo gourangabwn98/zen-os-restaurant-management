@@ -655,8 +655,9 @@ export const updateLanguage = async (req, res) => {
 export const updateTheme = async (req, res) => {
   try {
     const { themePreference } = req.body;
-    if (!["light", "dark", "system"].includes(themePreference))
-      return res.status(400).json({ message: "themePreference must be 'light', 'dark' or 'system'" });
+    // GLB-05: Light or Dark only — "Auto/System" was removed.
+    if (!["light", "dark"].includes(themePreference))
+      return res.status(400).json({ message: "themePreference must be 'light' or 'dark'" });
     const user = await req.models.User
       .findByIdAndUpdate(req.user._id, { themePreference }, { returnDocument: "after" });
     res.json({ themePreference: user.themePreference });

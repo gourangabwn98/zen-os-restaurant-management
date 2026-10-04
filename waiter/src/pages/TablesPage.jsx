@@ -13,6 +13,7 @@ import {
 } from "../utils/tableSession.js";
 import { NAV_HEIGHT } from "../theme.js";
 import { useLiveOrders } from "../hooks/useLiveOrders.js";
+import { t, tn, localName } from "../i18n/index.jsx";
 
 const AMBER = "#F5B83D";
 
@@ -38,12 +39,12 @@ export default function TablesPage() {
   const { auth, duty } = useAppState();
   const dutyGated = auth.user?.role === "waiter" && !duty.onDuty;
   const goToNewOrder = (tableNo) => {
-    if (dutyGated) return toast.error("You must be ON DUTY to perform this action.");
+    if (dutyGated) return toast.error(t("You must be ON DUTY to perform this action."));
     nav(`/new-order?table=${tableNo}`);
   };
   // Take Away starts here (the order page no longer offers it once a table is picked).
   const goToTakeaway = () => {
-    if (dutyGated) return toast.error("You must be ON DUTY to perform this action.");
+    if (dutyGated) return toast.error(t("You must be ON DUTY to perform this action."));
     nav("/new-order?type=takeaway");
   };
   const [tables, setTables]     = useState(null);
@@ -66,7 +67,7 @@ export default function TablesPage() {
       setSessions(map);
       setPendingOrders(pRes.data?.orders || []);
     } catch {
-      setError("Couldn't load tables");
+      setError(t("Couldn't load tables"));
     }
   }, []);
 
@@ -91,27 +92,28 @@ export default function TablesPage() {
     setBusyId(order._id);
     try {
       await confirmOrder(order._id);
-      toast.success(`Order ${order.orderId} confirmed · KOT sent`);
+      // ORD-01: accepting doesn't print the KOT — it fires when the change window ends.
+      toast.success(t("Order {id} accepted — it goes to the kitchen when the change window ends", { id: order.orderId }));
       load();
     } catch (err) {
-      toast.error(err.response?.data?.message || "Couldn't confirm order");
+      toast.error(err.response?.data?.message || t("Couldn't confirm order"));
     } finally { setBusyId(null); }
   };
 
   const handleReject = async (order) => {
-    if (!window.confirm(`Reject order ${order.orderId}?`)) return;
+    if (!window.confirm(t("Reject order {id}?", { id: order.orderId }))) return;
     setBusyId(order._id);
     try {
       await rejectOrder(order._id, "Rejected by waiter");
-      toast.success("Order rejected");
+      toast.success(t("Order rejected"));
       load();
     } catch (err) {
-      toast.error(err.response?.data?.message || "Couldn't reject order");
+      toast.error(err.response?.data?.message || t("Couldn't reject order"));
     } finally { setBusyId(null); }
   };
 
   if (error) return <ErrorState message={error} onRetry={load} />;
-  if (tables === null) return <Loader label="Loading tables…" />;
+  if (tables === null) return <Loader label={t("Loading tables…")} />;
 
   const liveTables = tables.filter((t) => t.status !== "Inactive").sort((a, b) => a.tableNo - b.tableNo);
   const classified = liveTables.map((t) => classifyTable(t, sessions[t.tableNo]));
@@ -127,13 +129,13 @@ export default function TablesPage() {
           count sit on their own row underneath. */}
       <div style={{ padding: "14px 16px 0" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-          <div style={{ fontFamily: FONT_HEAD, fontSize: 22, fontWeight: 800, color: TEXT_MAIN, letterSpacing: -0.5, flexShrink: 0 }}>Tables</div>
+          <div style={{ fontFamily: FONT_HEAD, fontSize: 22, fontWeight: 800, color: TEXT_MAIN, letterSpacing: -0.5, flexShrink: 0 }}>{t("Tables")}</div>
 
           <button
             type="button"
             onClick={() => setShowPending(true)}
             className="pressable"
-            aria-label={`Awaiting confirmation, ${pendingOrders.length} order${pendingOrders.length === 1 ? "" : "s"}`}
+            aria-label={`${t("Awaiting confirmation")}, ${tn(pendingOrders.length, "{n} order", "{n} orders")}`}
             style={{
               display: "flex", alignItems: "center", gap: 5, minHeight: 32, padding: "0 10px", borderRadius: 999,
               border: `1px solid ${pendingOrders.length ? `${AMBER}80` : CARD_BORDER}`,
@@ -145,7 +147,7 @@ export default function TablesPage() {
             }}
           >
             <BellIcon />
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>Pending</span>
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{t("Pending")}</span>
             {pendingOrders.length > 0 && (
               <span style={{
                 minWidth: 16, height: 16, borderRadius: 999, background: AMBER, color: "#0B0E13",
@@ -159,11 +161,11 @@ export default function TablesPage() {
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginTop: 4 }}>
           <div style={{ fontSize: 11.5, color: TEXT_MUTED, maxWidth: 320 }}>
-            Tap a table to see its orders or start a new one.
+            {t("Tap a table to see its orders or start a new one.")}
           </div>
           {classified.length > 0 && (
             <div style={{ fontSize: 10.5, color: TEXT_MUTED, fontWeight: 600, flexShrink: 0, whiteSpace: "nowrap" }}>
-              <span style={{ fontFamily: FONT_MONO, color: TEXT_MAIN, fontWeight: 700 }}>{summary.occupied}</span> of {classified.length} occupied
+              {t("{a} of {b} occupied", { a: summary.occupied, b: classified.length })}
             </div>
           )}
         </div>
@@ -177,7 +179,7 @@ export default function TablesPage() {
 
       {/* Grid — just the tables, nothing else on this page. */}
       {classified.length === 0 ? (
-        <EmptyBoard title="No tables set up yet" sub="Ask an admin to add tables" />
+        <EmptyBoard title={t("No tables set up yet")} sub={t("Ask an admin to add tables")} />
       ) : (
         <div className="tables-grid" style={{ padding: "16px 16px 0" }}>
           {classified.map((c) =>
@@ -204,11 +206,11 @@ export default function TablesPage() {
           below the table grid. Starts a TAKEAWAY order (no table). */}
       <div style={{ padding: "18px 16px 0" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 10px", color: TEXT_MUTED, fontSize: 10.5, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase" }}>
-          <span style={{ flex: 1, height: 1, background: CARD_BORDER }} />Or<span style={{ flex: 1, height: 1, background: CARD_BORDER }} />
+          <span style={{ flex: 1, height: 1, background: CARD_BORDER }} />{t("Or")}<span style={{ flex: 1, height: 1, background: CARD_BORDER }} />
         </div>
         <button
           type="button" onClick={goToTakeaway} className="pressable"
-          aria-label="Start a Take Away order"
+          aria-label={t("Start a Take Away order")}
           style={{
             width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", cursor: "pointer",
             borderRadius: 18, border: `1.5px dashed ${AMBER}`, background: `${AMBER}14`, color: TEXT_MAIN, textAlign: "left",
@@ -217,8 +219,8 @@ export default function TablesPage() {
         >
           <span aria-hidden="true" style={{ width: 44, height: 44, borderRadius: 14, flexShrink: 0, display: "grid", placeItems: "center", background: `${AMBER}2E`, fontSize: 22 }}>🛍️</span>
           <span style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ display: "block", fontFamily: FONT_HEAD, fontWeight: 800, fontSize: 16 }}>Take Away</span>
-            <span style={{ display: "block", fontSize: 11.5, color: TEXT_MUTED }}>Order to pack and collect — no table</span>
+            <span style={{ display: "block", fontFamily: FONT_HEAD, fontWeight: 800, fontSize: 16 }}>{t("Take Away")}</span>
+            <span style={{ display: "block", fontSize: 11.5, color: TEXT_MUTED }}>{t("Order to pack and collect — no table")}</span>
           </span>
           <span aria-hidden="true" style={{ color: AMBER, fontSize: 20, fontWeight: 800 }}>＋</span>
         </button>
@@ -251,7 +253,7 @@ export default function TablesPage() {
               padding: "10px 16px 14px", borderBottom: `1px solid ${CARD_BORDER}`, display: "flex",
               justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, background: CARD_BG, zIndex: 1,
             }}>
-              <div style={{ fontFamily: FONT_HEAD, fontWeight: 800, fontSize: 16, color: TEXT_MAIN }}>Table {selected}</div>
+              <div style={{ fontFamily: FONT_HEAD, fontWeight: 800, fontSize: 16, color: TEXT_MAIN }}>{t("Table {n}", { n: selected })}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <button
                   onClick={() => goToNewOrder(selected)}
@@ -261,11 +263,11 @@ export default function TablesPage() {
                     color: dutyGated ? TEXT_MUTED : "#0B0E13", fontWeight: 800, fontSize: 12, fontFamily: FONT_BODY,
                   }}
                 >
-                  + Add order
+                  + {t("Add order")}
                 </button>
                 <button
                   onClick={() => setSelected(null)}
-                  aria-label="Close"
+                  aria-label={t("Close")}
                   style={{
                     width: 36, height: 36, borderRadius: "50%", border: `1px solid ${CARD_BORDER}`,
                     background: "rgba(255,255,255,0.04)", color: TEXT_MAIN, fontSize: 15, cursor: "pointer", flexShrink: 0,
@@ -280,14 +282,14 @@ export default function TablesPage() {
               <span><ReceiptCount count={selectedClassified.orderCount} /></span>
               {selectedClassified.placedAt && (
                 <span>
-                  since seated ·{" "}
+                  {t("since seated")} ·{" "}
                   <span style={{ fontFamily: FONT_MONO, fontWeight: 600, color: TEXT_MAIN }}>
                     {formatElapsed(elapsedMinutes(selectedClassified.placedAt))}
                   </span>
                 </span>
               )}
               <span>
-                running ·{" "}
+                {t("running")} ·{" "}
                 <span style={{ fontFamily: FONT_MONO, fontWeight: 600, color: TEXT_MAIN }}>₹{runningTotal(selectedSession?.orders)}</span>
               </span>
             </div>
@@ -330,14 +332,14 @@ export default function TablesPage() {
               justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, background: CARD_BG, zIndex: 1,
             }}>
               <div style={{ fontFamily: FONT_HEAD, fontWeight: 800, fontSize: 16, color: TEXT_MAIN }}>
-                Awaiting confirmation
+                {t("Awaiting confirmation")}
                 <span style={{ marginLeft: 8, fontFamily: FONT_MONO, fontSize: 13, fontWeight: 600, color: TEXT_MUTED }}>
                   {pendingOrders.length}
                 </span>
               </div>
               <button
                 onClick={() => setShowPending(false)}
-                aria-label="Close"
+                aria-label={t("Close")}
                 style={{
                   width: 36, height: 36, borderRadius: "50%", border: `1px solid ${CARD_BORDER}`,
                   background: "rgba(255,255,255,0.04)", color: TEXT_MAIN, fontSize: 15, cursor: "pointer", flexShrink: 0,
@@ -350,7 +352,7 @@ export default function TablesPage() {
             <div style={{ padding: "12px 10px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
               {pendingOrders.length === 0 ? (
                 <div style={{ padding: "24px 16px", textAlign: "center", fontSize: 12.5, color: TEXT_MUTED }}>
-                  Nothing waiting on confirmation right now.
+                  {t("Nothing waiting on confirmation right now.")}
                 </div>
               ) : (
                 pendingOrders.map((o) => (
@@ -391,18 +393,18 @@ function EmptyBoard({ title, sub }) {
 }
 
 function ReceiptCount({ count }) {
-  return <>{count} order{count === 1 ? "" : "s"}</>;
+  return <>{tn(count, "{n} order", "{n} orders")}</>;
 }
 
 function OrderRow({ order, onClick }) {
   const meta = STATUS_META[order.status] || { label: order.status, color: TEXT_MUTED };
-  const items = (order.items || []).slice(0, 3).map((i) => `${i.name} ×${i.qty}`).join(", ");
+  const items = (order.items || []).slice(0, 3).map((i) => `${localName(i)} ×${i.qty}`).join(", ");
   return (
     <button
       type="button"
       onClick={onClick}
       className="pressable"
-      aria-label={`${order.orderId}, ${meta.label}, ₹${order.total}`}
+      aria-label={`${order.orderId}, ${t(meta.label)}, ₹${order.total}`}
       style={{
         display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, textAlign: "left",
         minHeight: 44, width: "100%", padding: "10px 12px", cursor: "pointer",
@@ -413,7 +415,7 @@ function OrderRow({ order, onClick }) {
       <div style={{ minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontWeight: 700, fontSize: 12.5 }}>{order.orderId}</span>
-          <span style={{ fontSize: 10, fontWeight: 700, color: meta.color }}>{meta.label}</span>
+          <span style={{ fontSize: 10, fontWeight: 700, color: meta.color }}>{t(meta.label)}</span>
         </div>
         {items && <div style={{ fontSize: 11, color: TEXT_MUTED, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{items}</div>}
       </div>
@@ -423,9 +425,9 @@ function OrderRow({ order, onClick }) {
 }
 
 function PendingOrderRow({ order, busy, onOpen, onConfirm, onReject }) {
-  const items = (order.items || []).slice(0, 3).map((i) => `${i.name} ×${i.qty}`).join(", ");
-  const where = order.orderType === "DINE_IN" ? `Table ${order.tableNo}` : "Takeaway";
-  const who = order.guestName || order.user?.name || "Guest";
+  const items = (order.items || []).slice(0, 3).map((i) => `${localName(i)} ×${i.qty}`).join(", ");
+  const where = order.orderType === "DINE_IN" ? t("Table {n}", { n: order.tableNo }) : t("Takeaway");
+  const who = order.guestName || order.user?.name || t("Guest");
   return (
     <div style={{ background: `${AMBER}12`, border: `1px solid ${AMBER}40`, borderRadius: 14, padding: "12px 12px" }}>
       <div onClick={onOpen} role="button" tabIndex={0} style={{ cursor: "pointer" }}>
@@ -435,7 +437,7 @@ function PendingOrderRow({ order, busy, onOpen, onConfirm, onReject }) {
               <span style={{ fontWeight: 700, fontSize: 13, color: TEXT_MAIN }}>{order.orderId}</span>
               <span style={{ fontSize: 10.5, color: TEXT_MUTED }}>{where} · {who}</span>
             </div>
-            {items && <div style={{ fontSize: 11.5, color: TEXT_MUTED, marginTop: 5 }}>{items}{order.items?.length > 3 ? ` +${order.items.length - 3} more` : ""}</div>}
+            {items && <div style={{ fontSize: 11.5, color: TEXT_MUTED, marginTop: 5 }}>{items}{order.items?.length > 3 ? ` ${t("+{n} more", { n: order.items.length - 3 })}` : ""}</div>}
             <div style={{ fontSize: 10, color: TEXT_MUTED, marginTop: 4 }}>
               {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </div>
@@ -454,7 +456,7 @@ function PendingOrderRow({ order, busy, onOpen, onConfirm, onReject }) {
             opacity: busy ? 0.6 : 1,
           }}
         >
-          {busy ? "…" : "✓ Confirm"}
+          {busy ? "…" : `✓ ${t("Accept")}`}
         </button>
         <button
           onClick={onReject}
@@ -465,7 +467,7 @@ function PendingOrderRow({ order, busy, onOpen, onConfirm, onReject }) {
             color: "#FF8A8A", fontWeight: 800, fontSize: 12, fontFamily: FONT_BODY, opacity: busy ? 0.6 : 1,
           }}
         >
-          ✕ Reject
+          ✕ {t("Reject")}
         </button>
       </div>
     </div>

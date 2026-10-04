@@ -10,10 +10,9 @@ import {
   RecaptchaVerifier,
   signInWithPhoneNumber,
 } from "firebase/auth";
-// import logo from "../assets/charu_logo.webp";
 import LanguageToggle from "../components/LanguageToggle.jsx";
 import { t, fmtNum } from "../i18n/core.js";
-import logo from "../assets/charu_logo.webp";
+import { BRAND } from "../brand.js";
 
 const PINK = PRIMARY;
 
@@ -150,14 +149,15 @@ export default function LoginPage() {
   overflow: "hidden",
 }}>
   <img
-    src={logo}
-    alt={t("Logo")}
+    src={BRAND.mark}
+    alt={BRAND.name}
     style={{ width: "100%", height: "100%", objectFit: "cover" }}
   />
 </div>
 
+        <img src={BRAND.wordmark} alt="" style={{ display: "block", height: 30, width: "auto", margin: "0 auto 6px" }} />
         <div style={{ color: "#c4b5fd", fontWeight: 700, fontSize: 22, marginBottom: 4 }}>
-          Zen OS
+          {BRAND.name}
         </div>
         <div style={{ color: "#4b5563", fontSize: 11, letterSpacing: 3, marginBottom: 32 }}>
           {t("ADMIN PANEL")}
@@ -291,7 +291,7 @@ export default function LoginPage() {
         )}
 
         <div style={{ marginTop: 28, fontSize: 11, color: "#1f1d2e" }}>
-          Zen OS v1.0
+          {BRAND.name} · {BRAND.version}
         </div>
       </div>
     </div>

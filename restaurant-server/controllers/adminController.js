@@ -2,7 +2,7 @@
 import mongoose from "mongoose";
 import { priceItems, computeTotals } from "../utils/pricing.js";
 import { getScheduleContext } from "../services/menuScheduleService.js";
-import { transitionOrderStatusTx, buildActor, getRoleFromUser } from "../services/orderService.js";
+import { transitionOrderStatusTx, buildActor, getRoleFromUser, EDITABLE_STATUSES } from "../services/orderService.js";
 import { ORDER_STATUSES, PAYMENT_STATUSES, canSetPaymentStatus } from "../utils/orderStateMachine.js";
 import {
   emitOrderStatusChanged, emitOrderCancelled, emitOrderConfirmed,
@@ -360,13 +360,21 @@ export const updateOrderPayment = async (req, res) => {
     // A cancelled order can't take money: marking it PAID created
     // "cancelled · was paid" bills that no revenue total counts. The guard is
     // in the update filter itself, so it also holds against a cancel racing it.
-    const filter = { _id: req.params.id, ...(update.paymentStatus === "PAID" && { status: { $ne: STATUS_CANCELLED } }) };
+    // BIL-02: a SETTLED bill's payment can't be undone or re-labelled here —
+    // an admin reopens the bill first (POST /admin/orders/:id/reopen-bill).
+    const unsettled = { $or: [{ billStatus: { $exists: false }, status: { $ne: "COMPLETED" } }, { billStatus: "OPEN" }] };
+    const filter = {
+      _id: req.params.id,
+      ...(update.paymentStatus === "PAID" && { status: { $ne: STATUS_CANCELLED } }),
+      ...((update.paymentStatus === "PENDING_VERIFICATION" || update.paymentMethod) && unsettled),
+    };
     const order = await Order.findOneAndUpdate(filter, { $set: update }, { returnDocument: "after", runValidators: true });
     if (!order) {
-      const exists = await Order.exists({ _id: req.params.id });
-      return exists
+      const existing = await Order.findById(req.params.id).select("status billStatus").lean();
+      if (!existing) return res.status(404).json({ message: "Order not found" });
+      return existing.status === STATUS_CANCELLED
         ? res.status(409).json({ message: "This order was cancelled — it can't be marked paid" })
-        : res.status(404).json({ message: "Order not found" });
+        : res.status(409).json({ message: "This bill is settled — reopen the bill before changing its payment" });
     }
 
     emitPaymentStatusChanged(req.tenantKey, order);
@@ -389,8 +397,9 @@ export const addItemsToOrder = async (req, res) => {
 
     // Orders can only be changed while Placed (before the KOT prints) — see
     // orderService.modifyOrderItemsTx. Extra items later = a new order.
-    if (order.status !== "CONFIRMED" || order.stockDeducted)
-      return res.status(409).json({ message: "Items can only be changed while the order is Placed — for more food now, place a new order for the table" });
+    // ORD-01: held orders only (awaiting acceptance or Placed, KOT not fired).
+    if (!EDITABLE_STATUSES.includes(order.status) || order.stockDeducted)
+      return res.status(409).json({ message: "Items can only be changed before the order goes to the kitchen — for more food now, place a new order for the table" });
 
     const scheduleCtx = await getScheduleContext({ models: req.models });
     const newDbItems = await priceItems(items, MenuItem, scheduleCtx);
@@ -419,7 +428,7 @@ export const addItemsToOrder = async (req, res) => {
     // the added food would then never reach the kitchen or the stock count.
     const updated = await Order.findOneAndUpdate(
       {
-        _id: order._id, status: "CONFIRMED", stockDeducted: { $ne: true },
+        _id: order._id, status: order.status, stockDeducted: { $ne: true },
         // Orders saved before `revision` existed have no field (read as 0).
         revision: order.revision ? order.revision : { $in: [0, null] },
       },
@@ -428,7 +437,7 @@ export const addItemsToOrder = async (req, res) => {
           items: order.items, subtotal: order.subtotal, tax: order.tax,
           serviceCharge: order.serviceCharge, discount: order.discount, total: order.total,
         },
-        $push: { statusHistory: { status: "CONFIRMED", changedBy: actor, changedAt: new Date(), note: `Added ${newDbItems.length} item(s)` } },
+        $push: { statusHistory: { status: order.status, changedBy: actor, changedAt: new Date(), note: `Added ${newDbItems.length} item(s)` } },
         $inc: { revision: 1 },
       },
       { returnDocument: "after", runValidators: true },

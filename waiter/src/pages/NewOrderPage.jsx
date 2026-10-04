@@ -12,6 +12,7 @@ import VoiceOrder from "../components/VoiceOrder.jsx";
 import QtyStepper, { AddButton } from "../components/ui/QtyStepper.jsx";
 import { useAppState } from "../context/AppState.jsx";
 import { ACCENT, ACCENT_SOFT, ACCENT_GRADIENT, TEXT_MUTED, TEXT_FAINT, GLASS_BG, GLASS_BORDER, NAV_HEIGHT } from "../theme.js";
+import { t as tr, tn, localName } from "../i18n/index.jsx";
 
 export default function NewOrderPage() {
   const nav = useNavigate();
@@ -86,7 +87,7 @@ export default function NewOrderPage() {
       return next;
     });
     const n = lines.reduce((s, l) => s + l.qty, 0);
-    toast.success(`Added ${n} item${n === 1 ? "" : "s"} by voice`);
+    toast.success(tn(n, "Added {n} item by voice", "Added {n} items by voice"));
   };
   const voiceMenu = useMemo(() => fullMenu.filter((it) => !(it.stockTracked && !it.stockAvailable)), [fullMenu]);
 
@@ -121,11 +122,11 @@ export default function NewOrderPage() {
       };
       const { data: order } = await placeOrder(body);
       toast.success(order.status === "CONFIRMED"
-        ? `Order ${order.orderId} placed — it starts preparing in a few minutes`
-        : `Order ${order.orderId} placed — preparing now`);
+        ? tr("Order {id} placed — it goes to the kitchen in a few minutes", { id: order.orderId })
+        : tr("Order {id} placed — cooking now", { id: order.orderId }));
       nav(`/order/${order._id}`, { replace: true });
     } catch (err) {
-      toast.error(err.response?.data?.message || "Couldn't place order");
+      toast.error(err.response?.data?.message || tr("Couldn't place order"));
     } finally { setPlacing(false); }
   };
 
@@ -133,15 +134,15 @@ export default function NewOrderPage() {
     return (
       <div style={{ paddingBottom: NAV_HEIGHT + 16 }}>
         <div style={{ padding: "18px 16px 4px", display: "flex", alignItems: "center", gap: 10 }}>
-          <button onClick={() => nav(-1)} aria-label="Back" style={backBtn}>←</button>
-          <div style={{ fontSize: 21, fontWeight: 800, color: "#fff", letterSpacing: -0.4 }}>New Order</div>
+          <button onClick={() => nav(-1)} aria-label={tr("Back")} style={backBtn}>←</button>
+          <div style={{ fontSize: 21, fontWeight: 800, color: "#fff", letterSpacing: -0.4 }}>{tr("New order")}</div>
         </div>
         <EmptyState
           icon="🕔"
-          title="Start your duty to take orders"
-          sub="You're currently off duty — clock in from the Tables page first."
+          title={tr("Start your duty to take orders")}
+          sub={tr("You're currently off duty — clock in from the Tables page first.")}
           action={
-            <PrimaryButton onClick={() => nav("/tables")}>← Back to Tables</PrimaryButton>
+            <PrimaryButton onClick={() => nav("/tables")}>← {tr("Back to Tables")}</PrimaryButton>
           }
         />
       </div>
@@ -152,20 +153,20 @@ export default function NewOrderPage() {
     return (
       <div style={{ paddingBottom: NAV_HEIGHT + 120 }}>
         <div style={{ padding: "18px 16px 4px", display: "flex", alignItems: "center", gap: 10 }}>
-          <button onClick={() => setReviewing(false)} aria-label="Back" style={backBtn}>←</button>
-          <div style={{ fontSize: 21, fontWeight: 800, color: "#fff", letterSpacing: -0.4 }}>Review Order</div>
+          <button onClick={() => setReviewing(false)} aria-label={tr("Back")} style={backBtn}>←</button>
+          <div style={{ fontSize: 21, fontWeight: 800, color: "#fff", letterSpacing: -0.4 }}>{tr("Review order")}</div>
         </div>
 
         <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
           {cart.map((c) => (
             <GlassCard key={c.item._id} style={{ padding: "12px 14px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff" }}>{c.item.name} × {c.qty}</div>
+                <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff" }}>{localName(c.item)} × {c.qty}</div>
                 <div style={{ fontWeight: 800, fontSize: 13.5, color: ACCENT }}>₹{c.item.price * c.qty}</div>
               </div>
               <input
                 value={c.notes} onChange={(e) => setNotes(c.item._id, e.target.value)}
-                placeholder="Add note (e.g. less spicy)…"
+                placeholder={tr("Add note (e.g. less spicy)…")}
                 style={{
                   marginTop: 8, width: "100%", padding: "9px 11px", fontSize: 12.5, borderRadius: 10,
                   border: `1px solid ${GLASS_BORDER}`, background: "rgba(255,255,255,0.05)", color: "#fff",
@@ -175,23 +176,23 @@ export default function NewOrderPage() {
             </GlassCard>
           ))}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "10px 4px 0", fontWeight: 800, color: "#fff" }}>
-            <span style={{ fontSize: 14 }}>Total</span>
+            <span style={{ fontSize: 14 }}>{tr("Total")}</span>
             <span style={{ fontSize: 22, fontVariantNumeric: "tabular-nums", letterSpacing: -0.4 }}>₹{subtotal}</span>
           </div>
         </div>
 
         <div style={{ padding: "4px 16px" }}>
-          <label style={{ fontSize: 11.5, fontWeight: 700, color: TEXT_FAINT, display: "block", marginBottom: 6 }}>Customer name (optional)</label>
+          <label style={{ fontSize: 11.5, fontWeight: 700, color: TEXT_FAINT, display: "block", marginBottom: 6 }}>{tr("Customer name (optional)")}</label>
           <input
             value={customerName} onChange={(e) => setCustomerName(e.target.value)}
-            placeholder="Walk-in guest"
+            placeholder={tr("Walk-in guest")}
             style={{
               width: "100%", padding: "12px 14px", borderRadius: 12, border: `1px solid ${GLASS_BORDER}`,
               fontSize: 14, boxSizing: "border-box", background: GLASS_BG, color: "#fff",
             }}
           />
           <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 10 }}>
-            {orderType === "DINE_IN" ? `Dine-in · Table ${tableNo}` : "Takeaway"} · the order is Placed right away; you can change it for a few minutes, then it starts preparing and the KOT prints.
+            {orderType === "DINE_IN" ? `${tr("Dine-in")} · ${tr("Table {n}", { n: tableNo })}` : tr("Takeaway")} · {tr("the order is Placed right away; you can change it for a few minutes, then it goes to the kitchen and the KOT prints.")}
           </div>
         </div>
 
@@ -201,7 +202,7 @@ export default function NewOrderPage() {
           borderRadius: 18, boxShadow: "0 12px 32px rgba(0,0,0,0.45)",
         }}>
           <PrimaryButton onClick={handlePlace} disabled={!canPlace || placing} style={{ width: "100%" }}>
-            {placing ? "Placing…" : `Place Order · ₹${subtotal}`}
+            {placing ? tr("Placing…") : `${tr("Place order")} · ₹${subtotal}`}
           </PrimaryButton>
         </div>
       </div>
@@ -211,8 +212,8 @@ export default function NewOrderPage() {
   return (
     <div style={{ paddingBottom: NAV_HEIGHT + (itemCount > 0 ? 90 : 16) }}>
       <div style={{ padding: "18px 16px 4px", display: "flex", alignItems: "center", gap: 10 }}>
-        <button onClick={() => nav(-1)} aria-label="Back" style={backBtn}>←</button>
-        <div style={{ fontSize: 21, fontWeight: 800, color: "#fff", letterSpacing: -0.4 }}>New Order</div>
+        <button onClick={() => nav(-1)} aria-label={tr("Back")} style={backBtn}>←</button>
+        <div style={{ fontSize: 21, fontWeight: 800, color: "#fff", letterSpacing: -0.4 }}>{tr("New order")}</div>
       </div>
 
       {/* Order type + table */}
@@ -222,9 +223,9 @@ export default function NewOrderPage() {
             display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 12,
             border: "1.5px solid rgba(59,130,246,0.5)", background: ACCENT_SOFT, color: ACCENT, fontWeight: 800, fontSize: 14,
           }}>
-            {preTable ? `🍽️ Dine-in · Table ${preTable}` : "🛍️ Take Away"}
+            {preTable ? `🍽️ ${tr("Dine-in")} · ${tr("Table {n}", { n: preTable })}` : `🛍️ ${tr("Take Away")}`}
             <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 600, color: TEXT_MUTED }}>
-              {preTable ? "picked on the table map" : "no table"}
+              {preTable ? tr("picked on the table map") : tr("no table")}
             </span>
           </div>
         ) : (<>
@@ -236,7 +237,7 @@ export default function NewOrderPage() {
               background: orderType === t ? ACCENT_SOFT : GLASS_BG,
               color: orderType === t ? ACCENT : TEXT_MUTED, fontWeight: 700, fontSize: 12.5,
             }}>
-              {t === "DINE_IN" ? "🍽️ Dine-in" : "🛍️ Takeaway"}
+              {t === "DINE_IN" ? `🍽️ ${tr("Dine-in")}` : `🛍️ ${tr("Takeaway")}`}
             </button>
           ))}
         </div>
@@ -246,10 +247,10 @@ export default function NewOrderPage() {
             width: "100%", padding: "12px 14px", borderRadius: 12, border: `1px solid ${GLASS_BORDER}`,
             fontSize: 14, background: GLASS_BG, color: "#fff",
           }}>
-            <option value="" style={{ color: "#111" }}>Select a table…</option>
+            <option value="" style={{ color: "#111" }}>{tr("Select a table…")}</option>
             {tables.map((t) => (
               <option key={t.tableNo} value={t.tableNo} style={{ color: "#111" }}>
-                Table {t.tableNo} ({t.seats} seats){t.occupancyStatus === "OCCUPIED" ? " — occupied, adding to it" : ""}
+                {tr("Table {n}", { n: t.tableNo })} ({tn(t.seats, "{n} seat", "{n} seats")}){t.occupancyStatus === "OCCUPIED" ? ` — ${tr("occupied, adding to it")}` : ""}
               </option>
             ))}
           </select>
@@ -261,7 +262,7 @@ export default function NewOrderPage() {
       <div style={{ padding: "6px 16px", display: "flex", gap: 8 }}>
         <input
           value={search} onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search menu…"
+          placeholder={tr("Search menu…")}
           style={{
             flex: 1, minWidth: 0, padding: "11px 15px", borderRadius: 14, border: `1px solid ${GLASS_BORDER}`,
             fontSize: 14, boxSizing: "border-box", background: GLASS_BG, color: "#fff",
@@ -272,7 +273,7 @@ export default function NewOrderPage() {
 
       {categories.length > 0 && (
         <div className="hide-scrollbar" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "10px 16px" }}>
-          <Chip active={!category} onClick={() => setCategory("")}>All</Chip>
+          <Chip active={!category} onClick={() => setCategory("")}>{tr("All")}</Chip>
           {categories.map((c) => (
             <Chip key={c.category} active={category === c.category} onClick={() => setCategory(c.category)}>{c.category}</Chip>
           ))}
@@ -280,8 +281,8 @@ export default function NewOrderPage() {
       )}
 
       <div style={{ padding: "4px 16px 0" }}>
-        {items === null && <Loader label="Loading menu…" />}
-        {items !== null && grouped.length === 0 && <EmptyState icon="🔎" title="No items found" />}
+        {items === null && <Loader label={tr("Loading menu…")} />}
+        {items !== null && grouped.length === 0 && <EmptyState icon="🔎" title={tr("No items found")} />}
         {grouped.map(([cat, catItems]) => (
           <div key={cat} style={{ marginBottom: 10 }}>
             <div style={{ fontSize: 12, fontWeight: 800, color: "#fff", letterSpacing: 0.3, padding: "12px 2px 6px" }}>{cat}</div>
@@ -295,8 +296,8 @@ export default function NewOrderPage() {
                     style={{ "--i": i, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", opacity: outOfStock ? 0.5 : 1 }}
                   >
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff" }}>{it.name}</div>
-                      <div style={{ fontSize: 12, color: TEXT_FAINT, marginTop: 2 }}>₹{it.price}{outOfStock ? " · Out of stock" : ""}</div>
+                      <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff" }}>{localName(it)}</div>
+                      <div style={{ fontSize: 12, color: TEXT_FAINT, marginTop: 2 }}>₹{it.price}{outOfStock ? ` · ${tr("Out of stock")}` : ""}</div>
                     </div>
                     {!outOfStock && (
                       qty > 0
@@ -318,8 +319,8 @@ export default function NewOrderPage() {
           display: "flex", alignItems: "center", justifyContent: "space-between", fontWeight: 800, fontSize: 14,
           cursor: "pointer", boxShadow: "0 12px 28px rgba(59,130,246,0.45)",
         }}>
-          <span style={{ fontVariantNumeric: "tabular-nums" }}>{itemCount} item{itemCount > 1 ? "s" : ""} · ₹{subtotal}</span>
-          <span>Review →</span>
+          <span style={{ fontVariantNumeric: "tabular-nums" }}>{tn(itemCount, "{n} item", "{n} items")} · ₹{subtotal}</span>
+          <span>{tr("Review")} →</span>
         </button>
       )}
     </div>

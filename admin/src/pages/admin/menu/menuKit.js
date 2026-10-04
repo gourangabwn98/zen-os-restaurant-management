@@ -18,6 +18,35 @@ export const isSoldOut = (item, now = Date.now()) =>
   !item?.isAvailable && !!item?.soldOutUntil && new Date(item.soldOutUntil).getTime() > now;
 export const availState = (item) => (item?.isAvailable ? "on" : isSoldOut(item) ? "soldout" : "off");
 
+// ── categories an item is listed under (MNU-01, 03–07) ──────────────────────
+// Mirrors restaurant-server/utils/menuCategories.js: primary `category`, extra
+// `categories`, the three flag-driven built-ins, and the data-driven built-ins
+// the server computed into `categoryList` (Most Ordered / Highest Rated /
+// Sales-Based Choice — never guessed here).
+export const ITEM_FLAGS = [
+  { flag: "isTodaysSpecial", label: N_("Today's Special"), hint: N_("Featured on the customer home screen today") },
+  { flag: "isChefsPick", label: N_("Chef's Pick"), hint: N_("The kitchen recommends it") },
+  { flag: "isFastAvailable", label: N_("Fast Available"), hint: N_("Ready quickly — for guests in a hurry") },
+];
+// MNU-06 — the icon keys the server accepts (utils/menuCategories.js CATEGORY_ICONS).
+export const CATEGORY_ICON_KEYS = [
+  "plate", "star", "chef", "bolt", "flame", "thumbs", "trend", "tea", "coffee", "drink", "breakfast",
+  "rice", "curry", "fish", "chicken", "mutton", "egg", "veg", "bread", "noodles", "roll", "tandoor",
+  "soup", "salad", "snack", "dessert", "sweet", "icecream", "pizza", "burger", "thali", "combo",
+];
+export const isSmartCat = (c) => c?.kind === "SMART";
+export const manualCats = (cats) => cats.filter((c) => !isSmartCat(c));
+/** Every category name this item is listed under (primary first). */
+export const memberNames = (item, cats) => {
+  const out = new Set([item.category, ...(item.categories || [])]);
+  for (const c of cats) {
+    if (!isSmartCat(c)) continue;
+    if (c.smartFlag ? item[c.smartFlag] === true : (item.categoryList || []).includes(c.name)) out.add(c.name);
+  }
+  out.delete(undefined); out.delete("");
+  return out;
+};
+
 // ── time formatting ─────────────────────────────────────────────────────────
 // "17:00" → "5:00 PM"
 export const fmt12 = (hhmm) => {
@@ -190,7 +219,7 @@ export const buildTimeGroups = ({ menuTimes, cats, countOf, clock }) => {
     .filter((g) => g.mt || g.cats.length || g.key === ALL_DAY)
     .map((g) => ({
       ...g,
-      items: g.cats.reduce((s, c) => s + countOf(c), 0),
+      items: g.cats.reduce((s, c) => s + (c.kind === "SMART" ? 0 : countOf(c)), 0),
       live: isScheduleActive(g.schedule ? { ...g.schedule, enabled: true } : null, clock),
     }));
 };
@@ -221,7 +250,8 @@ const TEST_RE = /^(test|testing|demo|sample|dummy|temp|tmp|asdf|xyz|abc)\b/i;
  * [{ cat, kind: "duplicate", into }, { cat, kind: "test" }, { cat, kind: "empty" }]
  * A duplicate merges into the spelling with the most items.
  */
-export const findCleanup = (cats, countOf) => {
+export const findCleanup = (allCats, countOf) => {
+  const cats = allCats.filter((c) => c.kind !== "SMART"); // built-ins are never "cleanup"
   const out = [];
   const flagged = new Set();
   const groups = new Map();

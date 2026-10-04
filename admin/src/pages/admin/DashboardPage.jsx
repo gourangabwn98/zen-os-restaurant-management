@@ -3,9 +3,8 @@ import toast from "react-hot-toast";
 import { useVisibleInterval } from "../../hooks/useVisibleInterval.js";
 import { useLiveOrders } from "../../hooks/useLiveOrders.js";
 import {
-  updateOrderStatus, getAllOrders, getAllInvoices,
-  updateInvoiceStatus, getAllTables, getInventoryOverview, getPrinterStatus,
-  updateOrderPayment, confirmOrder, rejectOrder,
+  updateOrderStatus, getAllOrders, getAllTables, getInventoryOverview, getPrinterStatus,
+  confirmOrder, rejectOrder,
 } from "../../services/adminService.js";
 import { StockAlertsModal } from "../../components/OpsAlertsPanel.jsx";
 import { t, N_, fmtNum, fmtDate, fmtTime } from "../../i18n/core.js";
@@ -23,27 +22,29 @@ import ActiveOrders from "./dashboard/ActiveOrders.jsx";
 import { TodayDetail, TotalsCard } from "./dashboard/DetailCards.jsx";
 
 // ── Canonical vocabulary (see restaurant-server/utils/orderStateMachine.js) ───
+// Floor words (DSH-04): Placed → Cooking → Ready to Deliver → Eating/Served → Completed.
 const STATUS_LABEL = {
   AWAITING_PAYMENT: N_("Awaiting payment"),
   PENDING_CONFIRMATION: N_("Pending"),
   CONFIRMED: N_("Placed"),
-  PREPARING: N_("Preparing"),
-  READY: N_("Ready"),
-  DELIVERED: N_("Delivered"),
+  PREPARING: N_("Cooking"),
+  READY: N_("Ready to Deliver"),
+  DELIVERED: N_("Served"),
   COMPLETED: N_("Completed"),
   CANCELLED: N_("Cancelled"),
 };
 const TYPE_LABEL = { DINE_IN: N_("Dine-in"), TAKEAWAY: N_("Takeaway"), ONLINE: N_("Online") };
 
-// Only the transitions the backend state machine will actually accept.
-// Mirrors TRANSITIONS in restaurant-server/utils/orderStateMachine.js.
+// The OPERATIONAL steps the Dashboard may take (orderStateMachine.js). No
+// COMPLETED here — DSH-03: completing belongs to billing (settling the bill
+// in Invoices completes a served order); the Dashboard never completes or bills.
 const NEXT_STATUS = {
   AWAITING_PAYMENT: ["CANCELLED"], // only a verified payment moves it forward
   PENDING_CONFIRMATION: ["CONFIRMED", "CANCELLED"],
   CONFIRMED: ["PREPARING", "CANCELLED"],
   PREPARING: ["READY", "CANCELLED"],
   READY: ["DELIVERED"],
-  DELIVERED: ["COMPLETED"],
+  DELIVERED: [],
   COMPLETED: [],
   CANCELLED: [],
 };
@@ -67,7 +68,6 @@ export default function DashboardPage({ data, onNavigate }) {
 
   const [allOrders, setAllOrders] = useState([]);
   const [allTodayOrders, setAllTodayOrders] = useState([]);
-  const [invoiceMap, setInvoiceMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [tables, setTables] = useState(null);
   const [inv, setInv] = useState(null);
@@ -89,12 +89,10 @@ export default function DashboardPage({ data, onNavigate }) {
     try {
       const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
       const first = !fullRef.current;
-      const [ordersRes, invoicesRes] = await Promise.all([
-        first
-          ? getAllOrders({ limit: 1000 })
-          : getAllOrders({ scope: "live", since: midnight.toISOString(), limit: 1000 }),
-        getAllInvoices().catch(() => ({ data: { invoices: [] } })),
-      ]);
+      // BIL-01: the Dashboard reads orders only — bills live in Invoices.
+      const ordersRes = first
+        ? await getAllOrders({ limit: 1000 })
+        : await getAllOrders({ scope: "live", since: midnight.toISOString(), limit: 1000 });
       const fetched = ordersRes.data.orders || [];
       let full = fetched;
       if (!first) {
@@ -106,25 +104,8 @@ export default function DashboardPage({ data, onNavigate }) {
       }
       fullRef.current = full;
       const today = full.filter((o) => isToday(o.createdAt));
-      const invoices = invoicesRes.data?.invoices || [];
-
-      const activeDining = today.filter(
-        (o) => o.orderType === "DINE_IN" && o.tableNo && !ACTIVE_EXCLUDE.includes(o.status),
-      );
-      const iMap = {};
-      invoices.forEach((inv) => {
-        const ids = inv.orders?.map(String) || [];
-        for (const o of activeDining) {
-          if (ids.includes(String(o._id))) {
-            iMap[Number(o.tableNo)] = { ...inv, invoiceStatus: inv.status || inv.paymentStatus || "pending" };
-            break;
-          }
-        }
-      });
-
       setAllOrders(full);
       setAllTodayOrders(today);
-      setInvoiceMap(iMap);
     } catch {
       toast.error(t("Failed to load data"));
     } finally {
@@ -181,19 +162,6 @@ export default function DashboardPage({ data, onNavigate }) {
     setAllTodayOrders((p) => p.map(apply));
   };
 
-  // Record a payment (same endpoint + enum validation as Invoices / Orders).
-  const handleMarkPaid = async (order, paymentMethod) => {
-    try {
-      const { data } = await updateOrderPayment(order._id, { paymentStatus: "PAID", paymentMethod });
-      const o = data?.order; // server copy has `user` unpopulated — patch only what changed
-      patchOrder(order._id, { paymentStatus: o?.paymentStatus || "PAID", paymentMethod: o?.paymentMethod || paymentMethod });
-      toast.success(t("{id} marked paid", { id: order.orderId }));
-    } catch (err) {
-      toast.error(err.response?.data?.message || t("Update failed"));
-      throw err;
-    }
-  };
-
   // Accept / reject a customer order — the same endpoints the Orders screen uses.
   const handleAccept = async (order) => {
     try {
@@ -221,23 +189,15 @@ export default function DashboardPage({ data, onNavigate }) {
 
   const handleStatusChange = async (id, st) => {
     try {
-      await updateOrderStatus(id, st);
-      toast.success(`${t("Order")} → ${statusLabel(st)}`);
-      setAllOrders((p) => p.map((o) => (o._id === id ? { ...o, status: st } : o)));
-      if (fullRef.current) fullRef.current = fullRef.current.map((o) => (o._id === id ? { ...o, status: st } : o));
-      setAllTodayOrders((p) => p.map((o) => (o._id === id ? { ...o, status: st } : o)));
+      // Accepting goes through its own endpoint (it starts the change window).
+      const { data } = st === "CONFIRMED" ? await confirmOrder(id) : await updateOrderStatus(id, st);
+      const updated = data?.order || data;
+      // The server's word wins: "Served" on an already-settled bill completes it.
+      const status = updated?.status || st;
+      toast.success(`${t("Order")} → ${statusLabel(status)}`);
+      patchOrder(id, { status, billStatus: updated?.billStatus });
     } catch (err) {
       toast.error(err.response?.data?.message || t("Update failed"));
-    }
-  };
-
-  const handleInvoiceChange = async (id, st) => {
-    try {
-      await updateInvoiceStatus(id, st);
-      toast.success(`${t("Invoice")} → ${t(st)}`);
-      await fetchData();
-    } catch {
-      toast.error(t("Invoice update failed"));
     }
   };
 
@@ -251,10 +211,11 @@ export default function DashboardPage({ data, onNavigate }) {
   // ── derived, all from real data ────────────────────────────────────────────
   const today = todaySummary(allTodayOrders);
   const totals = overallTotals(allOrders);
-  const floor = floorTables(tables || [], allTodayOrders, invoiceMap, now);
-  const pendingInvoices = Object.values(invoiceMap).filter((i) => i.invoiceStatus?.toLowerCase() === "pending").length;
+  const floor = floorTables(tables || [], allTodayOrders, now);
+  // Served today, bill still open — settled in Invoices (BIL-01), listed here only.
+  const billsToSettle = allTodayOrders.filter((o) => o.status === "DELIVERED" && (o.billStatus ? o.billStatus !== "SETTLED" : true));
   const attention = attentionItems({
-    inv, printer, pendingInvoices,
+    inv, printer, billsToSettle,
     awaitingConfirm: allOrders.filter((o) => o.status === "PENDING_CONFIRMATION"),
     older: olderUnpaid(allOrders),
   });
@@ -319,11 +280,9 @@ export default function DashboardPage({ data, onNavigate }) {
                 <FloorCard
                   tables={floor}
                   tablesLoaded={tables !== null}
-                  nextStatus={NEXT_STATUS}
-                  statusLabel={statusLabel}
                   statusKey={statusKey}
+                  typeLabel={typeLabel}
                   onStatusChange={handleStatusChange}
-                  onInvoiceStatusChange={handleInvoiceChange}
                   onNavigate={onNavigate}
                 />
               </div>
@@ -351,14 +310,11 @@ export default function DashboardPage({ data, onNavigate }) {
         <AttentionModal
           // Re-read from the live list each render, so a row disappears as soon as it's settled.
           item={attention.find((a) => a.kind === detailKind) || { kind: detailKind, orders: [] }}
-          pendingTables={floor.filter((tb) => tb.billPending && tb.invoice)}
           printer={printer}
           typeLabel={typeLabel}
           statusKey={statusKey}
-          onMarkPaid={handleMarkPaid}
           onAccept={handleAccept}
           onReject={handleReject}
-          onInvoiceStatusChange={handleInvoiceChange}
           onNavigate={onNavigate}
           onClose={() => setDetailKind(null)}
         />

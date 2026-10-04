@@ -67,7 +67,8 @@ export const computePay = ({ hr = {}, sessions = [], advances = [], unpaidLeaveD
 const loadMonth = async ({ AttendanceSession, StaffLeave, StaffPay, employeeId, start, end, key }) => {
   const [sessions, leaves, ledger] = await Promise.all([
     AttendanceSession.find({ employee: employeeId, loginAt: { $gte: start, $lte: end } }).lean(),
-    StaffLeave.find({ employee: employeeId, status: "APPROVED", from: { $lte: end }, to: { $gte: start } }).lean(),
+    // EMP-02: approved (paid) + declined / still-pending past days (LOP).
+    StaffLeave.find({ employee: employeeId, status: { $in: ["APPROVED", "DECLINED", "PENDING"] }, from: { $lte: end }, to: { $gte: start } }).lean(),
     StaffPay.find({ employee: employeeId, month: key }).sort({ createdAt: -1 }).lean(),
   ]);
   const { paid, unpaid } = leaveDaysInRange(leaves, start, end);

@@ -206,3 +206,4 @@ img.emp-av { object-fit: cover; }
   .emp .zc-subnav { flex-wrap: nowrap; overflow-x: auto; }
   .emp .zc-subnav button { flex: none; }
 }
+.emp-av.staff { background: var(--card-2); color: var(--text-2); border-color: var(--edge-hi); }

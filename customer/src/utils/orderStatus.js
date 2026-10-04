@@ -26,8 +26,8 @@ export const STATUS_LABEL = {
   PENDING_CONFIRMATION: "Awaiting confirmation",
   CONFIRMED: "Placed",
   PREPARING: "Preparing",
-  READY: "Ready",
-  DELIVERED: "Delivered",
+  READY: "Ready to serve",
+  DELIVERED: "Served",
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
 };
@@ -37,7 +37,7 @@ export const STATUS_MESSAGE = {
   PENDING_CONFIRMATION: "Waiting for the restaurant to accept your order…",
   CONFIRMED: "Your order has been placed — you can still change it for a few minutes.",
   PREPARING: "Your food is being prepared.",
-  READY: "Your order is ready!",
+  READY: "Your food is ready — it's on its way to you.",
   DELIVERED: "Enjoy your meal!",
   COMPLETED: "Order completed. Thanks for visiting!",
   CANCELLED: "This order was cancelled.",
@@ -49,7 +49,7 @@ export const STAGES = [
   { key: "CONFIRMED",            label: "Placed",    icon: "✅" },
   { key: "PREPARING",            label: "Preparing", icon: "👨‍🍳" },
   { key: "READY",                label: "Ready",     icon: "🛎️" },
-  { key: "DELIVERED",            label: "Delivered", icon: "🍽️" },
+  { key: "DELIVERED",            label: "Served",    icon: "🍽️" },
 ];
 
 export const statusPillClass = (status) => {

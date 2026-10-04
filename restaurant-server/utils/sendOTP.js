@@ -1,3 +1,4 @@
+import { BRAND_NAME } from "./brand.js";
 import twilio from "twilio";
 import axios from "axios";
 
@@ -48,7 +49,7 @@ const sendViaTwilio = async (phone, otp) => {
   );
 
   await client.messages.create({
-    body: `Your Adda Cafe OTP is ${otp}. Valid for 5 minutes. Do not share it with anyone.`,
+    body: `Your ${BRAND_NAME} OTP is ${otp}. Valid for 5 minutes. Do not share it with anyone.`,
     from: process.env.TWILIO_PHONE,
     to: `+91${phone}`,
   });

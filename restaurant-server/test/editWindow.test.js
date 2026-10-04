@@ -302,14 +302,43 @@ await test("edit: a stale revision is refused (someone else edited first)", asyn
   await assert.rejects(edit(w, WAITER, { items: [{ menuItemId: "m1", qty: 1 }], revision: 1 }), (e) => e.statusCode === 409 && /Someone else/.test(e.message));
 });
 
-await test("edit: only while Placed — not awaiting confirmation, not preparing, not after a KOT exists", async () => {
+await test("edit: only while held — not preparing, not after a KOT exists", async () => {
   for (const extra of [
-    { status: "PENDING_CONFIRMATION" }, { status: "PREPARING" }, { status: "READY" }, { status: "AWAITING_PAYMENT" },
+    { status: "PREPARING" }, { status: "READY" }, { status: "AWAITING_PAYMENT" },
     { status: "CONFIRMED", stockDeducted: true }, // an admin moved a later order back to Placed
   ]) {
     const w = makeWorld({ orders: [pending(extra)] });
     await assert.rejects(edit(w, ADMIN, { items: [{ menuItemId: "m1", qty: 1 }] }), (e) => e.statusCode === 409, JSON.stringify(extra));
   }
+});
+
+// ── ORD-01: the hold counts from placement; changes allowed from placement ──
+await test("ORD-01: a customer can change the order while it still awaits acceptance (no KOT yet)", async () => {
+  const w = makeWorld({ orders: [pending({ status: "PENDING_CONFIRMATION", user: "u1", autoPrepareAt: null })] });
+  const { order } = await edit(w, CUSTOMER, { items: [{ menuItemId: "m1", qty: 3 }] });
+  assert.equal(order.status, "PENDING_CONFIRMATION");
+  assert.equal(order.items[0].qty, 3);
+  assert.equal(w.state.kots.length, 0, "nothing reached the kitchen");
+});
+
+await test("ORD-01: accepted 2 min after placing → KOT fires 3 min after PLACING (1 min left)", async () => {
+  const placed = Date.now() - 2 * 60000;
+  const w = makeWorld({ orders: [pending({ status: "PENDING_CONFIRMATION", autoPrepareAt: null, createdAt: new Date(placed) })] });
+  const r = await confirmOrderTx({ req: { models: w.models, db: w.db, user: ADMIN, headers: {} }, orderId: "o1" });
+  assert.equal(r.order.status, "CONFIRMED");
+  const at = new Date(r.order.autoPrepareAt).getTime();
+  assert.ok(Math.abs(at - (placed + 3 * 60000)) < 1500, "hold measured from placement");
+  assert.equal(w.state.kots.length, 0, "KOT still held");
+});
+
+await test("ORD-01: accepted after the 3 minutes → straight to the kitchen (KOT once)", async () => {
+  const w = makeWorld({ orders: [pending({ status: "PENDING_CONFIRMATION", autoPrepareAt: null, createdAt: new Date(Date.now() - 5 * 60000) })] });
+  const r = await confirmOrderTx({ req: { models: w.models, db: w.db, user: ADMIN, headers: {} }, orderId: "o1" });
+  assert.equal(r.order.status, "PREPARING");
+  assert.equal(w.state.kots.length, 1);
+  const again = await autoSendDueOrders({ models: w.models, db: w.db });
+  assert.equal(again.sent, 0, "the timer can't print it twice");
+  assert.equal(w.state.kots.length, 1);
 });
 
 await test("edit: customer owner / guest with token may; others may not; nobody may empty the order", async () => {

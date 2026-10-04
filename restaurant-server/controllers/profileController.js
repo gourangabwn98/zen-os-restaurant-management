@@ -3,6 +3,8 @@ import cloudinary  from "../config/cloudinary.js";
 import streamifier from "streamifier";
 import { isPhonePeConfigured } from "../services/paymentService.js";
 import { PAYMENT_MODES, effectivePaymentMode } from "../utils/paymentMode.js";
+import { effectiveServices } from "../utils/serviceToggles.js";
+import { emitMenuUpdated } from "../sockets/socket.js";
 
 const uploadToCloudinary = (buffer, folder = "restaurant", size = 400) =>
   new Promise((resolve, reject) => {
@@ -50,6 +52,22 @@ export const updateRestaurantProfile = async (req, res) => {
       }
       req.body.editWindowMinutes = m;
     }
+    // SET-01: service toggles are booleans, merged onto what's saved so a
+    // partial update can never silently switch another service off.
+    if (req.body.services !== undefined) {
+      const svc = req.body.services;
+      if (!svc || typeof svc !== "object" || Array.isArray(svc)) {
+        return res.status(400).json({ message: "services must be { dineIn, takeAway, delivery }" });
+      }
+      const clean = {};
+      for (const k of ["dineIn", "takeAway", "delivery"]) {
+        if (svc[k] === undefined) continue;
+        if (typeof svc[k] !== "boolean") return res.status(400).json({ message: `services.${k} must be true or false` });
+        clean[k] = svc[k];
+      }
+      const current = await RestaurantProfile.findOne().select("services").lean();
+      req.body.services = { ...effectiveServices(current), ...clean };
+    }
     let profile = await RestaurantProfile.findOne();
     if (!profile) {
       profile = await RestaurantProfile.create({ restaurantName: req.body.restaurantName || "Restaurant", ...req.body });
@@ -57,6 +75,9 @@ export const updateRestaurantProfile = async (req, res) => {
       Object.assign(profile, req.body);
       await profile.save();
     }
+    // Open customer apps re-read the profile + menu (SET-01: a switched-off
+    // service disappears without a reload). The event carries no data.
+    if (req.body.services !== undefined) emitMenuUpdated(req.tenantKey);
     res.json({ success: true, data: profile });
   } catch (err) { res.status(400).json({ message: err.message }); }
 };

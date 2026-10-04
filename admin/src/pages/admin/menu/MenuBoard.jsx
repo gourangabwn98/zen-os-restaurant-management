@@ -8,12 +8,14 @@
 // Purely presentational: MenuAdminPage owns the data (real API results) and
 // passes every action in. No menu data is created here.
 // ─────────────────────────────────────────────────────────────────────────────
+import TimePicker from "../../../components/TimePicker.jsx";
 import { useState } from "react";
 import Loader from "../shared/Loader.jsx";
 import EmptyState from "../shared/EmptyState.jsx";
 import ErrorState from "../shared/ErrorState.jsx";
 import { t, tn, fmtNum, localName } from "../../../i18n/core.js";
 import { VegDot, ScheduleBadge, Thumb, CatThumb } from "./menuUI.jsx";
+import { ITEM_FLAGS } from "./menuKit.js";
 import {
   VIEWS, VIEW_CHIPS, hasSchedule, hasPhoto, isOutOfStock, scheduledAt, availState,
   timeLabel, daysLabel, datesLabel, fmtMinutes, hhmmOf, windowSegments, DAY_SHORT, hasExtraFilters,
@@ -77,11 +79,11 @@ export function MenuTimesCard({ groups, selected, onSelect, preview, setPreview,
             <option value="">{t("Today")}</option>
             {DAY_SHORT.map((d, i) => <option key={d} value={i}>{t(d)}</option>)}
           </select>
-          <input type="time" className="zc-input mb-mini" aria-label={t("Preview at another time")}
-            style={{ width: 112, borderColor: isCustom ? "var(--violet-line)" : undefined }}
+          <TimePicker ariaLabel={t("Preview at another time")} allowEmpty
+            style={isCustom ? { outline: "1px solid var(--violet-line)", borderRadius: 8 } : undefined}
             value={preview ? hhmmOf(preview.minutes) : ""}
-            onChange={(e) => {
-              const m = /^(\d{2}):(\d{2})$/.exec(e.target.value);
+            onChange={(v) => {
+              const m = /^(\d{2}):(\d{2})$/.exec(v);
               if (m) setPreview({ minutes: Number(m[1]) * 60 + Number(m[2]), day: preview?.day ?? null });
             }} />
         </div>
@@ -175,10 +177,13 @@ export function CategoryCard({
             onDrop={(e) => { e.preventDefault(); drop(c._id); setDrag(null); setOver(null); }}
             onDragEnd={() => { setDrag(null); setOver(null); }}>
             {cats.length > 1 && <span className="grip" aria-hidden="true">⋮⋮</span>}
-            <CatThumb image={c.image} size={24} />
+            <CatThumb image={c.image} icon={c.iconShown} size={24} />
             <button type="button" className="nm" aria-pressed={selCat === c.name}
               title={t("Show only {name} items", { name: localName(c) })}
-              onClick={() => onPickCat(selCat === c.name ? "All" : c.name)}>{localName(c)}</button>
+              onClick={() => onPickCat(selCat === c.name ? "All" : c.name)}>
+              {localName(c)}
+              {c.kind === "SMART" && <span className="zc-tag vio sq" style={{ marginLeft: 6, fontSize: 9.5 }} title={c.smartSource === "flag" ? t("Built-in · items you mark") : t("Built-in · filled from real orders and ratings")}>{t("Auto")}</span>}
+            </button>
             <span className="ct">{fmtNum(countOf(c))}</span>
             {c._id && (
               <button type="button" className="zc-btn ghost sm" style={{ padding: "3px 8px" }}
@@ -244,12 +249,13 @@ function AvailSeg({ item, busy, onSet }) {
 
 const DinerTags = ({ item, clock }) => (
   <span style={{ display: "inline-flex", gap: 5, flexWrap: "wrap", alignItems: "center" }}>
+    {ITEM_FLAGS.filter((f) => item[f.flag]).map((f) => <span key={f.flag} className="zc-tag live sq mb-dtag">{t(f.label)}</span>)}
     {(item.tags || []).map((x) => <span key={x} className="zc-tag vio mb-dtag">{x}</span>)}
     {isOutOfStock(item) && <span className="zc-tag stop sq"><i />{t("Out of stock")}</span>}
     {hasSchedule(item) && (
       <ScheduleBadge schedule={item.schedule} off={!clock && item.scheduledNow === false && item.isAvailable} />
     )}
-    {!(item.tags || []).length && !isOutOfStock(item) && !hasSchedule(item) && (
+    {!(item.tags || []).length && !ITEM_FLAGS.some((f) => item[f.flag]) && !isOutOfStock(item) && !hasSchedule(item) && (
       <span style={{ color: "var(--text-3)", fontSize: 11 }}>—</span>
     )}
   </span>

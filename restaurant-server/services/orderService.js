@@ -10,7 +10,7 @@
 import { priceOrder, priceItems, computeTotals } from "../utils/pricing.js";
 import { resolveCouponForOrder } from "./couponService.js";
 import { getScheduleContext } from "./menuScheduleService.js";
-import { normalizeOrderType, assertValidTransition, requiresPaidForTransition } from "../utils/orderStateMachine.js";
+import { normalizeOrderType, assertValidTransition, effectiveBillStatus } from "../utils/orderStateMachine.js";
 import { createKotJobForOrder } from "./kotService.js";
 import { findOrOpenTableSession, closeTableSession } from "./tableSessionService.js";
 import { findNextMatch } from "./waitlistService.js";
@@ -19,6 +19,7 @@ import {
   deductStockForOrder, reverseStockForOrder, calculateRecipeConsumption, validateInventoryForConsumption,
 } from "./inventoryService.js";
 import { isPhonePeConfigured } from "./paymentService.js";
+import { assertServiceEnabled } from "../utils/serviceToggles.js";
 import { resolveCustomerPaymentMethod, isPayFirst, PAYMENT_METHODS, PAY_FIRST_WINDOW_MS } from "../utils/paymentMode.js";
 
 // ── Identity helpers ──────────────────────────────────────────────────────
@@ -138,6 +139,9 @@ export const placeOrderTx = async ({ req, body }) => {
 
   const restaurant = await RestaurantProfile.findOne();
 
+  // SET-01: a customer can't order a service the restaurant switched off.
+  if (!isStaffOrder) assertServiceEnabled(restaurant, normalizedType);
+
   // ── Payment method (utils/paymentMode.js) ─────────────────────────────────
   // Customers are held to the restaurant's payment mode; a pay-first order
   // (Online + PhonePe) starts AWAITING_PAYMENT and stays invisible to staff
@@ -239,6 +243,7 @@ export const placeOrderTx = async ({ req, body }) => {
     guestPhone:    customerPhone || "",
     paymentMethod: method,
     paymentStatus: "PENDING_VERIFICATION",
+    billStatus:    "OPEN", // BIL-02 — only billingService settles it
     paymentDeadline: payFirst ? new Date(now.getTime() + PAY_FIRST_WINDOW_MS) : null,
     idempotencyKey: idempotencyKey || undefined,
     statusHistory: [{ status: initialStatus, changedBy: actor, changedAt: now, note: payFirst ? "Order placed — waiting for online payment" : "Order placed" }],
@@ -289,6 +294,12 @@ export const editWindowMs = (profile) => {
   const raw = profile?.editWindowMinutes == null ? NaN : Number(profile.editWindowMinutes);
   const min = Number.isFinite(raw) ? Math.min(MAX_EDIT_WINDOW_MIN, Math.max(0, raw)) : 3;
   return min * 60 * 1000;
+};
+
+/** ORD-01: when a held order's KOT fires — placedAt + window, never before now. */
+export const holdUntil = ({ placedAt, now = new Date(), profile }) => {
+  const placed = placedAt ? new Date(placedAt).getTime() : now.getTime();
+  return new Date(Math.max(now.getTime(), placed + editWindowMs(profile)));
 };
 
 /** Throws 409 (listing what's short) if stock can't cover these order lines. */
@@ -367,7 +378,10 @@ export const confirmOrderTx = async ({ req, orderId }) => {
 
   const actor = buildActor(req.user);
   const now = new Date();
-  const autoPrepareAt = new Date(now.getTime() + editWindowMs(await RestaurantProfile.findOne()));
+  // ORD-01: the change window counts from when the customer PLACED the order,
+  // not from acceptance — accepted within 3 min, the KOT still fires 3 min
+  // after placing; accepted later, it goes to the kitchen straight away.
+  const autoPrepareAt = holdUntil({ placedAt: current.createdAt, now, profile: await RestaurantProfile.findOne() });
   const updated = await Order.findOneAndUpdate(
     { _id: orderId, status: "PENDING_CONFIRMATION" },
     {
@@ -421,6 +435,8 @@ export const autoSendDueOrders = async ({ models, db, now = new Date(), onSent, 
 };
 
 // ── Edit an order while it is still editable ───────────────────────────────
+// ORD-01 — held orders: awaiting acceptance, or Placed before its KOT fires.
+export const EDITABLE_STATUSES = ["PENDING_CONFIRMATION", "CONFIRMED"];
 /**
  * Replaces the order's items (add / remove / change qty / notes) while it is
  * still PENDING_CONFIRMATION. Admin and waiter may always edit; the customer
@@ -466,12 +482,12 @@ export const modifyOrderItemsTx = async ({ req, orderId, items, revision }) => {
     }
   }
 
-  // Only a Placed order that hasn't reached the kitchen (no KOT / stock yet —
-  // an admin could move a later order back to CONFIRMED) can be changed.
-  if (order.status !== "CONFIRMED" || order.stockDeducted) {
+  // ORD-01: changeable from the moment it is placed until its KOT fires —
+  // while awaiting acceptance or Placed (held), never once it has reached the
+  // kitchen (no KOT / stock yet — an admin could move a later order back).
+  if (!EDITABLE_STATUSES.includes(order.status) || order.stockDeducted) {
     const err = new Error(
-      order.status === "PENDING_CONFIRMATION" ? "This order can be changed once the restaurant accepts it"
-      : order.status === "AWAITING_PAYMENT" ? "Pay for the order first, or cancel it and order again"
+      order.status === "AWAITING_PAYMENT" ? "Pay for the order first, or cancel it and order again"
       : "This order is already being prepared and can't be changed");
     err.statusCode = 409;
     throw err;
@@ -517,17 +533,17 @@ export const modifyOrderItemsTx = async ({ req, orderId, items, revision }) => {
 
   const updated = await Order.findOneAndUpdate(
     // revision 0 also matches orders saved before the field existed (no field).
-    { _id: orderId, status: "CONFIRMED", stockDeducted: { $ne: true }, revision: revision === 0 ? { $in: [0, null] } : revision },
+    { _id: orderId, status: order.status, stockDeducted: { $ne: true }, revision: revision === 0 ? { $in: [0, null] } : revision },
     {
       $set: { items: dbItems, subtotal, tax, serviceCharge, discount, total },
       $inc: { revision: 1 },
-      $push: { statusHistory: { status: "CONFIRMED", changedBy: actor, changedAt: new Date(), note } },
+      $push: { statusHistory: { status: order.status, changedBy: actor, changedAt: new Date(), note } },
     },
     { returnDocument: "after" },
   );
   if (!updated) {
     const fresh = await Order.findById(orderId).select("status revision");
-    const err = new Error(fresh?.status !== "CONFIRMED"
+    const err = new Error(!EDITABLE_STATUSES.includes(fresh?.status)
       ? "This order has just started preparing and can't be changed"
       : "Someone else changed this order a moment ago — please review it and try again");
     err.statusCode = 409;
@@ -618,7 +634,7 @@ export const cancelOrderTx = async ({ req, orderId, reason }) => {
  * Still fully validated + atomic via a conditional findOneAndUpdate.
  */
 export const transitionOrderStatusTx = async ({ req, orderId, toStatus, note }) => {
-  const { Order, TableSession, Table, WaitlistEntry } = req.models;
+  const { Order } = req.models;
 
   const current = await Order.findById(orderId);
   if (!current) {
@@ -656,24 +672,18 @@ export const transitionOrderStatusTx = async ({ req, orderId, toStatus, note }) 
   }
 
   const role = getRoleFromUser(req.user);
+  // COMPLETED is refused here for every person (SYSTEM_ONLY_TARGETS) — it is
+  // the billing workflow's outcome, see completeServedSettledOrder below.
   assertValidTransition(current.status, toStatus, role);
-
-  const needsPaid = requiresPaidForTransition(current.status, toStatus, role);
-  if (needsPaid && current.paymentStatus !== "PAID") {
-    const err = new Error("Mark the payment as Paid before completing this order");
-    err.statusCode = 400;
-    throw err;
-  }
 
   const actor = buildActor(req.user);
   const extraFields = {};
   if (toStatus === "PREPARING") { extraFields.preparedBy = actor; extraFields.preparingAt = new Date(); }
   if (toStatus === "READY")     { extraFields.readyBy    = actor; extraFields.readyAt     = new Date(); }
   if (toStatus === "DELIVERED") { extraFields.deliveredBy = actor; extraFields.deliveredAt = new Date(); }
-  if (toStatus === "COMPLETED") { extraFields.completedBy = actor; extraFields.completedAt = new Date(); }
 
   const updated = await Order.findOneAndUpdate(
-    { _id: orderId, status: current.status, ...(needsPaid && { paymentStatus: "PAID" }) },
+    { _id: orderId, status: current.status },
     {
       $set:  { status: toStatus, ...extraFields },
       $push: { statusHistory: { status: toStatus, changedBy: actor, changedAt: new Date(), note: note || "" } },
@@ -687,38 +697,58 @@ export const transitionOrderStatusTx = async ({ req, orderId, toStatus, note }) 
     throw err;
   }
 
-  // ── Auto-clear the table (Phase 2) ──────────────────────────────────────
-  // A waiter/admin no longer has to remember to "clear the table" by hand —
-  // the moment the LAST active order on a table's session reaches COMPLETED,
-  // the session closes itself here, the same way the manual "clear table"
-  // button always worked (see tableSessionService.closeTableSession — it
-  // still refuses to close while any other order on the session is
-  // non-terminal, so a table with several running orders only frees up once
-  // every one of them is done). We surface the closed session (and a
-  // waitlist suggestion, if any) so the caller can emit the same realtime
-  // events the manual clear used to.
-  let closedTableSession = null;
-  let freedTable = null;
-  let suggestedEntry = null;
-  if (toStatus === "COMPLETED" && updated.tableSession) {
-    try {
-      closedTableSession = await closeTableSession({
-        TableSession, Order, Table, sessionId: updated.tableSession, actor,
-      });
-      freedTable = await Table.findById(closedTableSession.table);
-      if (freedTable) {
-        suggestedEntry = await findNextMatch({ WaitlistEntry }, freedTable.seats);
-      }
-    } catch (err) {
-      // The order's own status flip above already committed — a hiccup
-      // freeing the table (another order on the session still active, a
-      // concurrent close, a dangling session reference) must never surface
-      // as a failure to complete THIS order. Expected 400s (still-active /
-      // already-closed) are silent; anything else is logged for visibility.
-      if (err.statusCode !== 400) console.error("Auto-clear table on order completion failed:", err);
-    }
+  // DSH-04: "Served" (→ DELIVERED) on a bill that billing already settled
+  // (e.g. a takeaway paid and settled at the counter) completes it now —
+  // Completed = served AND settled, whichever happens last.
+  if (toStatus === "DELIVERED" && effectiveBillStatus(updated) === "SETTLED") {
+    const done = await completeServedSettledOrder({ models: req.models, orderId, actor });
+    if (done.order) return done;
   }
 
+  return { order: updated, closedTableSession: null, freedTable: null, suggestedEntry: null };
+};
+
+// ── Served + settled → COMPLETED (BIL-02 / DSH-04) ─────────────────────────
+/**
+ * The ONLY way an order becomes COMPLETED: it has been served (DELIVERED) and
+ * its bill has been settled (billStatus SETTLED). Called by billingService
+ * right after a settlement, and by transitionOrderStatusTx right after
+ * "Served" on an already-settled bill. Atomic and conditional, so the two
+ * racing each other complete it exactly once; a no-op (order: null) when the
+ * order isn't both served and settled yet.
+ *
+ * The moment the LAST active order on a table's session completes, the
+ * session closes itself (tableSessionService.closeTableSession still refuses
+ * while any other order on it is non-terminal). The closed session, freed
+ * table and waitlist suggestion are returned for the caller's realtime emits.
+ */
+export const completeServedSettledOrder = async ({ models, orderId, actor, now = new Date() }) => {
+  const { Order, TableSession, Table, WaitlistEntry } = models;
+  assertValidTransition("DELIVERED", "COMPLETED", "system");
+  const by = { ...(actor || SYSTEM_ACTOR) };
+  const updated = await Order.findOneAndUpdate(
+    { _id: orderId, status: "DELIVERED", billStatus: "SETTLED", paymentStatus: "PAID" },
+    {
+      $set:  { status: "COMPLETED", completedBy: by, completedAt: now },
+      $push: { statusHistory: { status: "COMPLETED", changedBy: by, changedAt: now, note: "Bill settled" } },
+    },
+    { returnDocument: "after" },
+  );
+  if (!updated) return { order: null, closedTableSession: null, freedTable: null, suggestedEntry: null };
+
+  let closedTableSession = null, freedTable = null, suggestedEntry = null;
+  if (updated.tableSession && TableSession) {
+    try {
+      closedTableSession = await closeTableSession({ TableSession, Order, Table, sessionId: updated.tableSession, actor: by });
+      freedTable = Table ? await Table.findById(closedTableSession.table) : null;
+      if (freedTable && WaitlistEntry) suggestedEntry = await findNextMatch({ WaitlistEntry }, freedTable.seats);
+    } catch (err) {
+      // The completion already committed — a table that can't be freed yet
+      // (another order still active, already closed) must not undo it.
+      if (err.statusCode !== 400) console.error("Auto-clear table on order completion failed:", err);
+      closedTableSession = null; freedTable = null; suggestedEntry = null;
+    }
+  }
   return { order: updated, closedTableSession, freedTable, suggestedEntry };
 };
 

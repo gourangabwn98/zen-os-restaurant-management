@@ -19,6 +19,7 @@
 // charges, social) is kept, styled the same way, rather than dropped to
 // match the mockup's abbreviated scope.
 // ─────────────────────────────────────────────────────────────────────────────
+import TimePicker from "../../components/TimePicker.jsx";
 import { useState, useEffect, useRef } from "react";
 import toast from "react-hot-toast";
 import {
@@ -27,7 +28,8 @@ import {
   addRestaurantPrinter, updateRestaurantPrinter, deleteRestaurantPrinter,
 } from "../../services/adminService.js";
 import PageHeader from "./shared/PageHeader.jsx";
-import { t, tn, N_, fmtNum } from "../../i18n/core.js";
+import { t, tn, N_, fmtNum, fmtDate } from "../../i18n/core.js";
+import { displayName, displayLogo } from "../../brand.js";
 import { invalidate } from "../../services/cache.js";
 
 // ── page-scoped styles (tokens only — light / dark safe) ─────────────────────
@@ -409,7 +411,9 @@ export default function ProfilePage() {
 
   return (
     <div>
-      <PageHeader title={t("Restaurant profile")} sub={t("Everything here is restaurant data, stored in the database — an admin can change it without a redeploy")} />
+      <PageHeader title={t("Restaurant profile")} sub={profile.updatedAt
+        ? `${displayName(profile)} · ${t("last updated {date}", { date: fmtDate(profile.updatedAt, { day: "numeric", month: "long" }) })}`
+        : t("Everything here is restaurant data, stored in the database — an admin can change it without a redeploy")} />
 
       <div className="prof-grid">
         {/* ── LEFT ── */}
@@ -418,19 +422,20 @@ export default function ProfilePage() {
           <SectionCard title={t("Identity")} sub={t("Shown on the customer site, bills and KOT headers")}
             editing={editing.basic} onEdit={() => startEdit("basic")} onCancel={() => cancelEdit("basic")} onSave={() => saveSection("basic")}
             viewContent={<div style={{ display: "flex", gap: 16 }}>
-              <div className="prof-avatar">{logoSrc ? <img src={logoSrc} alt={t("Logo")} /> : (profile.restaurantName?.[0] || "R")}</div>
+              <div className="prof-avatar"><img src={logoSrc || displayLogo(profile)} alt={t("Logo")} /></div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <Kv pairs={[
                   [t("Restaurant name"), orDash(profile.restaurantName), true],
                   [t("Phone"), orDash(profile.phone)],
                   [t("Email"), orDash(profile.email)],
                   [t("Contact person"), orDash(profile.contactPerson)],
+                  [t("GSTIN"), orDash(profile.gstNumber)],
                 ]} />
               </div>
             </div>}
             editContent={<div>
               <div style={{ display: "flex", gap: 16, marginBottom: 16 }}>
-                <div className="prof-avatar">{logoSrc ? <img src={logoSrc} alt={t("Logo")} /> : (draft.restaurantName?.[0] || "R")}</div>
+                <div className="prof-avatar"><img src={logoSrc || displayLogo(draft)} alt={t("Logo")} /></div>
                 <div>
                   <input type="file" accept="image/*" ref={logoFileRef} style={{ display: "none" }} onChange={handleLogoUpload} />
                   <button type="button" className="zc-btn sm" onClick={() => logoFileRef.current?.click()}>{uploading ? t("Uploading…") : t("Change logo")}</button>
@@ -554,6 +559,13 @@ export default function ProfilePage() {
             </div>}
             editContent={<div>
               {services.map((s) => <ServiceRow key={s.key} label={s.label} on={draft.services[s.key]} editable onClick={() => setService(s.key)} />)}
+              {/* SET-01: what a switch actually does */}
+              <div style={{ fontSize: 11, color: "var(--text-3)", margin: "4px 0 6px" }}>
+                {t("A service turned off disappears from the customer app straight away and the server refuses customer orders for it. Staff can still take any order.")}
+              </div>
+              {!services.some((s) => draft.services[s.key]) && (
+                <div style={{ fontSize: 11.5, color: "var(--wait-ink)", marginBottom: 6 }}>⚠ {t("With every service off, customers can't order at all.")}</div>
+              )}
               <div style={{ borderTop: "1px solid var(--edge)", marginTop: 6, paddingTop: 12, display: "flex", alignItems: "center", gap: 10 }}>
                 <Toggle on={draft.notificationSound} onClick={() => set("notificationSound", !draft.notificationSound)} />
                 <span style={{ fontSize: 12.5, color: "var(--text-1)" }}>{t("Notification sound")}</span>
@@ -583,8 +595,8 @@ export default function ProfilePage() {
               [t("Avg delivery time"), profile.avgDeliveryTime ? t("{n} min", { n: profile.avgDeliveryTime }) : "—"],
             ]} />}
             editContent={<div className="prof-edit-grid">
-              <Field label={t("Opening time")}><input className="zc-input" type="time" value={draft.openingTime} onChange={(e) => set("openingTime", e.target.value)} /></Field>
-              <Field label={t("Closing time")}><input className="zc-input" type="time" value={draft.closingTime} onChange={(e) => set("closingTime", e.target.value)} /></Field>
+              <Field label={t("Opening time")}><TimePicker ariaLabel={t("Opening time")} value={draft.openingTime} onChange={(v) => set("openingTime", v)} /></Field>
+              <Field label={t("Closing time")}><TimePicker ariaLabel={t("Closing time")} value={draft.closingTime} onChange={(v) => set("closingTime", v)} /></Field>
               <Field label={t("Avg delivery time (min)")} full><input className="zc-input" type="number" value={draft.avgDeliveryTime} onChange={(e) => setNum("avgDeliveryTime", e.target.value)} /></Field>
             </div>}
           />

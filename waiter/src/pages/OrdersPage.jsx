@@ -8,14 +8,17 @@ import Chip from "../components/ui/Chip.jsx";
 import PrimaryButton from "../components/ui/PrimaryButton.jsx";
 import { Loader, ErrorState, EmptyState } from "../components/StateViews.jsx";
 import { NAV_HEIGHT } from "../theme.js";
+import { t, N_ } from "../i18n/index.jsx";
+import { STATUS_LABEL } from "../components/StatusBadge.jsx";
 
+// Same floor words as the status badges (DSH-04).
 const FILTERS = [
-  { key: "ALL",                   label: "All" },
-  { key: "PENDING_CONFIRMATION",  label: "Awaiting confirmation" },
-  { key: "PREPARING",             label: "Preparing" },
-  { key: "READY",                 label: "Ready" },
-  { key: "DELIVERED",             label: "Delivered" },
-  { key: "COMPLETED",             label: "Completed" },
+  { key: "ALL",                   label: N_("All") },
+  { key: "PENDING_CONFIRMATION",  label: STATUS_LABEL.PENDING_CONFIRMATION },
+  { key: "PREPARING",             label: STATUS_LABEL.PREPARING },
+  { key: "READY",                 label: STATUS_LABEL.READY },
+  { key: "DELIVERED",             label: STATUS_LABEL.DELIVERED },
+  { key: "COMPLETED",             label: STATUS_LABEL.COMPLETED },
 ];
 
 export default function OrdersPage() {
@@ -31,7 +34,7 @@ export default function OrdersPage() {
       const { data } = await getAllOrders({ limit: 100 });
       setOrders(data.orders || []);
     } catch {
-      setError("Couldn't load orders");
+      setError(t("Couldn't load orders"));
     }
   }, []);
 
@@ -50,22 +53,22 @@ export default function OrdersPage() {
     setBusyId(order._id);
     try {
       await confirmOrder(order._id);
-      toast.success(`Order ${order.orderId} accepted`);
+      toast.success(t("Order {id} accepted", { id: order.orderId }));
       load();
     } catch (err) {
-      toast.error(err.response?.data?.message || "Couldn't accept the order");
+      toast.error(err.response?.data?.message || t("Couldn't accept the order"));
     } finally { setBusyId(null); }
   };
 
   if (error) return <ErrorState message={error} onRetry={load} />;
-  if (orders === null) return <Loader label="Loading orders…" />;
+  if (orders === null) return <Loader label={t("Loading orders…")} />;
 
   const list = filter === "ALL" ? orders.filter((o) => o.status !== "CANCELLED") : orders.filter((o) => o.status === filter);
   const pendingCount = orders.filter((o) => o.status === "PENDING_CONFIRMATION").length;
 
   return (
     <div style={{ paddingBottom: NAV_HEIGHT + 90 }}>
-      <div style={{ padding: "20px 16px 4px", fontSize: 25, fontWeight: 800, color: "#fff", letterSpacing: -0.5 }}>Orders</div>
+      <div style={{ padding: "20px 16px 4px", fontSize: 25, fontWeight: 800, color: "#fff", letterSpacing: -0.5 }}>{t("Orders")}</div>
 
       <div className="hide-scrollbar" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "12px 16px" }}>
         {FILTERS.map((f) => (
@@ -75,13 +78,13 @@ export default function OrdersPage() {
             onClick={() => setFilter(f.key)}
             badge={f.key === "PENDING_CONFIRMATION" ? pendingCount : null}
           >
-            {f.label}
+            {t(f.label)}
           </Chip>
         ))}
       </div>
 
       {list.length === 0 ? (
-        <EmptyState icon="🧾" title="No orders here" sub="Try a different filter" />
+        <EmptyState icon="🧾" title={t("No orders here")} sub={t("Try a different filter")} />
       ) : (
         <div style={{ padding: "4px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
           {list.map((o, i) => (
@@ -95,7 +98,7 @@ export default function OrdersPage() {
                     onClick={(e) => handleQuickConfirm(e, o)}
                     style={{ padding: "8px 18px", fontSize: 12 }}
                   >
-                    {busyId === o._id ? "Accepting…" : "✓ Accept order"}
+                    {busyId === o._id ? t("Accepting…") : `✓ ${t("Accept order")}`}
                   </PrimaryButton>
                 </div>
               )}
