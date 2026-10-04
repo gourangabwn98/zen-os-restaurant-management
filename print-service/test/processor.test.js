@@ -62,19 +62,29 @@ const run = async () => {
     assert.equal(billDriver.printedJobs.length, 1);
   });
 
-  await test("printer offline: job stays in the queue as FAILED — the order is never lost", async () => {
+  await test("printer offline: job WAITS in the queue (PENDING, no attempt used) — the order is never lost", async () => {
     const { processor, queue } = setup({ kotOnline: false });
     await processor.ingest({ jobId: "kot-2", jobType: "KOT", orderId: "ORD00002", items: [{ name: "Idli", qty: 1 }] });
     const job = queue.get("kot-2");
-    assert.equal(job.status, "FAILED");
-    assert.equal(job.attempts, 1);
+    assert.equal(job.status, "PENDING");
+    assert.equal(job.attempts || 0, 0);
     assert.match(job.lastError, /offline/i);
+  });
+
+  await test("printer off for a long time: retries never exhaust — it still prints when the printer is back", async () => {
+    const { processor, queue, kotDriver } = setup({ kotOnline: false });
+    await processor.ingest({ jobId: "kot-2b", jobType: "KOT", orderId: "ORD00002", items: [{ name: "Idli", qty: 1 }] });
+    for (let i = 0; i < 10; i++) await processor.retrySweep(); // far past maxAttempts (3)
+    assert.equal(queue.getExhausted(3).length, 0);
+    kotDriver.setOnline(true);
+    await processor.retrySweep();
+    assert.equal(queue.get("kot-2b").status, "PRINTED");
   });
 
   await test("printer reconnect: job left FAILED while offline succeeds once printer comes back online, via retry sweep", async () => {
     const { processor, queue, kotDriver } = setup({ kotOnline: false });
     await processor.ingest({ jobId: "kot-3", jobType: "KOT", orderId: "ORD00003", items: [{ name: "Vada", qty: 3 }] });
-    assert.equal(queue.get("kot-3").status, "FAILED");
+    assert.equal(queue.get("kot-3").status, "PENDING");
 
     kotDriver.setOnline(true); // printer reconnects
     await processor.retrySweep();
@@ -130,7 +140,8 @@ const run = async () => {
   });
 
   await test("a job exhausting all retry attempts stops retrying but is still visible, never deleted", async () => {
-    const { processor, queue } = setup({ kotOnline: false });
+    const { processor, queue, kotDriver } = setup();
+    kotDriver.forceFailNext(10); // a real print error each time (printer online)
     await processor.ingest({ jobId: "kot-7", jobType: "KOT", orderId: "ORD00007", items: [{ name: "Rava Kesari", qty: 1 }] });
     await processor.retrySweep(); // attempt 2
     await processor.retrySweep(); // attempt 3 — now at maxAttempts (3)

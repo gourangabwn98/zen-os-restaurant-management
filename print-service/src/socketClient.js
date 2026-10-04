@@ -52,6 +52,14 @@ export class SocketClient {
 
     this.socket.on("connect_error", (err) => {
       logger.error("Connection error:", err.message);
+      // Say what to fix — this runs unattended and nothing prints until it connects.
+      if (/printer key/i.test(err.message)) {
+        logger.error("→ PRINTER_KEY in .env is wrong or revoked. Make a new one in Admin → Profile → Print service.");
+      } else if (/namespace/i.test(err.message)) {
+        logger.error("→ BACKEND_URL must be the server address only, e.g. https://your-server.com (no /api).");
+      } else if (/xhr poll error|websocket error|ECONNREFUSED|timeout/i.test(err.message)) {
+        logger.error(`→ Can't reach ${this.backendUrl}. Is the server running, and is BACKEND_URL in .env right?`);
+      }
     });
 
     this.socket.on("reconnect_attempt", (n) => {

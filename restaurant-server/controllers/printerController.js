@@ -2,8 +2,9 @@
 import { getRoomConnectionCount } from "../sockets/socket.js";
 import { rooms } from "../utils/tenantKey.js";
 import {
-  createPrinterDevice, listPrinterDevices, revokePrinterDevice,
+  createPrinterDevice, listPrinterDevices, revokePrinterDevice, skipStalePrintJobs, WAITING_STATUSES,
 } from "../services/printerDeviceService.js";
+import { buildActor } from "../services/orderService.js";
 
 // ── GET /api/admin/printer/status — staff dashboard widget ──────────────────
 export const getPrinterStatus = async (req, res) => {
@@ -27,6 +28,13 @@ export const getPrinterStatus = async (req, res) => {
       BillPrintJob.countDocuments({ status: "FAILED" }),
       PrinterDevice.find({ status: "Active" }).select("-keyHash"),
     ]);
+    // Oldest job still waiting — "tickets are piling up" for the admin card.
+    const waiting = { status: { $in: WAITING_STATUSES } };
+    const [oldKot, oldBill] = await Promise.all([
+      KOTJob.findOne(waiting).sort({ createdAt: 1 }).select("createdAt").lean(),
+      BillPrintJob.findOne(waiting).sort({ createdAt: 1 }).select("createdAt").lean(),
+    ]);
+    const oldestWaitingAt = [oldKot?.createdAt, oldBill?.createdAt].filter(Boolean).sort((a, b) => a - b)[0] || null;
 
     const connectedCount = await getRoomConnectionCount(rooms.printers(req.tenantKey));
 
@@ -34,6 +42,7 @@ export const getPrinterStatus = async (req, res) => {
       connectedPrinters: connectedCount,
       online: connectedCount > 0,
       devices,
+      oldestWaitingAt,
       kot:  { pending: kotPending, printing: kotPrinting, printedToday: kotPrintedToday, failed: kotFailed },
       bill: { pending: billPending, printing: billPrinting, printedToday: billPrintedToday, failed: billFailed },
       // legacy shape kept for the existing admin dashboard widget (Phase 4)
@@ -136,6 +145,18 @@ export const deletePrinterDevice = async (req, res) => {
     const { PrinterDevice } = req.models;
     await revokePrinterDevice({ PrinterDevice, id: req.params.id });
     res.json({ message: "Printer device revoked" });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message });
+  }
+};
+
+// ── POST /api/admin/printer/skip-stale  { olderThanMinutes } (admin) ─────────
+// Drops waiting jobs that are too old to print (see printerDeviceService).
+export const skipStaleJobs = async (req, res) => {
+  try {
+    const { KOTJob, BillPrintJob } = req.models;
+    const r = await skipStalePrintJobs({ KOTJob, BillPrintJob, olderThanMinutes: req.body?.olderThanMinutes, actor: buildActor(req.user) });
+    res.json(r);
   } catch (err) {
     res.status(err.statusCode || 500).json({ message: err.message });
   }

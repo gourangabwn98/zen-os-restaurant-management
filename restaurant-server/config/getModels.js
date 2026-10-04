@@ -501,7 +501,7 @@ const kotJobSchema = new mongoose.Schema({
   // Never settable by a customer/guest (see services/orderService.js).
   priority:   { type: String, enum: ["NORMAL","URGENT"], default: "NORMAL" },
   // ── Print lifecycle (Phase 5) ─────────────────────────────────────────────
-  status:      { type: String, enum: ["PENDING","PRINTING","PRINTED","FAILED"], default: "PENDING" },
+  status:      { type: String, enum: ["PENDING","PRINTING","PRINTED","FAILED","SKIPPED"], default: "PENDING" }, // SKIPPED: stale, dropped by an admin — never printed
   printerId:   { type: mongoose.Schema.Types.ObjectId, ref: "PrinterDevice", default: null },
   attempts:    { type: Number, default: 0 },
   lastError:   { type: String, default: "" },
@@ -520,7 +520,7 @@ const billPrintJobSchema = new mongoose.Schema({
   tableNo:    { type: Number, default: null },
   orderType:  { type: String, enum: ORDER_TYPES },
   payload:    { type: mongoose.Schema.Types.Mixed, required: true }, // rendered bill breakdown (items/subtotal/tax/total/etc.)
-  status:     { type: String, enum: ["PENDING","PRINTING","PRINTED","FAILED"], default: "PENDING" },
+  status:     { type: String, enum: ["PENDING","PRINTING","PRINTED","FAILED","SKIPPED"], default: "PENDING" }, // SKIPPED: see kotJobSchema
   printerId:  { type: mongoose.Schema.Types.ObjectId, ref: "PrinterDevice", default: null },
   attempts:   { type: Number, default: 0 },
   lastError:  { type: String, default: "" },

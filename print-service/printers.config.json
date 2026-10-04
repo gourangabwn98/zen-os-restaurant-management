@@ -1,19 +1,12 @@
 {
-  "_comment": "Defines which physical printer handles which job role. 'role' matches PrinterDevice.role on the backend (KOT / BILL / BOTH). For USB printers, windowsShareName is optional and defaults to windowsPrinterName -- only set it if you gave the printer's SHARE a different name than its display name.",
+  "_comment": "Defines which physical printer handles which job role. 'role' matches PrinterDevice.role on the backend (KOT / BILL / BOTH). USB_DIRECT = a USB receipt printer Windows installed with the generic WinUSB driver (not under Printers & scanners) — bytes go straight to the device; vendorId/productId (hex) pick it. For a printer that IS installed in Windows use type USB + windowsPrinterName (and share it); for a network printer use type LAN + ip/port.",
   "printers": [
     {
-      "id": "kitchen",
-      "role": "KOT",
-      "type": "LAN",
-      "ip": "192.168.1.50",
-      "port": 9100
-    },
-    {
-      "id": "billing",
-      "role": "BILL",
-      "type": "USB",
-      "windowsPrinterName": "EPSON_TM_T88V",
-      "windowsShareName": "EPSON_TM_T88V"
+      "id": "counter",
+      "role": "BOTH",
+      "type": "USB_DIRECT",
+      "vendorId": "0483",
+      "productId": "5720"
     }
   ]
 }

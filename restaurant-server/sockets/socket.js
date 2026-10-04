@@ -247,8 +247,10 @@ export const initSocket = (httpServer) => {
         };
         const incFields = (status === "FAILED" || status === "PRINTING") ? { attempts: 1 } : null;
 
-        const job = await Model.findByIdAndUpdate(
-          jobId,
+        // A job an admin SKIPPED stays skipped unless it really printed
+        // (a print-service that had it queued locally may still report it).
+        const job = await Model.findOneAndUpdate(
+          status === "PRINTED" ? { _id: jobId } : { _id: jobId, status: { $ne: "SKIPPED" } },
           { $set: setFields, ...(incFields ? { $inc: incFields } : {}) },
           { returnDocument: "after" }
         );

@@ -103,14 +103,20 @@ export class Processor {
     }
 
     this._processing.add(jobId);
+    // Printer off / unplugged / out of paper → the job waits (no attempt used,
+    // see queue.markWaiting); the retry sweep prints it once it's back.
+    const online = await entry.driver.isOnline().catch(() => false);
+    if (!online) {
+      const msg = `Printer "${entry.driver.id}" is offline — waiting for it`;
+      if (job.lastError !== msg) logger.warn(`Job ${jobId} (${job.jobType}): ${msg}`);
+      this.queue.markWaiting(jobId, msg);
+      this._processing.delete(jobId);
+      return;
+    }
     this.queue.markPrinting(jobId);
     await this._safeReport(jobId, job.jobType, "PRINTING");
 
     try {
-      const online = await entry.driver.isOnline();
-      if (!online) {
-        throw new Error(`Printer "${entry.driver.id}" is offline`);
-      }
 
       const header = await this._header();
       const width = entry.charsPerLine;

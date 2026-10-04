@@ -29,6 +29,8 @@ import path from "path";
 import { renderLinesToPrinter } from "./renderLines.js";
 
 const PRINTER_CLASS = 7;
+const USB_CHUNK = 4096;               // bytes per USB write
+const USB_CHUNK_TIMEOUT_MS = 20000;   // per chunk — the printer may be busy printing the previous one
 const PACKAGED = !["node", "node.exe"].includes(path.basename(process.execPath).toLowerCase());
 
 let usbModule = null;
@@ -115,9 +117,16 @@ export class UsbDirectDriver {
       const { itf, endpoint } = this._outEndpoint(device);
       await device.claimInterface(itf);
       claimed = itf;
-      const res = await device.transferOut(endpoint, data);
-      if (res.status !== "ok" || res.bytesWritten !== data.length) {
-        throw new Error(`USB write incomplete (${res.status}, ${res.bytesWritten}/${data.length} bytes)`);
+      // In chunks, each with a generous timeout: the usb package's default is
+      // 1 s per write, and a bill with a logo / pay-QR image is far more than
+      // a slow thermal printer accepts in 1 s — the write got "Cancelled"
+      // half-way and the bill printed cut off.
+      for (let off = 0; off < data.length; off += USB_CHUNK) {
+        const chunk = data.subarray(off, Math.min(off + USB_CHUNK, data.length));
+        const res = await device.transferOut(endpoint, chunk, USB_CHUNK_TIMEOUT_MS);
+        if (res.status !== "ok" || res.bytesWritten !== chunk.length) {
+          throw new Error(`USB write incomplete (${res.status}, ${off + Math.max(0, res.bytesWritten || 0)}/${data.length} bytes)`);
+        }
       }
     } finally {
       if (claimed !== null) await device.releaseInterface(claimed).catch(() => {});

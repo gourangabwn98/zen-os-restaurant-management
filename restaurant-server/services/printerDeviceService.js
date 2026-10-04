@@ -51,3 +51,28 @@ export const markPrinterSeen = async ({ PrinterDevice, deviceId, status, error }
   if (error !== undefined) update.lastError = error || "";
   await PrinterDevice.findByIdAndUpdate(deviceId, { $set: update });
 };
+
+// ── Stale print jobs ─────────────────────────────────────────────────────────
+// A job still waiting when no print service was connected (e.g. none was ever
+// set up) would otherwise all print at once the moment one connects — a pile
+// of hours-old KOTs. An admin can drop the stale ones first. Atomic and
+// conditional on the job still waiting, so a job that a printer has started
+// or finished meanwhile is never touched (same pattern as report-job-status).
+export const WAITING_STATUSES = ["PENDING", "FAILED"];
+export const STALE_MIN_MINUTES = 10;
+
+/** Pure: the cutoff for "older than N minutes" (N clamped to at least 10). */
+export const staleCutoff = (olderThanMinutes, now = new Date()) => {
+  const m = Number(olderThanMinutes);
+  const minutes = Number.isFinite(m) ? Math.max(STALE_MIN_MINUTES, Math.round(m)) : 60;
+  return { minutes, cutoff: new Date(now.getTime() - minutes * 60 * 1000) };
+};
+
+/** Marks waiting KOT/bill jobs older than the cutoff SKIPPED. → { kot, bill, minutes } */
+export const skipStalePrintJobs = async ({ KOTJob, BillPrintJob, olderThanMinutes, actor, now = new Date() }) => {
+  const { minutes, cutoff } = staleCutoff(olderThanMinutes, now);
+  const filter = { status: { $in: WAITING_STATUSES }, createdAt: { $lt: cutoff } };
+  const update = { $set: { status: "SKIPPED", lastError: `Skipped by ${actor?.name || "admin"} — older than ${minutes} min` } };
+  const [k, b] = await Promise.all([KOTJob.updateMany(filter, update), BillPrintJob.updateMany(filter, update)]);
+  return { kot: k.modifiedCount || 0, bill: b.modifiedCount || 0, minutes };
+};

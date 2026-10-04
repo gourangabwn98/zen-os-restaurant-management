@@ -126,6 +126,21 @@ export class PrintQueue {
     return job;
   }
 
+  /** The printer is offline (off, unplugged, out of paper): the job WAITS —
+   * back to PENDING without using up an attempt, so it prints as soon as the
+   * printer returns, however long that takes. Attempts are only for real
+   * print errors; otherwise a printer that's off for a minute or two would
+   * exhaust the retries and the KOT would never print. */
+  markWaiting(jobId, reason) {
+    const job = this.jobs.get(jobId);
+    if (!job) return null;
+    job.status = "PENDING";
+    job.lastError = String(reason || "Waiting for the printer");
+    job.updatedAt = new Date().toISOString();
+    this._save();
+    return job;
+  }
+
   /** On startup, any job left in PRINTING means the process died mid-print
    * (we can't know if the printer actually got the data or not). Treat it
    * as failed so it gets retried — safer to risk a rare double-print (which

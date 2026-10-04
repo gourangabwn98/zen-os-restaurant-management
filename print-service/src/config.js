@@ -33,8 +33,13 @@ const required = (name) => {
   return v;
 };
 
+// The server ORIGIN. A URL ending in /api (the apps' VITE_API_URL style) makes
+// Socket.IO treat "/api" as a namespace: the connection is refused with
+// "Invalid namespace" and nothing ever prints — so it is stripped here.
+export const normalizeBackendUrl = (url) => String(url || "").trim().replace(/\/+$/, "").replace(/\/api$/i, "");
+
 export const config = {
-  backendUrl:  required("BACKEND_URL"),
+  backendUrl:  normalizeBackendUrl(required("BACKEND_URL")),
   printerKey:  required("PRINTER_KEY"),
   queueFile:   path.resolve(ROOT, process.env.QUEUE_FILE || "./data/queue.json"),
   maxAttempts: Number(process.env.MAX_ATTEMPTS || 5),

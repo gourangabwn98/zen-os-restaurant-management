@@ -31,6 +31,7 @@ import PageHeader from "./shared/PageHeader.jsx";
 import { t, tn, N_, fmtNum, fmtDate } from "../../i18n/core.js";
 import { displayName, displayLogo } from "../../brand.js";
 import { invalidate } from "../../services/cache.js";
+import PrintServiceCard from "./shared/PrintServiceCard.jsx";
 
 // ── page-scoped styles (tokens only — light / dark safe) ─────────────────────
 if (typeof document !== "undefined" && !document.getElementById("prof-styles")) {
@@ -624,10 +625,13 @@ export default function ProfilePage() {
             </div>}
           />
 
-          {/* Printers */}
+          {/* Print service — what actually prints KOTs and bills */}
+          <PrintServiceCard backendUrl={String(import.meta.env.VITE_API_URL || "").replace(/\/api\/?$/, "")} />
+
+          {/* Printers — reference list only (the print service reads its own printers.config.json) */}
           <div className="zc-card" style={{ marginBottom: 16 }}>
             <div className="zc-card-h">
-              <div><div className="t">{t("Printers")}</div><div className="s">{t("Local print service, discovered on the restaurant network")}</div></div>
+              <div><div className="t">{t("Printers")}</div><div className="s">{t("For reference only — which printer prints what is set in the print service's printers.config.json")}</div></div>
               <div style={{ flex: 1 }} />
               <span style={{ fontSize: 11, color: "var(--text-3)" }}>{tn(profile.printerIps.length, "{n} printer", "{n} printers")}</span>
             </div>

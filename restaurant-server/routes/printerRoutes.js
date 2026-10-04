@@ -1,7 +1,7 @@
 import express from "express";
 import {
   getPrinterStatus, updateKotJobStatus, getPrintQueue,
-  registerPrinterDevice, getPrinterDevices, deletePrinterDevice,
+  registerPrinterDevice, getPrinterDevices, deletePrinterDevice, skipStaleJobs,
 } from "../controllers/printerController.js";
 import { protect } from "../middleware/authMiddleware.js";
 import { requireStaff, requireAdmin } from "../middleware/rbac.js";
@@ -20,5 +20,7 @@ router.patch("/kot/:id/status", updateKotJobStatus);
 router.post("/devices",         requireAdmin, registerPrinterDevice);
 router.get("/devices",          requireAdmin, getPrinterDevices);
 router.delete("/devices/:id",   requireAdmin, deletePrinterDevice);
+// Drop waiting jobs too old to print (e.g. queued while no print service ran).
+router.post("/skip-stale",      requireAdmin, skipStaleJobs);
 
 export default router;
