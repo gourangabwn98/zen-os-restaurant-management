@@ -97,9 +97,16 @@ const run = async () => {
       const r = validateTransition(chain[i], chain[i + 1], "admin");
       assert.equal(r.ok, true, `${chain[i]} -> ${chain[i + 1]} should be ok`);
     }
-    // BIL-02 / DSH-03: COMPLETED is a billing outcome — "system" only.
+    // COMPLETED: billing ("system") or an admin's Complete (PAID checked in
+    // orderService.completeOrderByAdminTx) — never waiter/chef/customer.
     assert.equal(validateTransition("DELIVERED", "COMPLETED", "system").ok, true);
-    for (const role of ["admin", "waiter", "chef", "customer"]) {
+    for (const from of ["PREPARING", "READY", "DELIVERED"]) {
+      assert.equal(validateTransition(from, "COMPLETED", "admin").ok, true, `admin from ${from}`);
+    }
+    for (const from of ["AWAITING_PAYMENT", "PENDING_CONFIRMATION", "CONFIRMED", "CANCELLED"]) {
+      assert.equal(validateTransition(from, "COMPLETED", "admin").ok, false, `admin from ${from}`);
+    }
+    for (const role of ["waiter", "chef", "customer"]) {
       assert.equal(validateTransition("DELIVERED", "COMPLETED", role).ok, false, role);
     }
   });

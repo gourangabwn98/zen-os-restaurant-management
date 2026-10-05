@@ -1,6 +1,6 @@
 // src/pages/admin/shared/OrdersTable.jsx
 import { useEffect, useState } from "react";
-import { MANUAL_PAYMENT_STATUSES, needsPaidFirst, PAID_FIRST_HINT } from "./paymentRules.js";
+import { MANUAL_PAYMENT_STATUSES, needsPaidFirst, offersStatus, PAID_FIRST_HINT } from "./paymentRules.js";
 import { PINK, STATUS_STYLE } from "./constants";
 import Badge from "./Badge";
 import toast from "react-hot-toast";
@@ -9,10 +9,10 @@ import {
   updateOrderStatus, confirmOrder, rejectOrder, updateOrderPayment,
 } from "../../../services/adminService";
 
-// Canonical status machine. PREPARING/READY/DELIVERED/CANCELLED are reachable
-// from the dropdown; CONFIRMED has its own button below. COMPLETED is not —
-// settling the bill completes a served order (BIL-02, DSH-03).
-const NEXT_STATUS_OPTIONS = ["PREPARING", "READY", "DELIVERED", "CANCELLED"];
+// Canonical status machine. PREPARING/READY/DELIVERED/COMPLETED/CANCELLED are
+// reachable from the dropdown; CONFIRMED has its own button below. COMPLETED
+// (clears the table) only for a cooking/ready/served order, locked until PAID.
+const NEXT_STATUS_OPTIONS = ["PREPARING", "READY", "DELIVERED", "COMPLETED", "CANCELLED"];
 
 const PAYMENT_OPTIONS = MANUAL_PAYMENT_STATUSES; // FAILED is never set by hand
 const PAYMENT_LABEL = { PENDING_VERIFICATION: N_("Pending"), PAID: N_("Paid"), FAILED: N_("Failed") };
@@ -169,7 +169,7 @@ export default function OrdersTable({ rows: initialRows, hideAction = false }) {
                         style={selectStyle}
                       >
                         <option value="" disabled>{t("Update")}</option>
-                        {NEXT_STATUS_OPTIONS.map((s) => (
+                        {NEXT_STATUS_OPTIONS.filter((s) => s !== o.status && offersStatus(o, s)).map((s) => (
                           <option key={s} value={s} disabled={needsPaidFirst(o, s)} title={needsPaidFirst(o, s) ? t(PAID_FIRST_HINT) : undefined}>
                             {t(s)}{needsPaidFirst(o, s) ? ` (${t("mark Paid first")})` : ""}
                           </option>

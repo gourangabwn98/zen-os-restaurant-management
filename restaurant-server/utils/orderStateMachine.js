@@ -25,7 +25,8 @@
 // cancelled when its paymentDeadline passes (orderService.expireUnpaidOrders).
 //
 // Admin has full override authority: an admin may move an order to ANY
-// other status at all (forward, backward, or sideways into/out of
+// other status at all — except COMPLETED, which needs PAID (see
+// ADMIN_COMPLETE_FROM) — (forward, backward, or sideways into/out of
 // CANCELLED) to correct a mis-click or a support dispute — see the
 // `role === "admin"` bypass in validateTransition below. Every other role
 // (waiter/chef/customer) stays restricted to the explicit TRANSITIONS /
@@ -67,10 +68,16 @@ export const BILL_STATUSES = ["OPEN", "SETTLED"];
 export const effectiveBillStatus = (order) =>
   order?.billStatus || (order?.status === "COMPLETED" ? "SETTLED" : "OPEN");
 
-// Targets nobody may set by hand — not even an admin override. COMPLETED is
-// reached only when billing settles a served order (DSH-03/DSH-04, BIL-01):
-// orderService.completeServedSettledOrder, role "system".
-const SYSTEM_ONLY_TARGETS = ["COMPLETED"];
+// COMPLETED is reached two ways, and no other:
+//   • "system" — billing settles a served order (DSH-03/DSH-04, BIL-01):
+//     orderService.completeServedSettledOrder (DELIVERED → COMPLETED).
+//   • "admin"  — an explicit "Complete" (clears the table), and ONLY once the
+//     order is PAID (PAYMENT_REQUIRED_INTO below, re-checked atomically in
+//     orderService.completeOrderByAdminTx, which also settles the bill).
+//     Only from a state the kitchen has already taken: a Placed order hasn't
+//     had its KOT/stock deduction yet (sendToKitchenTx) and must not skip it.
+// Waiters/chefs/customers never complete by hand — a waiter settles the bill.
+export const ADMIN_COMPLETE_FROM = ["PREPARING", "READY", "DELIVERED"];
 
 export const ORDER_SOURCES = ["CUSTOMER", "WAITER", "ADMIN"];
 export const ORDER_TYPES   = ["DINE_IN", "TAKEAWAY", "ONLINE"];
@@ -110,7 +117,7 @@ const TRANSITION_ROLES = {
 };
 
 // Target statuses that require the order to be PAID first, per role. Nobody
-// — waiter or admin — can complete an unpaid bill: mark it Paid first. Keyed
+// — admin included — can complete an unpaid order: mark it Paid first. Keyed
 // on the TARGET (not only DELIVERED→COMPLETED) so an admin's override jump
 // (e.g. READY→COMPLETED) can't skip it either. transitionOrderStatusTx also
 // puts `paymentStatus: "PAID"` into its atomic update filter, so a payment
@@ -173,14 +180,23 @@ export const validateTransition = (fromStatus, toStatus, role) => {
     return { ok: false, code: 400, message: `Order is already "${toStatus}"` };
   }
 
-  // Checked BEFORE the admin override: completing is a billing outcome, not
-  // a status anyone picks (an admin jump to COMPLETED used to skip billing).
-  if (SYSTEM_ONLY_TARGETS.includes(toStatus) && role !== "system") {
-    return {
-      ok: false,
-      code: 400,
-      message: "An order is completed by settling its bill in Invoices — it can't be set by hand",
-    };
+  // Checked BEFORE the generic admin override (see ADMIN_COMPLETE_FROM).
+  if (toStatus === "COMPLETED" && role !== "system") {
+    if (role !== "admin") {
+      return {
+        ok: false,
+        code: 400,
+        message: "Only an admin can complete an order by hand — otherwise it completes by settling its bill",
+      };
+    }
+    if (!ADMIN_COMPLETE_FROM.includes(fromStatus)) {
+      return {
+        ok: false,
+        code: 400,
+        message: "Only an order that is cooking, ready or served can be completed — send it to the kitchen first",
+      };
+    }
+    return { ok: true }; // payment (PAID) is checked by orderService.completeOrderByAdminTx
   }
 
   // Admin override: any status -> any other (distinct, valid) status is

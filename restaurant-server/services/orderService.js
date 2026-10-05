@@ -10,7 +10,7 @@
 import { priceOrder, priceItems, computeTotals } from "../utils/pricing.js";
 import { resolveCouponForOrder } from "./couponService.js";
 import { getScheduleContext } from "./menuScheduleService.js";
-import { normalizeOrderType, assertValidTransition, effectiveBillStatus } from "../utils/orderStateMachine.js";
+import { normalizeOrderType, assertValidTransition, effectiveBillStatus, requiresPaidForTransition } from "../utils/orderStateMachine.js";
 import { createKotJobForOrder } from "./kotService.js";
 import { findOrOpenTableSession, closeTableSession } from "./tableSessionService.js";
 import { findNextMatch } from "./waitlistService.js";
@@ -671,9 +671,14 @@ export const transitionOrderStatusTx = async ({ req, orderId, toStatus, note }) 
     return { order };
   }
 
+  // COMPLETED by a person = an admin's explicit "Complete" — PAID only, and it
+  // settles the bill + clears the table (completeOrderByAdminTx). Waiters and
+  // everyone else are refused by the state machine inside it.
+  if (toStatus === "COMPLETED") {
+    return completeOrderByAdminTx({ req, current, note });
+  }
+
   const role = getRoleFromUser(req.user);
-  // COMPLETED is refused here for every person (SYSTEM_ONLY_TARGETS) — it is
-  // the billing workflow's outcome, see completeServedSettledOrder below.
   assertValidTransition(current.status, toStatus, role);
 
   const actor = buildActor(req.user);
@@ -723,7 +728,7 @@ export const transitionOrderStatusTx = async ({ req, orderId, toStatus, note }) 
  * table and waitlist suggestion are returned for the caller's realtime emits.
  */
 export const completeServedSettledOrder = async ({ models, orderId, actor, now = new Date() }) => {
-  const { Order, TableSession, Table, WaitlistEntry } = models;
+  const { Order } = models;
   assertValidTransition("DELIVERED", "COMPLETED", "system");
   const by = { ...(actor || SYSTEM_ACTOR) };
   const updated = await Order.findOneAndUpdate(
@@ -735,7 +740,18 @@ export const completeServedSettledOrder = async ({ models, orderId, actor, now =
     { returnDocument: "after" },
   );
   if (!updated) return { order: null, closedTableSession: null, freedTable: null, suggestedEntry: null };
+  return { order: updated, ...(await clearTableAfterCompletion({ models, order: updated, actor: by })) };
+};
 
+/**
+ * The moment the LAST active order on a table's session completes, the
+ * session closes itself (tableSessionService.closeTableSession still refuses
+ * while any other order on it is non-terminal). → { closedTableSession,
+ * freedTable, suggestedEntry } for the caller's realtime emits; never throws
+ * (the completion has already committed).
+ */
+const clearTableAfterCompletion = async ({ models, order: updated, actor: by }) => {
+  const { Order, TableSession, Table, WaitlistEntry } = models;
   let closedTableSession = null, freedTable = null, suggestedEntry = null;
   if (updated.tableSession && TableSession) {
     try {
@@ -749,7 +765,54 @@ export const completeServedSettledOrder = async ({ models, orderId, actor, now =
       closedTableSession = null; freedTable = null; suggestedEntry = null;
     }
   }
-  return { order: updated, closedTableSession, freedTable, suggestedEntry };
+  return { closedTableSession, freedTable, suggestedEntry };
+};
+
+/**
+ * Admin "Complete" (clears the table). Allowed only when:
+ *   • the caller is an admin, and the order is cooking / ready / served
+ *     (orderStateMachine ADMIN_COMPLETE_FROM — a Placed order must go to the
+ *     kitchen first so its KOT + stock deduction are never skipped), and
+ *   • the order is PAID — checked here for a clear message AND inside the
+ *     atomic update filter, so a payment undo racing this can't slip through.
+ * The bill is settled in the same write (it is paid; Invoices and revenue
+ * read billStatus), "served" is recorded if it wasn't, and the table session
+ * closes when this was its last active order.
+ */
+export const completeOrderByAdminTx = async ({ req, current, note }) => {
+  const { Order } = req.models;
+  const role = getRoleFromUser(req.user);
+  assertValidTransition(current.status, "COMPLETED", role);
+  if (requiresPaidForTransition(current.status, "COMPLETED", role) && current.paymentStatus !== "PAID") {
+    throw Object.assign(new Error("Mark this order Paid first — an unpaid order can't be completed"), {
+      statusCode: 400, code: "PAYMENT_REQUIRED",
+    });
+  }
+
+  const actor = buildActor(req.user);
+  const now = new Date();
+  const settleNow = effectiveBillStatus(current) !== "SETTLED";
+  const updated = await Order.findOneAndUpdate(
+    { _id: current._id, status: current.status, paymentStatus: "PAID" },
+    {
+      $set: {
+        status: "COMPLETED", completedBy: actor, completedAt: now,
+        ...(!current.deliveredAt && { deliveredBy: actor, deliveredAt: now }),
+        ...(settleNow && { billStatus: "SETTLED", billSettledAt: now, billSettledBy: actor }),
+      },
+      $push: { statusHistory: { status: "COMPLETED", changedBy: actor, changedAt: now, note: note || "Completed by admin" } },
+    },
+    { returnDocument: "after" },
+  );
+  if (!updated) {
+    const fresh = await Order.findById(current._id).select("status paymentStatus").lean();
+    const err = fresh && fresh.status === current.status && fresh.paymentStatus !== "PAID"
+      ? Object.assign(new Error("Mark this order Paid first — an unpaid order can't be completed"), { code: "PAYMENT_REQUIRED" })
+      : new Error("Order changed a moment ago — refresh and try again");
+    err.statusCode = fresh && fresh.status === current.status ? 400 : 409;
+    throw err;
+  }
+  return { order: updated, ...(await clearTableAfterCompletion({ models: req.models, order: updated, actor })) };
 };
 
 // ── Ownership check for read access ───────────────────────────────────────

@@ -13,7 +13,7 @@ import CombinedBillModal from "./shared/CombinedBillModal.jsx";
 import CombineBillPanel from "./shared/CombineBillPanel.jsx";
 import VoiceOrder from "./shared/VoiceOrder.jsx";
 import { statusKind } from "./shared/statusKind.js";
-import { MANUAL_PAYMENT_STATUSES, needsPaidFirst, canPickStatus, isBillSettled, canSettleBill, PAID_FIRST_HINT } from "./shared/paymentRules.js";
+import { MANUAL_PAYMENT_STATUSES, needsPaidFirst, canPickStatus, offersStatus, isBillSettled, canSettleBill, PAID_FIRST_HINT } from "./shared/paymentRules.js";
 import ErrorState from "./shared/ErrorState.jsx";
 import EmptyState from "./shared/EmptyState.jsx";
 import { getMenu, getCategories } from "../../services/menuService.js";
@@ -72,7 +72,9 @@ const ACTIVE_ORDER_STATUSES = ["PENDING_CONFIRMATION","CONFIRMED","PREPARING","R
 // only ever the order's starting point, not something to switch back to) —
 // nor AWAITING_PAYMENT (only a verified online payment moves an order out of
 // it; see utils/paymentMode.js on the server).
-// Statuses a person may pick by hand — never COMPLETED (BIL-02: settling the bill completes a served order).
+// Statuses a person may pick by hand. COMPLETED (clears the table) is offered
+// only for a cooking/ready/served order and stays locked until it is PAID
+// (shared/paymentRules.js — the server enforces the same).
 const ALL_STATUSES = STATUSES.filter(s => s !== "All" && s !== "PENDING_CONFIRMATION" && s !== "AWAITING_PAYMENT" && canPickStatus(s));
 const PAYMENT_STATUSES = ["All","PAID","PENDING_VERIFICATION"];
 const ORDER_TYPES = ["All","DINE_IN","TAKEAWAY"];
@@ -488,7 +490,7 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
 
           <DLabel>{t("Update order status")}</DLabel>
           <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:16 }}>
-            {ALL_STATUSES.filter(s => s !== order.status).map(s => {
+            {ALL_STATUSES.filter(s => s !== order.status && offersStatus(order, s)).map(s => {
               const st = STATUS_STYLE[s] || DEFAULT_STATUS_STYLE;
               const blocked = needsPaidFirst(order, s);
               return (
@@ -1871,7 +1873,7 @@ const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPayment
             <div style={{ fontSize:10, color:T3, fontWeight:600, letterSpacing:1,
               textTransform:"uppercase", marginBottom:6 }}>{t("Order Status")}</div>
             <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
-              {ALL_STATUSES.filter(s => s !== order.status).map(s => {
+              {ALL_STATUSES.filter(s => s !== order.status && offersStatus(order, s)).map(s => {
                   const st = STATUS_STYLE[s] || DEFAULT_STATUS_STYLE;
                   const blocked = needsPaidFirst(order, s);
                   return (

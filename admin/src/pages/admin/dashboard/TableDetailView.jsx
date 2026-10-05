@@ -13,9 +13,11 @@ import { FLOOR_FLOW, FLOOR_STATE_OF } from "./model.js";
 import { FLOOR_LABEL } from "./floorLabels.js";
 import { t, N_, fmtNum, fmtTime, localName } from "../../../i18n/core.js";
 import { customerName } from "../shared/customerName.js";
+import { COMPLETE_FROM, needsPaidFirst, PAID_FIRST_HINT } from "../shared/paymentRules.js";
 
 const money = (n) => `₹${fmtNum(Math.round(n || 0))}`;
-// The one step the floor can take next — never COMPLETED (billing does that).
+// The one step the floor can take next. Complete (clears the table) is a
+// separate button — cooking/ready/served only, locked until the order is PAID.
 const NEXT_STEP = {
   PENDING_CONFIRMATION: { to: "CONFIRMED", label: N_("Accept order") },
   CONFIRMED: { to: "PREPARING", label: N_("Send to kitchen now") },
@@ -81,16 +83,26 @@ export default function TableDetailView({ table, onClose, onStatusChange, onNavi
               </div>
               <div className="zd-mside">
                 <div className="zd-mamt">{money(o.total)}</div>
-                {step && (
+                {(step || COMPLETE_FROM.includes(o.status)) && (
                   <div className="zd-macts">
-                    <button type="button" className="zd-opt good" disabled={busy === o._id} onClick={() => advance(o, step.to)}>{t(step.label)}</button>
+                    {step && <button type="button" className="zd-opt good" disabled={busy === o._id} onClick={() => advance(o, step.to)}>{t(step.label)}</button>}
+                    {COMPLETE_FROM.includes(o.status) && (
+                      <button
+                        type="button" className="zd-opt"
+                        disabled={busy === o._id || needsPaidFirst(o, "COMPLETED")}
+                        title={needsPaidFirst(o, "COMPLETED") ? t(PAID_FIRST_HINT) : undefined}
+                        onClick={() => advance(o, "COMPLETED")}
+                      >
+                        {t("Complete & clear table")}{needsPaidFirst(o, "COMPLETED") ? ` 🔒 (${t("mark Paid first")})` : ""}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
             </div>
           );
         })}
-        <p className="zd-mnote">{t("Bills are settled in Invoices — settling a served order completes it and frees the table.")}</p>
+        <p className="zd-mnote">{t("Bills are settled in Invoices — settling a served order completes it and frees the table.")} {t("A paid order can also be completed here.")}</p>
       </Modal>
     </div>,
     document.body,

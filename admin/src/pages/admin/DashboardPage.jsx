@@ -35,16 +35,17 @@ const STATUS_LABEL = {
 };
 const TYPE_LABEL = { DINE_IN: N_("Dine-in"), TAKEAWAY: N_("Takeaway"), ONLINE: N_("Online") };
 
-// The OPERATIONAL steps the Dashboard may take (orderStateMachine.js). No
-// COMPLETED here — DSH-03: completing belongs to billing (settling the bill
-// in Invoices completes a served order); the Dashboard never completes or bills.
+// The steps the Dashboard may take (orderStateMachine.js). COMPLETED (clears
+// the table) is offered for a cooking/ready/served order and is locked until
+// the order is PAID (dashboard/ActiveOrders.jsx → needsPaidFirst; the server
+// refuses an unpaid one too).
 const NEXT_STATUS = {
   AWAITING_PAYMENT: ["CANCELLED"], // only a verified payment moves it forward
   PENDING_CONFIRMATION: ["CONFIRMED", "CANCELLED"],
   CONFIRMED: ["PREPARING", "CANCELLED"],
-  PREPARING: ["READY", "CANCELLED"],
-  READY: ["DELIVERED"],
-  DELIVERED: [],
+  PREPARING: ["READY", "COMPLETED", "CANCELLED"],
+  READY: ["DELIVERED", "COMPLETED"],
+  DELIVERED: ["COMPLETED"],
   COMPLETED: [],
   CANCELLED: [],
 };

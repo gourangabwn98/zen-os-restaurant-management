@@ -1,5 +1,5 @@
 import { PRIMARY, PRIMARY_LIGHT, PRIMARY_DARK } from "../../theme.js";
-import { canPickStatus, isBillSettled } from "./shared/paymentRules.js";
+import { canPickStatus, isBillSettled, offersStatus, needsPaidFirst, PAID_FIRST_HINT } from "./shared/paymentRules.js";
 import { useState, useEffect, useCallback } from "react";
 import toast from "react-hot-toast";
 import {
@@ -48,9 +48,9 @@ const STATUS_STYLE = {
 const ACTIVE_STATUSES = ["PENDING_CONFIRMATION","CONFIRMED","PREPARING","READY","DELIVERED"];
 // Targets offered on the "Update Order" buttons. PENDING_CONFIRMATION is
 // deliberately excluded — it's only ever an order's starting point, never
-// something to switch back to (see CLAUDE.md). COMPLETED is never offered:
-// settling the bill in Invoices completes a served order (BIL-01/02).
-const ALL_STATUSES    = ["CONFIRMED","PREPARING","READY","DELIVERED","CANCELLED"].filter(canPickStatus);
+// something to switch back to (see CLAUDE.md). COMPLETED (clears the table)
+// is offered for a cooking/ready/served order and locked until it is PAID.
+const ALL_STATUSES    = ["CONFIRMED","PREPARING","READY","DELIVERED","COMPLETED","CANCELLED"].filter(canPickStatus);
 // TBL-02: any table size the restaurant actually has (server allows 1–100).
 const MIN_SEATS = 1, MAX_SEATS = 100;
 const seatsError = (v) => {
@@ -525,13 +525,14 @@ const OrderDrawer = ({ config, order, session, onClose, onStatusChange, onClearT
             <div style={{ fontSize:10, fontWeight:600, color:T3, letterSpacing:1.2,
               textTransform:"uppercase", marginBottom:10 }}>{t("Update Order")}</div>
             <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:22 }}>
-              {ALL_STATUSES.filter(st=>st!==order.status).map(st => {
+              {ALL_STATUSES.filter(st=>st!==order.status && offersStatus(order, st)).map(st => {
                 const stl = STATUS_STYLE[st]||{ bg:"rgba(107,114,128,0.15)", border:"#4b5563", tc:"#9ca3af", label:st };
+                const blocked = needsPaidFirst(order, st);
                 return (
-                  <button key={st} className="status-btn" onClick={()=>handleStatus(st)}
-                    disabled={updating}
-                    style={{ background:stl.bg, borderColor:stl.border, color:stl.tc }}>
-                    {updating ? <span className="spinner" /> : t(stl.label)}
+                  <button key={st} className="status-btn" onClick={()=>!blocked && handleStatus(st)}
+                    disabled={updating || blocked} title={blocked ? t(PAID_FIRST_HINT) : undefined}
+                    style={{ background:stl.bg, borderColor:stl.border, color:stl.tc, opacity:blocked?0.45:1, cursor:blocked?"not-allowed":undefined }}>
+                    {updating ? <span className="spinner" /> : <>{t(stl.label)}{blocked ? ` 🔒 (${t("mark Paid first")})` : ""}</>}
                   </button>
                 );
               })}
@@ -814,7 +815,7 @@ export default function TablesPage({ onNavigate }) {
     };
   }, [fetchData]);
 
-  const handleStatusChange  = async (id, ns) => { try { await updateOrderStatus(id,ns); toast.success(`→ ${t(ns)}`); await fetchData(); setSelected(null); } catch { toast.error(t("Update failed")); } };
+  const handleStatusChange  = async (id, ns) => { try { await updateOrderStatus(id,ns); toast.success(`→ ${t(ns)}`); await fetchData(); setSelected(null); } catch (err) { toast.error(err?.response?.data?.message || t("Update failed")); } };
   const handleSeatsChange   = async (tableNo, seats) => { try { await updateTable(tableNo,{ seats }); toast.success(t("Table {n} now seats {s}", { n: tableNo, s: seats })); await fetchData(); } catch(e) { toast.error(e.response?.data?.message||t("Failed to update")); } };
   const handleToggleStatus  = async (tableNo) => { const tb=tables.find(x=>x.tableNo===tableNo); if(!tb)return; const ns=tb.status==="Active"?"Inactive":"Active"; try { await updateTable(tableNo,{status:ns}); toast.success(`${t("Table {n}", { n: tableNo })} → ${t(ns)}`); fetchData(); } catch { toast.error(t("Failed to update")); } };
   const handleDelete        = async (tableNo) => { if(!window.confirm(t("Delete Table {n}?", { n: tableNo })))return; try { await deleteTable(tableNo); toast.success(t("Table {n} deleted", { n: tableNo })); fetchData(); if(selected===tableNo)setSelected(null); } catch(e){ toast.error(e.response?.data?.message||t("Failed")); } };
