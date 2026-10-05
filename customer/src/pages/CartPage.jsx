@@ -131,10 +131,11 @@ function ShoppingCart() {
   // Guests order with no name, phone or login (the server never required them).
   const canPlace = useMemo(() => {
     if (cart.itemCount === 0) return false;
+    if (table.checking) return false; // a scanned QR is still being verified
     if (orderType === "DINE_IN" && !canDineIn) return false;
     if (orderType === "TAKEAWAY" && !canTakeaway) return false;
     return true;
-  }, [cart.itemCount, orderType, canDineIn, canTakeaway]);
+  }, [cart.itemCount, table.checking, orderType, canDineIn, canTakeaway]);
 
   const handlePlace = async () => {
     if (!canPlace || placing) return;
@@ -198,7 +199,8 @@ function ShoppingCart() {
   }
 
   // Why the button is disabled — shown right above it so it's never a mystery.
-  const blocker = !canDineIn && !canTakeaway
+  const blocker = table.checking ? "Checking your table…"
+    : !canDineIn && !canTakeaway
     ? (table.isDineIn ? "Ordering from the table is switched off right now — please ask a waiter." : "Takeaway orders are switched off right now — please ask at the counter.")
     : orderType === "DINE_IN" && !table.isDineIn ? "Scan your table's QR code for dine-in" : null;
 

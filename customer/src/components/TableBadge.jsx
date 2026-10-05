@@ -8,6 +8,9 @@ import { useAppState } from "../context/AppState.jsx";
 export default function TableBadge({ onClear, compact }) {
   const { table } = useAppState();
 
+  if (table.checking) { // just scanned a table QR — never flash "Takeaway" meanwhile
+    return <span className="table-chip" role="status"><span className="live" />Checking your table…</span>;
+  }
   if (!table.isDineIn) {
     return <span className="table-chip">🛍️ {compact ? "Takeaway · scan QR" : "Takeaway · scan table QR for dine-in"}</span>;
   }

@@ -23,7 +23,16 @@
     <script>try{if(localStorage.getItem("sohoj_theme")==="dark")document.documentElement.dataset.theme="dark";}catch(e){}</script>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- First paint before the JS bundle arrives (slow mobile data after a QR
+         scan): a branded splash instead of a blank page. React replaces it. -->
+    <style>
+      .boot{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#FFEFE0;color:#5b3a24;font:600 15px/1.3 Inter,system-ui,sans-serif}
+      .boot img{width:84px;height:84px;animation:bootp 1.2s ease-in-out infinite alternate}
+      @keyframes bootp{from{transform:scale(.94);opacity:.75}to{transform:scale(1);opacity:1}}
+      @media (prefers-reduced-motion:reduce){.boot img{animation:none}}
+      :root[data-theme="dark"] .boot{background:#1A0F0B;color:#f3e2d3}
+    </style>
+    <div id="root"><div class="boot" role="status"><img src="/brand/khoai-v2/hk-mark-192.png" alt="" width="84" height="84" /><span>Opening the menu…</span></div></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
