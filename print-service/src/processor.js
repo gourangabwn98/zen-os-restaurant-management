@@ -22,12 +22,15 @@ export class Processor {
     this.printerManager = printerManager;
     this.reportStatus = reportStatus;
     this.maxAttempts = opts.maxAttempts ?? 5;
+    // FAILED-job backoff (queue.getRetryable); 0 = retry on every sweep.
+    this.retryBaseDelayMs = opts.retryBaseDelayMs ?? 0;
     this.logoProvider = opts.logoProvider || null; // restaurant logo on bills (src/logo.js)
     this.profileProvider = opts.profileProvider || null; // header: name/address/phone (src/restaurantProfile.js)
     this.footer = opts.footer || "";
     this.payQrProvider = opts.payQrProvider || null; // "Scan & Pay" QR on unpaid bills (src/payQr.js)
     this.textImages = opts.textImages || null; // non-Latin text as images (src/textImage.js)
     this._processing = new Set(); // jobIds currently mid-print, in THIS process
+    this._sweep = null; // the running retry sweep, if any (never two at once)
   }
 
   /**
@@ -38,7 +41,11 @@ export class Processor {
    */
   async ingest(job) {
     if (this.queue.isTerminal(job.jobId)) {
+      // The backend still lists it, so our PRINTED report never reached it
+      // (sent while disconnected) — send it again, or the admin keeps seeing
+      // it as not printed and it comes back on every reconnect.
       logger.info(`Skipping job ${job.jobId} (${job.jobType}) — already printed`);
+      await this._safeReport(job.jobId, job.jobType, "PRINTED");
       return;
     }
     const wasKnown = this.queue.has(job.jobId);
@@ -81,16 +88,17 @@ export class Processor {
     }
   }
 
-  /** Attempts to print exactly one job, exactly once, right now. */
+  /** Attempts to print exactly one job, exactly once, right now.
+   * → "printed" | "offline" | "failed" | "skipped" (nothing to do). */
   async tryPrint(jobId) {
-    if (this._processing.has(jobId)) return; // already mid-flight in this process
+    if (this._processing.has(jobId)) return "skipped"; // already mid-flight in this process
     const job = this.queue.get(jobId);
-    if (!job) return;
-    if (job.status === "PRINTED") return; // duplicate-protection: never re-print
+    if (!job) return "skipped";
+    if (job.status === "PRINTED" || job.status === "SKIPPED") return "skipped"; // never re-print
 
     if ((job.attempts || 0) >= this.maxAttempts) {
       logger.warn(`Job ${jobId} has exhausted ${this.maxAttempts} attempts — needs manual attention`);
-      return;
+      return "skipped";
     }
 
     const entry = this.printerManager.driverFor(job.jobType);
@@ -99,7 +107,7 @@ export class Processor {
       logger.error(msg);
       this.queue.markFailed(jobId, msg);
       await this._safeReport(jobId, job.jobType, "FAILED", msg);
-      return;
+      return "failed";
     }
 
     this._processing.add(jobId);
@@ -107,11 +115,14 @@ export class Processor {
     // see queue.markWaiting); the retry sweep prints it once it's back.
     const online = await entry.driver.isOnline().catch(() => false);
     if (!online) {
-      const msg = `Printer "${entry.driver.id}" is offline — waiting for it`;
+      // Say WHY when the driver knows (e.g. USB support missing next to the
+      // .exe) — "offline" alone sent people looking at a working printer.
+      const why = entry.driver.lastProblem ? ` (${entry.driver.lastProblem})` : "";
+      const msg = `Printer "${entry.driver.id}" is offline — waiting for it${why}`;
       if (job.lastError !== msg) logger.warn(`Job ${jobId} (${job.jobType}): ${msg}`);
       this.queue.markWaiting(jobId, msg);
       this._processing.delete(jobId);
-      return;
+      return "offline";
     }
     this.queue.markPrinting(jobId);
     await this._safeReport(jobId, job.jobType, "PRINTING");
@@ -134,6 +145,7 @@ export class Processor {
       this.queue.markPrinted(jobId);
       await this._safeReport(jobId, job.jobType, "PRINTED");
       logger.ok(`Printed ${job.jobType} job ${jobId} on "${entry.driver.id}"`);
+      return "printed";
     } catch (err) {
       this.queue.markFailed(jobId, err);
       await this._safeReport(jobId, job.jobType, "FAILED", err.message);
@@ -142,6 +154,7 @@ export class Processor {
       // the next reconnect reconciliation) will pick it up again, up to
       // maxAttempts, at which point it just sits there for a human to see
       // via getExhausted() rather than being retried forever.
+      return "failed";
     } finally {
       this._processing.delete(jobId);
     }
@@ -149,14 +162,28 @@ export class Processor {
 
   /** Periodic sweep — retries every eligible PENDING/FAILED job. Also how a
    * printer that just came back online gets its backlog cleared without
-   * waiting for a fresh socket push. */
-  async retrySweep() {
-    const retryable = this.queue.getRetryable(this.maxAttempts);
+   * waiting for a fresh socket push. Never runs twice at once (a slow print
+   * must not let the next tick start a second pass over the same jobs); a
+   * printer found offline is not asked again for the rest of this pass. */
+  retrySweep() {
+    if (this._sweep) return this._sweep;
+    this._sweep = this._runSweep().finally(() => { this._sweep = null; });
+    return this._sweep;
+  }
+
+  async _runSweep() {
+    const retryable = this.queue.getRetryable(this.maxAttempts, { baseDelayMs: this.retryBaseDelayMs });
     if (retryable.length === 0) return;
-    logger.info(`Retry sweep: ${retryable.length} job(s) eligible`);
+    const offline = new Set();
+    let tried = 0;
     for (const job of retryable) {
-      await this.tryPrint(job.jobId);
+      const entry = this.printerManager.driverFor(job.jobType);
+      if (entry && offline.has(entry)) continue;
+      tried++;
+      const outcome = await this.tryPrint(job.jobId);
+      if (outcome === "offline" && entry) offline.add(entry);
     }
+    if (tried && !(offline.size && tried === offline.size)) logger.info(`Retry sweep: ${retryable.length} job(s) eligible`);
   }
 
   async _safeReport(jobId, jobType, status, error) {

@@ -83,13 +83,22 @@ export class PrintQueue {
     if (existing?.status === "PRINTED") {
       return existing; // already done — never overwritten
     }
+    const now = new Date().toISOString();
+    // The print state is OURS: the backend's copy lags (a report sent while
+    // disconnected is lost), so a backend "PRINTING" must never overwrite a
+    // local FAILED/PENDING — that job would then never be retried. A job we
+    // dropped (SKIPPED) that the backend lists again is wanted again.
+    // A new job always starts PENDING with 0 attempts: the backend's own
+    // attempt counter counts PRINTING + FAILED reports, not our tries.
+    const status = !existing || existing.status === "SKIPPED" ? "PENDING" : existing.status;
     const merged = {
       ...existing,
       ...job,
-      status: job.status || existing?.status || "PENDING",
-      attempts: existing?.attempts ?? job.attempts ?? 0,
-      updatedAt: new Date().toISOString(),
-      createdAt: existing?.createdAt || job.createdAt || new Date().toISOString(),
+      status,
+      attempts: existing && existing.status !== "SKIPPED" ? existing.attempts || 0 : 0,
+      updatedAt: now,
+      createdAt: existing?.createdAt || job.createdAt || now,
+      firstSeenAt: existing?.firstSeenAt || now,
     };
     this.jobs.set(job.jobId, merged);
     this._save();
@@ -141,6 +150,40 @@ export class PrintQueue {
     return job;
   }
 
+  /** The backend no longer wants this job (an admin skipped it, marked it
+   * printed by hand, or it was finished elsewhere) — never print it. Kept,
+   * not deleted, so the log/queue still shows what happened. */
+  markSkipped(jobId, reason) {
+    const job = this.jobs.get(jobId);
+    if (!job || job.status === "PRINTED" || job.status === "PRINTING") return null;
+    job.status = "SKIPPED";
+    job.lastError = String(reason || "Skipped");
+    job.updatedAt = new Date().toISOString();
+    this._save();
+    return job;
+  }
+
+  /** After a successful pull of the backend's not-done list: any local
+   * PENDING/FAILED job we already knew about BEFORE that pull started, and
+   * that the list doesn't contain, is done/skipped on the backend → skip it
+   * here too. (A job is in the database before it is ever pushed to us, so
+   * one seen before the pull must be in a list fetched after it.) */
+  dropMissing(listedIds, pulledAfterMs) {
+    const dropped = [];
+    for (const job of this.jobs.values()) {
+      if (job.status !== "PENDING" && job.status !== "FAILED") continue;
+      if (listedIds.has(job.jobId)) continue;
+      const seen = Date.parse(job.firstSeenAt || job.createdAt || "");
+      if (!(seen < pulledAfterMs)) continue;
+      job.status = "SKIPPED";
+      job.lastError = "No longer in the server's print queue (skipped or printed elsewhere)";
+      job.updatedAt = new Date().toISOString();
+      dropped.push(job);
+    }
+    if (dropped.length) this._save();
+    return dropped;
+  }
+
   /** On startup, any job left in PRINTING means the process died mid-print
    * (we can't know if the printer actually got the data or not). Treat it
    * as failed so it gets retried — safer to risk a rare double-print (which
@@ -161,10 +204,19 @@ export class PrintQueue {
     }
   }
 
-  /** Jobs eligible for a (re)print attempt right now, oldest first. */
-  getRetryable(maxAttempts) {
+  /** Jobs eligible for a (re)print attempt right now, oldest first.
+   * PENDING (new, or waiting for an offline printer) is always eligible. A
+   * FAILED job waits baseDelayMs × 2^(attempts-1), capped at 60 s, after its
+   * last failure — so a fast sweep reacts quickly to a printer coming back
+   * without burning a real error's attempts in a few seconds. */
+  getRetryable(maxAttempts, { baseDelayMs = 0, now = Date.now() } = {}) {
+    const due = (j) => {
+      if (j.status !== "FAILED" || !baseDelayMs) return true;
+      const wait = Math.min(60000, baseDelayMs * 2 ** Math.max(0, (j.attempts || 1) - 1));
+      return now - Date.parse(j.updatedAt || 0) >= wait;
+    };
     return [...this.jobs.values()]
-      .filter((j) => (j.status === "PENDING" || j.status === "FAILED") && (j.attempts || 0) < maxAttempts)
+      .filter((j) => (j.status === "PENDING" || j.status === "FAILED") && (j.attempts || 0) < maxAttempts && due(j))
       .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   }
 
@@ -181,6 +233,7 @@ export class PrintQueue {
       printing: all.filter((j) => j.status === "PRINTING").length,
       printed: all.filter((j) => j.status === "PRINTED").length,
       failed: all.filter((j) => j.status === "FAILED").length,
+      skipped: all.filter((j) => j.status === "SKIPPED").length,
     };
   }
 }

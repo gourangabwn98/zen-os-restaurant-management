@@ -2,3 +2,5 @@ node_modules/
 .env
 data/queue.json
 *.log
+release/
+release.zip

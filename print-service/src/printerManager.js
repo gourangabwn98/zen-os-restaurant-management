@@ -42,18 +42,30 @@ export class PrinterManager {
     return this.drivers.find((d) => d.role === "BOTH") || null;
   }
 
+  /** Re-checks every printer; logs each change — including the very first
+   * check, so a printer that is offline at startup is reported (and why).
+   * → { list, cameOnline } — cameOnline: some printer just went offline→online. */
   async checkAll() {
+    let cameOnline = false;
     for (const entry of this.drivers) {
-      const wasOnline = entry.status === "online";
+      const before = entry.status;
       const online = await entry.driver.isOnline().catch(() => false);
       entry.status = online ? "online" : "offline";
-      if (online !== wasOnline) {
+      if (entry.status !== before) {
+        if (online && before === "offline") cameOnline = true;
+        const why = !online && entry.driver.lastProblem ? ` — ${entry.driver.lastProblem}` : "";
         logger[online ? "ok" : "warn"](
-          `Printer "${entry.driver.id}" (${entry.role}, ${entry.driver.type}) is now ${online ? "ONLINE" : "OFFLINE"}`
+          `Printer "${entry.driver.id}" (${entry.role}, ${entry.driver.type}) is now ${online ? "ONLINE" : "OFFLINE"}${why}`
         );
       }
     }
+    this.cameOnline = cameOnline;
     return this.drivers.map((d) => ({ id: d.driver.id, role: d.role, type: d.driver.type, status: d.status }));
+  }
+
+  /** Hot-plug: `fn` runs when a printer may have appeared (USB_DIRECT only). */
+  onChange(fn) {
+    for (const { driver } of this.drivers) if (typeof driver.onChange === "function") driver.onChange(fn);
   }
 
   summary() {

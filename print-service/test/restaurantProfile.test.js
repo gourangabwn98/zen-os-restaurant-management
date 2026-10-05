@@ -41,5 +41,15 @@ await test("offline with no cache: empty details, never throws", async () => {
   assert.deepEqual(p, { name: "", address: "", city: "", phone: "", logo: "", upiId: "", upiPayeeName: "", paymentQr: "" });
 });
 
+await test("a slow / waking-up server never delays a print once any copy is cached", async () => {
+  const d = dir();
+  await new RestaurantProfileProvider({ backendUrl: "https://a", cacheDir: d, fetch: okFetch() }).get();
+  const hang = () => new Promise(() => {}); // server never answers
+  const t = Date.now();
+  const p = await new RestaurantProfileProvider({ backendUrl: "https://a", cacheDir: d, fetch: hang }).get();
+  assert.equal(p.name, "AD's Cafe");
+  assert.ok(Date.now() - t < 200, `took ${Date.now() - t} ms`);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

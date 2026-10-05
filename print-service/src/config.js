@@ -42,10 +42,13 @@ export const config = {
   backendUrl:  normalizeBackendUrl(required("BACKEND_URL")),
   printerKey:  required("PRINTER_KEY"),
   queueFile:   path.resolve(ROOT, process.env.QUEUE_FILE || "./data/queue.json"),
-  maxAttempts: Number(process.env.MAX_ATTEMPTS || 5),
+  maxAttempts: Number(process.env.MAX_ATTEMPTS || 10),
   retryBaseDelayMs: Number(process.env.RETRY_BASE_DELAY_MS || 3000),
-  retrySweepIntervalMs: Number(process.env.RETRY_SWEEP_INTERVAL_MS || 15000),
-  healthCheckIntervalMs: Number(process.env.HEALTH_CHECK_INTERVAL_MS || 20000),
+  // How often waiting/failed jobs are looked at. Fast on purpose: a waiting
+  // job prints within seconds of its printer coming back; FAILED jobs still
+  // back off (RETRY_BASE_DELAY_MS × 2^n, max 60 s — queue.getRetryable).
+  retrySweepIntervalMs: Number(process.env.RETRY_SWEEP_INTERVAL_MS || 3000),
+  healthCheckIntervalMs: Number(process.env.HEALTH_CHECK_INTERVAL_MS || 5000),
   // Bill logo (Admin → Profile logo): max size in printer dots — a 58 mm
   // roll is ~384 dots wide, 80 mm ~576. LOGO_INVERT: auto | true | false.
   logoWidth:  Number(process.env.LOGO_WIDTH || 192),
@@ -59,7 +62,9 @@ export const config = {
   unicodeFont: process.env.UNICODE_FONT || "Nirmala UI",
   printPayQr: String(process.env.PRINT_PAY_QR || "true").toLowerCase() !== "false",
   payQrSize:  Number(process.env.PAY_QR_SIZE || 240), // dots; ~30 mm
-  queuePollIntervalMs: Number(process.env.QUEUE_POLL_INTERVAL_MS || 20000),
+  // Safety net for a live push that never arrived (job created on another
+  // server instance, or during a reconnect) — one small socket call.
+  queuePollIntervalMs: Number(process.env.QUEUE_POLL_INTERVAL_MS || 5000),
   useMockPrinter: String(process.env.USE_MOCK_PRINTER || "false").toLowerCase() === "true",
   printers: readPrintersConfig(),
 };

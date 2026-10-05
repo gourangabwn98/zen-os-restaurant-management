@@ -48,6 +48,10 @@ export class SocketClient {
     this.socket.on("disconnect", (reason) => {
       this.connected = false;
       logger.warn(`Disconnected from backend: ${reason}. Reconnecting automatically…`);
+      // socket.io-client does NOT reconnect by itself after a server-side
+      // disconnect (e.g. the server restarting gracefully) — without this the
+      // service would sit disconnected, printing nothing, until restarted.
+      if (reason === "io server disconnect") setTimeout(() => this.socket.connect(), 2000);
     });
 
     this.socket.on("connect_error", (err) => {
@@ -98,16 +102,34 @@ export class SocketClient {
    * backoff, so polling never speeds up or repeats their attempts. */
   async reconcileQueue({ onlyNew = false } = {}) {
     if (!this.socket?.connected) return;
+    if (this._reconciling) return; // a slow pull is still running — never overlap
+    this._reconciling = true;
     try {
+      const startedAt = Date.now();
       const { jobs, error } = await this._ack("get-queue", {});
       if (error) { logger.error("get-queue failed:", error); return; }
-      const todo = onlyNew ? jobs.filter((j) => !this.processor.queue.has(j.jobId)) : jobs;
-      if (!onlyNew || todo.length) logger.info(`Reconciling ${todo.length} job(s) from backend queue`);
+      const list = Array.isArray(jobs) ? jobs : [];
+      const queue = this.processor.queue;
+
+      // Done/skipped on the backend (admin "skip old jobs", marked printed by
+      // hand, printed by another print-service) → never print it here.
+      const dropped = queue.dropMissing(new Set(list.map((j) => j.jobId)), startedAt);
+      for (const j of dropped) logger.info(`Not printing ${j.jobType} job ${j.jobId} — the server no longer lists it (skipped or already printed)`);
+
+      // The poll: new jobs, plus ones we printed whose PRINTED report was
+      // lost, plus ones we'd dropped that the server wants again.
+      const todo = onlyNew
+        ? list.filter((j) => !queue.has(j.jobId) || queue.isTerminal(j.jobId) || queue.get(j.jobId)?.status === "SKIPPED")
+        : list;
+      const fresh = todo.filter((j) => !queue.has(j.jobId)).length;
+      if (!onlyNew || fresh) logger.info(`Reconciling ${onlyNew ? fresh : todo.length} job(s) from backend queue`);
       for (const job of todo) {
         await this.processor.ingest(job);
       }
     } catch (err) {
       logger.error("Queue reconciliation failed:", err.message);
+    } finally {
+      this._reconciling = false;
     }
   }
 

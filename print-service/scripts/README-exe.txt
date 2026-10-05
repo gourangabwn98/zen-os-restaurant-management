@@ -91,3 +91,29 @@ Keep ALL of these files together in one folder:
 
   Windows SmartScreen may warn the first time ("unrecognised app") because
   the program isn't code-signed: click "More info" > "Run anyway".
+
+4) Keep it printing reliably
+----------------------------
+  * Copy the WHOLE folder. Without node_modules\ a USB_DIRECT printer can't
+    be reached: the window then says
+      "offline — waiting for it (USB support isn't available ...)"
+    and nothing prints. Copy the node_modules folder back next to the .exe.
+
+  * Clicking inside the black window no longer pauses printing (QuickEdit is
+    switched off at start). Still: don't close the window.
+
+  * The PC must not sleep: Settings > System > Power > Screen and sleep >
+    "When plugged in, put my device to sleep after" = Never. A sleeping PC
+    prints nothing until it wakes.
+
+  * Before starting a NEW version for the first time after a long break:
+    Admin > Profile > Print service > "Skip old jobs". Old tickets the server
+    no longer lists are then never printed (the program checks this itself
+    every few seconds).
+
+  * A printer that is switched off / unplugged keeps its tickets waiting and
+    prints them within a few seconds of coming back. Nothing is lost.
+
+  * KOTs print when an order is SENT TO THE KITCHEN — by default 3 minutes
+    after it is placed (the "edit window", Admin > Profile > Services). Set
+    it to 0 to print the KOT at once, or press "Start preparing".

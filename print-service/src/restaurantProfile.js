@@ -58,25 +58,44 @@ export class RestaurantProfileProvider {
     }
   }
 
-  /** { name, address, city, phone, logo } — possibly empty strings, never throws. */
+  /** { name, address, city, phone, logo } — possibly empty strings, never throws.
+   * Never makes a print wait when ANY copy exists: a stale one (memory or
+   * disk) is returned at once and refreshed in the background — a slow or
+   * waking-up server must not hold a KOT for up to FETCH_TIMEOUT_MS. Only the
+   * very first fetch, with nothing cached at all, is waited for. */
   async get() {
     if (this._profile && Date.now() - this._fetchedAt < REFRESH_MS) return this._profile;
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
-    try {
-      const res = await this._fetch(this.url, { signal: ctrl.signal });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = await res.json();
-      this._profile = pick(body?.data || body);
-      this._writeDisk(this._profile);
-    } catch (err) {
-      const cached = this._profile || this._readDisk();
-      if (!cached) logger.warn(`Restaurant details unavailable (${err.message}) — printing without address/phone`);
-      this._profile = cached || pick();
-    } finally {
-      clearTimeout(timer);
-      this._fetchedAt = Date.now(); // also throttles retries after a failure
+    if (!this._profile) this._profile = this._readDisk();
+    if (this._profile) {
+      this._refresh();
+      return this._profile;
     }
-    return this._profile;
+    return this._refresh();
+  }
+
+  /** One fetch at a time; → the profile to use (never throws). */
+  _refresh() {
+    if (this._inflight) return this._inflight;
+    this._inflight = (async () => {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+      try {
+        const res = await this._fetch(this.url, { signal: ctrl.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const body = await res.json();
+        this._profile = pick(body?.data || body);
+        this._writeDisk(this._profile);
+      } catch (err) {
+        const cached = this._profile || this._readDisk();
+        if (!cached) logger.warn(`Restaurant details unavailable (${err.message}) — printing without address/phone`);
+        this._profile = cached || pick();
+      } finally {
+        clearTimeout(timer);
+        this._fetchedAt = Date.now(); // also throttles retries after a failure
+        this._inflight = null;
+      }
+      return this._profile;
+    })();
+    return this._inflight;
   }
 }

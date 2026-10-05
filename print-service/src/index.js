@@ -9,6 +9,7 @@ import { LogoProvider } from "./logo.js";
 import { RestaurantProfileProvider } from "./restaurantProfile.js";
 import { PayQrProvider } from "./payQr.js";
 import { TextImageRenderer } from "./textImage.js";
+import { disableQuickEdit } from "./consoleMode.js";
 
 // True when running as the packaged .exe (scripts/build-exe.mjs), not `node`.
 const PACKAGED = !["node", "node.exe"].includes(path.basename(process.execPath).toLowerCase());
@@ -18,6 +19,8 @@ async function main() {
   // is reported by the catch below instead of crashing before it exists.
   const { config } = await import("./config.js");
   logger.info("Starting print-service…");
+  // A click inside this window must never pause printing (src/consoleMode.js).
+  if (await disableQuickEdit()) logger.info("Console QuickEdit turned off — clicking in this window no longer pauses printing");
   logger.info(`Backend: ${config.backendUrl}`);
   logger.info(`Printers configured: ${config.printers.map((p) => `${p.id}(${p.role}/${p.type})`).join(", ")}`);
   if (config.useMockPrinter) logger.warn("USE_MOCK_PRINTER=true — no real hardware will be used");
@@ -30,13 +33,15 @@ async function main() {
   await printerManager.checkAll();
 
   let socketClient; // defined below, referenced by the processor's reportStatus
+  const profileProvider = new RestaurantProfileProvider({ backendUrl: config.backendUrl, cacheDir: path.dirname(config.queueFile) });
   const processor = new Processor(
     queue,
     printerManager,
     (jobId, jobType, status, error) => socketClient.reportStatus(jobId, jobType, status, error),
     {
       maxAttempts: config.maxAttempts,
-      profileProvider: new RestaurantProfileProvider({ backendUrl: config.backendUrl, cacheDir: path.dirname(config.queueFile) }),
+      retryBaseDelayMs: config.retryBaseDelayMs,
+      profileProvider,
       // Bengali / Hindi / any non-Latin text: printed as images (Windows font).
       textImages: new TextImageRenderer({ cacheDir: path.dirname(config.queueFile), font: config.unicodeFont }),
       footer: config.billFooter,
@@ -58,6 +63,15 @@ async function main() {
     }
   );
 
+  // Warm the header / logo / pay-QR now, so the first KOT or bill after a
+  // start never waits for a download (each is cached afterwards).
+  profileProvider.get()
+    .then((h) => Promise.allSettled([
+      h?.logo && processor.logoProvider?.get(h.logo),
+      processor.payQrProvider?.forBill({ paymentStatus: "PENDING_VERIFICATION", total: 1 }, h),
+    ]))
+    .catch(() => {});
+
   socketClient = new SocketClient({ backendUrl: config.backendUrl, printerKey: config.printerKey, processor }).connect();
 
   // Any jobs recovered from a previous crash, or left PENDING when we shut
@@ -67,10 +81,22 @@ async function main() {
 
   const retryTimer = setInterval(() => processor.retrySweep().catch((e) => logger.error("Retry sweep error:", e.message)), config.retrySweepIntervalMs);
   const pollTimer = setInterval(() => socketClient.reconcileQueue({ onlyNew: true }), config.queuePollIntervalMs);
-  const healthTimer = setInterval(() => printerManager.checkAll().catch((e) => logger.error("Health check error:", e.message)), config.healthCheckIntervalMs);
+  // A printer that comes back (switched on, paper loaded, cable plugged in)
+  // clears its backlog at once — not on the next sweep tick.
+  const healthTimer = setInterval(() => printerManager.checkAll()
+    .then(() => { if (printerManager.cameOnline) return processor.retrySweep(); })
+    .catch((e) => logger.error("Health check error:", e.message)), config.healthCheckIntervalMs);
+  // USB plug-in / power-on: give the device a moment to enumerate, then print.
+  let plugTimer = null;
+  printerManager.onChange(() => {
+    clearTimeout(plugTimer);
+    plugTimer = setTimeout(() => {
+      printerManager.checkAll().then(() => processor.retrySweep()).catch((e) => logger.error("USB change check error:", e.message));
+    }, 800);
+  });
   const statsTimer = setInterval(() => {
     const s = queue.stats();
-    logger.info(`Queue: ${s.pending} pending, ${s.printing} printing, ${s.printed} printed, ${s.failed} failed`);
+    logger.info(`Queue: ${s.pending} pending, ${s.printing} printing, ${s.printed} printed, ${s.failed} failed${s.skipped ? `, ${s.skipped} skipped` : ""}`);
   }, 60000);
 
   const shutdown = (signal) => {

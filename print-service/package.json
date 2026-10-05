@@ -8,7 +8,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "node test/queue.test.js && node test/renderers.test.js && node test/logo.test.js && node test/restaurantProfile.test.js && node test/payQr.test.js && node test/textImage.test.js && node test/printerManager.test.js && node test/usbDriver.test.js && node test/usbDirectDriver.test.js && node test/processor.test.js && node test/integration.test.js",
+    "test": "node test/queue.test.js && node test/renderers.test.js && node test/logo.test.js && node test/restaurantProfile.test.js && node test/payQr.test.js && node test/textImage.test.js && node test/printerManager.test.js && node test/usbDriver.test.js && node test/usbDirectDriver.test.js && node test/processor.test.js && node test/reliability.test.js && node test/integration.test.js",
     "build:exe": "node scripts/build-exe.mjs"
   },
   "dependencies": {

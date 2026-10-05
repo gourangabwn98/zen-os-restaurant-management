@@ -22,7 +22,10 @@ import { fileURLToPath } from "url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BUILD = path.join(ROOT, "build");
-const DIST = path.join(ROOT, "dist");
+// `npm run build:exe -- --out release` builds into another folder (e.g. a
+// clean copy to send to a restaurant while dist/ is still running here).
+const outArg = process.argv.indexOf("--out");
+const DIST = path.resolve(ROOT, outArg > -1 && process.argv[outArg + 1] ? process.argv[outArg + 1] : "dist");
 const EXE_NAME = "SohojPrintService.exe";
 const EXE = path.join(DIST, EXE_NAME);
 const FUSE = "NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2"; // fixed by Node

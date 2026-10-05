@@ -66,6 +66,7 @@ export class UsbDirectDriver {
     }
     this._usb = deps.usb || null;
     this._busy = Promise.resolve(); // one USB transfer at a time
+    this.lastProblem = null; // why isOnline() last said no — shown in the log
     // Only used to build the ESC/POS byte buffer (same as UsbDriver).
     this.printer = new ThermalPrinter({ type: PrinterTypes.EPSON, removeSpecialCharacters: false });
   }
@@ -89,9 +90,28 @@ export class UsbDirectDriver {
 
   async isOnline() {
     try {
-      return Boolean(await this._find());
-    } catch {
+      const found = Boolean(await this._find());
+      this.lastProblem = found ? null : "not found on USB — is it plugged in and switched on?";
+      return found;
+    } catch (err) {
+      // e.g. the `usb` package missing next to the .exe: NOT a printer that
+      // is off, and it never fixes itself — say exactly that.
+      this.lastProblem = err.message;
       return false;
+    }
+  }
+
+  /** Calls `fn` whenever a USB device is plugged in / switched on (or
+   * removed), so waiting jobs print at once instead of on the next sweep. */
+  onChange(fn) {
+    try {
+      const usb = this._lib();
+      if (typeof usb.addEventListener !== "function") return false;
+      usb.addEventListener("connect", () => fn("connect"));
+      usb.addEventListener("disconnect", () => fn("disconnect"));
+      return true;
+    } catch {
+      return false; // no USB support — the periodic checks still run
     }
   }
 
