@@ -154,14 +154,47 @@ export default function LoginPage() {
     style={{ width: "100%", height: "100%", objectFit: "cover" }}
   />
 </div>
+<div
+  style={{
+    textAlign: "center",
+    marginBottom: 32,
+  }}
+>
+  <div
+    style={{
+      color: "#c4b5fd",
+      fontWeight: 700,
+      fontSize: 22,
+      letterSpacing: 2,
+      lineHeight: 1.2,
+      marginBottom: 6,
+    }}
+  >
+    HOTEL
+  </div>
 
-        <img src={BRAND.wordmark} alt="" style={{ display: "block", height: 30, width: "auto", margin: "0 auto 6px" }} />
-        <div style={{ color: "#c4b5fd", fontWeight: 700, fontSize: 22, marginBottom: 4 }}>
-          {BRAND.name}
-        </div>
-        <div style={{ color: "#4b5563", fontSize: 11, letterSpacing: 3, marginBottom: 32 }}>
-          {t("ADMIN PANEL")}
-        </div>
+  <img
+    src={BRAND.wordmark}
+    alt="খোয়াই"
+    style={{
+      display: "block",
+      height: 30,
+      width: "auto",
+      margin: "0 auto 10px",
+    }}
+  />
+
+  <div
+    style={{
+      color: "#6b7280",
+      fontSize: 10,
+      fontWeight: 600,
+      letterSpacing: 3,
+    }}
+  >
+    {t("ADMIN PANEL")}
+  </div>
+</div>
 
         {/* ── Step: Phone ── */}
         {step === "phone" && (
