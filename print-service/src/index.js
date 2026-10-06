@@ -10,6 +10,7 @@ import { RestaurantProfileProvider } from "./restaurantProfile.js";
 import { PayQrProvider } from "./payQr.js";
 import { TextImageRenderer } from "./textImage.js";
 import { disableQuickEdit } from "./consoleMode.js";
+import { acquireInstanceLock } from "./instanceLock.js";
 
 // True when running as the packaged .exe (scripts/build-exe.mjs), not `node`.
 const PACKAGED = !["node", "node.exe"].includes(path.basename(process.execPath).toLowerCase());
@@ -18,6 +19,14 @@ async function main() {
   // Loaded here (not a static import) so a missing .env / printers.config.json
   // is reported by the catch below instead of crashing before it exists.
   const { config } = await import("./config.js");
+  // Only ONE copy per printer key: a second copy would print every job again.
+  const lock = acquireInstanceLock(config.printerKey);
+  if (!lock.ok) {
+    throw new Error(`The print service is already running on this PC (process ${lock.pid}) — `
+      + "close the other window first. Two copies print every KOT and bill twice.");
+  }
+  process.on("exit", lock.release);
+
   logger.info("Starting print-service…");
   // A click inside this window must never pause printing (src/consoleMode.js).
   if (await disableQuickEdit()) logger.info("Console QuickEdit turned off — clicking in this window no longer pauses printing");

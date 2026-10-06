@@ -33,5 +33,7 @@ export const renderLinesToPrinter = (printer, lines) => {
     if (line.size === "large") printer.setTextNormal();
     if (line.bold) printer.bold(false);
   }
-  printer.cut();
+  // The KOT/bill renderers already end with their own cut — a second one here
+  // fed ~8 blank lines and cut again: the blank strip between tickets.
+  if (lines.at(-1)?.type !== "cut") printer.cut();
 };
