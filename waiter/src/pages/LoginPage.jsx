@@ -79,7 +79,7 @@ export default function LoginPage() {
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", padding: 24 }}>
-     ```jsx
+    
 <div style={{ textAlign: "center", marginBottom: 30 }}>
   {/* Hotel Khoai branding */}
   <img
@@ -144,7 +144,7 @@ export default function LoginPage() {
       : t("Code sent to +91 {phone}", { phone })}
   </div>
 </div>
-```
+
 
 
       {step === "phone" ? (
