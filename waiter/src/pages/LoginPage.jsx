@@ -79,18 +79,58 @@ export default function LoginPage() {
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", padding: 24 }}>
-      <div style={{ textAlign: "center", marginBottom: 30 }}>
-        {/* GLB-01: Hotel KHOAI mark + wordmark (src/brand.js) */}
-        <img src={BRAND.mark} alt={BRAND.name} width="72" height="72" style={{ display: "block", margin: "0 auto 10px", borderRadius: "50%" }} />
-        <img src={BRAND.wordmark} alt="" height="30" style={{ display: "block", margin: "0 auto 4px", height: 30, width: "auto" }} />
-        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 2, color: TEXT_FAINT, textTransform: "uppercase", marginBottom: 14 }}>{BRAND.name} · {t("Waiter")}</div>
-        <div style={{ fontWeight: 800, fontSize: 21, color: "#fff", letterSpacing: -0.4 }}>
-          {step === "phone" ? t("Waiter login") : t("Hi {name}, verify your number", { name: staffName || t("there") })}
-        </div>
-        <div style={{ fontSize: 12.5, color: TEXT_FAINT, marginTop: 4 }}>
-          {step === "phone" ? t("Enter your registered staff phone number") : t("Code sent to +91 {phone}", { phone })}
-        </div>
-      </div>
+     <div style={{ textAlign: "center", marginBottom: 30 }}>
+  {/* Hotel KHOAI mark + Bengali wordmark */}
+  <img
+    src={BRAND.mark}
+    alt={BRAND.name}
+    width="72"
+    height="72"
+    style={{
+      display: "block",
+      margin: "0 auto 10px",
+      borderRadius: "50%",
+    }}
+  />
+
+  <img
+    src={BRAND.wordmark}
+    alt="খোয়াই"
+    style={{
+      display: "block",
+      height: 30,
+      width: "auto",
+      margin: "0 auto 16px",
+    }}
+  />
+
+  <div
+    style={{
+      fontWeight: 800,
+      fontSize: 21,
+      color: "#fff",
+      letterSpacing: -0.4,
+    }}
+  >
+    {step === "phone"
+      ? t("Waiter login")
+      : t("Hi {name}, verify your number", {
+          name: staffName || t("there"),
+        })}
+  </div>
+
+  <div
+    style={{
+      fontSize: 12.5,
+      color: TEXT_FAINT,
+      marginTop: 4,
+    }}
+  >
+    {step === "phone"
+      ? t("Enter your registered staff phone number")
+      : t("Code sent to +91 {phone}", { phone })}
+  </div>
+</div>
 
       {step === "phone" ? (
         <>
