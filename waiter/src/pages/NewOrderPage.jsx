@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import { getMenu, getMenuCategories } from "../services/menuService.js";
 import { getAllTables } from "../services/tableService.js";
 import { placeOrder, newIdempotencyKey } from "../services/orderService.js";
+import { getSocket } from "../services/socketService.js";
 import { Loader, EmptyState } from "../components/StateViews.jsx";
 import GlassCard from "../components/ui/GlassCard.jsx";
 import PrimaryButton from "../components/ui/PrimaryButton.jsx";
@@ -32,9 +33,10 @@ export default function NewOrderPage() {
   const [tableNo, setTableNo]     = useState(preTable || "");
   const [tables, setTables]       = useState([]);
 
-  const [items, setItems]         = useState(null);
-  // Whole menu (unfiltered) — what voice ordering matches spoken names against.
-  const [fullMenu, setFullMenu]   = useState([]);
+  // Whole menu (unfiltered), fetched ONCE — the list below and voice ordering
+  // both read it. null = still loading. (It used to be fetched twice, and the
+  // two identical GET /menu requests ran one after the other in Chrome.)
+  const [fullMenu, setFullMenu]   = useState(null);
   const [categories, setCategories] = useState([]);
   const [search, setSearch]       = useState("");
   const [category, setCategory]   = useState("");
@@ -45,22 +47,36 @@ export default function NewOrderPage() {
   const [reviewing, setReviewing] = useState(false);
   const [idemKey]                 = useState(newIdempotencyKey);
 
-  useEffect(() => {
-    getAllTables().then(({ data }) => setTables((data.tables || []).filter((t) => t.status !== "Inactive"))).catch(() => {});
-    getMenuCategories().then(({ data }) => setCategories(data || [])).catch(() => {});
-    getMenu().then(({ data }) => setFullMenu(Array.isArray(data) ? data : [])).catch(() => {});
+  const loadFullMenu = useCallback(() => {
+    getMenu().then(({ data }) => setFullMenu(Array.isArray(data) ? data : [])).catch(() => setFullMenu((m) => m || []));
   }, []);
 
-  const loadMenu = useCallback(() => {
-    getMenu({ category: category || undefined, search: search || undefined })
-      .then(({ data }) => setItems(Array.isArray(data) ? data : []))
-      .catch(() => setItems([]));
-  }, [category, search]);
-
   useEffect(() => {
-    const id = setTimeout(loadMenu, 250);
-    return () => clearTimeout(id);
-  }, [loadMenu]);
+    // The table list is only shown when no table was picked on the map.
+    if (!locked) getAllTables().then(({ data }) => setTables((data.tables || []).filter((t) => t.status !== "Inactive"))).catch(() => {});
+    getMenuCategories().then(({ data }) => setCategories(data || [])).catch(() => {});
+    loadFullMenu();
+  }, [locked, loadFullMenu]);
+
+  // Menu changed on the server (item switched off, sold out, price) → reload,
+  // as tapping a category used to.
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return undefined;
+    socket.on("menu:updated", loadFullMenu);
+    return () => { socket.off("menu:updated", loadFullMenu); };
+  }, [loadFullMenu]);
+
+  // Category / search filter the menu already loaded — same result as the
+  // server's GET /menu?category=&search= (categoryList = primary + extra +
+  // smart categories, name contains the search, case-insensitive; order kept).
+  const items = useMemo(() => {
+    if (!fullMenu) return null;
+    const q = search.trim().toLowerCase();
+    return fullMenu.filter((it) =>
+      (!category || (it.categoryList || [it.category]).includes(category))
+      && (!q || String(it.name || "").toLowerCase().includes(q)));
+  }, [fullMenu, category, search]);
 
   const getQty = (id) => cart.find((c) => c.item._id === id)?.qty || 0;
 
@@ -89,7 +105,7 @@ export default function NewOrderPage() {
     const n = lines.reduce((s, l) => s + l.qty, 0);
     toast.success(tn(n, "Added {n} item by voice", "Added {n} items by voice"));
   };
-  const voiceMenu = useMemo(() => fullMenu.filter((it) => !(it.stockTracked && !it.stockAvailable)), [fullMenu]);
+  const voiceMenu = useMemo(() => (fullMenu || []).filter((it) => !(it.stockTracked && !it.stockAvailable)), [fullMenu]);
 
   const setNotes = (id, notes) => setCart((prev) => prev.map((c) => (c.item._id === id ? { ...c, notes } : c)));
 

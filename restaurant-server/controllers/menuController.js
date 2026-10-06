@@ -12,7 +12,7 @@ import { extractDocumentText } from "../utils/purchaseImportExtract.js";
 import { sniffFileType } from "../middleware/importUploadMiddleware.js";
 import { CATEGORY_SORT } from "../services/categoryService.js";
 import { listBestSellers } from "../services/bestSellerService.js";
-import { getMenuContext } from "../services/smartCategoryService.js";
+import { getMenuContext, ensureSmartCategories } from "../services/smartCategoryService.js";
 import {
   smartByKey, itemCategoryList, cleanExtraCategories, parseFlag, ITEM_FLAGS, categoryIcon,
 } from "../utils/menuCategories.js";
@@ -65,7 +65,12 @@ export const getMenu = async (req, res) => {
     // windows (which may cross midnight) are checked on the lean results.
     // An item whose PRIMARY category is scheduled out is hidden everywhere.
     const skipSchedule = manageView || (ignoreSchedule === "true" && isAdmin);
-    const scheduleCtx = await getScheduleContext({ models: req.models });
+    // Schedule context and the smart-category context don't depend on each
+    // other — read them together (getMenuContext only carries `hidden` through).
+    const [scheduleCtx, baseMenuCtx] = await Promise.all([
+      getScheduleContext({ models: req.models }),
+      readyMenuContext(req.models),
+    ]);
     const hidden = skipSchedule ? new Set() : scheduleCtx.hiddenCategories;
     if (category && hidden.has(category)) return res.json([]);
     if (hidden.size) and.push({ category: { $nin: [...hidden] } });
@@ -73,7 +78,7 @@ export const getMenu = async (req, res) => {
     // ── One category's items (MNU-01/03–07) ────────────────────────────────
     // An item is listed under its primary category, its extra `categories`,
     // and any smart category it qualifies for — always the same document.
-    const menuCtx = await getMenuContext({ models: req.models, hidden });
+    const menuCtx = { ...baseMenuCtx, hidden };
     if (category) {
       const smart = menuCtx.smartCats.find((c) => c.name === category);
       const def = smart && smartByKey(smart.smartKey);
@@ -266,13 +271,35 @@ export const toggleAvailability = async (req, res) => {
 
 const isImageUrl = (s) => typeof s === "string" && /^(https?:\/\/|data:image\/)/i.test(s);
 
+// The smart-category context without `hidden` (callers add it). On the first
+// call in a process ensureSmartCategories may create/rename a category, so it
+// completes before the category reads — exactly as when this ran in sequence.
+// One shared run, so two parallel callers never create the same category twice.
+let ensuring = null;
+const ensureOnce = (models) => {
+  if (!ensuring) ensuring = ensureSmartCategories({ models }).finally(() => { ensuring = null; });
+  return ensuring;
+};
+const readyMenuContext = async (models) => {
+  await ensureOnce(models);
+  return getMenuContext({ models });
+};
+const readyCategories = async (models) => {
+  await ensureOnce(models);
+  return models.Category.find().sort(CATEGORY_SORT).lean();
+};
+
 export const getCategoriesWithImage = async (req, res) => {
   try {
     const { MenuItem, Category } = req.models;
-    const { hiddenCategories } = await getScheduleContext({ models: req.models });
-    const menuCtx = await getMenuContext({ models: req.models, hidden: hiddenCategories });
+    // Three independent reads, together (they used to run one after another).
+    const [{ hiddenCategories }, menuCtx, allCats] = await Promise.all([
+      getScheduleContext({ models: req.models }),
+      readyMenuContext(req.models),
+      readyCategories(req.models),
+    ]);
     // Saved admin order (MNU-02) — customers and waiters list categories in it.
-    const cats = (await Category.find().sort(CATEGORY_SORT).lean()).filter((c) => !hiddenCategories.has(c.name));
+    const cats = allCats.filter((c) => !hiddenCategories.has(c.name));
     const visibleBase = { isAvailable: true, ...(hiddenCategories.size && { category: { $nin: [...hiddenCategories] } }) };
     const result = await Promise.all(cats.map(async (c) => {
       let item = null;

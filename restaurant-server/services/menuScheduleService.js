@@ -32,14 +32,17 @@ const httpError = (msg, statusCode = 400) => {
  */
 export const getScheduleContext = async ({ models, profile, now = new Date() }) => {
   const { RestaurantProfile, Category } = models;
-  if (typeof models.MenuItem?.updateMany === "function") await restoreSoldOutItems({ models, now });
-  const prof = profile !== undefined
-    ? profile
-    : await RestaurantProfile.findOne().select("timezone").lean();
+  // Independent reads run together (one DB round trip instead of three). The
+  // sold-out restore only touches MenuItem, and it still completes before this
+  // returns — i.e. before any caller reads menu items or prices an order.
+  const [, prof, scheduledCats] = await Promise.all([
+    typeof models.MenuItem?.updateMany === "function" ? restoreSoldOutItems({ models, now }) : null,
+    profile !== undefined ? profile : RestaurantProfile.findOne().select("timezone").lean(),
+    Category.find({ "schedule.enabled": true }).select("name schedule").lean(),
+  ]);
   const timezone = resolveTimezone(prof?.timezone);
   const clock = clockInTimezone(now, timezone);
 
-  const scheduledCats = await Category.find({ "schedule.enabled": true }).select("name schedule").lean();
   const hiddenCategories = new Set(
     scheduledCats.filter((c) => !isScheduleActive(c.schedule, clock)).map((c) => c.name),
   );
