@@ -79,8 +79,9 @@ export default function LoginPage() {
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", padding: 24 }}>
-     <div style={{ textAlign: "center", marginBottom: 30 }}>
-  {/* Hotel KHOAI mark + Bengali wordmark */}
+     ```jsx
+<div style={{ textAlign: "center", marginBottom: 30 }}>
+  {/* Hotel Khoai branding */}
   <img
     src={BRAND.mark}
     alt={BRAND.name}
@@ -92,6 +93,18 @@ export default function LoginPage() {
       borderRadius: "50%",
     }}
   />
+
+  <div
+    style={{
+      color: "#c4b5fd",
+      fontSize: 11,
+      fontWeight: 800,
+      letterSpacing: 3,
+      marginBottom: 3,
+    }}
+  >
+    HOTEL
+  </div>
 
   <img
     src={BRAND.wordmark}
@@ -131,6 +144,8 @@ export default function LoginPage() {
       : t("Code sent to +91 {phone}", { phone })}
   </div>
 </div>
+```
+
 
       {step === "phone" ? (
         <>
