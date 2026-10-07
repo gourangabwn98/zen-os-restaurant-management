@@ -115,7 +115,8 @@ export const addEmployee         = (body) => api.post("/admin/employees", body);
 export const editEmployee        = (id, body) => api.put(`/admin/employees/${id}`, body);
 export const setEmployeeStatus   = (id, status) => api.patch(`/admin/employees/${id}/status`, { status });
 // EMP-01 — the manager sets On shift / On break / Off shift for someone.
-export const setEmployeeShift    = (id, state) => api.patch(`/admin/employees/${id}/shift`, { state });
+// ON_BREAK needs a reason (mandatory, saved in Duty history).
+export const setEmployeeShift    = (id, state, reason) => api.patch(`/admin/employees/${id}/shift`, reason ? { state, reason } : { state });
 export const getEmployeeStats    = (id, { from, to } = {}) =>
   api.get(`/admin/employees/${id}/stats`, { params: { from: from || undefined, to: to || undefined } });
 export const getEmployeePerformance = (params) => api.get("/admin/employees/performance", { params });

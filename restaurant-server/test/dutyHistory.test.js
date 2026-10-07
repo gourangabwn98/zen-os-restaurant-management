@@ -55,7 +55,7 @@ const makeHistory = () => {
   return {
     rows,
     create: async (doc) => {
-      if (rows.some((r) => String(r.session) === String(doc.session) && r.action === doc.action)) {
+      if (rows.some((r) => String(r.session) === String(doc.session) && r.action === doc.action && +r.at === +doc.at)) {
         const err = new Error("duplicate key"); err.code = 11000; throw err;
       }
       const row = { _id: `h${++seq}`, ...doc };
@@ -81,7 +81,7 @@ const ADMIN = { id: "u_admin", role: "ADMIN", name: "Owner" };
 const SELF = { id: "u_rahul", role: "WAITER", name: "Rahul" };
 const selfStart = (AS, DH) => startDuty({ AttendanceSession: AS, DutyHistory: DH, actor: SELF, employeeId: RAHUL._id, role: "waiter", employeeName: "Rahul" });
 const selfEnd = (AS, DH) => endDuty({ AttendanceSession: AS, DutyHistory: DH, actor: SELF, employeeId: RAHUL._id });
-const adminSet = (AS, DH, state) => setEmployeeShift({ AttendanceSession: AS, DutyHistory: DH, employee: RAHUL, state, actor: ADMIN });
+const adminSet = (AS, DH, state, reason) => setEmployeeShift({ AttendanceSession: AS, DutyHistory: DH, employee: RAHUL, state, reason, actor: ADMIN });
 const wholeDay = { start: new Date(0), end: new Date(8.64e15) };
 
 const run = async () => {
@@ -166,14 +166,12 @@ const run = async () => {
     assert.equal(DH.rows.length, 0);
   });
 
-  await test("break start/end and heartbeats are not duty changes — no records", async () => {
+  await test("employee's own break start/end and heartbeats write no records", async () => {
     const AS = makeSessions(), DH = makeHistory();
     await selfStart(AS, DH);
     await startBreak({ AttendanceSession: AS, employeeId: RAHUL._id });
     await endBreak({ AttendanceSession: AS, employeeId: RAHUL._id });
     await recordHeartbeat({ AttendanceSession: AS, employeeId: RAHUL._id });
-    await adminSet(AS, DH, "ON_BREAK");
-    await adminSet(AS, DH, "ON_SHIFT");
     assert.equal(DH.rows.length, 1);
     assert.equal((await AS.findOne({ employee: RAHUL._id, status: "OPEN" })).status, "OPEN");
   });
@@ -181,7 +179,7 @@ const run = async () => {
   await test("a retried write for the same transition is swallowed (unique session+action)", async () => {
     const AS = makeSessions(), DH = makeHistory();
     const { session } = await selfStart(AS, DH);
-    await DH.create({ session: session._id, action: "ON_DUTY" }).catch((e) => assert.equal(e.code, 11000));
+    await DH.create({ session: session._id, action: "ON_DUTY", at: session.loginAt }).catch((e) => assert.equal(e.code, 11000));
     assert.equal(DH.rows.length, 1);
   });
 
@@ -210,7 +208,7 @@ const run = async () => {
     const DH = await seeded();
     const r = await listDutyHistory({ DutyHistory: DH, ...wholeDay });
     assert.equal(r.total, 5);
-    assert.deepEqual(r.summary, { total: 5, onDuty: 3, offDuty: 2, bySelf: 3, byAdmin: 2 });
+    assert.deepEqual(r.summary, { total: 5, onDuty: 3, offDuty: 2, onBreak: 0, bySelf: 3, byAdmin: 2 });
   });
 
   await test("employee filter → only that employee", async () => {
@@ -218,7 +216,7 @@ const run = async () => {
     const r = await listDutyHistory({ DutyHistory: DH, ...wholeDay, employeeId: RAHUL._id });
     assert.equal(r.total, 4);
     assert.ok(r.records.every((x) => String(x.employee) === RAHUL._id));
-    assert.deepEqual(r.summary, { total: 4, onDuty: 2, offDuty: 2, bySelf: 3, byAdmin: 1 });
+    assert.deepEqual(r.summary, { total: 4, onDuty: 2, offDuty: 2, onBreak: 0, bySelf: 3, byAdmin: 1 });
   });
 
   await test("action filter OFF_DUTY → only OFF records", async () => {
@@ -257,6 +255,82 @@ const run = async () => {
     assert.equal(r.records[0].session, "c"); // newest first
   });
 
+  // ── Admin break (BREAK, mandatory reason) ─────────────────────────────────
+  await test("admin break on an on-duty employee → ON_BREAK + BREAK record with reason", async () => {
+    const AS = makeSessions(), DH = makeHistory();
+    await selfStart(AS, DH);
+    const r = await adminSet(AS, DH, "ON_BREAK", "  Lunch Break  ");
+    assert.equal(r.changed, true);
+    const open = await AS.findOne({ employee: RAHUL._id, status: "OPEN" });
+    assert.equal(open.status, "OPEN", "a break is not off duty — session stays open");
+    assert.equal(open.presenceStatus, "BREAK");
+    const b = DH.rows[1];
+    assert.equal(b.action, "BREAK");
+    assert.equal(b.reason, "Lunch Break");
+    assert.equal(b.source, "ADMIN");
+    assert.equal(b.changedBy.role, "ADMIN");
+    assert.equal(b.changedBy.name, "Owner");
+    assert.equal(b.employeeName, "Rahul");
+    assert.equal(+b.at, +open.breaks[0].startedAt);
+    assert.equal(DH.rows.filter((x) => x.action === "OFF_DUTY").length, 0, "no OFF_DUTY written");
+  });
+
+  await test("admin break: empty / whitespace / missing / non-text / too-long reason is refused, nothing changes", async () => {
+    const AS = makeSessions(), DH = makeHistory();
+    await selfStart(AS, DH);
+    for (const reason of [undefined, "", "   ", "\n\t ", 42, "x".repeat(201)]) {
+      await assert.rejects(adminSet(AS, DH, "ON_BREAK", reason), (e) => e.statusCode === 400);
+    }
+    assert.equal((await AS.findOne({ employee: RAHUL._id, status: "OPEN" })).presenceStatus, "ONLINE");
+    assert.equal(DH.rows.length, 1);
+  });
+
+  await test("admin break when OFF duty is refused (409) — no session, no record", async () => {
+    const AS = makeSessions(), DH = makeHistory();
+    await assert.rejects(adminSet(AS, DH, "ON_BREAK", "Lunch"), (e) => e.statusCode === 409);
+    assert.equal(await AS.findOne({ employee: RAHUL._id, status: "OPEN" }), null);
+    assert.equal(DH.rows.length, 0);
+  });
+
+  await test("duplicate admin break while already ON BREAK is refused (409), one record", async () => {
+    const AS = makeSessions(), DH = makeHistory();
+    await selfStart(AS, DH);
+    await adminSet(AS, DH, "ON_BREAK", "Lunch");
+    await assert.rejects(adminSet(AS, DH, "ON_BREAK", "Again"), (e) => e.statusCode === 409);
+    assert.equal(DH.rows.filter((x) => x.action === "BREAK").length, 1);
+  });
+
+  await test("two breaks in one shift → two BREAK records; ON/OFF behaviour unchanged", async () => {
+    const AS = makeSessions(), DH = makeHistory();
+    await selfStart(AS, DH);
+    await adminSet(AS, DH, "ON_BREAK", "Lunch");
+    await adminSet(AS, DH, "ON_SHIFT"); // back from break: not logged
+    await new Promise((r) => setTimeout(r, 5)); // a later break has a later start time
+    await adminSet(AS, DH, "ON_BREAK", "Tea");
+    await selfEnd(AS, DH);
+    assert.deepEqual(DH.rows.map((r) => r.action + (r.reason ? ":" + r.reason : "")),
+      ["ON_DUTY", "BREAK:Lunch", "BREAK:Tea", "OFF_DUTY"]);
+  });
+
+  await test("BREAK shows in admin + own history, by date, and under the BREAK action filter", async () => {
+    const AS = makeSessions(), DH = makeHistory();
+    await selfStart(AS, DH);
+    await adminSet(AS, DH, "ON_BREAK", "Lunch Break");
+    await startDuty({ AttendanceSession: AS, DutyHistory: DH, actor: ADMIN, employeeId: "u_amit", role: "waiter", employeeName: "Amit" });
+    const all = await listDutyHistory({ DutyHistory: DH, ...wholeDay });
+    assert.equal(all.summary.onBreak, 1);
+    const own = await listDutyHistory({ DutyHistory: DH, ...wholeDay, employeeId: RAHUL._id });
+    assert.ok(own.records.some((r) => r.action === "BREAK" && r.reason === "Lunch Break"));
+    const onlyBreaks = await listDutyHistory({ DutyHistory: DH, ...wholeDay, action: "BREAK" });
+    assert.equal(onlyBreaks.total, 1);
+    assert.deepEqual(onlyBreaks.summary, { total: 1, onDuty: 0, offDuty: 0, onBreak: 1, bySelf: 0, byAdmin: 1 });
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const { start, end } = resolveRange(today, today, "Asia/Kolkata");
+    assert.equal((await listDutyHistory({ DutyHistory: DH, start, end, action: "BREAK" })).total, 1, "today: shown");
+    const old = resolveRange("2000-01-01", "2000-01-01", "Asia/Kolkata");
+    assert.equal((await listDutyHistory({ DutyHistory: DH, ...old, action: "BREAK" })).total, 0, "other day: none");
+  });
+
   // ── Restaurant (IST) calendar day, not UTC ─────────────────────────────────
   await test("07 Oct 2026 in Asia/Kolkata = 06 Oct 18:30Z → 07 Oct 18:29:59.999Z", async () => {
     const { start, end } = resolveRange("2026-10-07", "2026-10-07", "Asia/Kolkata");
@@ -271,7 +345,7 @@ const run = async () => {
     await assert.rejects(DutyHistory.updateOne({}, { $set: { action: "OFF_DUTY" } }).exec(), /read-only/);
     await assert.rejects(DutyHistory.deleteMany({}).exec(), /read-only/);
     await assert.rejects(DutyHistory.findOneAndUpdate({}, { $set: { source: "SELF" } }).exec(), /read-only/);
-    const idx = DutyHistory.schema.indexes().find(([keys]) => keys.session === 1 && keys.action === 1);
+    const idx = DutyHistory.schema.indexes().find(([keys]) => keys.session === 1 && keys.action === 1 && keys.at === 1);
     assert.ok(idx && idx[1].unique);
     await conn.close();
   });

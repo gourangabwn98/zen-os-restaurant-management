@@ -16,7 +16,7 @@
 
 import {
   assertCanStartBreak, assertCanEndBreak, assertCanEndDuty,
-  DUTY_ACTIONS, DUTY_CHANGE_SOURCES,
+  DUTY_ACTIONS, DUTY_CHANGE_SOURCES, BREAK_REASON_MAX,
 } from "../utils/attendanceStateMachine.js";
 
 // ── Duty history (ON/OFF audit) ─────────────────────────────────────────────
@@ -27,7 +27,8 @@ import {
 // never undoes the duty change itself (that already committed); it is logged.
 const sameId = (a, b) => a != null && b != null && String(a) === String(b);
 
-export const recordDutyChange = async ({ DutyHistory, session, action, actor, employeeName }) => {
+// `at` / `reason` are for BREAK (the break's startedAt, the admin's reason).
+export const recordDutyChange = async ({ DutyHistory, session, action, actor, employeeName, at, reason }) => {
   if (!DutyHistory || !session) return null;
   const doc = {
     employee: session.employee,
@@ -37,7 +38,8 @@ export const recordDutyChange = async ({ DutyHistory, session, action, actor, em
     source: sameId(actor?.id, session.employee) ? "SELF" : "ADMIN",
     changedBy: { id: actor?.id || null, role: actor?.role || null, name: actor?.name || "" },
     session: session._id,
-    at: action === "ON_DUTY" ? session.loginAt : session.logoutAt,
+    at: at || (action === "ON_DUTY" ? session.loginAt : session.logoutAt),
+    reason: reason || "",
   };
   try {
     return await DutyHistory.create(doc);
@@ -64,15 +66,16 @@ export const listDutyHistory = async ({ DutyHistory, start, end, employeeId, act
   const countWhere = (field, value) =>
     filter[field] && filter[field] !== value ? 0 : DutyHistory.countDocuments({ ...filter, [field]: value });
 
-  const [records, total, onDuty, offDuty, bySelf, byAdmin] = await Promise.all([
+  const [records, total, onDuty, offDuty, onBreak, bySelf, byAdmin] = await Promise.all([
     DutyHistory.find(filter).sort({ at: -1, _id: -1 }).skip((safePage - 1) * safeLimit).limit(safeLimit).lean(),
     DutyHistory.countDocuments(filter),
     countWhere("action", "ON_DUTY"),
     countWhere("action", "OFF_DUTY"),
+    countWhere("action", "BREAK"),
     countWhere("source", "SELF"),
     countWhere("source", "ADMIN"),
   ]);
-  return { records, total, page: safePage, limit: safeLimit, summary: { total, onDuty, offDuty, bySelf, byAdmin } };
+  return { records, total, page: safePage, limit: safeLimit, summary: { total, onDuty, offDuty, onBreak, bySelf, byAdmin } };
 };
 
 export const DEFAULT_HEARTBEAT_GRACE_MS = 5 * 60 * 1000; // 5 minutes — ~10 missed 30s heartbeats
@@ -263,15 +266,31 @@ export const shiftStateOf = (session) =>
  * update it themselves. Reuses the self-service transitions, so the session
  * rules (one open session, break bookkeeping, working time) stay identical;
  * the session is marked `managed` so the heartbeat sweep never auto-closes it.
+ * ON_BREAK needs a non-blank `reason`, only works on someone who is on duty
+ * right now (not off, not already on break), and writes a BREAK history
+ * record with that reason. The session stays OPEN — a break is not off duty.
  * Returns { session, state, changed }.
  */
-export const setEmployeeShift = async ({ AttendanceSession, DutyHistory, employee, state, actor }) => {
+export const setEmployeeShift = async ({ AttendanceSession, DutyHistory, employee, state, actor, reason }) => {
   if (!SHIFT_STATES.includes(state)) {
     const err = new Error("state must be ON_SHIFT, ON_BREAK or OFF_SHIFT"); err.statusCode = 400; throw err;
+  }
+  const breakReason = typeof reason === "string" ? reason.trim() : "";
+  if (state === "ON_BREAK") {
+    if (!breakReason) { const err = new Error("A reason is required to put someone on break"); err.statusCode = 400; throw err; }
+    if (breakReason.length > BREAK_REASON_MAX) {
+      const err = new Error(`Break reason must be ${BREAK_REASON_MAX} characters or fewer`); err.statusCode = 400; throw err;
+    }
   }
   const employeeId = employee._id;
   let open = await AttendanceSession.findOne({ employee: employeeId, status: "OPEN" });
   const before = shiftStateOf(open);
+  if (state === "ON_BREAK" && before === "OFF_SHIFT") {
+    const err = new Error("Only an employee who is on duty can be put on break"); err.statusCode = 409; throw err;
+  }
+  if (state === "ON_BREAK" && before === "ON_BREAK") {
+    const err = new Error("This employee is already on break"); err.statusCode = 409; throw err;
+  }
   if (before === state) return { session: open, state, changed: false };
 
   if (state === "OFF_SHIFT") {
@@ -284,7 +303,16 @@ export const setEmployeeShift = async ({ AttendanceSession, DutyHistory, employe
     open = (await startDuty({ AttendanceSession, DutyHistory, actor, employeeId, role, employeeName: employee.name })).session;
   }
   await AttendanceSession.updateOne({ _id: open._id }, { $set: { managed: true, changedBy: actor } });
-  if (state === "ON_BREAK" && shiftStateOf(open) !== "ON_BREAK") open = await startBreak({ AttendanceSession, employeeId });
+  if (state === "ON_BREAK") {
+    // startBreak is the atomic ONLINE → BREAK guard: a concurrent second
+    // break request gets a 409 there and never reaches the history write.
+    open = await startBreak({ AttendanceSession, employeeId });
+    const started = (open.breaks || [])[open.breaks.length - 1];
+    await recordDutyChange({
+      DutyHistory, session: open, action: "BREAK", actor, employeeName: employee.name,
+      at: started?.startedAt, reason: breakReason,
+    });
+  }
   if (state === "ON_SHIFT" && shiftStateOf(open) === "ON_BREAK") open = await endBreak({ AttendanceSession, employeeId });
   const fresh = await AttendanceSession.findOne({ employee: employeeId, status: "OPEN" });
   return { session: fresh || open, state, changed: true };

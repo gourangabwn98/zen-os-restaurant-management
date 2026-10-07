@@ -268,9 +268,12 @@ it back. A failed duty read in a frontend must keep the last known state,
 never show OFF.
 
 Every real ON/OFF writes one append-only `DutyHistory` record (who:
-`source` SELF/ADMIN + `changedBy` actor; unique `{session, action}` so a retry
-can't duplicate; model-level hooks block updates/deletes). Breaks,
-heartbeats, disconnects and "already on duty" resumes write nothing. Any new
+`source` SELF/ADMIN + `changedBy` actor; unique `{session, action, at}` so a
+retry can't duplicate; model-level hooks block updates/deletes). An admin
+break (`setEmployeeShift` ON_BREAK) writes a BREAK record and needs a
+non-blank reason; it is only allowed while ON duty and never closes the
+session — BREAK is not OFF_DUTY. An employee's own break, heartbeats,
+disconnects and "already on duty" resumes write nothing. Any new
 path that opens or closes a session must pass `DutyHistory` + `actor` to
 `startDuty`/`endDuty`. History days are the restaurant's calendar day
 (`RestaurantProfile.timezone`, via `employeeService.resolveRange`).

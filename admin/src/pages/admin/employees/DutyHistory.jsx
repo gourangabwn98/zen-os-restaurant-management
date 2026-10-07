@@ -13,7 +13,8 @@ import { toDateInput, roleText, count } from "./shared.js";
 import { t, N_, fmtTime, fmtDate } from "../../../i18n/core.js";
 
 const PAGE_SIZE = 100;
-const DUTY_ACTION_LABEL = { ON_DUTY: N_("On duty"), OFF_DUTY: N_("Off duty") };
+const DUTY_ACTION_LABEL = { ON_DUTY: N_("On duty"), OFF_DUTY: N_("Off duty"), BREAK: N_("Break") };
+const DUTY_ACTION_KIND = { ON_DUTY: "ready", OFF_DUTY: "done", BREAK: "wait" };
 const ACTOR_ROLE_LABEL = { ADMIN: N_("Admin"), WAITER: N_("Waiter"), CHEF: N_("Chef") };
 
 const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return toDateInput(d); };
@@ -80,9 +81,10 @@ export default function DutyHistory({ people = [] }) {
           {people.map((p) => <option key={p._id} value={p._id}>{p.name || t("Admin")} · {roleText(p)}</option>)}
         </select>
         <select className="zc-select" value={action} onChange={(e) => pick(action, setAction)(e.target.value)} aria-label={t("Action")}>
-          <option value="">{t("On & off")}</option>
+          <option value="">{t("All actions")}</option>
           <option value="ON_DUTY">{t("On duty")}</option>
           <option value="OFF_DUTY">{t("Off duty")}</option>
+          <option value="BREAK">{t("Break")}</option>
         </select>
         <select className="zc-select" value={source} onChange={(e) => pick(source, setSource)(e.target.value)} aria-label={t("Changed by")}>
           <option value="">{t("Changed by anyone")}</option>
@@ -96,6 +98,7 @@ export default function DutyHistory({ people = [] }) {
           <span><b className="tnum">{count(s.total)}</b> {person ? t("changes for {name}", { name: person.name }) : t("changes")}</span>
           <span><b className="tnum" style={{ color: "var(--ready-ink)" }}>{count(s.onDuty)}</b> {t("on duty")}</span>
           <span><b className="tnum">{count(s.offDuty)}</b> {t("off duty")}</span>
+          <span><b className="tnum" style={{ color: s.onBreak ? "var(--wait-ink)" : undefined }}>{count(s.onBreak || 0)}</b> {t("breaks")}</span>
           <span><b className="tnum">{count(s.bySelf)}</b> {person ? t("by {name}", { name: person.name }) : t("by employees")}</span>
           <span><b className="tnum" style={{ color: s.byAdmin ? "var(--live-ink)" : undefined }}>{count(s.byAdmin)}</b> {t("by admin")}</span>
         </div>
@@ -110,19 +113,20 @@ export default function DutyHistory({ people = [] }) {
             <div style={{ overflowX: "auto" }}>
               <table className="zc-ledger">
                 <thead>
-                  <tr><th>{t("Time")}</th><th>{t("Employee")}</th><th>{t("Action")}</th><th>{t("Changed by")}</th><th>{t("Role")}</th></tr>
+                  <tr><th>{t("Time")}</th><th>{t("Employee")}</th><th>{t("Action")}</th><th>{t("Changed by")}</th><th>{t("Role")}</th><th>{t("Reason")}</th></tr>
                 </thead>
                 <tbody>
                   {data.records.map((r) => (
                     <tr key={r._id}>
                       <td className="tnum" style={{ whiteSpace: "nowrap" }}>{fmtTime(r.at)}</td>
                       <td>{r.employeeName || "—"}</td>
-                      <td><Badge label={DUTY_ACTION_LABEL[r.action]} kind={r.action === "ON_DUTY" ? "ready" : "done"} /></td>
+                      <td><Badge label={DUTY_ACTION_LABEL[r.action] || r.action} kind={DUTY_ACTION_KIND[r.action] || "done"} /></td>
                       <td>
                         {r.changedBy?.name || "—"}
                         {r.source === "ADMIN" && <> <Badge label={N_("Admin change")} kind="live" dot={false} /></>}
                       </td>
                       <td>{t(ACTOR_ROLE_LABEL[r.changedBy?.role] || r.changedBy?.role || "—")}</td>
+                      <td style={{ color: r.reason ? "var(--text-1)" : "var(--text-3)", overflowWrap: "anywhere" }}>{r.reason || "—"}</td>
                     </tr>
                   ))}
                 </tbody>

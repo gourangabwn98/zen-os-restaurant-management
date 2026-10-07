@@ -101,8 +101,9 @@ export default function ActivityPage() {
               : (
                 <>
                   <div style={{ fontSize: 11.5, color: TEXT_MUTED, padding: "0 2px" }}>
-                    {t("On duty {on} · Off duty {off} · By you {self} · By admin {admin}", {
-                      on: dutyLog.summary.onDuty, off: dutyLog.summary.offDuty, self: dutyLog.summary.bySelf, admin: dutyLog.summary.byAdmin,
+                    {t("On duty {on} · Off duty {off} · Break {brk} · By you {self} · By admin {admin}", {
+                      on: dutyLog.summary.onDuty, off: dutyLog.summary.offDuty, brk: dutyLog.summary.onBreak || 0,
+                      self: dutyLog.summary.bySelf, admin: dutyLog.summary.byAdmin,
                     })}
                   </div>
                   {dutyLog.records.map((r) => <DutyLine key={r._id} record={r} showDate={from !== to} />)}
@@ -182,9 +183,15 @@ function OrderLine({ order, tint, sub, dateField }) {
   );
 }
 
+const DUTY_LINE = {
+  ON_DUTY:  { label: "ON DUTY",  tint: GREEN },
+  OFF_DUTY: { label: "OFF DUTY", tint: TEXT_MUTED },
+  BREAK:    { label: "BREAK",    tint: AMBER }, // set by an admin, with a reason — not off duty
+};
+
 function DutyLine({ record, showDate }) {
-  const on = record.action === "ON_DUTY";
-  const tint = on ? GREEN : TEXT_MUTED;
+  const look = DUTY_LINE[record.action] || DUTY_LINE.OFF_DUTY;
+  const tint = look.tint;
   const when = new Date(record.at).toLocaleString([], showDate
     ? { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }
     : { hour: "2-digit", minute: "2-digit" });
@@ -197,8 +204,11 @@ function DutyLine({ record, showDate }) {
       background: `${tint}14`, border: `1px solid ${tint}40`, borderRadius: 12,
     }}>
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontWeight: 700, fontSize: 12.5, color: on ? GREEN : "#fff" }}>{on ? t("ON DUTY") : t("OFF DUTY")}</div>
+        <div style={{ fontWeight: 700, fontSize: 12.5, color: tint === TEXT_MUTED ? "#fff" : tint }}>{t(look.label)}</div>
         <div style={{ fontSize: 10.5, color: record.source === "SELF" ? TEXT_FAINT : AMBER, marginTop: 2 }}>{by}</div>
+        {record.reason && (
+          <div style={{ fontSize: 11, color: "#fff", marginTop: 3, overflowWrap: "anywhere" }}>{t("Reason: {reason}", { reason: record.reason })}</div>
+        )}
       </div>
       <span style={{ fontWeight: 700, fontSize: 12.5, color: TEXT_MUTED, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{when}</span>
     </div>
