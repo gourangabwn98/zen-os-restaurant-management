@@ -67,7 +67,7 @@ await test("EMP-01: manager sets On Shift → On Break → On Shift → Off Shif
   assert.equal(shiftStateOf(r.session), "ON_SHIFT");
   assert.equal(AS.rows[0].managed, true);
   assert.equal(AS.rows[0].role, "staff", "an 'Other' role employee can be put on shift");
-  r = await setEmployeeShift({ AttendanceSession: AS, employee: helper, state: "ON_BREAK", actor: ACTOR });
+  r = await setEmployeeShift({ AttendanceSession: AS, employee: helper, state: "ON_BREAK", reason: "Lunch", actor: ACTOR });
   assert.equal(shiftStateOf(r.session), "ON_BREAK");
   r = await setEmployeeShift({ AttendanceSession: AS, employee: helper, state: "ON_SHIFT", actor: ACTOR });
   assert.equal(shiftStateOf(r.session), "ON_SHIFT");
@@ -78,10 +78,13 @@ await test("EMP-01: manager sets On Shift → On Break → On Shift → Off Shif
   await assert.rejects(setEmployeeShift({ AttendanceSession: AS, employee: helper, state: "LUNCH", actor: ACTOR }), (e) => e.statusCode === 400);
 });
 
-await test("EMP-01: straight to On Break from Off Shift opens the shift first", async () => {
+await test("EMP-01: On Break from Off Shift is refused — only someone on duty can go on break", async () => {
   const AS = attendanceWorld();
-  const r = await setEmployeeShift({ AttendanceSession: AS, employee: helper, state: "ON_BREAK", actor: ACTOR });
-  assert.equal(shiftStateOf(r.session), "ON_BREAK");
+  await assert.rejects(
+    setEmployeeShift({ AttendanceSession: AS, employee: helper, state: "ON_BREAK", reason: "Lunch", actor: ACTOR }),
+    (e) => e.statusCode === 409,
+  );
+  assert.equal(AS.rows.length, 0, "no session opened");
 });
 
 await test("EMP-01: a manager-set shift is NOT auto-closed by the heartbeat sweep", async () => {

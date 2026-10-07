@@ -16,10 +16,13 @@ export const SESSION_STATUSES  = ["OPEN", "CLOSED"];
 export const PRESENCE_STATUSES = ["ONLINE", "BREAK", "OFFLINE"];
 
 // Duty history (DutyHistory, append-only audit). One record per session
-// OPEN (ON_DUTY) and one per session CLOSE (OFF_DUTY) — breaks are not duty
-// changes. `source` says who did it: SELF = the employee, ADMIN = someone
-// else (an admin via Employees → Set shift).
-export const DUTY_ACTIONS        = ["ON_DUTY", "OFF_DUTY"];
+// OPEN (ON_DUTY), one per session CLOSE (OFF_DUTY), and one per admin-set
+// break (BREAK, with a mandatory reason). BREAK is never OFF_DUTY — the
+// session stays OPEN. An employee's own break isn't logged. `source` says
+// who did it: SELF = the employee, ADMIN = someone else (an admin via
+// Employees → Set shift).
+export const DUTY_ACTIONS        = ["ON_DUTY", "OFF_DUTY", "BREAK"];
+export const BREAK_REASON_MAX    = 200;
 export const DUTY_CHANGE_SOURCES = ["SELF", "ADMIN"];
 
 const guardError = (message, statusCode = 400) => {

@@ -13,7 +13,7 @@ import {
 import { nextOrderId } from "../utils/orderNumber.js";
 import { INGREDIENT_SOURCES } from "../utils/recipeCost.js";
 import { CATEGORY_KINDS, SMART_KEYS } from "../utils/menuCategories.js";
-import { DUTY_ACTIONS, DUTY_CHANGE_SOURCES } from "../utils/attendanceStateMachine.js";
+import { DUTY_ACTIONS, DUTY_CHANGE_SOURCES, BREAK_REASON_MAX } from "../utils/attendanceStateMachine.js";
 
 // ── Atomic counters ──────────────────────────────────────────────────────────
 // One document per sequence (currently just "orderId"). Incremented with a
@@ -839,11 +839,13 @@ attendanceSessionSchema.index({ loginAt: -1 });
 
 // ── Duty history (ON/OFF audit log) ────────────────────────────────────────
 // Append-only: one record per real duty transition, written by
-// services/attendanceService.js right after the session opens or closes.
-// Never written for a disconnect, a closed tab or a sleeping screen — those
-// don't change the session. Idempotent by construction: the unique
-// {session, action} index means a session can produce at most one ON_DUTY
-// and one OFF_DUTY record, however many times a write is retried.
+// services/attendanceService.js right after the session opens or closes
+// (or an admin starts a break). Never written for a disconnect, a closed tab
+// or a sleeping screen — those don't change the session. Idempotent by
+// construction: the unique {session, action, at} index means each
+// transition (ON_DUTY at loginAt, OFF_DUTY at logoutAt, BREAK at that
+// break's startedAt) is recorded once however many times a write is retried,
+// while one session may still hold several BREAKs.
 // Names are snapshots so the log stays readable after a rename.
 const dutyHistorySchema = new mongoose.Schema({
   employee:     { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
@@ -853,9 +855,10 @@ const dutyHistorySchema = new mongoose.Schema({
   source:       { type: String, enum: DUTY_CHANGE_SOURCES, required: true },
   changedBy:    { type: actorSchema, required: true },
   session:      { type: mongoose.Schema.Types.ObjectId, ref: "AttendanceSession", required: true },
-  at:           { type: Date, required: true }, // the session's loginAt / logoutAt
+  at:           { type: Date, required: true }, // loginAt / logoutAt / the break's startedAt
+  reason:       { type: String, default: "", trim: true, maxlength: BREAK_REASON_MAX }, // BREAK only
 }, { timestamps: { createdAt: true, updatedAt: false } });
-dutyHistorySchema.index({ session: 1, action: 1 }, { unique: true, name: "one_record_per_session_transition" });
+dutyHistorySchema.index({ session: 1, action: 1, at: 1 }, { unique: true, name: "one_record_per_transition" });
 dutyHistorySchema.index({ at: -1 });
 dutyHistorySchema.index({ employee: 1, at: -1 });
 // Audit records are never edited or deleted through the app.

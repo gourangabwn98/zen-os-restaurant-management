@@ -13,7 +13,7 @@ import { getEmployeeStats, setEmployeeShift } from "../../../services/adminServi
 import { getAttendanceEmployee } from "../../../services/attendanceService.js";
 import { StatCard, Loader, Badge } from "../shared/index.js";
 import ErrorState from "../shared/ErrorState.jsx";
-import { TableShell } from "../inventory/invUI.jsx";
+import { TableShell, Modal } from "../inventory/invUI.jsx";
 import { t, N_, fmtNum, fmtDate, fmtTime } from "../../../i18n/core.js";
 import { DUTY_LABEL, initials, fmtDuration, toDateInput, phoneLabel, count, missingDocs, roleText, SHIFT_STATES, shiftFromDuty } from "./shared.js";
 import ReviewsTab from "./ReviewsTab.jsx";
@@ -131,28 +131,76 @@ export default function EmployeeProfile({ employee, duty, ordersToday, hr, polic
 
 // ── EMP-01: the manager sets someone's shift (they forgot, or can't log in) ──
 // The live duty list refreshes from the attendance socket event.
+// "On break" asks for a mandatory reason first (saved in Duty history) and
+// is only offered while the person is on duty — the server enforces both.
+const BREAK_REASON_MAX = 200;
+
 function ShiftControl({ employee, status }) {
   const [busy, setBusy] = useState(false);
+  const [askBreak, setAskBreak] = useState(false);
   const cur = shiftFromDuty(status);
-  const set = async (state) => {
-    if (state === cur) return;
+  const set = async (state, reason) => {
+    if (state === cur) return false;
     setBusy(true);
     try {
-      await setEmployeeShift(employee._id, state);
+      await setEmployeeShift(employee._id, state, reason);
       toast.success(t("{name}: {state}", { name: employee.name, state: t(SHIFT_STATES.find((s) => s.id === state).label) }));
-    } catch (err) { toast.error(err.response?.data?.message || t("Update failed")); }
+      return true;
+    } catch (err) { toast.error(err.response?.data?.message || t("Update failed")); return false; }
     finally { setBusy(false); }
+  };
+  const pick = (id) => {
+    if (id === "ON_BREAK") { if (cur === "ON_SHIFT") setAskBreak(true); return; }
+    set(id);
   };
   return (
     <div style={{ marginTop: 10 }}>
       <div className="zc-seg" role="radiogroup" aria-label={t("Set shift")}>
         {SHIFT_STATES.map((s) => (
           <button key={s.id} type="button" role="radio" aria-checked={cur === s.id} className={cur === s.id ? "on" : ""}
-            disabled={busy} onClick={() => set(s.id)}>{t(s.label)}</button>
+            disabled={busy || (s.id === "ON_BREAK" && cur === "OFF_SHIFT")}
+            title={s.id === "ON_BREAK" && cur === "OFF_SHIFT" ? t("Only someone on duty can be put on break") : undefined}
+            onClick={() => pick(s.id)}>{t(s.label)}</button>
         ))}
       </div>
       <div className="emp-hint" style={{ marginTop: 6 }}>{t("Set by you — it stays until you or they change it.")}</div>
+      {askBreak && (
+        <BreakReasonModal
+          employee={employee} busy={busy}
+          onClose={() => setAskBreak(false)}
+          onConfirm={async (reason) => { if (await set("ON_BREAK", reason)) setAskBreak(false); }}
+        />
+      )}
     </div>
+  );
+}
+
+function BreakReasonModal({ employee, busy, onClose, onConfirm }) {
+  const [reason, setReason] = useState("");
+  const clean = reason.trim();
+  const submit = () => { if (clean && !busy) onConfirm(clean); };
+  return (
+    <Modal
+      title={t("Put {name} on break", { name: employee.name })}
+      sub={t("The reason is saved in Duty history. They stay on duty — a break is not off duty.")}
+      onClose={busy ? () => {} : onClose}
+      width={460}
+      footer={
+        <>
+          <button type="button" className="zc-btn" onClick={onClose} disabled={busy}>{t("Cancel")}</button>
+          <button type="button" className="zc-btn pri" onClick={submit} disabled={!clean || busy}>{busy ? t("Saving…") : t("Start break")}</button>
+        </>
+      }
+    >
+      <label htmlFor="brk-reason" style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: "var(--text-2)", marginBottom: 6 }}>{t("Reason")} *</label>
+      <textarea
+        id="brk-reason" className="zc-textarea" rows={3} autoFocus maxLength={BREAK_REASON_MAX}
+        placeholder={t("e.g. Lunch break")} value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
+      />
+      {!clean && <div className="emp-hint" style={{ marginTop: 6 }}>{t("A reason is required.")}</div>}
+    </Modal>
   );
 }
 

@@ -287,5 +287,7 @@ export default {
   "By {name} (Admin)": "{name} (অ্যাডমিন) করেছেন",
   "No duty changes in this range": "এই সময়ে ডিউটির কোনো পরিবর্তন নেই",
   "Couldn't load duty history": "ডিউটির ইতিহাস আনা যায়নি",
-  "On duty {on} · Off duty {off} · By you {self} · By admin {admin}": "ডিউটিতে {on} · ডিউটি বন্ধ {off} · আপনি {self} · অ্যাডমিন {admin}",
+  "On duty {on} · Off duty {off} · Break {brk} · By you {self} · By admin {admin}": "ডিউটিতে {on} · ডিউটি বন্ধ {off} · বিরতি {brk} · আপনি {self} · অ্যাডমিন {admin}",
+  "BREAK": "বিরতি",
+  "Reason: {reason}": "কারণ: {reason}",
 };
