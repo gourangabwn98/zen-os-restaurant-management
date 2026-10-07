@@ -78,7 +78,8 @@ function useDutyStatus() {
         setPresenceStatus(data.session?.presenceStatus || "OFFLINE");
         setSessionStatus(data.session?.status || null);
       })
-      .catch(() => setPresenceStatus("OFFLINE"));
+      // Offline read: keep the last known state, never show an on-duty chef as off.
+      .catch(() => setPresenceStatus((s) => s || "OFFLINE"));
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);

@@ -279,4 +279,13 @@ export default {
   "{n} orders": "{n}টি অর্ডার",
   "{n} seat": "{n} আসন",
   "{n} seats": "{n} আসন",
+  // Duty history (Activity → My duty history)
+  "My duty history": "আমার ডিউটির ইতিহাস",
+  "ON DUTY": "ডিউটিতে",
+  "OFF DUTY": "ডিউটি বন্ধ",
+  "By you": "আপনি করেছেন",
+  "By {name} (Admin)": "{name} (অ্যাডমিন) করেছেন",
+  "No duty changes in this range": "এই সময়ে ডিউটির কোনো পরিবর্তন নেই",
+  "Couldn't load duty history": "ডিউটির ইতিহাস আনা যায়নি",
+  "On duty {on} · Off duty {off} · By you {self} · By admin {admin}": "ডিউটিতে {on} · ডিউটি বন্ধ {off} · আপনি {self} · অ্যাডমিন {admin}",
 };

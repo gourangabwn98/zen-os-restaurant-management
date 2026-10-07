@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { getMyActivity } from "../services/authService.js";
+import { getMyDutyHistory } from "../services/dutyService.js";
+import { getSocket } from "../services/socketService.js";
 import { Loader, ErrorState } from "../components/StateViews.jsx";
 import { ACCENT, GREEN, AMBER, RED, TEXT_MUTED, TEXT_FAINT, GLASS_BG, GLASS_BORDER, NAV_HEIGHT } from "../theme.js";
 import { RANGE_PRESETS, toDateInput, formatDuration } from "../utils/dateRange.js";
@@ -22,6 +24,23 @@ export default function ActivityPage() {
   }, [from, to]);
 
   useEffect(() => { setData(null); load(); }, [load]);
+
+  // My duty history — every ON/OFF and who did it (me or an admin). Re-read
+  // live on any duty change and after a reconnect; the server is the truth.
+  const [dutyLog, setDutyLog] = useState(null);
+  const loadDutyLog = useCallback(() => {
+    getMyDutyHistory({ from, to, limit: 200 })
+      .then(({ data }) => setDutyLog(data))
+      .catch(() => setDutyLog((d) => d || { records: [], summary: null, failed: true }));
+  }, [from, to]);
+  useEffect(() => { setDutyLog(null); loadDutyLog(); }, [loadDutyLog]);
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return undefined;
+    socket.on("employee:attendance:updated", loadDutyLog);
+    socket.on("connect", loadDutyLog);
+    return () => { socket.off("employee:attendance:updated", loadDutyLog); socket.off("connect", loadDutyLog); };
+  }, [loadDutyLog]);
 
   const applyPreset = (key) => {
     setPreset(key);
@@ -74,6 +93,22 @@ export default function ActivityPage() {
             <StatTile label={t("Time on duty")} value={formatDuration(data.duty.workingSeconds)} />
             <StatTile label={t("Break time")} value={formatDuration(data.duty.breakSeconds)} accent={AMBER} />
           </div>
+
+          <Section title={t("My duty history")} count={dutyLog?.summary?.total ?? "…"}>
+            {!dutyLog ? <EmptyRow text={t("Loading…")} />
+              : dutyLog.failed ? <EmptyRow text={t("Couldn't load duty history")} />
+              : dutyLog.records.length === 0 ? <EmptyRow text={t("No duty changes in this range")} />
+              : (
+                <>
+                  <div style={{ fontSize: 11.5, color: TEXT_MUTED, padding: "0 2px" }}>
+                    {t("On duty {on} · Off duty {off} · By you {self} · By admin {admin}", {
+                      on: dutyLog.summary.onDuty, off: dutyLog.summary.offDuty, self: dutyLog.summary.bySelf, admin: dutyLog.summary.byAdmin,
+                    })}
+                  </div>
+                  {dutyLog.records.map((r) => <DutyLine key={r._id} record={r} showDate={from !== to} />)}
+                </>
+              )}
+          </Section>
 
           <Section title={t("Unpaid orders")} count={data.orders.unpaidCount}>
             {data.orders.unpaidOrders.length === 0
@@ -143,6 +178,29 @@ function OrderLine({ order, tint, sub, dateField }) {
         </div>
       </div>
       <span style={{ fontWeight: 800, fontSize: 13.5, color: tint, flexShrink: 0 }}>₹{order.total}</span>
+    </div>
+  );
+}
+
+function DutyLine({ record, showDate }) {
+  const on = record.action === "ON_DUTY";
+  const tint = on ? GREEN : TEXT_MUTED;
+  const when = new Date(record.at).toLocaleString([], showDate
+    ? { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }
+    : { hour: "2-digit", minute: "2-digit" });
+  const by = record.source === "SELF"
+    ? t("By you")
+    : t("By {name} (Admin)", { name: record.changedBy?.name || t("Admin") });
+  return (
+    <div style={{
+      display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "10px 12px",
+      background: `${tint}14`, border: `1px solid ${tint}40`, borderRadius: 12,
+    }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontWeight: 700, fontSize: 12.5, color: on ? GREEN : "#fff" }}>{on ? t("ON DUTY") : t("OFF DUTY")}</div>
+        <div style={{ fontSize: 10.5, color: record.source === "SELF" ? TEXT_FAINT : AMBER, marginTop: 2 }}>{by}</div>
+      </div>
+      <span style={{ fontWeight: 700, fontSize: 12.5, color: TEXT_MUTED, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{when}</span>
     </div>
   );
 }

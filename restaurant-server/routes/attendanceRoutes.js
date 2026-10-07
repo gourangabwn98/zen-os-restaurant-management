@@ -9,7 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import express from "express";
 import {
-  getMyAttendance, getMyAttendanceToday,
+  getMyAttendance, getMyAttendanceToday, getMyDutyHistory,
   postStartDuty, postStartBreak, postEndBreak, postEndDuty,
 } from "../controllers/attendanceController.js";
 import { protect } from "../middleware/authMiddleware.js";
@@ -20,6 +20,7 @@ router.use(protect, requireEmployee);
 
 router.get("/me",           getMyAttendance);
 router.get("/me/today",     getMyAttendanceToday);
+router.get("/me/duty-history", getMyDutyHistory); // own ON/OFF audit, ?date=YYYY-MM-DD
 router.post("/start",       postStartDuty);
 router.post("/break/start", postStartBreak);
 router.post("/break/end",   postEndBreak);

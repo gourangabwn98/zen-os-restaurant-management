@@ -14,10 +14,9 @@ import { connectDB, getDB } from "./config/db.js";
 import { getModels } from "./config/getModels.js";
 import { tenantKeyFromUri } from "./utils/tenantKey.js";
 import {
-  initSocket, emitAttendanceUpdated, emitPayFirstPromoted, emitPayFirstExpired, emitPaymentStatusChanged,
+  initSocket, emitPayFirstPromoted, emitPayFirstExpired, emitPaymentStatusChanged,
   emitSentToKitchen, emitOrderNeedsAttention,
 } from "./sockets/socket.js";
-import { sweepStaleAttendanceSessions } from "./services/attendanceService.js";
 import { runDueOffers } from "./services/notificationService.js";
 import { runPayFirstTick } from "./services/payFirstService.js";
 import { autoSendDueOrders } from "./services/orderService.js";
@@ -151,7 +150,6 @@ connectDB().then(() => {
     getDB(process.env.MONGO_URI)
       .then((conn) => ensureSmartCategories({ models: getModels(conn) }))
       .catch((err) => console.error("smart categories setup failed:", err.message));
-    startAttendanceHeartbeatSweep();
     startScheduledOfferTick();
     startPayFirstTick();
     startAutoSendTick();
@@ -231,30 +229,10 @@ const startPayFirstTick = () => {
   setInterval(tick, PAY_FIRST_TICK_MS);
 };
 
-// ── Employee attendance heartbeat sweep ─────────────────────────────────────
-// Closes any duty session whose heartbeat has gone quiet for longer than the
-// grace period built into sweepStaleAttendanceSessions (browser closed
-// unexpectedly, device lost connectivity, etc.) — see
-// services/attendanceService.js for why this uses lastSeenAt, never "now",
-// as the logout time.
-const ATTENDANCE_SWEEP_INTERVAL_MS = 2 * 60 * 1000;
-const startAttendanceHeartbeatSweep = () => {
-  setInterval(async () => {
-    try {
-      const mongoUri = process.env.MONGO_URI;
-      const conn = await getDB(mongoUri);
-      const { AttendanceSession } = getModels(conn);
-      const closed = await sweepStaleAttendanceSessions({ AttendanceSession });
-      const tenantKey = tenantKeyFromUri(mongoUri);
-      for (const session of closed) {
-        emitAttendanceUpdated(tenantKey, {
-          action: "HEARTBEAT_TIMEOUT",
-          session,
-          employee: { _id: session.employee, name: session.employeeName, role: session.role },
-        });
-      }
-    } catch (err) {
-      console.error("attendance heartbeat sweep failed:", err.message);
-    }
-  }, ATTENDANCE_SWEEP_INTERVAL_MS);
-};
+// ── Employee duty: no automatic OFF ─────────────────────────────────────────
+// There is deliberately no attendance heartbeat sweep any more. It used to
+// close a duty session after ~5 minutes without a heartbeat — which is
+// exactly what a sleeping phone, a backgrounded app or a dropped network
+// produce — so staff kept getting turned OFF duty on their own. Duty now
+// ends only on an explicit action (services/attendanceService.js endDuty /
+// setEmployeeShift), and every real ON/OFF writes a DutyHistory record.

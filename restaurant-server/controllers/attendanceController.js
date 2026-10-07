@@ -11,8 +11,11 @@ import {
   startDuty, startBreak, endBreak, endDuty,
   getMySession, getMyToday,
   listTodayForAdmin, listHistory, getEmployeeHistory, getSummaryCards,
+  listDutyHistory,
 } from "../services/attendanceService.js";
-import { getRoleFromUser } from "../services/orderService.js";
+import { getRoleFromUser, buildActor } from "../services/orderService.js";
+import { resolveRange } from "../services/employeeService.js";
+import { resolveTimezone } from "../utils/menuSchedule.js";
 import { emitAttendanceUpdated } from "../sockets/socket.js";
 
 const employeeSnapshot = (session, req) => ({
@@ -50,6 +53,8 @@ export const postStartDuty = async (req, res) => {
     const { AttendanceSession } = req.models;
     const { session, resumed } = await startDuty({
       AttendanceSession,
+      DutyHistory: req.models.DutyHistory,
+      actor: buildActor(req.user),
       employeeId: req.user._id,
       role: getRoleFromUser(req.user),
       employeeName: req.user.name || req.user.waiterName || "",
@@ -86,7 +91,9 @@ export const postEndBreak = async (req, res) => {
 export const postEndDuty = async (req, res) => {
   try {
     const { AttendanceSession } = req.models;
-    const session = await endDuty({ AttendanceSession, employeeId: req.user._id });
+    const session = await endDuty({
+      AttendanceSession, DutyHistory: req.models.DutyHistory, actor: buildActor(req.user), employeeId: req.user._id,
+    });
     emitUpdate(req, "END", session);
     res.json({ session });
   } catch (err) {
@@ -138,6 +145,41 @@ export const getAdminAttendanceSummary = async (req, res) => {
     const { AttendanceSession, User } = req.models;
     const summary = await getSummaryCards({ AttendanceSession, User });
     res.json(summary);
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message });
+  }
+};
+
+// ── Duty history (ON/OFF audit) ─────────────────────────────────────────────
+// ?date=YYYY-MM-DD (or ?from=&to=) is the RESTAURANT's calendar day
+// (RestaurantProfile.timezone, Asia/Kolkata by default) — never the server's
+// UTC day. No date = today. Filtering and paging happen in the database.
+const dutyHistoryQuery = async (req) => {
+  const { date, from, to, action, source, page, limit } = req.query;
+  const tz = resolveTimezone((await req.models.RestaurantProfile.findOne().select("timezone").lean())?.timezone);
+  const { start, end } = resolveRange(date || from, date || to, tz);
+  return { DutyHistory: req.models.DutyHistory, start, end, action, source, page, limit };
+};
+
+// GET /api/attendance/me/duty-history — own records only (id from the JWT).
+export const getMyDutyHistory = async (req, res) => {
+  try {
+    const result = await listDutyHistory({ ...(await dutyHistoryQuery(req)), employeeId: req.user._id });
+    res.json(result);
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message });
+  }
+};
+
+// GET /api/admin/attendance/duty-history — every employee, ?employeeId= optional.
+export const getAdminDutyHistory = async (req, res) => {
+  try {
+    const { employeeId } = req.query;
+    if (employeeId && !/^[a-f0-9]{24}$/i.test(String(employeeId))) {
+      return res.status(400).json({ message: "Invalid employeeId" });
+    }
+    const result = await listDutyHistory({ ...(await dutyHistoryQuery(req)), employeeId: employeeId || undefined });
+    res.json(result);
   } catch (err) {
     res.status(err.statusCode || 500).json({ message: err.message });
   }

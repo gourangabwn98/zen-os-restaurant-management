@@ -5,6 +5,7 @@
 //   PATCH /admin/employees/:id/status      activate / deactivate
 //   GET   /admin/attendance/today          live duty status + today's hours
 //   GET   /admin/employees/performance     today's order counts per person
+//   GET   /admin/attendance/duty-history   ON/OFF audit log (employees/DutyHistory.jsx)
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import toast from "react-hot-toast";
 import { getEmployees, setEmployeeStatus, getEmployeePerformance, getHrSummary } from "../../services/adminService.js";
@@ -15,6 +16,7 @@ import { PageHeader, Loader, EmptyState, Badge } from "./shared/index.js";
 import ErrorState from "./shared/ErrorState.jsx";
 import EmployeeForm from "./employees/EmployeeForm.jsx";
 import EmployeeProfile from "./employees/EmployeeProfile.jsx";
+import DutyHistory from "./employees/DutyHistory.jsx";
 import { DUTY_LABEL, initials, fmtDuration, count, roleText } from "./employees/shared.js";
 import { t, N_, tn, fmtTime, fmtNum, fmtDate } from "../../i18n/core.js";
 import "./employees/employees.css";
@@ -122,6 +124,15 @@ export default function EmployeesPage() {
     && !roleFilter && !statusFilter && dutyFilter !== "worked"
     && matchesSearch(r.employee.name, r.employee.phone)
     && (dutyFilter !== "on" || r.status !== "OFFLINE"));
+
+  // Duty history's employee filter: every staff member plus the admins.
+  const historyPeople = useMemo(() => {
+    const staff = (employees || []).map((e) => ({ _id: e._id, name: e.name, role: e.role, jobTitle: e.jobTitle }));
+    const seen = new Set(staff.map((p) => String(p._id)));
+    const adminRows = attendance.filter((r) => r.employee.role === "admin" && !seen.has(String(r.employee._id)))
+      .map((r) => ({ _id: r.employee._id, name: r.employee.name, role: "admin" }));
+    return [...staff, ...adminRows].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  }, [employees, attendance]);
 
   const selected = visible.find((e) => e._id === selectedId) || visible[0] || null;
   const visibleIds = () => visible.map((e) => String(e._id));
@@ -351,6 +362,8 @@ export default function EmployeesPage() {
               )}
             </div>
           </div>
+
+          <DutyHistory people={historyPeople} />
         </>
       )}
 

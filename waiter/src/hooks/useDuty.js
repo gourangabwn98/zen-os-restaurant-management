@@ -1,9 +1,10 @@
 // src/hooks/useDuty.js — app-level duty/attendance state. Lives in
 // AppStateProvider (not a per-page component) so the heartbeat keeps firing
-// no matter which screen is open — it used to live only on the Tables page's
-// DutyPanel, which meant the heartbeat (and thus the session) went silent
-// the moment a waiter navigated to Orders/New Order/Order Detail for more
-// than the 5-minute stale-session grace period. Also the single source of
+// no matter which screen is open. The heartbeat only refreshes "last seen" —
+// a missed heartbeat (phone asleep, app in the background, network down)
+// never ends duty any more; only "End duty" or an admin does. On every
+// reconnect / attendance event the session is re-read from the server, so a
+// change made by an admin while offline shows up. Also the single source of
 // truth other pages read `onDuty` from to gate order-taking actions
 // (the backend enforces this too — see attendanceService.assertOnDuty —
 // this is purely for not letting a waiter build a whole order and only
@@ -23,7 +24,9 @@ export function useDuty(isLoggedIn) {
 
   const refresh = useCallback(() => {
     if (!isLoggedIn) { setSession(null); return; }
-    getMyDuty().then(({ data }) => setSession(data.session || null)).catch(() => setSession(null));
+    // A failed read (offline) keeps the last known state — it must never
+    // make an on-duty waiter look OFF. Only the first load falls back to null.
+    getMyDuty().then(({ data }) => setSession(data.session || null)).catch(() => setSession((s) => (s === undefined ? null : s)));
   }, [isLoggedIn]);
 
   useEffect(() => { refresh(); }, [refresh]);
@@ -39,10 +42,16 @@ export function useDuty(isLoggedIn) {
 
     const onUpdate = () => refresh();
     socket.on("employee:attendance:updated", onUpdate);
+    socket.on("connect", onUpdate); // reconnect: pick up anything missed
+    // Back from background / screen lock: re-read (never change) the state.
+    const onVisible = () => { if (!document.hidden) refresh(); };
+    document.addEventListener("visibilitychange", onVisible);
 
     return () => {
       clearInterval(heartbeatRef.current);
       socket.off("employee:attendance:updated", onUpdate);
+      socket.off("connect", onUpdate);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [isLoggedIn, session?.status, refresh]);
 
