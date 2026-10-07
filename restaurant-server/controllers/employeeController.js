@@ -152,10 +152,10 @@ export const getMyDashboard = async (req, res) => {
 // staff who forget, or have no app). Same session rules as self-service.
 export const setShift = async (req, res) => {
   try {
-    const { User, AttendanceSession } = req.models;
+    const { User, AttendanceSession, DutyHistory } = req.models;
     const employee = await User.findOne({ _id: req.params.id, role: { $in: EMPLOYEE_ROLES }, status: { $ne: "Inactive" } });
     if (!employee) return res.status(404).json({ message: "Employee not found" });
-    const r = await setEmployeeShift({ AttendanceSession, employee, state: req.body?.state, actor: buildActor(req.user) });
+    const r = await setEmployeeShift({ AttendanceSession, DutyHistory, employee, state: req.body?.state, actor: buildActor(req.user) });
     if (r.changed) {
       emitAttendanceUpdated(req.tenantKey, {
         action: `MANAGER_${r.state}`, session: r.session,

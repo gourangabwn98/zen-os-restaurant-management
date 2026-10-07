@@ -207,3 +207,13 @@ img.emp-av { object-fit: cover; }
   .emp .zc-subnav button { flex: none; }
 }
 .emp-av.staff { background: var(--card-2); color: var(--text-2); border-color: var(--edge-hi); }
+
+/* duty history (ON/OFF audit log) */
+.emp-dh { min-width: 0; }
+.emp-dh-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 12px 18px 4px; }
+.emp-dh-tools .zc-input, .emp-dh-tools .zc-select { width: auto; flex: 0 1 auto; min-width: 0; }
+.emp-dh-sum { display: flex; gap: 18px; flex-wrap: wrap; padding: 8px 18px 0; font-size: 12.5px; color: var(--text-2); }
+.emp-dh-sum b { font-size: 15px; font-weight: 700; color: var(--text-1); margin-right: 2px; }
+@container (max-width: 560px) {
+  .emp-dh-tools .zc-input, .emp-dh-tools .zc-select { flex: 1 1 100%; width: 100%; }
+}

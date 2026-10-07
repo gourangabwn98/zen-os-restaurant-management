@@ -13,6 +13,7 @@ import {
 import { nextOrderId } from "../utils/orderNumber.js";
 import { INGREDIENT_SOURCES } from "../utils/recipeCost.js";
 import { CATEGORY_KINDS, SMART_KEYS } from "../utils/menuCategories.js";
+import { DUTY_ACTIONS, DUTY_CHANGE_SOURCES } from "../utils/attendanceStateMachine.js";
 
 // ── Atomic counters ──────────────────────────────────────────────────────────
 // One document per sequence (currently just "orderId"). Incremented with a
@@ -836,6 +837,33 @@ attendanceSessionSchema.index({ employee: 1, loginAt: -1 });
 attendanceSessionSchema.index({ role: 1, status: 1 });
 attendanceSessionSchema.index({ loginAt: -1 });
 
+// ── Duty history (ON/OFF audit log) ────────────────────────────────────────
+// Append-only: one record per real duty transition, written by
+// services/attendanceService.js right after the session opens or closes.
+// Never written for a disconnect, a closed tab or a sleeping screen — those
+// don't change the session. Idempotent by construction: the unique
+// {session, action} index means a session can produce at most one ON_DUTY
+// and one OFF_DUTY record, however many times a write is retried.
+// Names are snapshots so the log stays readable after a rename.
+const dutyHistorySchema = new mongoose.Schema({
+  employee:     { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  employeeName: { type: String, default: "" },
+  employeeRole: { type: String, enum: ["admin","waiter","chef","staff"], required: true },
+  action:       { type: String, enum: DUTY_ACTIONS, required: true },
+  source:       { type: String, enum: DUTY_CHANGE_SOURCES, required: true },
+  changedBy:    { type: actorSchema, required: true },
+  session:      { type: mongoose.Schema.Types.ObjectId, ref: "AttendanceSession", required: true },
+  at:           { type: Date, required: true }, // the session's loginAt / logoutAt
+}, { timestamps: { createdAt: true, updatedAt: false } });
+dutyHistorySchema.index({ session: 1, action: 1 }, { unique: true, name: "one_record_per_session_transition" });
+dutyHistorySchema.index({ at: -1 });
+dutyHistorySchema.index({ employee: 1, at: -1 });
+// Audit records are never edited or deleted through the app.
+dutyHistorySchema.pre(
+  ["updateOne", "updateMany", "findOneAndUpdate", "replaceOne", "findOneAndReplace", "deleteOne", "deleteMany", "findOneAndDelete"],
+  function () { throw new Error("Duty history is read-only"); }
+);
+
 // ── Staff reviews (services/reviewService.js) ─────────────────────────────
 // A customer's rating of a PAID order, split per kind: FOOD goes to the chef
 // who cooked it, SERVICE to the waiter who took it (attributed server-side
@@ -998,6 +1026,7 @@ export function getModels(conn) {
     WaitlistEntry:     conn.models.WaitlistEntry     || conn.model("WaitlistEntry",     waitlistEntrySchema),
     NotificationLog:   conn.models.NotificationLog   || conn.model("NotificationLog",   notificationLogSchema),
     AttendanceSession: conn.models.AttendanceSession || conn.model("AttendanceSession", attendanceSessionSchema),
+    DutyHistory:       conn.models.DutyHistory       || conn.model("DutyHistory",       dutyHistorySchema),
     StaffReview:       conn.models.StaffReview       || conn.model("StaffReview",       staffReviewSchema),
     StaffLeave:        conn.models.StaffLeave        || conn.model("StaffLeave",        staffLeaveSchema),
     StaffPay:          conn.models.StaffPay          || conn.model("StaffPay",          staffPaySchema),

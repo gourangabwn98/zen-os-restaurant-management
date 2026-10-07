@@ -256,6 +256,25 @@ including the order-confirmation deduction path — this was a real gap
 deduction didn't) that's now fixed via `deductStockForOrder` returning an
 `alerts` array that callers emit via `emitInventoryAlert`.
 
+## Duty (attendance) and duty history
+
+Duty = an OPEN `AttendanceSession` (`services/attendanceService.js`). It ends
+**only** on an explicit action: the employee's "End duty" or an admin's
+"Off shift" (`setEmployeeShift`). There used to be a heartbeat sweep that
+closed sessions after ~5 min without a heartbeat — a sleeping phone, a
+backgrounded app or a dropped network all stop heartbeats, so staff kept
+going OFF by themselves. It is deliberately no longer scheduled; don't bring
+it back. A failed duty read in a frontend must keep the last known state,
+never show OFF.
+
+Every real ON/OFF writes one append-only `DutyHistory` record (who:
+`source` SELF/ADMIN + `changedBy` actor; unique `{session, action}` so a retry
+can't duplicate; model-level hooks block updates/deletes). Breaks,
+heartbeats, disconnects and "already on duty" resumes write nothing. Any new
+path that opens or closes a session must pass `DutyHistory` + `actor` to
+`startDuty`/`endDuty`. History days are the restaurant's calendar day
+(`RestaurantProfile.timezone`, via `employeeService.resolveRange`).
+
 ## Print service
 
 Runs **on-premises**, never as a cloud deployment — it needs to be on the

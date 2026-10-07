@@ -9,7 +9,7 @@ import {
 } from "../controllers/adminController.js";
 import {
   getAdminAttendanceToday, getAdminAttendanceHistory,
-  getAdminAttendanceEmployee, getAdminAttendanceSummary,
+  getAdminAttendanceEmployee, getAdminAttendanceSummary, getAdminDutyHistory,
 } from "../controllers/attendanceController.js";
 import { objectIdParam } from "../middleware/validateIds.js";
 import { previewCombined, printCombined, paySelected, completeSelectedOrders } from "../controllers/combinedBillController.js";
@@ -50,6 +50,7 @@ router.delete("/users/:id",  requireAdmin, deleteUser);
 // Admin only — employee attendance monitoring (Admin → Employees → Attendance)
 router.get("/attendance/today",         requireAdmin, getAdminAttendanceToday);
 router.get("/attendance/summary",       requireAdmin, getAdminAttendanceSummary);
+router.get("/attendance/duty-history",  requireAdmin, getAdminDutyHistory); // ON/OFF audit log
 router.get("/attendance/employee/:id",  requireAdmin, getAdminAttendanceEmployee);
 router.get("/attendance",               requireAdmin, getAdminAttendanceHistory);
 

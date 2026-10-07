@@ -5,3 +5,5 @@ export const getAttendanceToday    = (params) => api.get("/admin/attendance/toda
 export const getAttendanceHistory  = (params) => api.get("/admin/attendance", { params });
 export const getAttendanceEmployee = (id, params) => api.get(`/admin/attendance/employee/${id}`, { params });
 export const getAttendanceSummary  = () => api.get("/admin/attendance/summary");
+// Duty ON/OFF audit log — ?date=YYYY-MM-DD&employeeId=&action=&source=&page=&limit=
+export const getDutyHistory        = (params) => api.get("/admin/attendance/duty-history", { params });

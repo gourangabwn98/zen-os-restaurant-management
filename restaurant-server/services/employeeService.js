@@ -196,7 +196,7 @@ const todayRange = (tz) => {
  * midnight, which would silently shift results by a day in most timezones.
  * Falls back to today when either bound is missing. */
 const YMD_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
-const resolveRange = (from, to, tz) => {
+export const resolveRange = (from, to, tz) => {
   if (!from && !to) return todayRange(tz);
   if (tz) {
     const today = todayRange(tz);

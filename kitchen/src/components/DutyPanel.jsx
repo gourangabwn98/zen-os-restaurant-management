@@ -53,7 +53,8 @@ export default function DutyPanel() {
   const heartbeatRef = useRef(null);
 
   const refresh = useCallback(() => {
-    getMyDuty().then(({ data }) => setSession(data.session || null)).catch(() => setSession(null));
+    // Offline read: keep the last known state, never show an on-duty chef as off.
+    getMyDuty().then(({ data }) => setSession(data.session || null)).catch(() => setSession((s) => (s === undefined ? null : s)));
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);

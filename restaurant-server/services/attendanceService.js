@@ -16,7 +16,64 @@
 
 import {
   assertCanStartBreak, assertCanEndBreak, assertCanEndDuty,
+  DUTY_ACTIONS, DUTY_CHANGE_SOURCES,
 } from "../utils/attendanceStateMachine.js";
+
+// ── Duty history (ON/OFF audit) ─────────────────────────────────────────────
+// Written right after the session's own atomic open/close succeeded, so a
+// record exists only for a transition that really happened — an
+// "already on duty" resume or a refused end writes nothing. Retry-safe: the
+// unique {session, action} index turns a repeat into a no-op. A failed write
+// never undoes the duty change itself (that already committed); it is logged.
+const sameId = (a, b) => a != null && b != null && String(a) === String(b);
+
+export const recordDutyChange = async ({ DutyHistory, session, action, actor, employeeName }) => {
+  if (!DutyHistory || !session) return null;
+  const doc = {
+    employee: session.employee,
+    employeeName: employeeName || session.employeeName || "",
+    employeeRole: session.role,
+    action,
+    source: sameId(actor?.id, session.employee) ? "SELF" : "ADMIN",
+    changedBy: { id: actor?.id || null, role: actor?.role || null, name: actor?.name || "" },
+    session: session._id,
+    at: action === "ON_DUTY" ? session.loginAt : session.logoutAt,
+  };
+  try {
+    return await DutyHistory.create(doc);
+  } catch (err) {
+    if (err?.code === 11000) return null; // already recorded
+    console.error("duty history write failed:", err.message);
+    return null;
+  }
+};
+
+/** Duty history for [start, end] (the caller resolves the restaurant's
+ * calendar days), newest first, filtered and paginated in the database.
+ * `summary` counts the whole filtered set, not just the current page. */
+export const listDutyHistory = async ({ DutyHistory, start, end, employeeId, action, source, page = 1, limit = 100 }) => {
+  const filter = { at: { $gte: start, $lte: end } };
+  if (employeeId) filter.employee = employeeId;
+  if (DUTY_ACTIONS.includes(action)) filter.action = action;
+  if (DUTY_CHANGE_SOURCES.includes(source)) filter.source = source;
+
+  const safePage = Math.max(1, Number(page) || 1);
+  const safeLimit = Math.min(500, Math.max(1, Number(limit) || 100));
+
+  // A count that contradicts the active filter is 0 without asking the DB.
+  const countWhere = (field, value) =>
+    filter[field] && filter[field] !== value ? 0 : DutyHistory.countDocuments({ ...filter, [field]: value });
+
+  const [records, total, onDuty, offDuty, bySelf, byAdmin] = await Promise.all([
+    DutyHistory.find(filter).sort({ at: -1, _id: -1 }).skip((safePage - 1) * safeLimit).limit(safeLimit).lean(),
+    DutyHistory.countDocuments(filter),
+    countWhere("action", "ON_DUTY"),
+    countWhere("action", "OFF_DUTY"),
+    countWhere("source", "SELF"),
+    countWhere("source", "ADMIN"),
+  ]);
+  return { records, total, page: safePage, limit: safeLimit, summary: { total, onDuty, offDuty, bySelf, byAdmin } };
+};
 
 export const DEFAULT_HEARTBEAT_GRACE_MS = 5 * 60 * 1000; // 5 minutes — ~10 missed 30s heartbeats
 
@@ -101,7 +158,9 @@ export const summarizeAttendanceSessions = (sessions, now = new Date()) => {
 
 // ── Self-service mutations ──────────────────────────────────────────────────
 
-export const startDuty = async ({ AttendanceSession, employeeId, role, employeeName }) => {
+// `DutyHistory` + `actor` (optional, buildActor shape) record the ON_DUTY
+// audit entry; a resumed (already open) session records nothing.
+export const startDuty = async ({ AttendanceSession, DutyHistory, actor, employeeId, role, employeeName }) => {
   const now = new Date();
   try {
     const created = await AttendanceSession.create({
@@ -109,6 +168,7 @@ export const startDuty = async ({ AttendanceSession, employeeId, role, employeeN
       status: "OPEN", presenceStatus: "ONLINE",
       loginAt: now, lastSeenAt: now,
     });
+    await recordDutyChange({ DutyHistory, session: created, action: "ON_DUTY", actor, employeeName });
     return { session: created, resumed: false };
   } catch (err) {
     if (err?.code === 11000) {
@@ -171,7 +231,7 @@ export const endBreak = async ({ AttendanceSession, employeeId }) => {
   return updated;
 };
 
-export const endDuty = async ({ AttendanceSession, employeeId }) => {
+export const endDuty = async ({ AttendanceSession, DutyHistory, actor, employeeId }) => {
   const session = await AttendanceSession.findOne({ employee: employeeId, status: "OPEN" });
   assertCanEndDuty(session);
 
@@ -187,6 +247,7 @@ export const endDuty = async ({ AttendanceSession, employeeId }) => {
     err.statusCode = 409;
     throw err;
   }
+  await recordDutyChange({ DutyHistory, session: updated, action: "OFF_DUTY", actor });
   return updated;
 };
 
@@ -204,7 +265,7 @@ export const shiftStateOf = (session) =>
  * the session is marked `managed` so the heartbeat sweep never auto-closes it.
  * Returns { session, state, changed }.
  */
-export const setEmployeeShift = async ({ AttendanceSession, employee, state, actor }) => {
+export const setEmployeeShift = async ({ AttendanceSession, DutyHistory, employee, state, actor }) => {
   if (!SHIFT_STATES.includes(state)) {
     const err = new Error("state must be ON_SHIFT, ON_BREAK or OFF_SHIFT"); err.statusCode = 400; throw err;
   }
@@ -214,13 +275,13 @@ export const setEmployeeShift = async ({ AttendanceSession, employee, state, act
   if (before === state) return { session: open, state, changed: false };
 
   if (state === "OFF_SHIFT") {
-    const closed = await endDuty({ AttendanceSession, employeeId });
+    const closed = await endDuty({ AttendanceSession, DutyHistory, actor, employeeId });
     await AttendanceSession.updateOne({ _id: closed._id }, { $set: { changedBy: actor } });
     return { session: closed, state, changed: true };
   }
   if (!open) {
     const role = employee.isAdmin ? "admin" : employee.role;
-    open = (await startDuty({ AttendanceSession, employeeId, role, employeeName: employee.name })).session;
+    open = (await startDuty({ AttendanceSession, DutyHistory, actor, employeeId, role, employeeName: employee.name })).session;
   }
   await AttendanceSession.updateOne({ _id: open._id }, { $set: { managed: true, changedBy: actor } });
   if (state === "ON_BREAK" && shiftStateOf(open) !== "ON_BREAK") open = await startBreak({ AttendanceSession, employeeId });
@@ -239,7 +300,14 @@ export const recordHeartbeat = async ({ AttendanceSession, employeeId }) => {
   );
 };
 
-/** Closes OPEN sessions whose heartbeat has gone quiet for longer than the
+/** NOT SCHEDULED ANY MORE (see server.js) — duty now ends only on an
+ * explicit action: the employee's "End duty" or an admin's "Off shift".
+ * Running this on a timer turned staff OFF whenever a phone slept, the app
+ * was backgrounded or the network dropped (heartbeats stop in all three),
+ * and it writes no DutyHistory record. Kept for reference/tests only —
+ * don't re-schedule it without both of those addressed.
+ *
+ * Closes OPEN sessions whose heartbeat has gone quiet for longer than the
  * grace period. Uses each session's own last known `lastSeenAt` as the
  * logout time — never "now" — so no session ever gets a fabricated logout
  * time. Race-safe against a heartbeat/manual-end arriving concurrently: the
