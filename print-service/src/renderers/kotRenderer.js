@@ -56,7 +56,7 @@ export const renderKot = (job, { header = null, width = DEFAULT_WIDTH } = {}) =>
   lines.push(separator(W));
   lines.push({ text: `Total Items: ${items.reduce((s, i) => s + (Number(i.qty) || 0), 0)}`, bold: true, align: "right" });
   lines.push({ type: "feed" });
-  lines.push({ text: "[ KITCHEN COPY ]", bold: true, align: "center" });
+  lines.push({ text: "[ KOT ]", bold: true, align: "center" }); // KH-14 (was "[ KITCHEN COPY ]")
   lines.push({ type: "feed" });
   lines.push({ type: "cut" });
   return lines;

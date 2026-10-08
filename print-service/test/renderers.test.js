@@ -135,7 +135,7 @@ const run = async () => {
   });
 
   // ── KOT ──
-  await test("kot: header, title, details, items as xN, total items, kitchen copy", () => {
+  await test("kot: header, title, details, items as xN, total items, [ KOT ] footer", () => {
     const lines = renderKot(kotJob(), { header: HEADER });
     const t = text(lines);
     assert.match(t, /AD's Cafe/);
@@ -145,7 +145,12 @@ const run = async () => {
     assert.match(t, /Chicken Biryani +x2/);
     assert.match(t, /Note: less spicy/);
     assert.match(t, /Total Items: 13/);
-    assert.match(t, /\[ KITCHEN COPY \]/);
+    // KH-14: bottom line reads "[ KOT ]"; the heading above is unchanged.
+    assert.match(t, /\[ KOT \]/);
+    assert.doesNotMatch(t, /KITCHEN COPY/);
+    assert.equal((t.match(/\*\*\* KITCHEN ORDER TICKET \*\*\*/g) || []).length, 1);
+    assert.equal(lines.find((l) => l.text === "[ KOT ]").bold, true);
+    assert.equal(lines.find((l) => l.text === "[ KOT ]").align, "center");
     assert.equal(lines.find((l) => l.text === "ITEMS").bold, true);
     assert.equal(lines.at(-1).type, "cut");
   });
