@@ -81,6 +81,7 @@ if (typeof document !== "undefined" && !document.getElementById("menu-styles")) 
     }
 
     .mb-body { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 16px; align-items: start; }
+    .mb-body.mb-simple { grid-template-columns: minmax(0, 1fr); } /* manager: items only, full width */
     .mb-left { display: flex; flex-direction: column; gap: 16px; min-width: 0; position: sticky; top: 12px; }
     @media (max-width: 1180px) {
       .mb-body { grid-template-columns: minmax(0, 1fr); }

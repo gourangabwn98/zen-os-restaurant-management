@@ -285,6 +285,8 @@ export const VIEWS = {
   all:      { label: N_("All"),             test: () => true },
   onMenu:   { label: N_("On the menu now"), test: (i, c) => i.isAvailable && scheduledAt(i, c.catOf(i), c.clock) },
   byTime:   { label: N_("Hidden by time"),  test: (i, c) => i.isAvailable && !scheduledAt(i, c.catOf(i), c.clock) },
+  // Anything a diner can't see right now — off, sold out or outside its time.
+  hidden:   { label: N_("Hidden"),          test: (i, c) => !(i.isAvailable && scheduledAt(i, c.catOf(i), c.clock)) },
   soldOut:  { label: N_("Sold out today"),  test: (i) => isSoldOut(i) },
   off:      { label: N_("Turned off"),      test: (i) => !i.isAvailable && !isSoldOut(i) },
   noPhoto:  { label: N_("No photo"),        test: (i) => !hasPhoto(i) },

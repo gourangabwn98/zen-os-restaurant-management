@@ -392,4 +392,7 @@ export default {
   "e.g. 1 pc Chicken": "যেমন: ১ পিস চিকেন",
   "Every add-on needs a name and a price": "প্রতিটি অ্যাড-অনের নাম ও দাম দিন",
   "Extras the waiter can add, e.g. “1 pc Chicken” ₹40 — the price is added per item.": "ওয়েটার যে এক্সট্রা যোগ করতে পারবেন, যেমন “১ পিস চিকেন” ₹৪০ — দাম প্রতি আইটেমে যোগ হয়।",
+  // Manager's simple Menu items page.
+  "hidden": "লুকানো",
+  "customers can't see these now": "গ্রাহকরা এখন এগুলো দেখতে পাচ্ছেন না",
 };

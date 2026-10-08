@@ -27,6 +27,8 @@ import {
   getMenuTimes, setMenuAvailability, reorderCategories, mergeCategory,
 } from "../../services/menuService.js";
 import { getRestaurantProfile } from "../../services/adminService.js";
+import { useAuth } from "../../hooks/useAuth.js";
+import { isManager } from "../../utils/access.js";
 import PageHeader from "./shared/PageHeader.jsx";
 import Loader from "./shared/Loader.jsx";
 import { t, tn, fmtNum, localName } from "../../i18n/core.js";
@@ -737,6 +739,9 @@ const toggleIn = (set, id) => {
 };
 
 export default function MenuAdminPage() {
+  // A manager gets the simple page: just the items, full width — no Menu
+  // times / "All day · categories" column (that setup stays with the admin).
+  const simple = isManager(useAuth().user);
   const [items, setItems] = useState([]);
   const [cats, setCats] = useState([]);
   const [menuTimes, setMenuTimes] = useState([]);
@@ -913,14 +918,17 @@ export default function MenuAdminPage() {
   const atText = preview ? t("at {time}", { time: fmtMinutes(clock.minutes) }) : t("right now");
   const tiles = [
     { key: "onMenu", label: t("On the menu now"), value: counts.onMenu, color: "var(--ready-ink)", sub: atText },
-    { key: "byTime", label: t("Hidden by time"), value: counts.byTime, sub: t("outside their menu time") },
+    // Manager's simple page: one plain "Hidden" count instead of "Hidden by time".
+    simple
+      ? { key: "hidden", label: t("Hidden"), value: counts.hidden, sub: t("customers can't see these now") }
+      : { key: "byTime", label: t("Hidden by time"), value: counts.byTime, sub: t("outside their menu time") },
     { key: "soldOut", label: t("Sold out today"), value: counts.soldOut, color: counts.soldOut ? "var(--wait-ink)" : undefined,
       sub: t("back at {time}", { time: fmt12(dayEnd) }) },
     { key: "noPhoto", label: t("No photo"), value: counts.noPhoto, color: counts.noPhoto ? "var(--wait-ink)" : "var(--ready-ink)",
       sub: counts.noPhoto ? t("diners order less without one") : t("every item has one") },
-    { key: "cleanup", label: t("Needs cleanup"), value: cleanup.length, color: cleanup.length ? "var(--stop-ink)" : "var(--ready-ink)",
+    !simple && { key: "cleanup", label: t("Needs cleanup"), value: cleanup.length, color: cleanup.length ? "var(--stop-ink)" : "var(--ready-ink)",
       sub: cleanup.length ? t("duplicate, test or empty categories") : t("all tidy") },
-  ];
+  ].filter(Boolean);
 
   // ── actions (all through the API) ─────────────────────────────────────────
   const handleSaved = (saved, mode) => {
@@ -1065,13 +1073,15 @@ export default function MenuAdminPage() {
     <div>
       <PageHeader
         title={t("Menu items")}
-        sub={`${tn(items.length, "{n} item", "{n} items")} · ${tn(cats.length, "{n} category", "{n} categories")} · ${tn(menuTimes.length, "{n} menu time", "{n} menu times")}`}
+        sub={`${tn(items.length, "{n} item", "{n} items")} · ${tn(cats.length, "{n} category", "{n} categories")}${simple ? "" : ` · ${tn(menuTimes.length, "{n} menu time", "{n} menu times")}`}`}
         right={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button type="button" className="zc-btn" disabled={!ready} onClick={() => setShowImport(true)}>⇪ {t("Import menu")}</button>
-            <button type="button" className="zc-btn" disabled={!ready} onClick={openBulk}>
-              ✎ {t("Bulk edit")}{selItems.size ? ` (${fmtNum(selItems.size)})` : ""}
-            </button>
+            {!simple && (
+              <button type="button" className="zc-btn" disabled={!ready} onClick={openBulk}>
+                ✎ {t("Bulk edit")}{selItems.size ? ` (${fmtNum(selItems.size)})` : ""}
+              </button>
+            )}
             <button type="button" className="zc-btn pri" onClick={() => setModal("create")}>＋ {t("New item")}</button>
           </div>
         }
@@ -1079,8 +1089,8 @@ export default function MenuAdminPage() {
 
       <StatusStrip tiles={tiles} view={activeSaved || hasExtraFilters(filters) ? null : view} onView={onTile} />
 
-      <div className="mb-body">
-        <div className="mb-left">
+      <div className={`mb-body${simple ? " mb-simple" : ""}`}>
+        {!simple && <div className="mb-left">
           {loading ? (
             <div className="zc-card"><div className="zc-card-b"><Loader rows={5} /></div></div>
           ) : !error && (
@@ -1097,7 +1107,7 @@ export default function MenuAdminPage() {
                 onManage={() => setShowCats(true)} onAssign={setMtForm} disabled={!ready} />
             </>
           )}
-        </div>
+        </div>}
 
         <ItemsPanel
           loading={loading} error={error} onRetry={load} totalItems={items.length}
@@ -1117,6 +1127,7 @@ export default function MenuAdminPage() {
             clear: () => setSelItems(new Set()),
           }}
           hasFilters={hasFilters} clearFilters={clearFilters}
+          simple={simple}
         />
       </div>
 

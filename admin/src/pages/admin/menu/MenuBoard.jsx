@@ -267,20 +267,23 @@ const Price = ({ item }) => (
   </>
 );
 
-function GroupHeader({ g, preview, open, onToggle, allSel, someSel, onSelAll, onEditCat }) {
+// `simple` (manager's page): no select box and no menu-time chip.
+function GroupHeader({ g, preview, open, onToggle, allSel, someSel, onSelAll, onEditCat, simple = false }) {
   const tg = g.timeGroup;
   const at = preview ? fmtMinutes(preview.minutes) : null;
   return (
     <div className="mb-grp">
-      <input type="checkbox" className="menu-cb" aria-label={t("Select all in {name}", { name: g.label })}
-        checked={allSel} ref={(el) => { if (el) el.indeterminate = !allSel && someSel; }} onChange={onSelAll} />
+      {!simple && (
+        <input type="checkbox" className="menu-cb" aria-label={t("Select all in {name}", { name: g.label })}
+          checked={allSel} ref={(el) => { if (el) el.indeterminate = !allSel && someSel; }} onChange={onSelAll} />
+      )}
       <button type="button" className="tg" aria-expanded={open} onClick={onToggle}>
         <span aria-hidden="true" style={{ width: 10, color: "var(--text-3)" }}>{open ? "▾" : "▸"}</span>{g.label}
       </button>
-      <span className="mb-mtchip" style={{ borderColor: tg?.color || "var(--edge)" }}>
+      {!simple && <span className="mb-mtchip" style={{ borderColor: tg?.color || "var(--edge)" }}>
         {tg ? (tg.schedule ? `${tg.name} · ${timeLabel(tg.schedule)}` : tg.name) : t("All day")}
         {tg?.schedule?.days?.length ? ` · ${daysLabel(tg.schedule)}` : ""}
-      </span>
+      </span>}
       <span className="hint">
         {g.live
           ? (at ? t("showing at {time}", { time: at }) : t("showing to diners now"))
@@ -378,7 +381,9 @@ export function ItemsPanel({
   saved, activeSaved, onApplySaved, onRemoveSaved, onSaveView, filters, setFilters, allTags,
   selCat, selCatLabel, clearCat, preview, clock, sel, toggleSel, setSelMany, collapsed, toggleGroup, setAllCollapsed,
   busyIds, onEdit, onDelete, onAvail, onEditCat, onNew, bulk, hasFilters, clearFilters,
+  simple = false, // manager's page: no tick boxes / bulk bar, plain "hidden"
 }) {
+  const cols = simple ? 5 : 6;
   const shownCount = groups.reduce((s, g) => s + g.items.length, 0);
   const shownIds = groups.flatMap((g) => g.items.map((i) => i._id));
   const allShownSel = shownIds.length > 0 && shownIds.every((id) => sel.has(id));
@@ -393,7 +398,7 @@ export function ItemsPanel({
 
   const timeOffNote = (item, g) =>
     item.isAvailable && !scheduledAt(item, g.cat, previewClock)
-      ? <div style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 3 }}>{t("hidden by time")}</div>
+      ? <div style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 3 }}>{simple ? t("hidden") : t("hidden by time")}</div>
       : null;
 
   return (
@@ -420,7 +425,7 @@ export function ItemsPanel({
           </div>
         )}
 
-        {sel.size > 0 && (
+        {!simple && sel.size > 0 && (
           <div className="mb-bulk" role="region" aria-label={t("Bulk actions")}>
             <b style={{ color: "var(--accent-ink)" }}>{tn(sel.size, "{n} selected", "{n} selected")}</b>
             <button type="button" className="zc-btn good sm" disabled={bulk.busy} onClick={() => bulk.setState("on")}>{t("Turn on")}</button>
@@ -470,12 +475,14 @@ export function ItemsPanel({
             <table className="mb-tbl" style={{ minWidth: 760 }}>
               <thead>
                 <tr>
-                  <th style={{ width: 30 }}>
-                    <input type="checkbox" className="menu-cb" aria-label={t("Select all shown items")}
-                      checked={allShownSel}
-                      ref={(el) => { if (el) el.indeterminate = !allShownSel && shownIds.some((id) => sel.has(id)); }}
-                      onChange={() => setSelMany(shownIds, !allShownSel)} />
-                  </th>
+                  {!simple && (
+                    <th style={{ width: 30 }}>
+                      <input type="checkbox" className="menu-cb" aria-label={t("Select all shown items")}
+                        checked={allShownSel}
+                        ref={(el) => { if (el) el.indeterminate = !allShownSel && shownIds.some((id) => sel.has(id)); }}
+                        onChange={() => setSelMany(shownIds, !allShownSel)} />
+                    </th>
+                  )}
                   <th>{t("Item")}</th>
                   <th className="num" style={{ width: 84 }}>{t("Price")}</th>
                   <th style={{ width: 180 }}>{t("Diner tags")}</th>
@@ -489,17 +496,19 @@ export function ItemsPanel({
                 return (
                   <tbody key={g.name}>
                     <tr className="grp">
-                      <td colSpan={6}>
+                      <td colSpan={cols}>
                         <GroupHeader g={g} preview={preview} open={open} onToggle={() => toggleGroup(g.name)}
-                          allSel={gs.all} someSel={gs.some} onSelAll={gs.toggle} onEditCat={() => onEditCat(g.cat)} />
+                          allSel={gs.all} someSel={gs.some} onSelAll={gs.toggle} onEditCat={() => onEditCat(g.cat)} simple={simple} />
                       </td>
                     </tr>
                     {open && g.items.map((item) => (
                       <tr key={item._id} className="it" onClick={() => onEdit(item)}>
-                        <td onClick={(e) => e.stopPropagation()}>
-                          <input type="checkbox" className="menu-cb" aria-label={t("Select {name}", { name: localName(item) })}
-                            checked={sel.has(item._id)} onChange={() => toggleSel(item._id)} />
-                        </td>
+                        {!simple && (
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <input type="checkbox" className="menu-cb" aria-label={t("Select {name}", { name: localName(item) })}
+                              checked={sel.has(item._id)} onChange={() => toggleSel(item._id)} />
+                          </td>
+                        )}
                         <td>
                           <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                             <Thumb src={item.image} size={34} missing={!hasPhoto(item)} />
@@ -543,13 +552,15 @@ export function ItemsPanel({
                 <div key={g.name} style={{ marginBottom: 6 }}>
                   <div className="mb-mgrp" style={{ padding: 0 }}>
                     <GroupHeader g={g} preview={preview} open={open} onToggle={() => toggleGroup(g.name)}
-                      allSel={gs.all} someSel={gs.some} onSelAll={gs.toggle} onEditCat={() => onEditCat(g.cat)} />
+                      allSel={gs.all} someSel={gs.some} onSelAll={gs.toggle} onEditCat={() => onEditCat(g.cat)} simple={simple} />
                   </div>
                   {open && g.items.map((item) => (
                     <div key={item._id} className="mb-mrow" onClick={() => onEdit(item)}>
-                      <input type="checkbox" className="menu-cb" style={{ marginTop: 3 }}
-                        aria-label={t("Select {name}", { name: localName(item) })}
-                        checked={sel.has(item._id)} onClick={(e) => e.stopPropagation()} onChange={() => toggleSel(item._id)} />
+                      {!simple && (
+                        <input type="checkbox" className="menu-cb" style={{ marginTop: 3 }}
+                          aria-label={t("Select {name}", { name: localName(item) })}
+                          checked={sel.has(item._id)} onClick={(e) => e.stopPropagation()} onChange={() => toggleSel(item._id)} />
+                      )}
                       <Thumb src={item.image} size={44} missing={!hasPhoto(item)} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
