@@ -17,6 +17,8 @@ import { Loader, ErrorState, EmptyState } from "../components/StateViews.jsx";
 import { ACCENT, GREEN, AMBER, RED, TEXT_MUTED, TEXT_FAINT, GLASS_BORDER, GLASS_BG } from "../theme.js";
 import { t, N_, tn, localName } from "../i18n/index.jsx";
 import NotShareableNote from "../components/NotShareableNote.jsx";
+import AddonPicker, { AddonHint } from "../components/AddonPicker.jsx";
+import { hasAddons, lineKey, addonIdsOf } from "../utils/addons.js";
 import { DINING_AREA_LABEL } from "../utils/diningArea.js";
 import { STATUS_LABEL } from "../components/StatusBadge.jsx";
 
@@ -69,7 +71,8 @@ export default function OrderDetailPage() {
   const [menuCategories, setMenuCategories] = useState([]);
   const [menuSearch, setMenuSearch] = useState("");
   const [menuCategory, setMenuCategory] = useState("");
-  const [addQtys, setAddQtys] = useState({});
+  const [addQtys, setAddQtys] = useState({}); // KH-12: lineKey(item, add-ons) → { item, qty, addonIds }
+  const [picker, setPicker] = useState(null);  // KH-12: item whose add-ons are being asked about
   const [addKey, setAddKey] = useState(newIdempotencyKey); // KH-07: one follow-up per "add" tap
   // KH-03 / KH-07: the running orders billed together with this one — the
   // table's orders (dine-in) or this order + its follow-ups (takeaway).
@@ -169,25 +172,41 @@ export default function OrderDetailPage() {
     return [...map.entries()];
   }, [menuItems]);
 
-  const getAddQty = (itemId) => addQtys[itemId] || 0;
+  // KH-12: one entry per item + add-ons combination.
+  const getAddQty = (itemId) => Object.values(addQtys).filter((l) => l.item._id === itemId).reduce((s, l) => s + l.qty, 0);
+  const addAddLine = (item, addonIds = []) => setAddQtys((prev) => {
+    const key = lineKey(item._id, addonIds);
+    const ex = prev[key];
+    return { ...prev, [key]: { item, addonIds: [...addonIds], qty: Math.min(99, (ex?.qty || 0) + 1) } };
+  });
   const adjustAddQty = (item, delta) => {
+    if (delta > 0) { if (hasAddons(item)) setPicker(item); else addAddLine(item, []); return; }
     setAddQtys((prev) => {
-      const next = Math.max(0, (prev[item._id] || 0) + delta);
-      return { ...prev, [item._id]: next };
+      const key = Object.keys(prev).reverse().find((k) => prev[k].item._id === item._id && prev[k].qty > 0);
+      if (!key) return prev;
+      const next = { ...prev, [key]: { ...prev[key], qty: prev[key].qty - 1 } };
+      if (next[key].qty <= 0) delete next[key];
+      return next;
     });
   };
-  const addItemCount = Object.values(addQtys).reduce((s, q) => s + q, 0);
+  const addItemCount = Object.values(addQtys).reduce((s, l) => s + l.qty, 0);
 
   const submitAddItems = async () => {
-    const items = Object.entries(addQtys).filter(([, q]) => q > 0).map(([menuItemId, qty]) => ({ menuItemId, qty }));
+    const items = Object.values(addQtys).filter((l) => l.qty > 0)
+      .map((l) => ({ menuItemId: l.item._id, qty: l.qty, ...(l.addonIds.length && { addonIds: l.addonIds }) }));
     if (items.length === 0) return toast.error(t("Pick at least one item"));
     setBusy(true);
     try {
       if ((order.status === "CONFIRMED" || order.status === "PENDING_CONFIRMATION") && !order.stockDeducted) {
-        const merged = new Map((order.items || []).map((it) => [lineId(it), { menuItemId: lineId(it), qty: it.qty, notes: it.notes || "" }]));
+        // KH-12: merge only into a line with the same item AND add-ons.
+        const merged = new Map((order.items || []).map((it) => {
+          const ids = addonIdsOf(it);
+          return [lineKey(lineId(it), ids), { menuItemId: lineId(it), qty: it.qty, notes: it.notes || "", ...(ids.length && { addonIds: ids }) }];
+        }));
         for (const it of items) {
-          const ex = merged.get(it.menuItemId);
-          merged.set(it.menuItemId, ex ? { ...ex, qty: ex.qty + it.qty } : { ...it, notes: "" });
+          const k = lineKey(it.menuItemId, it.addonIds || []);
+          const ex = merged.get(k);
+          merged.set(k, ex ? { ...ex, qty: ex.qty + it.qty } : { ...it, notes: "" });
         }
         await modifyOrderItems(id, [...merged.values()], order.revision ?? 0);
         toast.success(t("Items added"));
@@ -204,16 +223,18 @@ export default function OrderDetailPage() {
     finally { setBusy(false); }
   };
 
+  // KH-12: lines keep their add-ons; keyed by item + add-ons (two Biryani lines may differ).
   const startEdit = () => setEditLines((order.items || []).map((it) => ({
-    menuItemId: lineId(it), name: it.name, price: it.price, qty: it.qty, notes: it.notes || "",
+    key: lineKey(lineId(it), addonIdsOf(it)), menuItemId: lineId(it), name: it.name, nameBn: it.nameBn, price: it.price, qty: it.qty,
+    notes: it.notes || "", addonIds: addonIdsOf(it), addons: it.addons || [],
   })));
-  const changeQty = (mid, d) => setEditLines((p) => p.map((l) => (l.menuItemId === mid ? { ...l, qty: Math.max(1, Math.min(99, l.qty + d)) } : l)));
-  const removeLine = (mid) => setEditLines((p) => p.filter((l) => l.menuItemId !== mid));
+  const changeQty = (key, d) => setEditLines((p) => p.map((l) => (l.key === key ? { ...l, qty: Math.max(1, Math.min(99, l.qty + d)) } : l)));
+  const removeLine = (key) => setEditLines((p) => p.filter((l) => l.key !== key));
   const saveEdit = async () => {
     if (!editLines.length) return toast.error(t("An order needs at least one item — cancel it instead"));
     setBusy(true);
     try {
-      await modifyOrderItems(id, editLines.map(({ menuItemId, qty, notes }) => ({ menuItemId, qty, notes })), order.revision ?? 0);
+      await modifyOrderItems(id, editLines.map(({ menuItemId, qty, notes, addonIds }) => ({ menuItemId, qty, notes, ...(addonIds?.length && { addonIds }) })), order.revision ?? 0);
       toast.success(t("Order updated"));
       setEditLines(null);
       load();
@@ -302,12 +323,15 @@ export default function OrderDetailPage() {
       <div style={{ margin: "14px 16px" }}>
         <GlassCard style={{ padding: "14px 16px" }}>
           {(editLines || order.items || []).map((it, i) => (
-            <div key={editLines ? it.menuItemId : i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "5px 0", fontSize: 13.5, color: "#fff" }}>
-              <span style={{ flex: 1, minWidth: 0 }}>{localName(it)}{editLines ? "" : ` × ${it.qty}`}{it.notes ? <span style={{ color: TEXT_FAINT }}> · "{it.notes}"</span> : ""}</span>
+            <div key={editLines ? it.key : i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "5px 0", fontSize: 13.5, color: "#fff" }}>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                {localName(it)}{editLines ? "" : ` × ${it.qty}`}{it.notes ? <span style={{ color: TEXT_FAINT }}> · "{it.notes}"</span> : ""}
+                {(it.addons || []).map((a) => <span key={a.name} style={{ display: "block", fontSize: 12, color: "#93C5FD" }}>+ {a.name}</span>)}
+              </span>
               {editLines ? (
                 <>
-                  <QtyStepper qty={it.qty} onDec={() => changeQty(it.menuItemId, -1)} onInc={() => changeQty(it.menuItemId, 1)} />
-                  <button type="button" onClick={() => removeLine(it.menuItemId)} aria-label={t("Remove {name}", { name: it.name })}
+                  <QtyStepper qty={it.qty} onDec={() => changeQty(it.key, -1)} onInc={() => changeQty(it.key, 1)} />
+                  <button type="button" onClick={() => removeLine(it.key)} aria-label={t("Remove {name}", { name: it.name })}
                     style={{ background: "none", border: 0, color: RED, fontSize: 16, cursor: "pointer", padding: "0 4px" }}>✕</button>
                 </>
               ) : (
@@ -424,8 +448,11 @@ export default function OrderDetailPage() {
           <GlassCard style={{ padding: "16px" }}>
             <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 10, color: "#fff" }}>{t("Bill")}</div>
             {(bill.mergedItems || []).map((it, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "3px 0", color: "#fff" }}>
-                <span>{localName(it)} × {it.qty}</span><span>₹{it.price * it.qty}</span>
+              <div key={i} style={{ fontSize: 12.5, padding: "3px 0", color: "#fff" }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>{localName(it)} × {it.qty}</span><span>₹{it.price * it.qty}</span>
+                </div>
+                {(it.addons || []).map((a) => <div key={a.name} style={{ fontSize: 11.5, color: "#93C5FD" }}>+ {a.name}</div>)}
               </div>
             ))}
             <div style={{ borderTop: `1px dashed ${GLASS_BORDER}`, marginTop: 8, paddingTop: 8 }}>
@@ -457,6 +484,11 @@ export default function OrderDetailPage() {
           {bill.upiId && <div style={{ color: "rgba(255,255,255,0.75)", fontSize: 13 }}>UPI: {bill.upiId}</div>}
           <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 12 }}>{t("Tap anywhere to close · Mark Paid once received")}</div>
         </div>
+      )}
+
+      {picker && (
+        <AddonPicker item={picker} onCancel={() => setPicker(null)}
+          onConfirm={(ids) => { addAddLine(picker, ids); setPicker(null); }} />
       )}
 
       {showAdd && (
@@ -514,6 +546,7 @@ export default function OrderDetailPage() {
                             <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff" }}>{localName(it)}</div>
                             <NotShareableNote item={it} />
                             <div style={{ fontSize: 12, color: TEXT_FAINT, marginTop: 2 }}>₹{it.price}{outOfStock ? ` · ${t("Out of stock")}` : ""}</div>
+                            <AddonHint item={it} />
                           </div>
                           {!outOfStock && (
                             qty > 0

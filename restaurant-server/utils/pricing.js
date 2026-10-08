@@ -7,6 +7,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { isItemScheduledNow } from "../services/menuScheduleService.js";
+import { resolveLineAddons } from "./menuAddons.js";
 
 const qtyOf = (raw) => {
   const n = Number(raw);
@@ -59,13 +60,16 @@ export const priceItems = async (items, MenuItem, scheduleCtx = null) => {
         throw err;
       }
 
+      // KH-12: chosen add-ons (ids only from the client) — priced from the DB.
+      const { addons, extra } = resolveLineAddons(m, i.addonIds);
       return {
         menuItem: m._id,
         name: m.name,
         nameBn: m.nameBn || "",
-        price: m.price,             // ← authoritative price, from DB, not client
+        price: m.price + extra,     // ← authoritative price, from DB, not client (incl. add-ons)
         qty,
         notes: typeof i.notes === "string" ? i.notes.slice(0, 300) : "",
+        ...(addons.length && { addons, basePrice: m.price }), // absent → line exactly as before
       };
     })
   );

@@ -11,6 +11,7 @@ import { parseMenuText, parseMenuCsv } from "../utils/menuImportParser.js";
 import { extractDocumentText } from "../utils/purchaseImportExtract.js";
 import { sniffFileType } from "../middleware/importUploadMiddleware.js";
 import { CATEGORY_SORT } from "../services/categoryService.js";
+import { normalizeAddons } from "../utils/menuAddons.js";
 import { listBestSellers } from "../services/bestSellerService.js";
 import { getMenuContext, ensureSmartCategories } from "../services/smartCategoryService.js";
 import {
@@ -156,6 +157,9 @@ export const addMenuItem = async (req, res) => {
     let extra;
     try { extra = await readExtraCategories(req, category); }
     catch (e) { return res.status(e.statusCode || 400).json({ message: e.message }); }
+    let addons; // KH-12
+    try { addons = normalizeAddons(req.body.addons) || []; }
+    catch (e) { return res.status(e.statusCode || 400).json({ message: e.message }); }
     if ((await req.models.Category.findOne({ name: category }).select("kind").lean())?.kind === "SMART")
       return res.status(400).json({ message: `"${category}" fills itself — pick an ordinary category and switch on its flag instead` });
 
@@ -180,6 +184,7 @@ export const addMenuItem = async (req, res) => {
       image: imageUrl,
       tags,
       categories: extra,
+      addons,
       ...readFlags(req.body),
     });
 
@@ -246,6 +251,11 @@ export const updateMenuItem = async (req, res) => {
     if (req.body.tags !== undefined) {
       try { item.tags = normalizeTags(req.body.tags); }
       catch (e) { return res.status(400).json({ message: e.message }); }
+    }
+    // KH-12: add-ons (sent only when the form changed them; ids are kept).
+    if (req.body.addons !== undefined) {
+      try { item.addons = normalizeAddons(req.body.addons, item.addons); }
+      catch (e) { return res.status(e.statusCode || 400).json({ message: e.message }); }
     }
 
     await item.save();

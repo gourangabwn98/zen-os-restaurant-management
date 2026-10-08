@@ -17,7 +17,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import {
   DEFAULT_WIDTH, separator, centered, keyValue, billItemHeader, billItemRows, amountWidth,
-  money, dateTime, orderTypeLabel, paymentStatusLabel, restaurantHeader, toPrintable,
+  money, dateTime, orderTypeLabel, paymentStatusLabel, restaurantHeader, toPrintable, wrapText,
 } from "./layout.js";
 
 export const renderBill = (job, { logo = null, header = null, width = DEFAULT_WIDTH, footer = "", payQr = null } = {}) => {
@@ -66,7 +66,16 @@ export const renderBill = (job, { logo = null, header = null, width = DEFAULT_WI
   lines.push(separator(W));
   for (const g of groups) {
     if (g.title) lines.push({ text: g.title, bold: true });
-    for (const r of g.rows) lines.push(...billItemRows(r.name, r.qty, r.amt, W, amtW));
+    for (const r of g.rows) {
+      lines.push(...billItemRows(r.name, r.qty, r.amt, W, amtW));
+      // KH-12: add-ons under the item; the line amount above already includes them.
+      for (const a of r.addons || []) {
+        const name = typeof a === "string" ? a : a?.name;
+        if (!toPrintable(name)) continue;
+        const each = typeof a === "object" && Number(a.price) > 0 ? ` (${money(a.price)})` : "";
+        for (const n of wrapText(`+ ${name}${each}`, W - 2)) lines.push({ text: `  ${n}` });
+      }
+    }
   }
   lines.push(separator(W));
 

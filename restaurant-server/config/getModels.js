@@ -246,6 +246,15 @@ const menuItemSchema = new mongoose.Schema({
   // "Sold out today": isAvailable is false until this instant, then it is
   // switched back on (services/menuItemService.js restoreSoldOutItems).
   soldOutUntil:  { type: Date, default: null },
+  // KH-12 — optional extras with a price ("1 pc chicken" ₹40). Picked per
+  // order line by id; priced only server-side (utils/menuAddons.js).
+  addons: {
+    type: [new mongoose.Schema({
+      name:  { type: String, required: true, trim: true, maxlength: 60 },
+      price: { type: Number, required: true, min: 0 },
+    })],
+    default: [],
+  },
 }, { timestamps: true });
 menuItemSchema.index({ soldOutUntil: 1 }, { partialFilterExpression: { soldOutUntil: { $type: "date" } } });
 menuItemSchema.index({ categories: 1 });
@@ -257,6 +266,18 @@ const orderItemSchema = new mongoose.Schema({
   price:    { type: Number, required: true },
   qty:      { type: Number, required: true, min: 1 },
   notes:    { type: String, default: "" },
+  // KH-12 — chosen add-ons, snapshotted. `price` above already INCLUDES them
+  // (basePrice + Σ addons.price), so price × qty stays the line amount
+  // everywhere. Old lines / lines without add-ons: [] and null.
+  addons:    {
+    type: [new mongoose.Schema({
+      addonId: { type: mongoose.Schema.Types.ObjectId, required: true },
+      name:    { type: String, required: true },
+      price:   { type: Number, required: true },
+    }, { _id: false })],
+    default: undefined,
+  },
+  basePrice: { type: Number, default: undefined },
   // Recipe making cost of ONE of this item, snapshotted when the order goes
   // to the kitchen (inventoryService.deductStockForOrder) — Insights' COGS
   // uses this, so later stock-price or recipe changes never rewrite history.
@@ -509,7 +530,7 @@ const kotJobSchema = new mongoose.Schema({
   orderId:    { type: String },
   tableNo:    { type: Number, default: null },
   orderType:  { type: String, enum: ORDER_TYPES },
-  items:      [{ name: String, nameBn: String, qty: Number, notes: String }],
+  items:      [{ name: String, nameBn: String, qty: Number, notes: String, addons: { type: [String], default: undefined } }], // addons: KH-12 names
   // The order's own note ("less spicy", "birthday table") — printed on the
   // ticket under the items. Used to be dropped: only item notes reached paper.
   notes:      { type: String, default: "" },

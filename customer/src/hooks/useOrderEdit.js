@@ -36,7 +36,15 @@ export function useOrderEdit() {
     const lines = (order.items || []).map((it) => {
       const id = String(it.menuItem?._id ?? it.menuItem);
       const live = byId.get(id);
-      return { item: live || { _id: id, name: it.name, nameBn: it.nameBn || "", price: it.price }, qty: it.qty, notes: it.notes || "" };
+      // KH-12: a line a waiter gave an add-on keeps it through the customer's
+      // edit (customers can't pick add-ons themselves; the server re-prices).
+      const addonIds = (it.addons || []).map((a) => String(a.addonId));
+      return {
+        // With add-ons the line's own price (item + add-ons) keeps the preview right.
+        item: live && !addonIds.length ? live : { ...(live || {}), _id: id, name: it.name, nameBn: it.nameBn || "", price: it.price },
+        qty: it.qty, notes: it.notes || "",
+        ...(addonIds.length && { addonIds }),
+      };
     });
     draft.replaceAll(lines);
     const next = { orderId: String(order._id), orderNo: order.orderId, revision: order.revision ?? 0, tableNo: order.tableNo ?? null };

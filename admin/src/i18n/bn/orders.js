@@ -396,4 +396,9 @@ export default {
   "Added as {id} — new KOT, same bill": "{id} হিসেবে যোগ হলো — নতুন KOT, একই বিল",
   "Add items to {where}": "{where}-এ আইটেম যোগ করুন",
   "Add items to Table {n}": "টেবিল {n}-এ আইটেম যোগ করুন",
+  // KH-12 — add-ons
+  "Does the customer want an extra?": "কাস্টমার কি এক্সট্রা কিছু নেবেন?",
+  "No extra": "এক্সট্রা লাগবে না",
+  "Add with extra": "এক্সট্রা সহ যোগ করুন",
+  "Extras": "এক্সট্রা",
 };

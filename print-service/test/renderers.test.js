@@ -165,6 +165,20 @@ const run = async () => {
     assert.match(text(renderBill(billJob())), /Type {7}: +Dine In/);
   });
 
+  await test("KH-12: add-ons print under their item on the KOT and the bill; plain items unchanged", () => {
+    const k = text(renderKot(kotJob({ items: [{ name: "Biryani", qty: 2, addons: ["1 pc Chicken", "Egg"] }, { name: "Tea", qty: 1 }] })));
+    assert.match(k, /Biryani +x2\n  \+ 1 pc Chicken\n  \+ Egg\nTea +x1/);
+    const b = text(renderBill(billJob({ items: [
+      { name: "Biryani", qty: 2, price: 140, addons: [{ name: "1 pc Chicken", price: 40 }] }, { name: "Tea", qty: 1, price: 20 },
+    ], subtotal: 300, tax: 0, serviceCharge: 0, total: 300 })));
+    assert.match(b, /Biryani +2 +Rs280\n  \+ 1 pc Chicken \(Rs40\)\nTea +1 +Rs20/);
+    assert.doesNotMatch(text(renderKot(kotJob())), /^  \+ /m, "no add-on lines on an order without add-ons");
+    for (const W of [32, 42, 48]) {
+      assertFits(renderKot(kotJob({ items: [{ name: LONG, qty: 1, addons: ["Extra spicy gravy with double cheese topping"] }] }), { width: W }), W);
+      assertFits(renderBill(billJob({ items: [{ name: LONG, qty: 1, price: 999, addons: [{ name: "Extra spicy gravy with double cheese topping", price: 120 }] }] }), { width: W }), W);
+    }
+  });
+
   await test("kot: the order's own note is printed after the items, in bold", () => {
     const lines = renderKot(kotJob({ notes: "Birthday table — bring candles" }));
     const t = text(lines);

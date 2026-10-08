@@ -126,7 +126,7 @@ export const previewCombinedBill = async ({ models, body }) => {
     orders: orders.map((o) => ({
       _id: o._id, orderId: o.orderId, status: o.status, paymentStatus: o.paymentStatus, paymentMethod: o.paymentMethod,
       customer: customerOf(o), createdAt: o.createdAt,
-      items: (o.items || []).map((i) => ({ name: i.name, nameBn: i.nameBn || "", qty: i.qty, price: i.price })),
+      items: (o.items || []).map((i) => ({ name: i.name, nameBn: i.nameBn || "", qty: i.qty, price: i.price, addons: i.addons || [] })),
       subtotal: o.subtotal, discount: o.discount || 0, couponCode: o.coupon?.code || "", tax: o.tax, serviceCharge: o.serviceCharge, total: o.total,
     })),
     totals: combineTotals(orders),
@@ -148,9 +148,9 @@ export const combinedPrintPayload = ({ tableNo, orders, restaurant }) => {
     diningArea: new Set(orders.map((o) => o.diningArea || "")).size === 1 ? (orders[0]?.diningArea || "") : "",
     orders: orders.map((o) => ({
       orderId: o.orderId, total: o.total, paymentStatus: o.paymentStatus,
-      items: (o.items || []).map((i) => ({ name: i.name, qty: i.qty, price: i.price })),
+      items: (o.items || []).map((i) => ({ name: i.name, qty: i.qty, price: i.price, addons: i.addons || [] })),
     })),
-    items: orders.flatMap((o) => o.items || []).map((i) => ({ name: i.name, qty: i.qty, price: i.price })),
+    items: orders.flatMap((o) => o.items || []).map((i) => ({ name: i.name, qty: i.qty, price: i.price, addons: i.addons || [] })),
     subtotal: t.subtotal, discount: t.discount, tax: t.tax, serviceCharge: t.serviceCharge, total: t.total,
     couponCode: "",
     paymentStatus: t.allPaid ? PAID : "PENDING_VERIFICATION",

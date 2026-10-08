@@ -51,7 +51,10 @@ export const createKotJobForOrder = async ({ KOTJob, order, actor, session, cust
           orderId:   order.orderId,
           tableNo:   order.tableNo,
           orderType: order.orderType,
-          items:     order.items.map((i) => ({ name: i.name, nameBn: i.nameBn || "", qty: i.qty, notes: i.notes || "" })),
+          items:     order.items.map((i) => ({
+            name: i.name, nameBn: i.nameBn || "", qty: i.qty, notes: i.notes || "",
+            ...(i.addons?.length && { addons: i.addons.map((a) => a.name) }), // KH-12 — printed under the item
+          })),
           notes:     order.notes || "",
           customerName: String(customerName || "").slice(0, KOT_NAME_MAX), // KH-08 — paper KOT only
           diningArea: order.diningArea || "", // KH-10

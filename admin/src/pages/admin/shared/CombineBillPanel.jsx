@@ -224,7 +224,7 @@ export default function CombineBillPanel({ tableNo, orders, onExit, onRefresh })
                     <span className={`zc-tag ${o.paymentStatus === "PAID" ? "ready" : "wait"}`}>{o.paymentStatus === "PAID" ? t("Paid") : t("Unpaid")}</span>
                   </div>
                   {o.items.map((it, i) => (
-                    <div key={i} className="cb-bill-line"><span>{localName(it)} × {fmtNum(it.qty)}</span><span>{money(it.price * it.qty)}</span></div>
+                    <div key={i} className="cb-bill-line"><span>{localName(it)} × {fmtNum(it.qty)}{(it.addons || []).map((a) => <small key={a.name} style={{ display: "block", color: "var(--live-ink)" }}>+ {a.name}</small>)}</span><span>{money(it.price * it.qty)}</span></div>
                   ))}
                 </div>
               ))}

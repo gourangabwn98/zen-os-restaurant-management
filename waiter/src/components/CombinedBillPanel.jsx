@@ -116,8 +116,11 @@ export default function CombinedBillPanel({ scope, orders, title, onChanged }) {
             <div key={o._id} style={{ marginBottom: 6 }}>
               <div style={{ fontSize: 11, color: TEXT_FAINT, fontWeight: 700 }}>{o.orderId}</div>
               {o.items.map((it, i) => (
-                <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: "#fff", padding: "1px 0" }}>
-                  <span>{localName(it)} × {it.qty}</span><span>₹{it.price * it.qty}</span>
+                <div key={i} style={{ fontSize: 12.5, color: "#fff", padding: "1px 0" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>{localName(it)} × {it.qty}</span><span>₹{it.price * it.qty}</span>
+                  </div>
+                  {(it.addons || []).map((a) => <div key={a.name} style={{ fontSize: 11.5, color: "#93C5FD" }}>+ {a.name}</div>)}
                 </div>
               ))}
             </div>

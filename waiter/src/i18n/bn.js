@@ -318,4 +318,9 @@ export default {
   "{n} bills settled": "{n}টি বিল মেটানো হয়েছে",
   "{n} order marked paid": "{n}টি অর্ডার পেইড",
   "{n} orders marked paid": "{n}টি অর্ডার পেইড",
+  // KH-12 — add-ons
+  "Does the customer want an extra?": "কাস্টমার কি এক্সট্রা কিছু নেবেন?",
+  "No extra": "এক্সট্রা লাগবে না",
+  "Add with extra": "এক্সট্রা সহ যোগ করুন",
+  "Extras": "এক্সট্রা",
 };

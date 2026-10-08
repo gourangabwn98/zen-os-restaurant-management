@@ -383,4 +383,13 @@ export default {
   "{name} not shareable": "{name} ভাগ করে খাওয়া যাবে না",
   "Its items show a red “{name} not shareable” note on the menu and order screens.": "এর আইটেমগুলোর নিচে মেনু ও অর্ডার স্ক্রিনে লাল “{name} ভাগ করে খাওয়া যাবে না” লেখা দেখাবে।",
 
+  // KH-12 — add-ons
+  "Add-ons": "অ্যাড-অন",
+  "Add an add-on": "অ্যাড-অন যোগ করুন",
+  "Add-on name": "অ্যাড-অনের নাম",
+  "Add-on price": "অ্যাড-অনের দাম",
+  "Remove add-on": "অ্যাড-অন বাদ দিন",
+  "e.g. 1 pc Chicken": "যেমন: ১ পিস চিকেন",
+  "Every add-on needs a name and a price": "প্রতিটি অ্যাড-অনের নাম ও দাম দিন",
+  "Extras the waiter can add, e.g. “1 pc Chicken” ₹40 — the price is added per item.": "ওয়েটার যে এক্সট্রা যোগ করতে পারবেন, যেমন “১ পিস চিকেন” ₹৪০ — দাম প্রতি আইটেমে যোগ হয়।",
 };

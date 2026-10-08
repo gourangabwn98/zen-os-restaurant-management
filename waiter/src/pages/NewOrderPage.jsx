@@ -15,6 +15,8 @@ import { useAppState } from "../context/AppState.jsx";
 import { ACCENT, ACCENT_SOFT, ACCENT_GRADIENT, TEXT_MUTED, TEXT_FAINT, GLASS_BG, GLASS_BORDER, NAV_HEIGHT } from "../theme.js";
 import { t as tr, tn, localName } from "../i18n/index.jsx";
 import NotShareableNote from "../components/NotShareableNote.jsx";
+import AddonPicker, { AddonHint } from "../components/AddonPicker.jsx";
+import { hasAddons, lineKey, unitPrice, addonNames } from "../utils/addons.js";
 import { DINING_AREA_LABEL, DINING_AREA_ICON } from "../utils/diningArea.js";
 
 export default function NewOrderPage() {
@@ -44,7 +46,8 @@ export default function NewOrderPage() {
   const [search, setSearch]       = useState("");
   const [category, setCategory]   = useState("");
 
-  const [cart, setCart]           = useState([]); // [{item, qty, notes}]
+  const [cart, setCart]           = useState([]); // [{key, item, qty, notes, addonIds}] — KH-12: one line per item + add-ons
+  const [picker, setPicker]       = useState(null); // KH-12: item whose add-ons are being asked about
   const [customerName, setCustomerName] = useState("");
   const [placing, setPlacing]     = useState(false);
   const [reviewing, setReviewing] = useState(false);
@@ -81,16 +84,29 @@ export default function NewOrderPage() {
       && (!q || String(it.name || "").toLowerCase().includes(q)));
   }, [fullMenu, category, search]);
 
-  const getQty = (id) => cart.find((c) => c.item._id === id)?.qty || 0;
+  // Total of this item across its lines (with / without add-ons).
+  const getQty = (id) => cart.filter((c) => c.item._id === id).reduce((s, c) => s + c.qty, 0);
+
+  // KH-12: add one of (item + these add-ons) — same combination → same line.
+  const addLine = (item, addonIds = [], qty = 1) => {
+    const key = lineKey(item._id, addonIds);
+    setCart((prev) => (prev.some((c) => c.key === key)
+      ? prev.map((c) => (c.key === key ? { ...c, qty: Math.min(99, c.qty + qty) } : c))
+      : [...prev, { key, item, qty, notes: "", addonIds: [...addonIds] }]));
+  };
+  const changeLine = (key, delta) => setCart((prev) => prev
+    .map((c) => (c.key === key ? { ...c, qty: Math.min(99, c.qty + delta) } : c))
+    .filter((c) => c.qty > 0));
 
   const adjustQty = (item, delta) => {
-    setCart((prev) => {
-      const ex = prev.find((c) => c.item._id === item._id);
-      if (!ex) return delta > 0 ? [...prev, { item, qty: 1, notes: "" }] : prev;
-      const nextQty = ex.qty + delta;
-      if (nextQty <= 0) return prev.filter((c) => c.item._id !== item._id);
-      return prev.map((c) => (c.item._id === item._id ? { ...c, qty: nextQty } : c));
-    });
+    if (delta > 0) {
+      if (hasAddons(item)) setPicker(item); // ask: does the customer want an extra?
+      else addLine(item, []);
+      return;
+    }
+    // "−" on the menu card: take one off this item's most recently added line.
+    const last = [...cart].reverse().find((c) => c.item._id === item._id);
+    if (last) changeLine(last.key, -1);
   };
 
   // Voice order: add each confirmed line, merging with what's already in the cart.
@@ -98,10 +114,11 @@ export default function NewOrderPage() {
     setCart((prev) => {
       let next = prev;
       for (const { item, qty } of lines) {
-        const ex = next.find((c) => c.item._id === item._id);
+        const key = lineKey(item._id, []); // voice lines: no add-ons
+        const ex = next.find((c) => c.key === key);
         next = ex
-          ? next.map((c) => (c.item._id === item._id ? { ...c, qty: Math.min(99, c.qty + qty) } : c))
-          : [...next, { item, qty, notes: "" }];
+          ? next.map((c) => (c.key === key ? { ...c, qty: Math.min(99, c.qty + qty) } : c))
+          : [...next, { key, item, qty, notes: "", addonIds: [] }];
       }
       return next;
     });
@@ -110,10 +127,10 @@ export default function NewOrderPage() {
   };
   const voiceMenu = useMemo(() => (fullMenu || []).filter((it) => !(it.stockTracked && !it.stockAvailable)), [fullMenu]);
 
-  const setNotes = (id, notes) => setCart((prev) => prev.map((c) => (c.item._id === id ? { ...c, notes } : c)));
+  const setNotes = (key, notes) => setCart((prev) => prev.map((c) => (c.key === key ? { ...c, notes } : c)));
 
   const itemCount = cart.reduce((s, c) => s + c.qty, 0);
-  const subtotal  = cart.reduce((s, c) => s + c.item.price * c.qty, 0);
+  const subtotal  = cart.reduce((s, c) => s + unitPrice(c.item, c.addonIds) * c.qty, 0); // preview; server re-prices
 
   const grouped = useMemo(() => {
     if (!items) return [];
@@ -132,7 +149,7 @@ export default function NewOrderPage() {
     setPlacing(true);
     try {
       const body = {
-        items: cart.map((c) => ({ menuItemId: c.item._id, qty: c.qty, notes: c.notes })),
+        items: cart.map((c) => ({ menuItemId: c.item._id, qty: c.qty, notes: c.notes, ...(c.addonIds?.length && { addonIds: c.addonIds }) })),
         orderType,
         tableNo: orderType === "DINE_IN" ? Number(tableNo) : undefined,
         diningArea: orderType === "DINE_IN" ? diningArea : "", // KH-10
@@ -179,13 +196,17 @@ export default function NewOrderPage() {
 
         <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
           {cart.map((c) => (
-            <GlassCard key={c.item._id} style={{ padding: "12px 14px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff" }}>{localName(c.item)} × {c.qty}</div>
-                <div style={{ fontWeight: 800, fontSize: 13.5, color: ACCENT }}>₹{c.item.price * c.qty}</div>
+            <GlassCard key={c.key} style={{ padding: "12px 14px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff", flex: 1, minWidth: 0 }}>{localName(c.item)}</div>
+                <QtyStepper qty={c.qty} size="sm" onDec={() => changeLine(c.key, -1)} onInc={() => changeLine(c.key, 1)} />
+                <div style={{ fontWeight: 800, fontSize: 13.5, color: ACCENT, minWidth: 56, textAlign: "right" }}>₹{unitPrice(c.item, c.addonIds) * c.qty}</div>
               </div>
+              {addonNames(c.item, c).map((n) => (
+                <div key={n} style={{ fontSize: 12, color: "#93C5FD", marginTop: 2 }}>+ {n}</div>
+              ))}
               <input
-                value={c.notes} onChange={(e) => setNotes(c.item._id, e.target.value)}
+                value={c.notes} onChange={(e) => setNotes(c.key, e.target.value)}
                 placeholder={tr("Add note (e.g. less spicy)…")}
                 style={{
                   marginTop: 8, width: "100%", padding: "9px 11px", fontSize: 12.5, borderRadius: 10,
@@ -231,6 +252,10 @@ export default function NewOrderPage() {
 
   return (
     <div style={{ paddingBottom: NAV_HEIGHT + (itemCount > 0 ? 90 : 16) }}>
+      {picker && (
+        <AddonPicker item={picker} onCancel={() => setPicker(null)}
+          onConfirm={(ids) => { addLine(picker, ids); setPicker(null); }} />
+      )}
       <div style={{ padding: "18px 16px 4px", display: "flex", alignItems: "center", gap: 10 }}>
         <button onClick={() => nav(-1)} aria-label={tr("Back")} style={backBtn}>←</button>
         <div style={{ fontSize: 21, fontWeight: 800, color: "#fff", letterSpacing: -0.4 }}>{tr("New order")}</div>
@@ -324,6 +349,7 @@ export default function NewOrderPage() {
                       <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff" }}>{localName(it)}</div>
                       <NotShareableNote item={it} />
                       <div style={{ fontSize: 12, color: TEXT_FAINT, marginTop: 2 }}>₹{it.price}{outOfStock ? ` · ${tr("Out of stock")}` : ""}</div>
+                      <AddonHint item={it} />
                     </div>
                     {!outOfStock && (
                       qty > 0

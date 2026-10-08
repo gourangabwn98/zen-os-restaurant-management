@@ -1,5 +1,6 @@
 // controllers/adminController.js
 import mongoose from "mongoose";
+import { lineAddonKey } from "../utils/menuAddons.js";
 import { priceItems, computeTotals } from "../utils/pricing.js";
 import { getScheduleContext } from "../services/menuScheduleService.js";
 import { transitionOrderStatusTx, buildActor, getRoleFromUser, EDITABLE_STATUSES } from "../services/orderService.js";
@@ -405,7 +406,9 @@ export const addItemsToOrder = async (req, res) => {
     const newDbItems = await priceItems(items, MenuItem, scheduleCtx);
 
     newDbItems.forEach(newItem => {
-      const existing = order.items.find(ex => String(ex.menuItem) === String(newItem.menuItem));
+      // KH-12: same item AND same add-ons → same line; otherwise a new line.
+      const existing = order.items.find(ex => String(ex.menuItem) === String(newItem.menuItem)
+        && lineAddonKey(ex.addons) === lineAddonKey(newItem.addons));
       if (existing) existing.qty += newItem.qty;
       else order.items.push(newItem);
     });
@@ -489,9 +492,10 @@ export const getCombinedBill = async (req, res) => {
     const mergedItems = [];
     matchOrders.forEach(o => {
       (o.items||[]).forEach(item => {
-        const ex = mergedItems.find(x => x.name === item.name && x.price === item.price);
+        // KH-12: lines with different add-ons stay separate.
+        const ex = mergedItems.find(x => x.name === item.name && x.price === item.price && lineAddonKey(x.addons) === lineAddonKey(item.addons));
         if (ex) ex.qty += item.qty;
-        else mergedItems.push({ name:item.name, nameBn:item.nameBn || "", price:item.price, qty:item.qty });
+        else mergedItems.push({ name:item.name, nameBn:item.nameBn || "", price:item.price, qty:item.qty, addons: item.addons || [] });
       });
     });
 

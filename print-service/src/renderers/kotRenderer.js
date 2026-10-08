@@ -42,6 +42,11 @@ export const renderKot = (job, { header = null, width = DEFAULT_WIDTH } = {}) =>
   const items = d.items || [];
   for (const it of items) {
     lines.push(...kotItemRows(it.name, it.qty, W));
+    // KH-12: add-ons under the item ("+ 1 pc Chicken"), so the cook sees them.
+    for (const a of it.addons || []) {
+      const name = typeof a === "string" ? a : a?.name;
+      if (toPrintable(name)) for (const n of wrapText(`+ ${name}`, W - 2)) lines.push({ text: `  ${n}`, bold: true });
+    }
     if (toPrintable(it.notes)) {
       for (const n of wrapText(`Note: ${it.notes}`, W - 2)) lines.push({ text: `  ${n}` });
     }

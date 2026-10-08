@@ -49,7 +49,7 @@ import { MenuTimeModal, BulkEditModal, ImportModal } from "./menu/MenuModals.jsx
 const TAGS = ["Veg", "Non Veg"];
 const EMPTY_FORM = {
   name: "", nameBn: "", price: "", originalPrice: "", description: "",
-  category: "", tag: "Veg", isAvailable: true, rating: 4.0, tags: [],
+  category: "", tag: "Veg", isAvailable: true, rating: 4.0, tags: [], addons: [],
   categories: [], isTodaysSpecial: false, isChefsPick: false, isFastAvailable: false,
 };
 // Item counts per category name, across every category an item is listed in.
@@ -452,11 +452,35 @@ function CategoriesModal({ cats, items, onClose, onChanged, onView }) {
 }
 
 // ── add / edit menu item modal ─────────────────────────────────────────────
+// KH-12 — add-on rows (name + ₹ price) for one menu item.
+function AddonsEditor({ value, onChange }) {
+  const update = (i, k, v) => onChange(value.map((a, j) => (j === i ? { ...a, [k]: v } : a)));
+  return (
+    <div style={{ display: "grid", gap: 6 }}>
+      {value.map((a, i) => (
+        <div key={a._id || i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input className="zc-input" style={{ flex: 1 }} maxLength={60} value={a.name}
+            placeholder={t("e.g. 1 pc Chicken")} onChange={(e) => update(i, "name", e.target.value)} aria-label={t("Add-on name")} />
+          <input className="zc-input" style={{ width: 96 }} type="number" min={0} inputMode="decimal" value={a.price}
+            placeholder="₹" onChange={(e) => update(i, "price", e.target.value)} aria-label={t("Add-on price")} />
+          <button type="button" className="zc-btn sm ghost" onClick={() => onChange(value.filter((_, j) => j !== i))}
+            aria-label={t("Remove add-on")}>✕</button>
+        </div>
+      ))}
+      {value.length < 10 && (
+        <button type="button" className="zc-btn sm ghost" style={{ justifySelf: "start" }}
+          onClick={() => onChange([...value, { name: "", price: "" }])}>＋ {t("Add an add-on")}</button>
+      )}
+    </div>
+  );
+}
+
 function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategoryCreated }) {
   const isEdit = !!item?._id;
   const [form, setForm] = useState(
     isEdit
-      ? { ...EMPTY_FORM, ...item, price: item.price ?? "", originalPrice: item.originalPrice || "", tags: item.tags || [], categories: item.categories || [] }
+      ? { ...EMPTY_FORM, ...item, price: item.price ?? "", originalPrice: item.originalPrice || "", tags: item.tags || [], categories: item.categories || [],
+          addons: (item.addons || []).map((a) => ({ _id: a._id, name: a.name, price: String(a.price) })) } // KH-12
       : { ...EMPTY_FORM, category: manualCats(categories)[0]?.name || "" },
   );
   const soldOut = isEdit && isSoldOut(item);
@@ -500,6 +524,10 @@ function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategor
     if (!form.name.trim()) return toast.error(t("Item name is required"));
     if (form.price === "" || isNaN(Number(form.price))) return toast.error(t("Price must be a number"));
     if (!form.category) return toast.error(t("Category is required"));
+    // KH-12: add-ons — every row needs a name and a price (empty rows are dropped).
+    const addonRows = (form.addons || []).filter((a) => a.name.trim() || String(a.price).trim());
+    if (addonRows.some((a) => !a.name.trim() || a.price === "" || isNaN(Number(a.price)) || Number(a.price) < 0))
+      return toast.error(t("Every add-on needs a name and a price"));
     if (sched.enabled) {
       const err = schedError(sched.startTime, sched.endTime);
       if (err) return toast.error(err);
@@ -519,6 +547,12 @@ function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategor
       if (!isEdit || form.isAvailable !== item.isAvailable) fd.append("isAvailable", form.isAvailable);
       fd.append("rating", form.rating || 4);
       fd.append("tags", JSON.stringify(form.tags || []));
+      {
+        // KH-12: only sent when the list changed (ids of kept add-ons go back).
+        const toSend = addonRows.map((a) => ({ ...(a._id && { _id: a._id }), name: a.name.trim(), price: Number(a.price) }));
+        const before = JSON.stringify((isEdit ? item.addons || [] : []).map((a) => ({ _id: a._id, name: a.name, price: Number(a.price) })));
+        if (JSON.stringify(toSend) !== before) fd.append("addons", JSON.stringify(toSend));
+      }
       if (form.originalPrice) fd.append("originalPrice", form.originalPrice);
       if (form.description) fd.append("description", form.description);
       if (imgFile) fd.append("image", imgFile);
@@ -666,6 +700,11 @@ function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategor
                 <label>{t("Diner tags")} <span style={{ color: "var(--text-3)", fontWeight: 400 }}>({t("optional")})</span></label>
                 <TagEditor value={form.tags || []} onChange={(v) => set("tags", v)} suggestions={allTags} />
                 <div className="hint">{t("Fish, Spicy, Bestseller… shown on the menu list and usable as filters. Veg / Non-veg stays above.")}</div>
+              </div>
+              <div className="menu-field full">
+                <label>{t("Add-ons")} <span style={{ color: "var(--text-3)", fontWeight: 400 }}>({t("optional")})</span></label>
+                <AddonsEditor value={form.addons || []} onChange={(v) => set("addons", v)} />
+                <div className="hint">{t("Extras the waiter can add, e.g. “1 pc Chicken” ₹40 — the price is added per item.")}</div>
               </div>
               <div className="menu-field full">
                 <label>{t("Availability")}</label>

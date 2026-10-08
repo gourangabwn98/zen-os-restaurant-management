@@ -31,6 +31,8 @@ import { t, tn, fmtNum, fmtDate, fmtDateTime, fmtTime, localName } from "../../i
 import { customerName } from "./shared/customerName.js";
 import { takenByName, takenByIsAcceptor } from "./shared/takenBy.js";
 import { DINING_AREA_LABEL } from "./shared/diningArea.js";
+import { hasAddons, cartLineKey, unitPrice, addonIdsOf } from "./shared/addons.js";
+import { AddonLines, AddonHint, AddonPicker } from "./shared/AddonUI.jsx";
 
 // ── add this to adminService.js if not already there ─────────────────────────
 // export const updateOrderPayment = (id, data) => api.patch(`/admin/orders/${id}/payment`, data);
@@ -259,8 +261,10 @@ const lineKey = (i) => String(i.menuItem?._id ?? i.menuItem ?? i.menuItemId);
 
 // Change quantities / notes or remove lines while the order is editable.
 const EditOrderItemsModal = ({ order, onClose, onSaved, onAddMore }) => {
+  // KH-12: a line keeps its add-ons; keyed by item + add-ons (two Biryani lines may differ).
   const [lines, setLines] = useState(() => (order.items || []).map((i) => ({
-    menuItemId: lineKey(i), name: i.name, nameBn: i.nameBn || "", price: i.price, qty: i.qty, notes: i.notes || "",
+    key: cartLineKey(lineKey(i), addonIdsOf(i)), menuItemId: lineKey(i), name: i.name, nameBn: i.nameBn || "", price: i.price, qty: i.qty,
+    notes: i.notes || "", addonIds: addonIdsOf(i), addons: i.addons || [],
   })));
   const [saving, setSaving] = useState(false);
 
@@ -270,16 +274,16 @@ const EditOrderItemsModal = ({ order, onClose, onSaved, onAddMore }) => {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, saving]);
 
-  const setQty = (id, d) => setLines((p) => p.map((l) => (l.menuItemId === id ? { ...l, qty: Math.max(1, Math.min(99, l.qty + d)) } : l)));
-  const remove = (id) => setLines((p) => p.filter((l) => l.menuItemId !== id));
-  const setNotes = (id, v) => setLines((p) => p.map((l) => (l.menuItemId === id ? { ...l, notes: v } : l)));
+  const setQty = (key, d) => setLines((p) => p.map((l) => (l.key === key ? { ...l, qty: Math.max(1, Math.min(99, l.qty + d)) } : l)));
+  const remove = (key) => setLines((p) => p.filter((l) => l.key !== key));
+  const setNotes = (key, v) => setLines((p) => p.map((l) => (l.key === key ? { ...l, notes: v } : l)));
   const subtotal = lines.reduce((s, l) => s + l.price * l.qty, 0);
 
   const save = async () => {
     if (!lines.length) return toast.error(t("An order needs at least one item — cancel it instead"));
     setSaving(true);
     try {
-      const { data } = await modifyOrderItems(order._id, lines.map((l) => ({ menuItemId: l.menuItemId, qty: l.qty, notes: l.notes })), order.revision ?? 0);
+      const { data } = await modifyOrderItems(order._id, lines.map((l) => ({ menuItemId: l.menuItemId, qty: l.qty, notes: l.notes, ...(l.addonIds?.length && { addonIds: l.addonIds }) })), order.revision ?? 0);
       toast.success(t("Order {id} updated", { id: order.orderId }));
       onSaved(data);
       onClose();
@@ -300,19 +304,20 @@ const EditOrderItemsModal = ({ order, onClose, onSaved, onAddMore }) => {
         </div>
         <div className="mb" style={{ display: "grid", gap: 8 }}>
           {lines.map((l) => (
-            <div key={l.menuItemId} className="zc-panel" style={{ padding: "10px 12px", display: "grid", gap: 8 }}>
+            <div key={l.key} className="zc-panel" style={{ padding: "10px 12px", display: "grid", gap: 8 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-1)" }}>{localName(l)}</div>
+                  <AddonLines line={l} />
                   <div className="tnum" style={{ fontSize: 11.5, color: "var(--text-3)" }}>{t("₹{price} each", { price: fmtNum(l.price) })}</div>
                 </div>
-                <button type="button" className="zc-btn sm" aria-label={t("Less {name}", { name: localName(l) })} disabled={l.qty <= 1} onClick={() => setQty(l.menuItemId, -1)}>−</button>
+                <button type="button" className="zc-btn sm" aria-label={t("Less {name}", { name: localName(l) })} disabled={l.qty <= 1} onClick={() => setQty(l.key, -1)}>−</button>
                 <span className="tnum" style={{ minWidth: 22, textAlign: "center", fontWeight: 700 }}>{fmtNum(l.qty)}</span>
-                <button type="button" className="zc-btn sm" aria-label={t("More {name}", { name: localName(l) })} onClick={() => setQty(l.menuItemId, 1)}>＋</button>
-                <button type="button" className="zc-btn danger sm" aria-label={t("Remove {name}", { name: localName(l) })} onClick={() => remove(l.menuItemId)}>✕</button>
+                <button type="button" className="zc-btn sm" aria-label={t("More {name}", { name: localName(l) })} onClick={() => setQty(l.key, 1)}>＋</button>
+                <button type="button" className="zc-btn danger sm" aria-label={t("Remove {name}", { name: localName(l) })} onClick={() => remove(l.key)}>✕</button>
               </div>
               <input className="zc-input" placeholder={t("Note for the kitchen (optional)")} value={l.notes} maxLength={120}
-                onChange={(e) => setNotes(l.menuItemId, e.target.value)} style={{ fontSize: 12 }} />
+                onChange={(e) => setNotes(l.key, e.target.value)} style={{ fontSize: 12 }} />
             </div>
           ))}
           {!lines.length && <div style={{ fontSize: 12.5, color: "var(--text-3)", textAlign: "center", padding: 12 }}>{t("No items left — add some, or cancel the order instead.")}</div>}
@@ -451,7 +456,7 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
             {order.items?.map((item,i) => (
               <div key={i} style={{ display:"flex", alignItems:"center", gap:11, padding:"10px 14px", borderBottom:"1px solid var(--edge)", fontSize:12.5 }}>
                 <span className="zc-q">{fmtNum(item.qty)}</span>
-                <span style={{ flex:1, fontWeight:500, color:T1 }}>{localName(item)}</span>
+                <span style={{ flex:1, fontWeight:500, color:T1 }}>{localName(item)}<AddonLines line={item} /></span>
                 <span className="tnum" style={{ fontWeight:600, color:T1 }}>₹{fmtNum(item.price * item.qty)}</span>
               </div>
             ))}
@@ -627,7 +632,8 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
   const [mi,          setMi]          = useState([]);
   const [selCat,      setSelCat]      = useState("All");
   const [search,      setSearch]      = useState("");
-  const [cart,        setCart]        = useState([]);
+  const [cart,        setCart]        = useState([]); // [{key, item, qty, addonIds}] — KH-12: one line per item + add-ons
+  const [picker,      setPicker]      = useState(null); // KH-12: item whose add-ons are being asked about
   const [orderType,   setOrderType]   = useState(initialOrderType);
   const [diningArea,  setDiningArea]  = useState(""); // KH-10
   // Pre-filled when opened by tapping a specific table on the floor map
@@ -681,22 +687,28 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
     return matchCat && matchSearch && matchVeg && matchTemp;
   });
 
-  const getQty    = (id) => cart.find(c=>c.item._id===id)?.qty||0;
-  const addItem   = (item) => setCart(p=>{ const ex=p.find(c=>c.item._id===item._id); return ex?p.map(c=>c.item._id===item._id?{...c,qty:c.qty+1}:c):[...p,{item,qty:1}]; });
+  // KH-12: a line = item + add-ons. Menu-card "+" asks about extras first.
+  const getQty    = (id) => cart.filter(c=>c.item._id===id).reduce((s,c)=>s+c.qty,0);
+  const addLine   = (item, addonIds=[]) => setCart(p=>{ const key=cartLineKey(item._id, addonIds); const ex=p.find(c=>c.key===key); return ex?p.map(c=>c.key===key?{...c,qty:Math.min(99,c.qty+1)}:c):[...p,{key,item,qty:1,addonIds:[...addonIds]}]; });
+  const addItem   = (item) => (hasAddons(item) ? setPicker(item) : addLine(item, []));
+  const incLine   = (key) => setCart(p=>p.map(c=>c.key===key?{...c,qty:Math.min(99,c.qty+1)}:c));
+  const decLine   = (key) => setCart(p=>p.map(c=>c.key===key?{...c,qty:c.qty-1}:c).filter(c=>c.qty>0));
   // Lines confirmed in the 🎤 voice-order panel (shared/VoiceOrder.jsx).
   const addVoiceItems = (list) => {
     setCart(p=>list.reduce((acc,{item,qty})=>{
-      const ex=acc.find(c=>c.item._id===item._id);
-      return ex?acc.map(c=>c.item._id===item._id?{...c,qty:Math.min(99,c.qty+qty)}:c):[...acc,{item,qty}];
+      const key=cartLineKey(item._id, []); // voice lines: no add-ons
+      const ex=acc.find(c=>c.key===key);
+      return ex?acc.map(c=>c.key===key?{...c,qty:Math.min(99,c.qty+qty)}:c):[...acc,{key,item,qty,addonIds:[]}];
     },p));
     const n=list.reduce((s,x)=>s+x.qty,0);
     toast.success(`🎤 ${tn(n, "Added {n} item", "Added {n} items")}`);
   };
-  const removeItem= (id)  => setCart(p=>{ const ex=p.find(c=>c.item._id===id); if(!ex)return p; return ex.qty===1?p.filter(c=>c.item._id!==id):p.map(c=>c.item._id===id?{...c,qty:c.qty-1}:c); });
+  // Menu-card "−": one off this item's most recently added line.
+  const removeItem= (id)  => { const last=[...cart].reverse().find(c=>c.item._id===id); if(last) decLine(last.key); };
   const clearCart = () => setCart([]);
 
   const totalQty  = cart.reduce((s,c)=>s+c.qty,0);
-  const subtotal  = cart.reduce((s,c)=>s+c.item.price*c.qty,0);
+  const subtotal  = cart.reduce((s,c)=>s+unitPrice(c.item,c.addonIds)*c.qty,0);
   const tax       = Math.round(subtotal*(gstRate/100));
   const scAmt     = scpi * totalQty;
   const total     = subtotal + tax + scAmt;
@@ -712,7 +724,7 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
     try{
       setLoading(true);
       const { data } = await placeOrder({
-        items: cart.map(c=>({ menuItemId:c.item._id, qty:c.qty })),
+        items: cart.map(c=>({ menuItemId:c.item._id, qty:c.qty, ...(c.addonIds?.length && { addonIds:c.addonIds }) })),
         orderType, tableNo: orderType==="DINE_IN" ? Number(tableNo) : null,
         diningArea: orderType==="DINE_IN" ? diningArea : "", // KH-10
         isGuest: true,
@@ -762,6 +774,7 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
             {search && <button onClick={()=>setSearch("")}
               className="zc-btn ghost sm" style={{ flexShrink:0 }}>✕</button>}
             <VoiceOrder menu={mi} onAdd={addVoiceItems} onSearch={(q)=>{ setSearch(q); setSelCat("All"); }} />
+            {picker && <AddonPicker item={picker} onCancel={()=>setPicker(null)} onConfirm={(ids)=>{ addLine(picker, ids); setPicker(null); }} />}
           </div>
 
           <button type="button" className="zc-x" onClick={onClose} aria-label={t("Close")}>✕</button>
@@ -884,6 +897,7 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
                         <div style={{ fontWeight:600, fontSize:13, color:"var(--text-1)",
                           lineHeight:1.3, marginBottom:3 }}>{localName(m)}</div>
                         {m.notShareableCategory && <div style={{ fontSize:11, fontWeight:700, color:"var(--stop-ink)", marginBottom:3 }}>{t("{name} not shareable", { name: m.notShareableCategory })}</div>}
+                        <AddonHint item={m} />
                         <div style={{ fontSize:11, color:"var(--text-3)" }}>{(catBn[m.category] && localName({ name: m.category, nameBn: catBn[m.category] })) || m.category}</div>
                         <div style={{ fontWeight:700, fontSize:15, color:"var(--text-1)",
                           marginTop:4 }}>₹{fmtNum(m.price)}</div>
@@ -961,30 +975,31 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
               ) : (
                 <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
                   {cart.map(c=>(
-                    <div key={c.item._id} className="zc-panel" style={{
+                    <div key={c.key} className="zc-panel" style={{
                       display:"flex", alignItems:"center", gap:8, padding:"8px 10px",
                     }}>
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ fontSize:13, fontWeight:600, color:"var(--text-1)",
                           overflow:"hidden", textOverflow:"ellipsis",
                           whiteSpace:"nowrap" }}>{localName(c.item)}</div>
+                        <AddonLines item={c.item} line={c} />
                         <div className="tnum" style={{ fontSize:11, color:"var(--text-3)" }}>
-                          ₹{fmtNum(c.item.price)} × {fmtNum(c.qty)}
+                          ₹{fmtNum(unitPrice(c.item,c.addonIds))} × {fmtNum(c.qty)}
                         </div>
                       </div>
                       <div className="tnum" style={{ fontWeight:700, color:"var(--text-1)", fontSize:13,
                         minWidth:44, textAlign:"right" }}>
-                        ₹{fmtNum(c.item.price*c.qty)}
+                        ₹{fmtNum(unitPrice(c.item,c.addonIds)*c.qty)}
                       </div>
                       <div style={{ display:"flex", alignItems:"center", gap:4 }}>
-                        <button onClick={()=>removeItem(c.item._id)} style={{
+                        <button onClick={()=>decLine(c.key)} style={{
                           width:24, height:24, borderRadius:"50%",
                           border:"1px solid var(--edge)", background:"var(--card-2)",
                           color:"var(--text-2)", cursor:"pointer", fontWeight:700,
                           fontSize:14, display:"flex", alignItems:"center",
                           justifyContent:"center",
                         }}>−</button>
-                        <button onClick={()=>addItem(c.item)} style={{
+                        <button onClick={()=>incLine(c.key)} style={{
                           width:24, height:24, borderRadius:"50%",
                           background:"var(--grad-btn)", color:"#fff", border:"none",
                           cursor:"pointer", fontWeight:700, fontSize:14,
@@ -1132,7 +1147,8 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }
   const [mi,          setMi]          = useState([]);
   const [selCat,      setSelCat]      = useState("All");
   const [search,      setSearch]      = useState("");
-  const [cart,        setCart]        = useState([]);
+  const [cart,        setCart]        = useState([]); // [{key, item, qty, addonIds}] — KH-12: one line per item + add-ons
+  const [picker,      setPicker]      = useState(null); // KH-12: item whose add-ons are being asked about
   const [cartOpen,    setCartOpen]    = useState(false); // phone: cart sheet over the menu
   const [loading,     setLoading]     = useState(false);
   const [menuLoading, setMenuLoading] = useState(true);
@@ -1179,22 +1195,28 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }
     return matchCat && matchSearch && matchVeg && matchTemp;
   });
 
-  const getQty    = (id) => cart.find(c=>c.item._id===id)?.qty||0;
-  const addItem   = (item) => setCart(p=>{ const ex=p.find(c=>c.item._id===item._id); return ex?p.map(c=>c.item._id===item._id?{...c,qty:c.qty+1}:c):[...p,{item,qty:1}]; });
+  // KH-12: a line = item + add-ons. Menu-card "+" asks about extras first.
+  const getQty    = (id) => cart.filter(c=>c.item._id===id).reduce((s,c)=>s+c.qty,0);
+  const addLine   = (item, addonIds=[]) => setCart(p=>{ const key=cartLineKey(item._id, addonIds); const ex=p.find(c=>c.key===key); return ex?p.map(c=>c.key===key?{...c,qty:Math.min(99,c.qty+1)}:c):[...p,{key,item,qty:1,addonIds:[...addonIds]}]; });
+  const addItem   = (item) => (hasAddons(item) ? setPicker(item) : addLine(item, []));
+  const incLine   = (key) => setCart(p=>p.map(c=>c.key===key?{...c,qty:Math.min(99,c.qty+1)}:c));
+  const decLine   = (key) => setCart(p=>p.map(c=>c.key===key?{...c,qty:c.qty-1}:c).filter(c=>c.qty>0));
   // Lines confirmed in the 🎤 voice-order panel (shared/VoiceOrder.jsx).
   const addVoiceItems = (list) => {
     setCart(p=>list.reduce((acc,{item,qty})=>{
-      const ex=acc.find(c=>c.item._id===item._id);
-      return ex?acc.map(c=>c.item._id===item._id?{...c,qty:Math.min(99,c.qty+qty)}:c):[...acc,{item,qty}];
+      const key=cartLineKey(item._id, []); // voice lines: no add-ons
+      const ex=acc.find(c=>c.key===key);
+      return ex?acc.map(c=>c.key===key?{...c,qty:Math.min(99,c.qty+qty)}:c):[...acc,{key,item,qty,addonIds:[]}];
     },p));
     const n=list.reduce((s,x)=>s+x.qty,0);
     toast.success(`🎤 ${tn(n, "Added {n} item", "Added {n} items")}`);
   };
-  const removeItem= (id)  => setCart(p=>{ const ex=p.find(c=>c.item._id===id); if(!ex)return p; return ex.qty===1?p.filter(c=>c.item._id!==id):p.map(c=>c.item._id===id?{...c,qty:c.qty-1}:c); });
+  // Menu-card "−": one off this item's most recently added line.
+  const removeItem= (id)  => { const last=[...cart].reverse().find(c=>c.item._id===id); if(last) decLine(last.key); };
   const clearCart = () => setCart([]);
 
   const totalQty = cart.reduce((s,c)=>s+c.qty,0);
-  const subtotal = cart.reduce((s,c)=>s+c.item.price*c.qty,0);
+  const subtotal = cart.reduce((s,c)=>s+unitPrice(c.item,c.addonIds)*c.qty,0);
   const tax      = Math.round(subtotal*(gstRate/100));
   const scAmt    = scpi*totalQty;
   const total    = subtotal+tax+scAmt;
@@ -1214,10 +1236,14 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }
       if (order.status === "CONFIRMED") {
         // Placed → merge into its lines and save through the edit endpoint
         // (re-priced server-side; the KOT prints when it starts preparing).
-        const merged = new Map((order.items || []).map((i) => [lineKey(i), { menuItemId: lineKey(i), qty: i.qty, notes: i.notes || "" }]));
+        // KH-12: merge only into a line with the same item AND add-ons.
+        const merged = new Map((order.items || []).map((i) => {
+          const ids = addonIdsOf(i);
+          return [cartLineKey(lineKey(i), ids), { menuItemId: lineKey(i), qty: i.qty, notes: i.notes || "", ...(ids.length && { addonIds: ids }) }];
+        }));
         for (const c of cart) {
-          const ex = merged.get(c.item._id);
-          merged.set(c.item._id, ex ? { ...ex, qty: ex.qty + c.qty } : { menuItemId: c.item._id, qty: c.qty, notes: "" });
+          const ex = merged.get(c.key);
+          merged.set(c.key, ex ? { ...ex, qty: ex.qty + c.qty } : { menuItemId: c.item._id, qty: c.qty, notes: "", ...(c.addonIds?.length && { addonIds: c.addonIds }) });
         }
         const { data } = await modifyOrderItems(order._id, [...merged.values()], order.revision ?? 0);
         toast.success(`✓ ${tn(totalQty, "Added {n} item to order", "Added {n} items to order")}`);
@@ -1229,7 +1255,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }
         // KH-07/KH-13: already in the kitchen → a follow-up order on a NEW KOT,
         // billed with this one. Table / type / area / customer come from it.
         const { data: added } = await placeOrder({
-          parentOrder: order._id, items: cart.map(c=>({ menuItemId:c.item._id, qty:c.qty })), idempotencyKey: followUpKey,
+          parentOrder: order._id, items: cart.map(c=>({ menuItemId:c.item._id, qty:c.qty, ...(c.addonIds?.length && { addonIds:c.addonIds }) })), idempotencyKey: followUpKey,
         });
         toast.success(`✓ ${t("Added as {id} — new KOT, same bill", { id: added.orderId })}`);
         onFollowUpPlaced?.(added);
@@ -1243,7 +1269,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }
           method:"POST",
           headers:{ "Content-Type":"application/json", Authorization:`Bearer ${token}` },
           body:JSON.stringify({
-            items: cart.map(c=>({ menuItemId:c.item._id, qty:c.qty })),
+            items: cart.map(c=>({ menuItemId:c.item._id, qty:c.qty, ...(c.addonIds?.length && { addonIds:c.addonIds }) })),
             paymentMethod, paymentStatus,
           }),
         }
@@ -1300,6 +1326,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }
                 cursor:"pointer", fontSize:14 }}>✕</button>}
           </div>
           <VoiceOrder menu={mi} onAdd={addVoiceItems} onSearch={(q)=>{ setSearch(q); setSelCat("All"); }} />
+            {picker && <AddonPicker item={picker} onCancel={()=>setPicker(null)} onConfirm={(ids)=>{ addLine(picker, ids); setPicker(null); }} />}
 
           <div style={{ display:"flex", gap:4, background:CARD2, padding:3,
             borderRadius:8, border:`1px solid ${BDR}` }}>
@@ -1460,6 +1487,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }
                         <div style={{ fontWeight:600, fontSize:13, color:T1,
                           lineHeight:1.3, marginBottom:3 }}>{localName(m)}</div>
                         {m.notShareableCategory && <div style={{ fontSize:11, fontWeight:700, color:"var(--stop-ink)", marginBottom:3 }}>{t("{name} not shareable", { name: m.notShareableCategory })}</div>}
+                        <AddonHint item={m} />
                         <div style={{ fontSize:11, color:T3 }}>{(catBn[m.category] && localName({ name: m.category, nameBn: catBn[m.category] })) || m.category}</div>
                         <div style={{ fontWeight:700, fontSize:15, color:PINK, marginTop:4 }}>₹{fmtNum(m.price)}</div>
                       </div>
@@ -1532,7 +1560,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }
               ) : (
                 <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
                   {cart.map(c=>(
-                    <div key={c.item._id} style={{
+                    <div key={c.key} style={{
                       display:"flex", alignItems:"center", gap:8,
                       padding:"8px 10px", borderRadius:10,
                       background:CARD, border:`1px solid ${BDR}`,
@@ -1541,18 +1569,19 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }
                         <div style={{ fontSize:13, fontWeight:600, color:T1,
                           overflow:"hidden", textOverflow:"ellipsis",
                           whiteSpace:"nowrap" }}>{localName(c.item)}</div>
-                        <div style={{ fontSize:11, color:T3 }}>₹{fmtNum(c.item.price)} × {fmtNum(c.qty)}</div>
+                        <AddonLines item={c.item} line={c} />
+                        <div style={{ fontSize:11, color:T3 }}>₹{fmtNum(unitPrice(c.item,c.addonIds))} × {fmtNum(c.qty)}</div>
                       </div>
                       <div style={{ fontWeight:700, color:PINK, fontSize:13, minWidth:44, textAlign:"right" }}>
-                        ₹{fmtNum(c.item.price*c.qty)}
+                        ₹{fmtNum(unitPrice(c.item,c.addonIds)*c.qty)}
                       </div>
                       <div style={{ display:"flex", alignItems:"center", gap:4 }}>
-                        <button onClick={()=>removeItem(c.item._id)} style={{
+                        <button onClick={()=>decLine(c.key)} style={{
                           width:24, height:24, borderRadius:"50%",
                           border:`1.5px solid ${BDR}`, background:CARD2,
                           color:T2, cursor:"pointer", fontWeight:700, fontSize:14,
                           display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
-                        <button onClick={()=>addItem(c.item)} style={{
+                        <button onClick={()=>incLine(c.key)} style={{
                           width:24, height:24, borderRadius:"50%",
                           background:PINK, color:"#fff", border:"none",
                           cursor:"pointer", fontWeight:700, fontSize:14,
@@ -1861,7 +1890,7 @@ const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPayment
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontSize:13, fontWeight:600, color:T1 }}>{displayName}</div>
           <div style={{ fontSize:11, color:T3, marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-            {order.items?.map(i=>`${localName(i)} ×${fmtNum(i.qty)}`).join(", ")||"—"}
+            {order.items?.map(i=>`${localName(i)}${i.addons?.length ? ` (+${i.addons.map(a=>a.name).join(", +")})` : ""} ×${fmtNum(i.qty)}`).join(", ")||"—"}
           </div>
         </div>
 
@@ -1894,7 +1923,7 @@ const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPayment
                   <div style={{ width:20, height:20, borderRadius:5, background:`var(--violet-weak)`,
                     display:"flex", alignItems:"center", justifyContent:"center",
                     fontSize:10, fontWeight:600, color:PINK }}>{fmtNum(item.qty)}</div>
-                  <span style={{ color:T1 }}>{localName(item)}</span>
+                  <span style={{ color:T1 }}>{localName(item)}<AddonLines line={item} /></span>
                 </div>
                 <span style={{ color:T1, fontWeight:500 }}>₹{fmtNum(item.price*item.qty)}</span>
               </div>
@@ -2063,7 +2092,7 @@ const PendingOrdersModal = ({ orders, busy, onConfirm, onReject, onClose }) => {
                           {o.orderId} · {phone ? `+91 ${phone}` : t("No phone")}
                         </div>
                         <div style={{ fontSize: 11.5, color: "var(--text-2)", marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {o.items?.map((i) => `${localName(i)} ×${fmtNum(i.qty)}`).join(", ") || "—"}
+                          {o.items?.map((i) => `${localName(i)}${i.addons?.length ? ` (+${i.addons.map((a) => a.name).join(", +")})` : ""} ×${fmtNum(i.qty)}`).join(", ") || "—"}
                         </div>
                         <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
                           {o.tableNo
@@ -2976,7 +3005,7 @@ export default function OrdersPage() {
                             : <span style={{ color: "var(--text-3)", fontSize: 12 }}>{formatOrderType(o.orderType)}</span>}
                         </td>
                         <td style={{ maxWidth: 190, color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {o.items?.map((i) => `${localName(i)} ×${fmtNum(i.qty)}`).join(", ") || "—"}
+                          {o.items?.map((i) => `${localName(i)}${i.addons?.length ? ` (+${i.addons.map((a) => a.name).join(", +")})` : ""} ×${fmtNum(i.qty)}`).join(", ") || "—"}
                         </td>
                         <td><span className={`zc-tag ${statusKind(o.status)}`}><i />{formatStatus(o.status)}</span></td>
                         <td>
@@ -3006,7 +3035,7 @@ export default function OrdersPage() {
                         <div className="tnum" style={{ fontWeight: 700, color: "var(--accent-ink)", fontSize: 12.5 }}>{o.orderId}</div>
                         <div style={{ fontSize: 12.5, color: "var(--text-1)", marginTop: 2, fontWeight: 500 }}>{name}</div>
                         <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {o.items?.map((i) => `${localName(i)} ×${fmtNum(i.qty)}`).join(", ") || "—"}
+                          {o.items?.map((i) => `${localName(i)}${i.addons?.length ? ` (+${i.addons.map((a) => a.name).join(", +")})` : ""} ×${fmtNum(i.qty)}`).join(", ") || "—"}
                         </div>
                       </div>
                       <div style={{ textAlign: "right", flex: "none" }}>

@@ -27,7 +27,7 @@ export default function OrderEditReview() {
     if (!cart.itemCount) return toast.error("Your order needs at least one item — cancel the order instead");
     setSaving(true);
     try {
-      await modifyOrder(meta.orderId, cart.cart.map((c) => ({ menuItemId: c.item._id, qty: c.qty, notes: c.notes || "" })), meta.revision);
+      await modifyOrder(meta.orderId, cart.cart.map((c) => ({ menuItemId: c.item._id, qty: c.qty, notes: c.notes || "", ...(c.addonIds?.length && { addonIds: c.addonIds }) })), meta.revision);
       toast.success(`Order #${meta.orderNo} updated`);
       const id = meta.orderId;
       orderEdit.stop();
