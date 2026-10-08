@@ -3,7 +3,7 @@ import { ORDER_STATUS_LABEL } from "./shared/statusLabels.js";
 import toast from "react-hot-toast";
 import {
   getAllOrders, getRestaurantProfile, updateOrderStatus, settleOrders, reopenOrderBill,
-  getAllTables, printOrderBill, confirmOrder, rejectOrder, modifyOrderItems,
+  getAllTables, printOrderOrGroupBill, confirmOrder, rejectOrder, modifyOrderItems,
 } from "../../services/adminService.js";
 import { placeOrder, newIdempotencyKey } from "../../services/orderService.js";
 import { getSocket } from "../../services/socketService.js";
@@ -330,6 +330,12 @@ const EditOrderItemsModal = ({ order, onClose, onSaved, onAddMore }) => {
   );
 };
 
+// KH-07/KH-13: after its KOT, "Add items" places a FOLLOW-UP order (new KOT,
+// same bill) — allowed while the order is running and its bill is open.
+const FOLLOW_UP_STATUSES = ["CONFIRMED", "PREPARING", "READY", "DELIVERED"];
+const canFollowUp = (o) => FOLLOW_UP_STATUSES.includes(o?.status)
+  && !(o.status === "CONFIRMED" && !o.stockDeducted) && !isBillSettled(o);
+
 // ── OrderDetailModal — full history of one order (reference "Order detail") ───
 const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onCombinedBill, onPrint, onAddItems, onEditItems, onConfirm, onReject, onSettle, onReopenBill, actionBusy }) => {
   if (!order) return null;
@@ -340,7 +346,7 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
   // ORD-01: items can change while the order is held — awaiting acceptance or
   // Placed — i.e. before its KOT exists.
   const isPlaced     = order.status === "CONFIRMED" && !order.stockDeducted;
-  const canAddItems  = (isPlaced || isPending) && !order.stockDeducted;
+  const canAddItems  = ((isPlaced || isPending) && !order.stockDeducted) || canFollowUp(order); // KH-07
   const settled      = isBillSettled(order);
   const canCancel    = ["PENDING_CONFIRMATION","CONFIRMED","PREPARING"].includes(order.status);
   const placedAt     = fmtDateTime(order.createdAt);
@@ -1121,7 +1127,8 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
 // ADD ITEMS TO EXISTING ORDER — Modal Component
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
+const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }) => {
+  const [followUpKey] = useState(newIdempotencyKey); // KH-07: one follow-up per open modal
   const [mi,          setMi]          = useState([]);
   const [selCat,      setSelCat]      = useState("All");
   const [search,      setSearch]      = useState("");
@@ -1215,6 +1222,17 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
         const { data } = await modifyOrderItems(order._id, [...merged.values()], order.revision ?? 0);
         toast.success(`✓ ${tn(totalQty, "Added {n} item to order", "Added {n} items to order")}`);
         onItemsAdded(data);
+        onClose();
+        return;
+      }
+      if (canFollowUp(order)) {
+        // KH-07/KH-13: already in the kitchen → a follow-up order on a NEW KOT,
+        // billed with this one. Table / type / area / customer come from it.
+        const { data: added } = await placeOrder({
+          parentOrder: order._id, items: cart.map(c=>({ menuItemId:c.item._id, qty:c.qty })), idempotencyKey: followUpKey,
+        });
+        toast.success(`✓ ${t("Added as {id} — new KOT, same bill", { id: added.orderId })}`);
+        onFollowUpPlaced?.(added);
         onClose();
         return;
       }
@@ -1686,6 +1704,15 @@ const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPayme
           <span style={{ fontSize:10, color:T3 }}>
             {t("{paid} paid · {pending} pending", { paid: paidOrders.length, pending: unpaidOrders.length })}
           </span>
+          {/* KH-13: quick "+" — add items to this running table (new KOT, same bill) */}
+          {(() => {
+            const target = [...orders].sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt))
+              .find((o) => !o.parentOrder && (canFollowUp(o) || (o.status==="CONFIRMED" && !o.stockDeducted)));
+            return target && onAddItems ? (
+              <button type="button" className="zc-btn sm pri" title={t("Add items to {where}", { where: heading })}
+                onClick={() => onAddItems(target)} style={{ padding:"4px 10px", fontWeight:800 }}>＋</button>
+            ) : null;
+          })()}
         </div>
       </div>
 
@@ -1805,7 +1832,7 @@ const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPayment
   const displayName  = customerName(order) || t("Order {n}", { n: idx+1 });
   const displayPhone = order.guestPhone||order.user?.phone ||  null;
   const av           = avc(displayName);
-  const canAddItems  = order.status === "CONFIRMED" && !order.stockDeducted; // only while Placed
+  const canAddItems  = (order.status === "CONFIRMED" && !order.stockDeducted) || canFollowUp(order); // Placed → edit; later → follow-up (KH-07)
   const placedMs     = nowTick != null ? nowTick - new Date(order.createdAt).getTime() : null;
   const placedKindThis = placedMs != null ? durationKind(Math.floor(placedMs / 60000)) : null;
 
@@ -1965,7 +1992,7 @@ const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPayment
             )}
             <button className="op-btn" onClick={async()=>{
               try{
-                await printOrderBill(order._id);
+                await printOrderOrGroupBill(order); // KH-07
                 toast.success(t("Bill sent to printer ✓"));
               }catch{ toast.error(t("Printer not running")); }
             }} style={{ padding:"5px 12px", borderRadius:8, fontSize:12, cursor:"pointer",
@@ -2508,7 +2535,7 @@ export default function OrdersPage() {
 
   const handlePrint = async (o) => {
     try {
-      await printOrderBill(o._id);
+      await printOrderOrGroupBill(o); // KH-07: whole group when it has follow-ups
       toast.success(t("Bill sent to printer ✓"));
     } catch (err) {
       toast.error(err?.response?.data?.message || t("Printer not running"));
@@ -2527,7 +2554,7 @@ export default function OrdersPage() {
 
   const rowActions = (o) => {
     const isPlaced = o.status === "CONFIRMED" && !o.stockDeducted;
-    const canAddItems = isPlaced;
+    const canAddItems = isPlaced || canFollowUp(o); // KH-13
     return (
       <div style={{ display: "flex", gap: 5, justifyContent: "flex-end" }} onClick={(e) => e.stopPropagation()}>
         {o.status === "PENDING_CONFIRMATION" && (
@@ -2777,12 +2804,16 @@ export default function OrdersPage() {
                     const tileStyle = occupied && !isSel && !hasDue
                       ? { background: KIND_FILL[kind], borderColor: KIND_LINE[kind] }
                       : undefined;
-                    return (
+                    // KH-13: "+" on an ongoing table → add items to its running
+                    // order (a follow-up on a new KOT once the first KOT printed).
+                    const addTarget = occupied ? [...tOrders].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+                      .find((o) => !o.parentOrder && (canFollowUp(o) || (o.status === "CONFIRMED" && !o.stockDeducted))) : null;
+                    const tile = (
                       <button
                         type="button"
                         key={tb.tableNo}
                         className={`zc-tbl${cls}`}
-                        style={tileStyle}
+                        style={addTarget ? { ...tileStyle, width: "100%", height: "100%" } : tileStyle}
                         onClick={() => setTableSelected(isSel ? null : tb.tableNo)}
                       >
                         {occupied && (
@@ -2801,6 +2832,17 @@ export default function OrdersPage() {
                             : <span style={{ fontSize: 11, color: "var(--text-3)" }}>{t("Free")}</span>}
                         </div>
                       </button>
+                    );
+                    if (!addTarget) return tile;
+                    return (
+                      <div key={tb.tableNo} style={{ position: "relative" }}>
+                        {tile}
+                        <button type="button" className="zc-btn sm pri"
+                          title={t("Add items to Table {n}", { n: tb.tableNo })} aria-label={t("Add items to Table {n}", { n: tb.tableNo })}
+                          onClick={(e) => { e.stopPropagation(); setShowAddItems(addTarget._id); }}
+                          style={{ position: "absolute", top: -6, right: -6, width: 26, height: 26, padding: 0, borderRadius: "50%",
+                            justifyContent: "center", fontWeight: 800, fontSize: 15, zIndex: 2 }}>＋</button>
+                      </div>
                     );
                   })}
                 </div>
@@ -3040,6 +3082,7 @@ export default function OrdersPage() {
           onItemsAdded={(updatedOrder) =>
             patchOrder(updatedOrder._id, updatedOrder)
           }
+          onFollowUpPlaced={() => fetchOrders()}
         />
       )}
 

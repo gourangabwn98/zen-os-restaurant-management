@@ -392,4 +392,8 @@ export default {
   // KH-10 — seating area
   "AC Room": "এসি রুম",
   "Garden": "বাগান",
+  // KH-07 / KH-13 — add items to a running order
+  "Added as {id} — new KOT, same bill": "{id} হিসেবে যোগ হলো — নতুন KOT, একই বিল",
+  "Add items to {where}": "{where}-এ আইটেম যোগ করুন",
+  "Add items to Table {n}": "টেবিল {n}-এ আইটেম যোগ করুন",
 };

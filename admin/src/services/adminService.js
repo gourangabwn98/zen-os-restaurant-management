@@ -82,6 +82,23 @@ export const addRestaurantPrinter    = (data)       => api.post("admin/restauran
 export const updateRestaurantPrinter = (id, data)   => api.patch(`admin/restaurant/printer/${id}`, data);
 export const deleteRestaurantPrinter = (id)         => api.delete(`admin/restaurant/printer/${id}`);
 export const printOrderBill = (id) => api.post(`/admin/orders/${id}/print-bill`);
+// KH-07 — an order + the follow-ups added after its KOT.
+export const getOrderGroup = (id) => api.get(`/admin/orders/${id}/group`);
+const RUNNING = ["CONFIRMED", "PREPARING", "READY", "DELIVERED"];
+/** KH-07: an order that has live follow-ups prints ONE combined bill for the
+ * whole group (every item, one total); any other order prints exactly as
+ * before. Resolves to the API response. */
+export const printOrderOrGroupBill = async (order) => {
+  try {
+    const { data } = await getOrderGroup(order._id);
+    const live = (data.orders || []).filter((o) => RUNNING.includes(o.status));
+    if (live.length > 1) {
+      const requestKey = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      return await api.post("/admin/combined-bill/print", { groupOf: data.rootId, orderIds: live.map((o) => o._id), requestKey });
+    }
+  } catch { /* fall back to the single bill below */ }
+  return printOrderBill(order._id);
+};
 export const getCategories = () => api.get("/menu/categories");
 
 // ── Order confirmation (Phase 4) ──────────────────────────────────────────
