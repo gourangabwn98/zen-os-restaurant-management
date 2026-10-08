@@ -11,7 +11,38 @@
 // tell the two cases apart via `created`.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const createKotJobForOrder = async ({ KOTJob, order, actor, session }) => {
+import { ORDER_SOURCES } from "../utils/orderStateMachine.js";
+
+const SOURCE_CUSTOMER = ORDER_SOURCES.find((s) => s === "CUSTOMER");
+if (!SOURCE_CUSTOMER) throw new Error("kotService: ORDER_SOURCES has no CUSTOMER");
+const KOT_NAME_MAX = 100; // sanity cap only — the KOT layout wraps long names
+
+/**
+ * KH-08 — the CUSTOMER's name for the paper KOT, or "" (line left out).
+ * Same rule as the admin app's customerName(): the typed guest name, else —
+ * only on a customer-placed order — the account name. On a staff-placed
+ * order the account is the waiter, never the customer.
+ * @param accountName  name of order.user (caller looks it up), or ""
+ */
+export const kotCustomerName = (order, accountName = "") => {
+  const placedByCustomer = !order?.source || order.source === SOURCE_CUSTOMER;
+  const name = String(order?.guestName || (placedByCustomer ? accountName : "") || "").replace(/\s+/g, " ").trim();
+  return name.slice(0, KOT_NAME_MAX);
+};
+
+/**
+ * KH-08 — a KOT job as the Kitchen app may see it: without the customer's
+ * name. The name is for the paper ticket only (printers room / print queue);
+ * the kitchen room is PII-stripped by design (CLAUDE.md → Socket.IO rooms).
+ */
+export const kitchenSafeKot = (kotJob) => {
+  if (!kotJob) return kotJob;
+  const plain = typeof kotJob.toObject === "function" ? kotJob.toObject() : { ...kotJob };
+  delete plain.customerName;
+  return plain;
+};
+
+export const createKotJobForOrder = async ({ KOTJob, order, actor, session, customerName = "" }) => {
   try {
     const created = await KOTJob.create(
       [
@@ -22,6 +53,7 @@ export const createKotJobForOrder = async ({ KOTJob, order, actor, session }) =>
           orderType: order.orderType,
           items:     order.items.map((i) => ({ name: i.name, nameBn: i.nameBn || "", qty: i.qty, notes: i.notes || "" })),
           notes:     order.notes || "",
+          customerName: String(customerName || "").slice(0, KOT_NAME_MAX), // KH-08 — paper KOT only
           priority:  order.priority === "URGENT" ? "URGENT" : "NORMAL",
           status:    "PENDING",
           createdBy: actor,

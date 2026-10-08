@@ -501,6 +501,10 @@ const kotJobSchema = new mongoose.Schema({
   // The order's own note ("less spicy", "birthday table") — printed on the
   // ticket under the items. Used to be dropped: only item notes reached paper.
   notes:      { type: String, default: "" },
+  // KH-08 — customer's name, printed on the paper KOT only. Sent to the
+  // printers room / print queue; stripped before anything reaches the
+  // kitchen room (kotService.kitchenSafeKot). "" = no name → line left out.
+  customerName: { type: String, default: "" },
   // Optional — lets a staff-placed order flag its KOT as urgent, so the
   // Kitchen Display can play a distinct, stronger alert tone for it.
   // Never settable by a customer/guest (see services/orderService.js).

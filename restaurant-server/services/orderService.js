@@ -11,7 +11,7 @@ import { priceOrder, priceItems, computeTotals } from "../utils/pricing.js";
 import { resolveCouponForOrder } from "./couponService.js";
 import { getScheduleContext } from "./menuScheduleService.js";
 import { normalizeOrderType, assertValidTransition, effectiveBillStatus, requiresPaidForTransition } from "../utils/orderStateMachine.js";
-import { createKotJobForOrder } from "./kotService.js";
+import { createKotJobForOrder, kotCustomerName } from "./kotService.js";
 import { findOrOpenTableSession, closeTableSession } from "./tableSessionService.js";
 import { findNextMatch } from "./waitlistService.js";
 import { signGuestOrderToken, verifyGuestOrderToken } from "../utils/guestOrderToken.js";
@@ -328,6 +328,17 @@ export const sendToKitchenTx = async ({ models, db, orderId, actor, role }) => {
   }
   assertValidTransition(current.status, "PREPARING", role);
 
+  // KH-08: customer's name for the paper KOT (account name only on a
+  // customer-placed order — kotService.kotCustomerName). Read before the
+  // transaction and never fatal: a failed lookup just leaves the line out.
+  let customerName = "";
+  try {
+    const account = !current.guestName && current.user && models.User
+      ? await models.User.findById(current.user).select("name").lean()
+      : null;
+    customerName = kotCustomerName(current, account?.name || "");
+  } catch { customerName = kotCustomerName(current, ""); }
+
   const session = await db.startSession();
   let sentOrder, kotResult, inventoryAlerts = [];
   try {
@@ -349,7 +360,7 @@ export const sendToKitchenTx = async ({ models, db, orderId, actor, role }) => {
       sentOrder = updated;
       const stockResult = await deductStockForOrder({ models, order: updated, actor, session });
       inventoryAlerts = stockResult.alerts || [];
-      kotResult = await createKotJobForOrder({ KOTJob, order: updated, actor, session });
+      kotResult = await createKotJobForOrder({ KOTJob, order: updated, actor, session, customerName });
     });
   } finally {
     session.endSession();

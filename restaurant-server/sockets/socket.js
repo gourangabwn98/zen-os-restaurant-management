@@ -51,6 +51,7 @@ import { tenantKeyFromUri, rooms } from "../utils/tenantKey.js";
 import { verifyGuestOrderToken } from "../utils/guestOrderToken.js";
 import { verifyPrinterKey, markPrinterSeen } from "../services/printerDeviceService.js";
 import { recordHeartbeat } from "../services/attendanceService.js";
+import { kitchenSafeKot } from "../services/kotService.js";
 
 let ioInstance = null;
 
@@ -213,7 +214,8 @@ export const initSocket = (httpServer) => {
 
         const jobs = [
           ...kot.map((j) => ({ jobId: String(j._id), jobType: "KOT", status: j.status, attempts: j.attempts,
-            orderId: j.orderId, tableNo: j.tableNo, orderType: j.orderType, items: j.items, notes: j.notes || "", createdAt: j.createdAt })),
+            orderId: j.orderId, tableNo: j.tableNo, orderType: j.orderType, items: j.items, notes: j.notes || "",
+            customerName: j.customerName || "", createdAt: j.createdAt })),
           ...bill.map((j) => ({ jobId: String(j._id), jobType: "BILL", status: j.status, attempts: j.attempts,
             orderId: j.orderId, tableNo: j.tableNo, orderType: j.orderType, payload: j.payload, createdAt: j.createdAt })),
         ].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
@@ -366,12 +368,14 @@ export const emitKotCreated = (tenantKey, kotJob) => {
     jobId: String(kotJob._id), jobType: "KOT",
     orderId: kotJob.orderId, tableNo: kotJob.tableNo, orderType: kotJob.orderType,
     items: kotJob.items, notes: kotJob.notes || "", attempts: kotJob.attempts || 0, priority: kotJob.priority || "NORMAL",
+    customerName: kotJob.customerName || "", // KH-08 — paper KOT only
   };
   emit(rooms.staff(tenantKey), "kot:created", { kotJob });
   // The Kitchen app's realtime feed — a chef never joins the staff room, so
   // without this, kot:created would never reach them and the whole KDS
-  // "new order" alert/sound would silently never fire.
-  emit(rooms.kitchen(tenantKey), "kot:created", { kotJob });
+  // "new order" alert/sound would silently never fire. KH-08: without the
+  // customer's name — that is for the paper KOT only.
+  emit(rooms.kitchen(tenantKey), "kot:created", { kotJob: kitchenSafeKot(kotJob) });
   emit(rooms.printers(tenantKey), "kot:created", payload);
   emit(rooms.staff(tenantKey), "kot-print", kotJob); // legacy shape/name
 };
