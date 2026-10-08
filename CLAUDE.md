@@ -66,8 +66,13 @@ system for any role.** Every app above authenticates against the same
    **Order flow:** waiter/admin orders start `CONFIRMED` ("Placed");
    customer orders start `PENDING_CONFIRMATION` ("Awaiting confirmation")
    until a waiter/admin accepts them (`confirmOrderTx` → `CONFIRMED`). A
-   Placed order is the only editable state (`orderService.modifyOrderItemsTx`
-   — server re-prices, optimistic `revision`, refused once `stockDeducted`).
+   Placed order is editable by anyone allowed (`orderService.modifyOrderItemsTx`
+   — server re-prices, optimistic `revision`). Once `stockDeducted`, only an
+   admin/manager may still edit, and only while `PREPARING`/`READY` (never
+   once served): `modifySentOrderTx` re-prices, gives back the old
+   `stockDeductions` and deducts the new items (`inventoryService.restockEditedOrder`),
+   and creates a `KOTChangeJob` change slip listing only the differences —
+   all in one transaction.
    At `autoPrepareAt` (`RestaurantProfile.editWindowMinutes`, default 3) the
    timer (role `system`) — or "Start preparing" by staff/chef — runs
    `orderService.sendToKitchenTx`: `CONFIRMED → PREPARING` with the stock
@@ -80,7 +85,11 @@ system for any role.** Every app above authenticates against the same
    explicitly blocked from placing orders at all. If you add a new
    transition or role, add it there, not as an ad-hoc check somewhere else.
 5. **KOT/bill print jobs are idempotent by construction**: `KOTJob` has a
-   unique index on `order` (one KOT ever, per order), and every job status
+   unique index on `order` (one KOT ever, per order); an order edited after
+   its KOT gets `KOTChangeJob` slips instead, unique on `{order, revision}`
+   and printed as `jobType: "KOT"` (they must be listed in BOTH print-queue
+   reads — the `get-queue` socket ack and `GET /admin/printer/queue` — or the
+   print-service drops them as "no longer on the server"). Every job status
    change goes through an atomic conditional `findOneAndUpdate`, never a
    plain `save()`. Follow this pattern for any new background job type.
 
@@ -236,8 +245,10 @@ whatever role that account has.
 
 ## Inventory
 
-`services/inventoryService.js`. Stock is deducted **exactly once per
-order**, when it is sent to the kitchen (`orderService.sendToKitchenTx`),
+`services/inventoryService.js`. Stock is deducted **once per order**, when
+it is sent to the kitchen (`orderService.sendToKitchenTx`) — and re-counted
+only when an admin/manager edits it afterwards (`restockEditedOrder`: old
+`stockDeductions` back, new items deducted, same transaction as the change),
 inside the same MongoDB transaction as the KOT job creation — guarded by an atomic `stockDeducted: false → true` flag
 plus per-ingredient atomic decrements (`currentStock: {$gte: qty}`) so
 concurrent confirms can't oversell. If you touch sending to the kitchen, keep

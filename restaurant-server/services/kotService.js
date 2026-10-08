@@ -12,7 +12,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { ORDER_SOURCES } from "../utils/orderStateMachine.js";
-import { addonLabel } from "../utils/menuAddons.js";
+import { addonLabel, lineAddonKey } from "../utils/menuAddons.js";
 
 const SOURCE_CUSTOMER = ORDER_SOURCES.find((s) => s === "CUSTOMER");
 if (!SOURCE_CUSTOMER) throw new Error("kotService: ORDER_SOURCES has no CUSTOMER");
@@ -73,6 +73,83 @@ export const createKotJobForOrder = async ({ KOTJob, order, actor, session, cust
     if (err?.code === 11000) {
       const existing = await KOTJob.findOne({ order: order._id }).session(session || null);
       return { created: false, job: existing };
+    }
+    throw err;
+  }
+};
+
+// ── KOT change slips (order edited after it reached the kitchen) ─────────────
+// Same item + same add-ons + same note = the same line ("Biryani + 2 x
+// Chicken, less spicy"); anything else is a different line, so changing a
+// note shows as cancel-old / make-new, which is what the cook must do.
+const changeKey = (i) => `${String(i.menuItem)}|${lineAddonKey(i.addons)}|${String(i.notes || "").trim()}`;
+const slipLine = (i, qty, cancel = false) => ({
+  name: cancel ? `${CANCEL_PREFIX}${i.name}` : i.name,
+  nameBn: i.nameBn ? (cancel ? `${CANCEL_PREFIX}${i.nameBn}` : i.nameBn) : "",
+  qty, notes: i.notes || "",
+  ...(i.addons?.length && { addons: i.addons.map(addonLabel) }),
+});
+
+export const CANCEL_PREFIX = "CANCEL - ";
+export const CHANGE_NOTE = "ORDER CHANGED - only the changes are listed. CANCEL = stop / don't make.";
+
+/**
+ * Pure: what the kitchen must do differently. `added` = extra qty to make,
+ * `removed` = qty to stop making. Lines are matched by changeKey.
+ */
+export const diffOrderLines = (beforeItems = [], afterItems = []) => {
+  const sum = (items) => {
+    const m = new Map();
+    for (const i of items) {
+      const k = changeKey(i);
+      const prev = m.get(k);
+      m.set(k, { line: prev?.line || i, qty: (prev?.qty || 0) + (Number(i.qty) || 0) });
+    }
+    return m;
+  };
+  const before = sum(beforeItems);
+  const after = sum(afterItems);
+  const added = [];
+  const removed = [];
+  for (const [k, a] of after) {
+    const d = a.qty - (before.get(k)?.qty || 0);
+    if (d > 0) added.push(slipLine(a.line, d));
+  }
+  for (const [k, b] of before) {
+    const d = b.qty - (after.get(k)?.qty || 0);
+    if (d > 0) removed.push(slipLine(b.line, d, true));
+  }
+  return { added, removed };
+};
+
+/**
+ * The change slip for one edit — the only place a KOTChangeJob is created.
+ * Inside the edit's transaction. Nothing changed for the kitchen (e.g. a
+ * price-only re-price) → no slip. Unique (order, revision): a retry returns
+ * the existing slip instead of printing the change twice.
+ * @returns {{ job: object|null, created: boolean }}
+ */
+export const createKotChangeJob = async ({ KOTChangeJob, before, after, actor, session }) => {
+  const { added, removed } = diffOrderLines(before.items, after.items);
+  if (!added.length && !removed.length) return { job: null, created: false };
+  try {
+    const [job] = await KOTChangeJob.create(
+      [{
+        order: after._id, revision: after.revision,
+        orderId: after.orderId, tableNo: after.tableNo, orderType: after.orderType,
+        items: [...added, ...removed],
+        notes: `${CHANGE_NOTE} Changed by ${actor?.name || "admin"}.`,
+        diningArea: after.diningArea || "",
+        tableName: after.tableName || "", tableDisplayNo: after.tableDisplayNo ?? null,
+        createdBy: actor,
+      }],
+      { session },
+    );
+    return { job, created: true };
+  } catch (err) {
+    if (err?.code === 11000) {
+      const job = await KOTChangeJob.findOne({ order: after._id, revision: after.revision }).session(session || null);
+      return { job, created: false };
     }
     throw err;
   }

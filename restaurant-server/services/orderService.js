@@ -11,13 +11,13 @@ import { priceOrder, priceItems, computeTotals } from "../utils/pricing.js";
 import { resolveCouponForOrder } from "./couponService.js";
 import { getScheduleContext } from "./menuScheduleService.js";
 import { normalizeOrderType, assertValidTransition, effectiveBillStatus, requiresPaidForTransition, ORDER_STATUSES } from "../utils/orderStateMachine.js";
-import { createKotJobForOrder, kotCustomerName } from "./kotService.js";
+import { createKotJobForOrder, createKotChangeJob, kotCustomerName } from "./kotService.js";
 import { normalizeDiningArea, tableDisplayNo, tableDisplayName } from "../utils/diningArea.js";
 import { findOrOpenTableSession, closeTableSession } from "./tableSessionService.js";
 import { findNextMatch } from "./waitlistService.js";
 import { signGuestOrderToken, verifyGuestOrderToken } from "../utils/guestOrderToken.js";
 import {
-  deductStockForOrder, reverseStockForOrder, calculateRecipeConsumption, validateInventoryForConsumption,
+  deductStockForOrder, reverseStockForOrder, restockEditedOrder, calculateRecipeConsumption, validateInventoryForConsumption,
 } from "./inventoryService.js";
 import { isPhonePeConfigured } from "./paymentService.js";
 import { isStaffRole, isManagementRole } from "../utils/roles.js";
@@ -521,6 +521,94 @@ export const autoSendDueOrders = async ({ models, db, now = new Date(), onSent, 
 // ── Edit an order while it is still editable ───────────────────────────────
 // ORD-01 — held orders: awaiting acceptance, or Placed before its KOT fires.
 export const EDITABLE_STATUSES = ["PENDING_CONFIRMATION", "CONFIRMED"];
+// Admin / manager only: the kitchen already has it, but it isn't served yet.
+export const SENT_EDITABLE_STATUSES = ["PREPARING", "READY"];
+
+const editError = (message, statusCode) => Object.assign(new Error(message), { statusCode });
+
+const validateEditPayload = ({ items, revision }) => {
+  if (!Number.isInteger(revision)) throw editError("revision is required", 400);
+  if (!Array.isArray(items) || items.length === 0)
+    throw editError("An order needs at least one item — cancel it instead of removing everything", 400);
+  if (items.length > 50) throw editError("Too many lines in one order", 400);
+  for (const it of items) {
+    if (!it?.menuItemId || !Number.isInteger(Number(it.qty)) || Number(it.qty) < 1 || Number(it.qty) > 99)
+      throw editError("Each item needs a menu item and a quantity from 1 to 99", 400);
+  }
+};
+
+const changeNote = (order, actor, total) => (order.paymentStatus === "PAID" && total !== order.total
+  ? `Order changed by ${actor.name} after payment — paid ₹${order.total}, new total ₹${total}`
+  : `Order changed by ${actor.name}`);
+
+// The coupon's own terms are re-applied (the order keeps its snapshot); it
+// stops discounting if the change took the order below its minimum.
+const couponDroppedNote = (order, discount) => (order.coupon && order.discount > 0 && discount === 0
+  ? ` — coupon ${order.coupon.code} no longer applies (below ₹${order.coupon.minOrderAmount} minimum)`
+  : "");
+
+/**
+ * An admin / manager changes an order the kitchen already has (PREPARING or
+ * READY — never once served). ONE transaction, like sendToKitchenTx:
+ *   1. the item/total write — conditional on status, stock state and the
+ *      optimistic `revision`, so two editors can't both win;
+ *   2. stock: what the old items took goes back, the new items are deducted
+ *      (inventoryService.restockEditedOrder) — stock matches the final order;
+ *   3. a KOT change slip listing only what changed (kotService.createKotChangeJob).
+ * An item the order already had at least as many of is kept even if it is
+ * sold out / out of hours now; anything added is checked like a new order.
+ * Returns { order, kotChange: { job, created }, inventoryAlerts }.
+ */
+const modifySentOrderTx = async ({ req, order, items, revision }) => {
+  const { Order, MenuItem, RestaurantProfile, KOTChangeJob } = req.models;
+  const restaurant = await RestaurantProfile.findOne();
+  const scheduleCtx = await getScheduleContext({ models: req.models, profile: restaurant });
+
+  const qtyBy = (list, idOf) => list.reduce((m, i) => m.set(String(idOf(i)), (m.get(String(idOf(i))) || 0) + Number(i.qty)), new Map());
+  const had = qtyBy(order.items, (i) => i.menuItem);
+  const want = qtyBy(items, (i) => i.menuItemId);
+  const keepIds = new Set([...want].filter(([id, q]) => q <= (had.get(id) || 0)).map(([id]) => id));
+
+  const { dbItems, subtotal, tax, serviceCharge, discount, total } = await priceOrder({
+    items, MenuItem, restaurantProfile: restaurant, scheduleCtx, coupon: order.coupon, acServiceCharge: order.acServiceCharge, keepIds,
+  });
+
+  const actor = buildActor(req.user);
+  const note = `${changeNote(order, actor, total)} (kitchen already had it — change slip sent)${couponDroppedNote(order, discount)}`;
+
+  const session = await req.db.startSession();
+  let updated, kotChange, inventoryAlerts = [];
+  try {
+    await session.withTransaction(async () => {
+      updated = await Order.findOneAndUpdate(
+        {
+          _id: order._id, status: order.status, stockDeducted: true, stockReversed: { $ne: true },
+          revision: revision === 0 ? { $in: [0, null] } : revision,
+        },
+        {
+          $set: { items: dbItems, subtotal, tax, serviceCharge, discount, total },
+          $inc: { revision: 1 },
+          $push: { statusHistory: { status: order.status, changedBy: actor, changedAt: new Date(), note } },
+        },
+        { returnDocument: "after", session },
+      );
+      if (!updated) {
+        const fresh = await Order.findById(order._id).select("status revision").session(session);
+        throw editError(!SENT_EDITABLE_STATUSES.includes(fresh?.status)
+          ? "This order has just been served or cancelled and can't be changed"
+          : "Someone else changed this order a moment ago — please review it and try again", 409);
+      }
+      const stock = await restockEditedOrder({ models: req.models, before: order, after: updated, actor, session });
+      inventoryAlerts = stock.alerts || [];
+      kotChange = await createKotChangeJob({ KOTChangeJob, before: order, after: updated, actor, session });
+    });
+  } finally {
+    session.endSession();
+  }
+
+  // Re-read: the stock step wrote stockDeductions + making costs.
+  return { order: await Order.findById(order._id), kotChange, inventoryAlerts };
+};
 /**
  * Replaces the order's items (add / remove / change qty / notes) while it is
  * still PENDING_CONFIRMATION. Admin and waiter may always edit; the customer
@@ -566,6 +654,14 @@ export const modifyOrderItemsTx = async ({ req, orderId, items, revision }) => {
     }
   }
 
+  validateEditPayload({ items, revision });
+
+  // Admin / manager: also while the kitchen has it (cooking or ready, until
+  // served) — stock is re-counted and the kitchen gets a change slip.
+  if (SENT_EDITABLE_STATUSES.includes(order.status) && order.stockDeducted && isManagementRole(role)) {
+    return modifySentOrderTx({ req, order, items, revision });
+  }
+
   // ORD-01: changeable from the moment it is placed until its KOT fires —
   // while awaiting acceptance or Placed (held), never once it has reached the
   // kitchen (no KOT / stock yet — an admin could move a later order back).
@@ -576,28 +672,6 @@ export const modifyOrderItemsTx = async ({ req, orderId, items, revision }) => {
     err.statusCode = 409;
     throw err;
   }
-  if (!Number.isInteger(revision)) {
-    const err = new Error("revision is required");
-    err.statusCode = 400;
-    throw err;
-  }
-  if (!Array.isArray(items) || items.length === 0) {
-    const err = new Error("An order needs at least one item — cancel it instead of removing everything");
-    err.statusCode = 400;
-    throw err;
-  }
-  if (items.length > 50) {
-    const err = new Error("Too many lines in one order");
-    err.statusCode = 400;
-    throw err;
-  }
-  for (const it of items) {
-    if (!it?.menuItemId || !Number.isInteger(Number(it.qty)) || Number(it.qty) < 1 || Number(it.qty) > 99) {
-      const err = new Error("Each item needs a menu item and a quantity from 1 to 99");
-      err.statusCode = 400;
-      throw err;
-    }
-  }
 
   const restaurant = await RestaurantProfile.findOne();
   const scheduleCtx = await getScheduleContext({ models: req.models, profile: restaurant });
@@ -606,14 +680,7 @@ export const modifyOrderItemsTx = async ({ req, orderId, items, revision }) => {
   await assertStockForItems({ models: req.models, items: dbItems });
 
   const actor = buildActor(req.user, order.guestName);
-  let note = order.paymentStatus === "PAID" && total !== order.total
-    ? `Order changed by ${actor.name} after payment — paid ₹${order.total}, new total ₹${total}`
-    : `Order changed by ${actor.name}`;
-  // The coupon's own terms are re-applied (the order keeps its snapshot); it
-  // stops discounting if the change took the order below its minimum.
-  if (order.coupon && order.discount > 0 && discount === 0) {
-    note += ` — coupon ${order.coupon.code} no longer applies (below ₹${order.coupon.minOrderAmount} minimum)`;
-  }
+  const note = changeNote(order, actor, total) + couponDroppedNote(order, discount);
 
   const updated = await Order.findOneAndUpdate(
     // revision 0 also matches orders saved before the field existed (no field).

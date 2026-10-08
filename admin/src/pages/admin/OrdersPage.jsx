@@ -27,7 +27,7 @@ const menuCached       = () => cached("order:menu", ORDER_DATA_TTL, () => getMen
 const profileCached    = () => cached("order:profile", 5 * ORDER_DATA_TTL, () => getRestaurantProfile());
 const categoriesCached = () => cached("order:categories", ORDER_DATA_TTL, () => getCategories());
 const prefetchOrderData = () => { menuCached().catch(() => {}); profileCached().catch(() => {}); categoriesCached().catch(() => {}); };
-import { t, tn, fmtNum, fmtDate, fmtDateTime, fmtTime, localName } from "../../i18n/core.js";
+import { t, tn, N_, fmtNum, fmtDate, fmtDateTime, fmtTime, localName } from "../../i18n/core.js";
 import { customerName } from "./shared/customerName.js";
 import { takenByName, takenByIsAcceptor } from "./shared/takenBy.js";
 import { DINING_AREA_LABEL, TABLE_AREAS, TABLE_AREA_LABEL, groupTablesByArea, tableLabel } from "./shared/diningArea.js";
@@ -194,18 +194,35 @@ const GlobalOrdersStyle = () => (
       cursor: pointer; transition: var(--theme-transition), border-color .12s ease;
     }
     .op-ocard:hover { border-color: var(--edge-hi); }
+    /* Table view order card — always open, read top to bottom. */
+    .op-ocard2 { border: 1px solid var(--edge); border-radius: var(--r-row); padding: 12px 13px; margin-bottom: 8px;
+      display: grid; gap: 10px; transition: var(--theme-transition); }
+    .op-track { display: flex; gap: 4px; }
+    .op-step { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px;
+      font-size: 10.5px; color: var(--text-3); position: relative; }
+    .op-step + .op-step::before { content: ""; position: absolute; top: 10px; right: 50%; width: 100%; height: 2px;
+      background: var(--edge-hi); z-index: 0; }
+    .op-step.done + .op-step::before, .op-step.now::before { background: var(--ready-ink); }
+    .op-step .dot { width: 21px; height: 21px; border-radius: 50%; display: grid; place-items: center; position: relative; z-index: 1;
+      font-size: 10.5px; font-weight: 700; background: var(--card-2); border: 1.5px solid var(--edge-hi); color: var(--text-3); }
+    .op-step.done .dot { background: var(--ready-fill); border-color: var(--ready-ink); color: var(--ready-ink); }
+    .op-step.now .dot { background: var(--grad-btn); border-color: transparent; color: #fff; box-shadow: 0 0 0 3px var(--violet-weak); }
+    .op-step.now .lb { color: var(--text-1); font-weight: 700; }
+    .op-step.done .lb { color: var(--text-2); }
+    .op-await { font-size: 12px; font-weight: 600; padding: 8px 10px; border-radius: 9px;
+      color: var(--wait-ink); background: var(--wait-fill); border: 1px solid var(--wait-line); }
+    .op-items { border-top: 1px solid var(--edge); border-bottom: 1px solid var(--edge); padding: 4px 0; }
+    .op-item { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; font-size: 12.5px; color: var(--text-1); }
+    .op-item .q { min-width: 26px; font-weight: 700; color: var(--accent-ink); }
+    .op-item .n { flex: 1; min-width: 0; }
+    .op-item .note { display: block; font-size: 11px; color: var(--text-3); font-style: italic; }
+    .op-item .a { font-weight: 600; }
+    .op-next { width: 100%; justify-content: center; padding: 10px 12px; font-size: 13.5px; font-weight: 700; }
+    .op-pay { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .op-pay .lb { font-size: 12px; font-weight: 600; color: var(--text-2); margin-right: auto; }
+    .op-more { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
   `}</style>
 );
-
-// ── Badge ─────────────────────────────────────────────────────────────────────
-const Badge = ({ label, map, format }) => {
-  const s = (map && map[label]) || styleFor(label);
-  return (
-    <span style={{ background:s.bg, color:s.color, padding:"3px 10px", borderRadius:20, fontSize:11, fontWeight:600, whiteSpace:"nowrap", border:`1px solid ${s.line}` }}>
-      {format ? format(label) : label}
-    </span>
-  );
-};
 
 // ── BillMetric — compact reference-style pill (Billing's two dense rows) ──────
 const BillMetric = ({ label, value, caption, tone, grad, onClick }) => (
@@ -299,11 +316,17 @@ const EditOrderItemsModal = ({ order, onClose, onSaved, onAddMore }) => {
         <div className="mh">
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="t" id="edit-items-title">{t("Edit order {id}", { id: order.orderId })}</div>
-            <div className="s"><SendCountdown order={order} /></div>
+            <div className="s">{isInKitchen(order) ? t("Already in the kitchen") : <SendCountdown order={order} />}</div>
           </div>
           <button type="button" className="zc-x" onClick={onClose} disabled={saving} aria-label={t("Close")}>✕</button>
         </div>
         <div className="mb" style={{ display: "grid", gap: 8 }}>
+          {isInKitchen(order) && (
+            <div role="note" style={{ padding: "10px 12px", borderRadius: 10, fontSize: 12.5, lineHeight: 1.45,
+              border: "1px solid var(--wait-line)", background: "var(--wait-fill)", color: "var(--wait-ink)" }}>
+              {t("The kitchen is already making this order. When you save, a change slip prints in the kitchen with only what you changed, and stock is updated.")}
+            </div>
+          )}
           {lines.map((l) => (
             <div key={l.key} className="zc-panel" style={{ padding: "10px 12px", display: "grid", gap: 8 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -341,6 +364,14 @@ const EditOrderItemsModal = ({ order, onClose, onSaved, onAddMore }) => {
 const FOLLOW_UP_STATUSES = ["CONFIRMED", "PREPARING", "READY", "DELIVERED"];
 const canFollowUp = (o) => FOLLOW_UP_STATUSES.includes(o?.status)
   && !(o.status === "CONFIRMED" && !o.stockDeducted) && !isBillSettled(o);
+
+// Items can be edited while Placed (before the KOT) — and, in this admin app
+// (admin / manager), still while the kitchen is cooking it or it's ready, up
+// to Served. Then the server re-counts stock and prints a change slip that
+// lists only what changed (orderService.modifySentOrderTx).
+const SENT_EDITABLE_STATUSES = ["PREPARING", "READY"];
+const isInKitchen = (o) => SENT_EDITABLE_STATUSES.includes(o?.status) && !!o.stockDeducted;
+const canEditItems = (o) => (o?.status === "CONFIRMED" && !o.stockDeducted) || isInKitchen(o);
 
 // ── OrderDetailModal — full history of one order (reference "Order detail") ───
 const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onCombinedBill, onPrint, onAddItems, onEditItems, onConfirm, onReject, onSettle, onReopenBill, actionBusy }) => {
@@ -438,6 +469,21 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
               <button type="button" className="zc-btn pri" disabled={actionBusy} onClick={()=>onStatusChange?.(order._id, "PREPARING")}>
                 🍳 {t("Start preparing now")}
               </button>
+            </div>
+          )}
+
+          {/* ── Cooking / Ready → still editable here until served ── */}
+          {isInKitchen(order) && onEditItems && (
+            <div style={{
+              display:"flex", gap:10, alignItems:"center", flexWrap:"wrap",
+              padding:"12px 14px", marginBottom:18, borderRadius:12,
+              border:"1px solid var(--wait-line)", background:"var(--wait-fill)",
+            }}>
+              <div style={{ flex:1, minWidth:160 }}>
+                <div style={{ fontSize:12.5, fontWeight:700, color:"var(--wait-ink)" }}>{t("In the kitchen — you can still change it")}</div>
+                <div style={{ fontSize:11.5, color:T2, marginTop:2 }}>{t("Until it's served. A change slip prints for the kitchen.")}</div>
+              </div>
+              <button type="button" className="zc-btn" disabled={actionBusy} onClick={()=>onEditItems(order)}>✎ {t("Edit items")}</button>
             </div>
           )}
 
@@ -1736,8 +1782,7 @@ const AddTableModal = ({ area, tables, onClose, onCreated }) => {
   );
 };
 
-const MultiOrderTableView = ({ orders, tableNo, tableName, nowTick, onStatusChange, onPaymentChange, onCombinedBill, onAddItems, onNewOrder, label, billTarget, onRefresh }) => {
-  const [expandedOrder, setExpandedOrder] = useState(null);
+const MultiOrderTableView = ({ orders, tableNo, tableName, nowTick, onStatusChange, onPaymentChange, onCombinedBill, onAddItems, onEditItems, onOpenDetail, onNewOrder, label, billTarget, onRefresh }) => {
   // Combine Bill selection mode (tables only). Restored after a refresh while
   // the panel keeps its ticks in sessionStorage.
   const [combineMode, setCombineMode] = useState(() => {
@@ -1821,12 +1866,12 @@ const MultiOrderTableView = ({ orders, tableNo, tableName, nowTick, onStatusChan
               key={order._id}
               order={order}
               idx={idx}
-              isExpanded={expandedOrder===order._id}
-              onExpand={()=>setExpandedOrder(expandedOrder===order._id?null:order._id)}
               onStatusChange={onStatusChange}
               onPaymentChange={onPaymentChange}
               onCombinedBill={onCombinedBill}
               onAddItems={onAddItems}
+              onEditItems={onEditItems}
+              onOpenDetail={onOpenDetail}
               nowTick={nowTick}
             />
           ))}
@@ -1845,12 +1890,12 @@ const MultiOrderTableView = ({ orders, tableNo, tableName, nowTick, onStatusChan
               key={order._id}
               order={order}
               idx={idx}
-              isExpanded={expandedOrder===order._id}
-              onExpand={()=>setExpandedOrder(expandedOrder===order._id?null:order._id)}
               onStatusChange={onStatusChange}
               onPaymentChange={onPaymentChange}
               onCombinedBill={onCombinedBill}
               onAddItems={onAddItems}
+              onEditItems={onEditItems}
+              onOpenDetail={onOpenDetail}
               nowTick={nowTick}
             />
           ))}
@@ -1920,184 +1965,165 @@ const MultiOrderTableView = ({ orders, tableNo, tableName, nowTick, onStatusChan
   );
 };
 
-// ── OrderCard — individual order row inside table view ─────────────────────────
-const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPaymentChange, onCombinedBill, onAddItems, nowTick }) => {
+// ── OrderCard — one order inside the table view ─────────────────────────────
+// Always open (no ▼): who, what they ordered, where it is (a 4-step track),
+// ONE big button for the next step, payment as two plain buttons, and the
+// rest (edit, add, bill, cancel) as small buttons underneath. Any other status
+// jump stays in the order's detail view ("All details").
+const ORDER_TRACK = ["CONFIRMED", "PREPARING", "READY", "DELIVERED"];
+const TRACK_LABEL = { CONFIRMED: N_("Placed"), PREPARING: N_("Cooking"), READY: N_("Ready"), DELIVERED: N_("Served") };
+const NEXT_STEP = {
+  PENDING_CONFIRMATION: { to: "CONFIRMED", icon: "✓", label: N_("Accept order") },
+  CONFIRMED:            { to: "PREPARING", icon: "🍳", label: N_("Start cooking") },
+  PREPARING:            { to: "READY",     icon: "🔔", label: N_("Mark ready") },
+  READY:                { to: "DELIVERED", icon: "🍽️", label: N_("Mark served") },
+  DELIVERED:            { to: "COMPLETED", icon: "✔", label: N_("Complete & free table") },
+};
+const CANCELLABLE = ["PENDING_CONFIRMATION", "CONFIRMED", "PREPARING"];
+
+const OrderTrack = ({ status }) => {
+  const at = ORDER_TRACK.indexOf(status);
+  return (
+    <div className="op-track" role="list" aria-label={t("Order progress")}>
+      {ORDER_TRACK.map((s, i) => {
+        const state = at < 0 ? "todo" : i < at ? "done" : i === at ? "now" : "todo";
+        return (
+          <div key={s} role="listitem" className={`op-step ${state}`} aria-current={state === "now" ? "step" : undefined}>
+            <span className="dot">{state === "done" ? "✓" : i + 1}</span>
+            <span className="lb">{t(TRACK_LABEL[s])}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const OrderCard = ({ order, idx, onStatusChange, onPaymentChange, onCombinedBill, onAddItems, onEditItems, onOpenDetail, nowTick }) => {
   const displayName  = customerName(order) || t("Order {n}", { n: idx+1 });
   const displayPhone = order.guestPhone||order.user?.phone ||  null;
   const av           = avc(displayName);
   const canAddItems  = (order.status === "CONFIRMED" && !order.stockDeducted) || canFollowUp(order); // Placed → edit; later → follow-up (KH-07)
   const placedMs     = nowTick != null ? nowTick - new Date(order.createdAt).getTime() : null;
   const placedKindThis = placedMs != null ? durationKind(Math.floor(placedMs / 60000)) : null;
+  const paid         = order.paymentStatus === "PAID";
+  const next         = NEXT_STEP[order.status];
+  const nextBlocked  = next && needsPaidFirst(order, next.to);
+  const [busy, setBusy] = useState(false);
 
-  // Card color reflects the order's own status (same wait/live/ready/done/
-  // stop palette as the table map and every status badge elsewhere) rather
-  // than just paid/unpaid, so a glance at the rail shows what stage each
-  // order is at, not only whether it's settled.
+  // Card colour = the order's own stage (same palette as the table map).
   const cardKind    = statusKind(order.status);
-  const borderColor = KIND_LINE[cardKind];
-  const bgColor     = KIND_FILL[cardKind];
+
+  const run = async (fn) => { if (busy) return; setBusy(true); try { await fn(); } finally { setBusy(false); } };
+  const cancel = () => {
+    if (!window.confirm(t("Cancel order {id}? This cannot be undone. The order stays in history as cancelled.", { id: order.orderId }))) return;
+    run(() => onStatusChange(order._id, "CANCELLED"));
+  };
+  const printBill = () => run(async () => {
+    try {
+      let guests; // KH-11: dine-in bills ask how many guests are seated
+      if (needsGuests(order.orderType)) { guests = askGuests(order.guests); if (guests === null) return; }
+      await printOrderOrGroupBill(order, guests); // KH-07
+      toast.success(t("Bill sent to printer ✓"));
+    } catch (err) { toast.error(err?.response?.data?.message || t("Printer not running")); }
+  });
 
   return (
-    <div style={{ marginBottom:6, borderRadius:RADIUS, overflow:"hidden",
-      border:`1px solid ${isExpanded ? "var(--violet-line)" : borderColor}`,
-      background: isExpanded ? `var(--violet-faint)` : bgColor }}>
-
-      <div onClick={onExpand} className="op-row" style={{ padding:"11px 13px", display:"flex",
-        alignItems:"center", gap:10, cursor:"pointer" }}>
-
-        <div style={{ width:30, height:30, borderRadius:"50%", background:av, color:"#fff",
-          display:"flex", alignItems:"center", justifyContent:"center",
-          fontSize:11, fontWeight:700, flexShrink:0 }}>
+    <div className="op-ocard2" style={{ borderColor: KIND_LINE[cardKind], background: KIND_FILL[cardKind] }}>
+      {/* ── who · total · paid? ── */}
+      <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+        <div style={{ width:32, height:32, borderRadius:"50%", background:av, color:"#fff",
+          display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:700, flexShrink:0 }}>
           {ini(displayName)}
         </div>
-
         <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontSize:13, fontWeight:600, color:T1 }}>{displayName}</div>
-          <div style={{ fontSize:11, color:T3, marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-            {order.items?.map(i=>`${localName(i)}${i.addons?.length ? ` (+${i.addons.map(addonLabel).join(", +")})` : ""} ×${fmtNum(i.qty)}`).join(", ")||"—"}
-          </div>
-        </div>
-
-        <div style={{ textAlign:"right", flexShrink:0 }}>
-          <div style={{ fontSize:14, fontWeight:700, color:PINK }}>₹{fmtNum(Math.round(order.total))}</div>
-          <div style={{ display:"flex", gap:4, justifyContent:"flex-end", marginTop:3, flexWrap:"wrap" }}>
+          <div style={{ fontSize:13.5, fontWeight:700, color:T1 }}>{displayName}</div>
+          <div style={{ fontSize:11, color:T3, marginTop:1 }}>
+            {order.orderId}{displayPhone ? ` · +91 ${displayPhone}` : ""}
             {placedMs != null && (
-              <span className="zc-tag" style={{
-                background:KIND_FILL[placedKindThis], color:KIND_INK[placedKindThis], border:`1px solid ${KIND_LINE[placedKindThis]}`,
-              }}>
-                ⏱ {formatDuration(placedMs)}
-              </span>
+              <span style={{ marginLeft:6, color:KIND_INK[placedKindThis], fontWeight:600 }}>⏱ {formatDuration(placedMs)}</span>
             )}
-            <Badge label={order.paymentStatus} map={PAY_STYLE} format={formatPayment}/>
-            <Badge label={order.status} map={STATUS_STYLE} format={formatStatus}/>
           </div>
         </div>
-
-        <span style={{ fontSize:12, color:T3 }}>{isExpanded?"▲":"▼"}</span>
+        <div style={{ textAlign:"right", flexShrink:0 }}>
+          <div className="tnum" style={{ fontSize:16, fontWeight:800, color:PINK }}>₹{fmtNum(Math.round(order.total))}</div>
+          <div style={{ fontSize:11, fontWeight:700, marginTop:2, color: paid ? "var(--ready-ink)" : "var(--stop-ink)" }}>
+            {paid ? `✓ ${t("Paid")} · ${t(order.paymentMethod || "Cash")}` : `⏳ ${t("Not paid")}`}
+          </div>
+        </div>
       </div>
 
-      {isExpanded && (
-        <div style={{ padding:"0 13px 13px", borderTop:`1px solid ${BDR}` }}>
+      {/* ── where it is ── */}
+      {order.status === "PENDING_CONFIRMATION" ? (
+        <div className="op-await">{t("New order from the customer — accept it to send it on")}</div>
+      ) : (
+        <OrderTrack status={order.status} />
+      )}
 
-          <div style={{ marginTop:10, marginBottom:10 }}>
-            {order.items?.map((item,i) => (
-              <div key={i} style={{ display:"flex", justifyContent:"space-between",
-                padding:"5px 0", borderBottom:`1px solid var(--edge)`, fontSize:12 }}>
-                <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-                  <div style={{ width:20, height:20, borderRadius:5, background:`var(--violet-weak)`,
-                    display:"flex", alignItems:"center", justifyContent:"center",
-                    fontSize:10, fontWeight:600, color:PINK }}>{fmtNum(item.qty)}</div>
-                  <span style={{ color:T1 }}>{localName(item)}<AddonLines line={item} /></span>
-                </div>
-                <span style={{ color:T1, fontWeight:500 }}>₹{fmtNum(item.price*item.qty)}</span>
-              </div>
-            ))}
-            <div style={{ display:"flex", justifyContent:"space-between",
-              fontWeight:700, fontSize:14, marginTop:8, color:T1 }}>
-              <span>{t("Total")}</span>
-              <span style={{ color:PINK }}>₹{fmtNum(Math.round(order.total))}</span>
-            </div>
+      {/* ── what they ordered ── */}
+      <div className="op-items">
+        {order.items?.map((item, i) => (
+          <div key={i} className="op-item">
+            <span className="q tnum">{fmtNum(item.qty)}×</span>
+            <span className="n">{localName(item)}<AddonLines line={item} />
+              {item.notes ? <span className="note">“{item.notes}”</span> : null}
+            </span>
+            <span className="a tnum">₹{fmtNum(item.price*item.qty)}</span>
           </div>
+        ))}
+      </div>
 
-          <div style={{ fontSize:11, color:T3, marginBottom:10 }}>
-            {order.orderId} · {displayPhone ? `+91 ${displayPhone}` : t("No phone")} · {t(order.paymentMethod||"Cash")}
-          </div>
+      {/* ── the next step: one big button ── */}
+      {next && (
+        <button type="button" className="zc-btn pri op-next" disabled={busy || nextBlocked}
+          title={nextBlocked ? t(PAID_FIRST_HINT) : undefined}
+          onClick={() => run(() => onStatusChange(order._id, next.to))}>
+          {next.icon} {t(next.label)}{nextBlocked ? ` — ${t("take payment first")}` : ""}
+        </button>
+      )}
 
-          {/* Order Status buttons */}
-          <div style={{ marginBottom:8 }}>
-            <div style={{ fontSize:10, color:T3, fontWeight:600, letterSpacing:1,
-              textTransform:"uppercase", marginBottom:6 }}>{t("Order Status")}</div>
-            <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
-              {ALL_STATUSES.filter(s => s !== order.status && offersStatus(order, s)).map(s => {
-                  const st = STATUS_STYLE[s] || DEFAULT_STATUS_STYLE;
-                  const blocked = needsPaidFirst(order, s);
-                  return (
-                    <button key={s} className="op-chip" disabled={blocked} title={blocked ? t(PAID_FIRST_HINT) : undefined}
-                      onClick={()=>{ if (!blocked) onStatusChange(order._id,s); }}
-                      style={{ padding:"4px 10px", borderRadius:20, border:`1px solid ${st.line}`,
-                        background:st.bg, color:st.color, cursor:blocked?"not-allowed":"pointer", opacity:blocked?0.45:1, fontSize:11, fontWeight:500 }}>
-                      {formatStatus(s)}{blocked ? " 🔒" : ""}
-                    </button>
-                  );
-                })}
-            </div>
-          </div>
-
-          {/* Payment Status buttons */}
-          <div style={{ marginBottom:8 }}>
-            <div style={{ fontSize:10, color:T3, fontWeight:600, letterSpacing:1,
-              textTransform:"uppercase", marginBottom:6 }}>{t("Payment Status")}</div>
-            <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
-              {MANUAL_PAYMENT_STATUSES.map(s => {
-                const st = PAY_STYLE[s] || DEFAULT_STATUS_STYLE;
-                const active = order.paymentStatus===s;
-                return (
-                  <button key={s} className="op-chip" onClick={()=>!active&&onPaymentChange(order._id,{ paymentStatus:s })}
-                    style={{ padding:"5px 12px", borderRadius:20, fontSize:11, fontWeight:600,
-                      cursor:active?"default":"pointer",
-                      border:`1px solid ${st.line}`,
-                      background:active?st.bg:"transparent",
-                      color:st.color, opacity:active?1:0.65 }}>
-                    {active?"✓ ":""}{formatPayment(s)}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Payment Method buttons */}
-          <div style={{ marginBottom:10 }}>
-            <div style={{ fontSize:10, color:T3, fontWeight:600, letterSpacing:1,
-              textTransform:"uppercase", marginBottom:6 }}>{t("Payment Method")}</div>
-            <div style={{ display:"flex", gap:5 }}>
-              {["Cash","Online"].map(m => {
-                const active = (order.paymentMethod||"Cash")===m;
-                return (
-                  <button key={m} className="op-chip" onClick={()=>!active&&onPaymentChange(order._id,{ paymentMethod:m })}
-                    style={{ padding:"5px 14px", borderRadius:20, fontSize:11, fontWeight:600,
-                      cursor:active?"default":"pointer",
-                      border:`2px solid ${active?PINK:BDR}`,
-                      background:active?`var(--violet-weak)`:CARD2,
-                      color:active?PINK:T2 }}>
-                    {m==="Cash"?"💵":"📱"} {t(m)}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Action buttons */}
-          <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-            {canAddItems && onAddItems && (
-              <button className="op-btn" onClick={()=>onAddItems(order)}
-                style={{ padding:"6px 14px", borderRadius:20, fontSize:12, fontWeight:600,
-                  border:`1px solid var(--violet-mid)`, background:`var(--violet-faint)`, color:PINK, cursor:"pointer" }}>
-                + {t("Add items")}
-              </button>
-            )}
-            {displayPhone && onCombinedBill && (
-              <button className="op-btn" onClick={()=>onCombinedBill("phone", displayPhone)}
-                style={{ padding:"6px 14px", borderRadius:20, fontSize:12, fontWeight:600,
-                  border:"1px solid var(--violet-glow)", background:"var(--violet-faint)",
-                  color:"var(--accent-ink)", cursor:"pointer" }}>
-                🧾 {t("Customer Bill")}
-              </button>
-            )}
-            <button className="op-btn" onClick={async()=>{
-              try{
-                let guests; // KH-11: dine-in bills ask how many guests are seated
-                if (needsGuests(order.orderType)) { guests = askGuests(order.guests); if (guests === null) return; }
-                await printOrderOrGroupBill(order, guests); // KH-07
-                toast.success(t("Bill sent to printer ✓"));
-              }catch(err){ toast.error(err?.response?.data?.message || t("Printer not running")); }
-            }} style={{ padding:"5px 12px", borderRadius:8, fontSize:12, cursor:"pointer",
-              border:"1px solid var(--ready-line)", background:"var(--ready-fill)",
-              color:"var(--ready-ink)", whiteSpace:"nowrap" }}>
-              🖨️ {t("Bill")}
-            </button>
-          </div>
+      {/* ── payment: two plain buttons ── */}
+      {!paid ? (
+        <div className="op-pay">
+          <span className="lb">{t("Payment received?")}</span>
+          <button type="button" className="zc-btn sm" disabled={busy}
+            onClick={() => run(() => onPaymentChange(order._id, { paymentStatus: "PAID", paymentMethod: "Cash" }))}>💵 {t("Paid by cash")}</button>
+          <button type="button" className="zc-btn sm" disabled={busy}
+            onClick={() => run(() => onPaymentChange(order._id, { paymentStatus: "PAID", paymentMethod: "Online" }))}>📱 {t("Paid online")}</button>
+        </div>
+      ) : !isBillSettled(order) && (
+        <div className="op-pay">
+          <span className="lb">{t("Paid by {method}", { method: t(order.paymentMethod || "Cash") })}</span>
+          <button type="button" className="zc-btn sm ghost" disabled={busy}
+            onClick={() => run(() => onPaymentChange(order._id, { paymentMethod: (order.paymentMethod || "Cash") === "Cash" ? "Online" : "Cash" }))}>
+            {(order.paymentMethod || "Cash") === "Cash" ? t("Change to online") : t("Change to cash")}
+          </button>
+          <button type="button" className="zc-btn sm ghost" disabled={busy}
+            onClick={() => { if (window.confirm(t("Mark {id} as not paid?", { id: order.orderId }))) run(() => onPaymentChange(order._id, { paymentStatus: "PENDING_VERIFICATION" })); }}>
+            {t("Undo paid")}
+          </button>
         </div>
       )}
+
+      {/* ── everything else ── */}
+      <div className="op-more">
+        {canEditItems(order) && onEditItems && (
+          <button type="button" className="zc-btn sm" disabled={busy} onClick={() => onEditItems(order)}
+            title={isInKitchen(order) ? t("Until it's served. A change slip prints for the kitchen.") : undefined}>✎ {t("Edit items")}</button>
+        )}
+        {canAddItems && onAddItems && (
+          <button type="button" className="zc-btn sm" disabled={busy} onClick={() => onAddItems(order)}>＋ {t("Add items")}</button>
+        )}
+        <button type="button" className="zc-btn sm" disabled={busy} onClick={printBill}>🖨️ {t("Print bill")}</button>
+        {displayPhone && onCombinedBill && (
+          <button type="button" className="zc-btn sm" disabled={busy} onClick={() => onCombinedBill("phone", displayPhone)}>🧾 {t("Customer Bill")}</button>
+        )}
+        {CANCELLABLE.includes(order.status) && (
+          <button type="button" className="zc-btn sm danger" disabled={busy} onClick={cancel}>✕ {t("Cancel")}</button>
+        )}
+        {onOpenDetail && (
+          <button type="button" className="zc-btn sm ghost" style={{ marginLeft:"auto" }} onClick={() => onOpenDetail(order)}>{t("All details")} →</button>
+        )}
+      </div>
     </div>
   );
 };
@@ -2226,6 +2252,12 @@ export default function OrdersPage() {
   const [tableSelected,setTableSelected]=useState(null);
   const [showCombinedBill, setShowCombinedBill] = useState(null);
   const [showTables, setShowTables] = useState(true);
+  // The 10 overview boxes — hidden / shown, remembered on this device.
+  const [showOverview, setShowOverviewState] = useState(() => { try { return localStorage.getItem("adminOrdersOverview") !== "hidden"; } catch { return true; } });
+  const toggleOverview = () => setShowOverviewState((v) => {
+    try { localStorage.setItem("adminOrdersOverview", v ? "hidden" : "shown"); } catch { /* storage off */ }
+    return !v;
+  });
   // Floor card shows either the dine-in tables or active takeaway orders.
   const [mapMode, setMapMode] = useState("tables"); // "tables" | "takeaway"
   // Table map area tab: "all" or a table area ("" Indoor / AC_ROOM / GARDEN).
@@ -2481,11 +2513,18 @@ export default function OrdersPage() {
 
   const handlePaymentChange=async(id,data)=>{
     try{
-      await fetch(`${import.meta.env.VITE_API_URL}/admin/orders/${id}/payment`,{
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/admin/orders/${id}/payment`,{
         method:"PATCH",
         headers:{ "Content-Type":"application/json", Authorization:`Bearer ${localStorage.getItem("adminToken")}` },
         body:JSON.stringify(data),
       });
+      // A refused change (e.g. a settled bill, or a role that can't undo Paid)
+      // must not look like it worked.
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        toast.error(body?.message || t("Payment update failed"));
+        return;
+      }
       patchOrder(id, data);
       toast.success(t("Payment updated ✓"));
     }catch{ toast.error(t("Payment update failed")); }
@@ -2684,7 +2723,7 @@ export default function OrdersPage() {
             </button>
           </>
         )}
-        {isPlaced && (
+        {canEditItems(o) && (
           <button type="button" className="zc-btn sm" title={t("Edit items")} disabled={actionBusy}
             onClick={() => setShowEditItems(o._id)} style={{ padding: "5px 8px" }}>✎</button>
         )}
@@ -2733,13 +2772,27 @@ export default function OrdersPage() {
         </div>
       </div>
 
-      {/* ── Two pill rows ── */}
-      <div className="op-pills" style={{ marginBottom: 8 }}>
-        {STAT_ROW.map((m) => <BillMetric key={m.label} {...m} />)}
+      {/* ── Order & Billing Overview: two pill rows, can be hidden ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--text-3)" }}>
+          {t("Order & Billing Overview")}
+        </span>
+        <button type="button" className="zc-btn sm ghost" onClick={toggleOverview} aria-expanded={showOverview}
+          aria-controls="op-overview" style={{ padding: "3px 10px" }}>
+          {showOverview ? `▴ ${t("Hide")}` : `▾ ${t("Show")}`}
+        </button>
       </div>
-      <div className="op-pills" style={{ marginBottom: 16 }}>
-        {STAGE_ROW.map((m) => <BillMetric key={m.label} {...m} />)}
-      </div>
+      {showOverview && (
+        <div id="op-overview">
+          <div className="op-pills" style={{ marginBottom: 8 }}>
+            {STAT_ROW.map((m) => <BillMetric key={m.label} {...m} />)}
+          </div>
+          <div className="op-pills" style={{ marginBottom: 16 }}>
+            {STAGE_ROW.map((m) => <BillMetric key={m.label} {...m} />)}
+          </div>
+        </div>
+      )}
+      {!showOverview && <div style={{ marginBottom: 10 }} />}
 
       {/* ── Controls ── */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
@@ -3002,6 +3055,8 @@ export default function OrdersPage() {
                   onPaymentChange={handlePaymentChange}
                   onCombinedBill={(mode, value) => setShowCombinedBill({ mode, value })}
                   onAddItems={(order) => setShowAddItems(order._id)}
+                  onEditItems={(order) => setShowEditItems(order._id)}
+                  onOpenDetail={(order) => setExpanded(order._id)}
                   onNewOrder={openNewTakeaway}
                 />
               ) : (
@@ -3023,6 +3078,8 @@ export default function OrdersPage() {
                 onPaymentChange={handlePaymentChange}
                 onCombinedBill={(mode, value) => setShowCombinedBill({ mode, value })}
                 onAddItems={(order) => setShowAddItems(order._id)}
+                onEditItems={(order) => setShowEditItems(order._id)}
+                onOpenDetail={(order) => setExpanded(order._id)}
                 onNewOrder={openNewOrder}
               />
             ) : (

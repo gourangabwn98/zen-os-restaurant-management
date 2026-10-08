@@ -127,37 +127,15 @@ export const validateInventoryForConsumption = async ({ InventoryItem, consumpti
   if (shortages.length) throwShortages(shortages);
 };
 
-// ── Deduct stock for an order sent to the kitchen ──────────────────────────
-/**
- * MUST be called from inside the same Mongo transaction/session as the
- * order's CONFIRMED → PREPARING write (orderService.sendToKitchenTx), next
- * to the KOT creation.
- *
- * Deducts  recipe quantity × qty ordered  of every STOCK ingredient,
- * converted into the stock item's own unit, and snapshots each line's
- * making cost onto `items[].makingCost` at today's stock prices.
- *
- * Idempotency: `Order.stockDeducted` flips false→true via an atomic
- * conditional update — a second call for the same order is a safe no-op.
- * Negative stock is additionally guarded at the DB level via a conditional
- * $inc (`currentStock: { $gte: qty } → $inc: -qty`), so even a validation
- * pass immediately followed by a concurrent order can't push stock negative.
- */
-export const deductStockForOrder = async ({ models, order, actor, session }) => {
+// Deducts every STOCK ingredient `order.items` needs (conditional $inc, so
+// stock never goes negative), writes the ledger, and snapshots
+// `stockDeductions` + each line's making cost onto the order. Callers own the
+// stockDeducted flag: deductStockForOrder (first deduction) and
+// restockEditedOrder (an order changed after it reached the kitchen).
+const deductLines = async ({ models, order, actor, session, reason }) => {
   const { Order, Recipe, InventoryItem, StockLedger, InventoryBatch } = models;
-
-  const claimed = await Order.findOneAndUpdate(
-    { _id: order._id, stockDeducted: false },
-    { $set: { stockDeducted: true } },
-    { session }
-  );
-  if (!claimed) {
-    // Already deducted (or raced) — nothing further to do.
-    return { deducted: false, deductions: [], alerts: [] };
-  }
-
   const recipes = await loadActiveRecipes(Recipe, order.items);
-  if (!recipes.length) return { deducted: true, deductions: [], alerts: [] };
+  if (!recipes.length) return { deductions: [], alerts: [] };
 
   const consumption = consumptionFromRecipes(recipes, order.items);
   const byId = await loadItemsById(InventoryItem, stockIngredientIds(recipes), session);
@@ -193,7 +171,7 @@ export const deductStockForOrder = async ({ models, order, actor, session }) => 
         quantity: -need.qty,
         balanceAfter: updated.currentStock,
         relatedOrder: order._id,
-        reason: `Order ${order.orderId}`,
+        reason: reason || `Order ${order.orderId}`,
         createdBy: actor,
       }],
       { session }
@@ -231,6 +209,38 @@ export const deductStockForOrder = async ({ models, order, actor, session }) => 
   });
   await Order.findByIdAndUpdate(order._id, { $set: update }, { session });
 
+  return { deductions, alerts };
+};
+// ── Deduct stock for an order sent to the kitchen ──────────────────────────
+/**
+ * MUST be called from inside the same Mongo transaction/session as the
+ * order's CONFIRMED → PREPARING write (orderService.sendToKitchenTx), next
+ * to the KOT creation.
+ *
+ * Deducts  recipe quantity × qty ordered  of every STOCK ingredient,
+ * converted into the stock item's own unit, and snapshots each line's
+ * making cost onto `items[].makingCost` at today's stock prices.
+ *
+ * Idempotency: `Order.stockDeducted` flips false→true via an atomic
+ * conditional update — a second call for the same order is a safe no-op.
+ * Negative stock is additionally guarded at the DB level via a conditional
+ * $inc (`currentStock: { $gte: qty } → $inc: -qty`), so even a validation
+ * pass immediately followed by a concurrent order can't push stock negative.
+ */
+export const deductStockForOrder = async ({ models, order, actor, session }) => {
+  const { Order } = models;
+
+  const claimed = await Order.findOneAndUpdate(
+    { _id: order._id, stockDeducted: false },
+    { $set: { stockDeducted: true } },
+    { session }
+  );
+  if (!claimed) {
+    // Already deducted (or raced) — nothing further to do.
+    return { deducted: false, deductions: [], alerts: [] };
+  }
+
+  const { deductions, alerts } = await deductLines({ models, order, actor, session });
   return { deducted: true, deductions, alerts };
 };
 
@@ -280,6 +290,44 @@ export const reverseStockForOrder = async ({ models, order, actor, session }) =>
   }
 
   return { reversed: true };
+};
+
+// ── Re-stock an order edited after it reached the kitchen ─────────────────
+/**
+ * An admin/manager changed an order that is already PREPARING/READY
+ * (orderService.modifySentOrderTx). MUST run inside that same transaction,
+ * after the order's items were updated: gives back everything `before`
+ * took (its `stockDeductions`), then deducts what the new items need — so
+ * stock always matches the final order, and a later cancel
+ * (reverseStockForOrder) returns exactly the new amounts. Food already
+ * cooked and thrown away is the admin's Wastage entry, not this.
+ * Only for an order whose stock is deducted and not reversed.
+ */
+export const restockEditedOrder = async ({ models, before, after, actor, session }) => {
+  const { Order, InventoryItem, StockLedger } = models;
+  if (!before.stockDeducted || before.stockReversed) throw httpError("This order's stock can't be changed", 409);
+
+  for (const d of before.stockDeductions || []) {
+    let updated = await InventoryItem.findByIdAndUpdate(
+      d.inventoryItem, { $inc: { currentStock: d.qty } }, { returnDocument: "after", session }
+    );
+    if (!updated) continue; // item deleted since — nothing to credit back to
+    if (updated.currentStock !== roundQty(updated.currentStock)) {
+      updated = await InventoryItem.findByIdAndUpdate(
+        updated._id, { $set: { currentStock: roundQty(updated.currentStock) } }, { returnDocument: "after", session }
+      );
+    }
+    await StockLedger.create(
+      [{
+        inventoryItem: updated._id, type: "REVERSAL", quantity: d.qty, balanceAfter: updated.currentStock,
+        relatedOrder: before._id, reason: `Order ${before.orderId} changed — returned`, createdBy: actor,
+      }],
+      { session }
+    );
+  }
+
+  await Order.updateOne({ _id: after._id }, { $set: { stockDeductions: [] } }, { session });
+  return deductLines({ models, order: after, actor, session, reason: `Order ${after.orderId} changed` });
 };
 
 // ── FIFO batch consumption (best-effort, expiry-accuracy only) ────────────

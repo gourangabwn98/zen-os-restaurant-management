@@ -166,6 +166,16 @@ const run = async () => {
     assert.match(text(renderBill(billJob())), /Type {7}: +Dine In/);
   });
 
+  await test("order-change slip: ORDER CHANGED title, CANCEL lines as sent; a normal KOT is unchanged", () => {
+    const lines = renderKot(kotJob({ changed: true, items: [{ name: "Biryani", qty: 1 }, { name: "CANCEL - Tea", qty: 2 }] }));
+    const t = text(lines);
+    assert.match(t, /\*\*\* ORDER CHANGED \*\*\*\nOnly the changes below/);
+    assert.doesNotMatch(t, /KITCHEN ORDER TICKET/);
+    assert.match(t, /CANCEL - Tea +x2/);
+    assert.ok(lines.some((l) => l.text === "[ KOT CHANGE ]"));
+    assert.doesNotMatch(text(renderKot(kotJob())), /ORDER CHANGED|KOT CHANGE/);
+  });
+
   await test("KH-12: add-ons print under their item on the KOT and the bill; plain items unchanged", () => {
     const k = text(renderKot(kotJob({ items: [{ name: "Biryani", qty: 2, addons: ["1 pc Chicken", "Egg"] }, { name: "Tea", qty: 1 }] })));
     assert.match(k, /Biryani +x2\n  \+ 1 pc Chicken\n  \+ Egg\nTea +x1/);

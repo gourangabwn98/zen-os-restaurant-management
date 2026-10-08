@@ -69,10 +69,13 @@ export const staleCutoff = (olderThanMinutes, now = new Date()) => {
 };
 
 /** Marks waiting KOT/bill jobs older than the cutoff SKIPPED. → { kot, bill, minutes } */
-export const skipStalePrintJobs = async ({ KOTJob, BillPrintJob, olderThanMinutes, actor, now = new Date() }) => {
+export const skipStalePrintJobs = async ({ KOTJob, BillPrintJob, KOTChangeJob = null, olderThanMinutes, actor, now = new Date() }) => {
   const { minutes, cutoff } = staleCutoff(olderThanMinutes, now);
   const filter = { status: { $in: WAITING_STATUSES }, createdAt: { $lt: cutoff } };
   const update = { $set: { status: "SKIPPED", lastError: `Skipped by ${actor?.name || "admin"} — older than ${minutes} min` } };
-  const [k, b] = await Promise.all([KOTJob.updateMany(filter, update), BillPrintJob.updateMany(filter, update)]);
-  return { kot: k.modifiedCount || 0, bill: b.modifiedCount || 0, minutes };
+  const [k, b, c] = await Promise.all([
+    KOTJob.updateMany(filter, update), BillPrintJob.updateMany(filter, update),
+    KOTChangeJob ? KOTChangeJob.updateMany(filter, update) : { modifiedCount: 0 }, // order-change slips
+  ]);
+  return { kot: (k.modifiedCount || 0) + (c.modifiedCount || 0), bill: b.modifiedCount || 0, minutes };
 };

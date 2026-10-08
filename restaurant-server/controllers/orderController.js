@@ -11,7 +11,7 @@ import {
 } from "../services/orderService.js";
 import {
   emitNewOrderPendingConfirmation, emitOrderCancelled, emitOrderConfirmed,
-  emitSentToKitchen, emitOrderModified,
+  emitSentToKitchen, emitOrderModified, emitKitchenOrderModified,
 } from "../sockets/socket.js";
 
 
@@ -182,10 +182,12 @@ export const getOrderById = async (req, res) => {
 // customer (JWT owner / guest token). Rules live in modifyOrderItemsTx.
 export const modifyOrderItems = async (req, res) => {
   try {
-    const { order } = await modifyOrderItemsTx({
+    const { order, kotChange, inventoryAlerts } = await modifyOrderItemsTx({
       req, orderId: req.params.id, items: req.body?.items, revision: req.body?.revision,
     });
-    emitOrderModified(req.tenantKey, order);
+    // kotChange is set only when the kitchen already had it (admin/manager edit).
+    if (kotChange) emitKitchenOrderModified(req.tenantKey, { order, kotChange, inventoryAlerts });
+    else emitOrderModified(req.tenantKey, order);
     res.json(order);
   } catch (err) {
     res.status(err.statusCode || 500).json({ message: err.message });

@@ -21,8 +21,11 @@ const qtyOf = (raw) => {
  * `scheduleCtx` (from menuScheduleService.getScheduleContext) additionally
  * rejects items whose CATEGORY schedule is outside its window right now
  * — the same rule GET /api/menu applies, so a stale cart can't bypass it.
+ * `opts.keepIds` (Set of menuItem ids): items the order ALREADY has at least
+ * this many of — an edit to an order the kitchen is cooking keeps them even
+ * if they're sold out / out of hours now. The price still comes from the DB.
  */
-export const priceItems = async (items, MenuItem, scheduleCtx = null) => {
+export const priceItems = async (items, MenuItem, scheduleCtx = null, { keepIds = null } = {}) => {
   if (!Array.isArray(items) || items.length === 0) {
     const err = new Error("No items in order");
     err.statusCode = 400;
@@ -49,12 +52,13 @@ export const priceItems = async (items, MenuItem, scheduleCtx = null) => {
         err.statusCode = 400;
         throw err;
       }
-      if (!m.isAvailable) {
+      const kept = keepIds?.has(String(m._id));
+      if (!m.isAvailable && !kept) {
         const err = new Error(`"${m.name}" is currently not available`);
         err.statusCode = 400;
         throw err;
       }
-      if (scheduleCtx && !isItemScheduledNow(m, scheduleCtx)) {
+      if (scheduleCtx && !kept && !isItemScheduledNow(m, scheduleCtx)) {
         const err = new Error(`"${m.name}" is not available at this time`);
         err.statusCode = 400;
         throw err;
@@ -114,8 +118,8 @@ export const computeTotals = (dbItems, restaurantProfile, coupon = null, { acSer
  * Full convenience wrapper used by placeOrder: resolve + compute in one call.
  * @returns {{ dbItems, subtotal, tax, serviceCharge, discount, total, totalQty }}
  */
-export const priceOrder = async ({ items, MenuItem, restaurantProfile, scheduleCtx = null, coupon = null, acServiceCharge = 0 }) => {
-  const dbItems = await priceItems(items, MenuItem, scheduleCtx);
+export const priceOrder = async ({ items, MenuItem, restaurantProfile, scheduleCtx = null, coupon = null, acServiceCharge = 0, keepIds = null }) => {
+  const dbItems = await priceItems(items, MenuItem, scheduleCtx, { keepIds });
   const totals  = computeTotals(dbItems, restaurantProfile, coupon, { acServiceCharge });
   return { dbItems, ...totals };
 };

@@ -1,5 +1,5 @@
 // controllers/printerController.js
-import { getRoomConnectionCount } from "../sockets/socket.js";
+import { getRoomConnectionCount, kotChangePrintPayload } from "../sockets/socket.js";
 import { rooms } from "../utils/tenantKey.js";
 import {
   createPrinterDevice, listPrinterDevices, revokePrinterDevice, skipStalePrintJobs, WAITING_STATUSES,
@@ -9,13 +9,13 @@ import { buildActor } from "../services/orderService.js";
 // ── GET /api/admin/printer/status — staff dashboard widget ──────────────────
 export const getPrinterStatus = async (req, res) => {
   try {
-    const { KOTJob, BillPrintJob, PrinterDevice } = req.models;
+    const { KOTJob, KOTChangeJob, BillPrintJob, PrinterDevice } = req.models;
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
 
-    const [
+    let [
       kotPending, kotPrinting, kotPrintedToday, kotFailed, kotRecentFailed,
       billPending, billPrinting, billPrintedToday, billFailed,
-      devices,
+      devices, chgPending, chgPrinting, chgPrintedToday, chgFailed,
     ] = await Promise.all([
       KOTJob.countDocuments({ status: "PENDING" }),
       KOTJob.countDocuments({ status: "PRINTING" }),
@@ -27,14 +27,21 @@ export const getPrinterStatus = async (req, res) => {
       BillPrintJob.countDocuments({ status: "PRINTED", printedAt: { $gte: todayStart } }),
       BillPrintJob.countDocuments({ status: "FAILED" }),
       PrinterDevice.find({ status: "Active" }).select("-keyHash"),
+      // Order-change slips count as KOTs on this card.
+      KOTChangeJob.countDocuments({ status: "PENDING" }),
+      KOTChangeJob.countDocuments({ status: "PRINTING" }),
+      KOTChangeJob.countDocuments({ status: "PRINTED", printedAt: { $gte: todayStart } }),
+      KOTChangeJob.countDocuments({ status: "FAILED" }),
     ]);
+    kotPending += chgPending; kotPrinting += chgPrinting; kotPrintedToday += chgPrintedToday; kotFailed += chgFailed;
     // Oldest job still waiting — "tickets are piling up" for the admin card.
     const waiting = { status: { $in: WAITING_STATUSES } };
-    const [oldKot, oldBill] = await Promise.all([
+    const [oldKot, oldBill, oldChg] = await Promise.all([
       KOTJob.findOne(waiting).sort({ createdAt: 1 }).select("createdAt").lean(),
       BillPrintJob.findOne(waiting).sort({ createdAt: 1 }).select("createdAt").lean(),
+      KOTChangeJob.findOne(waiting).sort({ createdAt: 1 }).select("createdAt").lean(),
     ]);
-    const oldestWaitingAt = [oldKot?.createdAt, oldBill?.createdAt].filter(Boolean).sort((a, b) => a - b)[0] || null;
+    const oldestWaitingAt = [oldKot?.createdAt, oldBill?.createdAt, oldChg?.createdAt].filter(Boolean).sort((a, b) => a - b)[0] || null;
 
     const connectedCount = await getRoomConnectionCount(rooms.printers(req.tenantKey));
 
@@ -63,12 +70,13 @@ export const getPrinterStatus = async (req, res) => {
 // local queue by job _id.
 export const getPrintQueue = async (req, res) => {
   try {
-    const { KOTJob, BillPrintJob } = req.models;
+    const { KOTJob, KOTChangeJob, BillPrintJob } = req.models;
     const NOT_DONE = { $in: ["PENDING","PRINTING","FAILED"] };
 
-    const [kot, bill] = await Promise.all([
+    const [kot, bill, changes] = await Promise.all([
       KOTJob.find({ status: NOT_DONE }).sort({ createdAt: 1 }).lean(),
       BillPrintJob.find({ status: NOT_DONE }).sort({ createdAt: 1 }).lean(),
+      KOTChangeJob.find({ status: NOT_DONE }).sort({ createdAt: 1 }).lean(), // order-change slips, printed as KOTs
     ]);
 
     const jobs = [
@@ -80,6 +88,7 @@ export const getPrintQueue = async (req, res) => {
         priority: j.priority || "NORMAL", createdAt: j.createdAt })),
       ...bill.map((j) => ({ jobId: String(j._id), jobType: "BILL", status: j.status, attempts: j.attempts,
         orderId: j.orderId, tableNo: j.tableNo, orderType: j.orderType, payload: j.payload, createdAt: j.createdAt })),
+      ...changes.map((j) => ({ ...kotChangePrintPayload(j), status: j.status })),
     ].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
     res.json({ jobs });
@@ -157,8 +166,8 @@ export const deletePrinterDevice = async (req, res) => {
 // Drops waiting jobs that are too old to print (see printerDeviceService).
 export const skipStaleJobs = async (req, res) => {
   try {
-    const { KOTJob, BillPrintJob } = req.models;
-    const r = await skipStalePrintJobs({ KOTJob, BillPrintJob, olderThanMinutes: req.body?.olderThanMinutes, actor: buildActor(req.user) });
+    const { KOTJob, BillPrintJob, KOTChangeJob } = req.models;
+    const r = await skipStalePrintJobs({ KOTJob, BillPrintJob, KOTChangeJob, olderThanMinutes: req.body?.olderThanMinutes, actor: buildActor(req.user) });
     res.json(r);
   } catch (err) {
     res.status(err.statusCode || 500).json({ message: err.message });

@@ -265,6 +265,12 @@ export default function KitchenBoardPage() {
         removeOrder(order._id);
       } else {
         upsertOrderSilently(order);
+        // The admin changed an order already on the board — a change slip
+        // prints too; make sure the cook notices (urgent tone + toast).
+        if (payload.modified) {
+          if (loadSoundPref() && !playUrgentOrderAlert()) setNeedsUnlock(true);
+          toast(`✏️ ${t("Order {id} changed — check the items", { id: order.orderId || "" })}`, { duration: 6000 });
+        }
       }
     };
 

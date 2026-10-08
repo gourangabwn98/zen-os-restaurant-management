@@ -76,6 +76,7 @@ export class SocketClient {
         jobId: payload.jobId, jobType: "KOT",
         orderId: payload.orderId, tableNo: payload.tableNo, orderType: payload.orderType,
         items: payload.items, notes: payload.notes || "",
+        ...(payload.changed && { changed: true }), // order-change slip (only the differences)
       });
     });
 

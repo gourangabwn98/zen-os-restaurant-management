@@ -205,12 +205,15 @@ export const initSocket = (httpServer) => {
       if (!socket.isPrinterDevice) return callback({ error: "Not authorized" });
       try {
         const conn = await getDB(process.env.MONGO_URI);
-        const { KOTJob, BillPrintJob } = getModels(conn);
+        const { KOTJob, KOTChangeJob, BillPrintJob } = getModels(conn);
         const NOT_DONE = { $in: ["PENDING","PRINTING","FAILED"] };
 
-        const [kot, bill] = await Promise.all([
+        const [kot, bill, changes] = await Promise.all([
           KOTJob.find({ status: NOT_DONE }).sort({ createdAt: 1 }).lean(),
           BillPrintJob.find({ status: NOT_DONE }).sort({ createdAt: 1 }).lean(),
+          // Order-change slips print as KOTs. Must be listed here, or the
+          // print-service drops a pushed slip as "no longer on the server".
+          KOTChangeJob.find({ status: NOT_DONE }).sort({ createdAt: 1 }).lean(),
         ]);
 
         const jobs = [
@@ -220,6 +223,7 @@ export const initSocket = (httpServer) => {
             tableName: j.tableName || "", tableDisplayNo: j.tableDisplayNo ?? null, createdAt: j.createdAt })),
           ...bill.map((j) => ({ jobId: String(j._id), jobType: "BILL", status: j.status, attempts: j.attempts,
             orderId: j.orderId, tableNo: j.tableNo, orderType: j.orderType, payload: j.payload, createdAt: j.createdAt })),
+          ...changes.map((j) => ({ ...kotChangePrintPayload(j), status: j.status })),
         ].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
         callback({ jobs });
@@ -240,7 +244,7 @@ export const initSocket = (httpServer) => {
 
       try {
         const conn = await getDB(process.env.MONGO_URI);
-        const { KOTJob, BillPrintJob, PrinterDevice } = getModels(conn);
+        const { KOTJob, KOTChangeJob, BillPrintJob, PrinterDevice } = getModels(conn);
         const Model = jobType === "KOT" ? KOTJob : BillPrintJob;
 
         const setFields = {
@@ -253,11 +257,11 @@ export const initSocket = (httpServer) => {
 
         // A job an admin SKIPPED stays skipped unless it really printed
         // (a print-service that had it queued locally may still report it).
-        const job = await Model.findOneAndUpdate(
-          status === "PRINTED" ? { _id: jobId } : { _id: jobId, status: { $ne: "SKIPPED" } },
-          { $set: setFields, ...(incFields ? { $inc: incFields } : {}) },
-          { returnDocument: "after" }
-        );
+        const filter = status === "PRINTED" ? { _id: jobId } : { _id: jobId, status: { $ne: "SKIPPED" } };
+        const update = { $set: setFields, ...(incFields ? { $inc: incFields } : {}) };
+        let job = await Model.findOneAndUpdate(filter, update, { returnDocument: "after" });
+        // An order-change slip travels as jobType "KOT" but lives in its own collection.
+        if (!job && jobType === "KOT") job = await KOTChangeJob.findOneAndUpdate(filter, update, { returnDocument: "after" });
 
         if (job) {
           const roomEvent = jobType === "KOT" ? "kot:status_changed" : "bill:status_changed";
@@ -418,6 +422,27 @@ export const emitOrderModified = (tenantKey, order) => {
   const payload = { order, previousStatus: order.status, modified: true };
   emit(rooms.staff(tenantKey), "order:status_changed", payload);
   emit(rooms.order(tenantKey, order._id), "order:status_changed", payload);
+};
+
+/** A change slip as the print queue / printers room sees it — a KOT job. */
+export const kotChangePrintPayload = (job) => ({
+  jobId: String(job._id), jobType: "KOT", changed: true,
+  orderId: job.orderId, tableNo: job.tableNo, orderType: job.orderType,
+  items: job.items, notes: job.notes || "", attempts: job.attempts || 0, priority: "URGENT",
+  customerName: "", diningArea: job.diningArea || "",
+  tableName: job.tableName || "", tableDisplayNo: job.tableDisplayNo ?? null,
+  createdAt: job.createdAt,
+});
+
+// Admin/manager changed an order the kitchen already has
+// (orderService.modifySentOrderTx): staff + customer see the new items, the
+// kitchen screen updates (PII-stripped, `modified` → it alerts the cook),
+// and the change slip goes to the printers like a KOT.
+export const emitKitchenOrderModified = (tenantKey, { order, kotChange, inventoryAlerts }) => {
+  emitOrderModified(tenantKey, order);
+  emit(rooms.kitchen(tenantKey), "order:status_changed", { order: toKitchenSafeOrder(order), previousStatus: order.status, modified: true });
+  if (kotChange?.created && kotChange.job) emit(rooms.printers(tenantKey), "kot:created", kotChangePrintPayload(kotChange.job));
+  for (const a of inventoryAlerts || []) emitInventoryAlert(tenantKey, a);
 };
 
 // The timer couldn't start preparing it (e.g. an ingredient ran out) —

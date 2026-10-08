@@ -581,6 +581,35 @@ const kotJobSchema = new mongoose.Schema({
   createdBy:  { type: actorSchema, default: () => ({}) },
 }, { timestamps: true });
 
+// ── KOT change slips ─────────────────────────────────────────────────────────
+// An admin/manager edited an order the kitchen already has (PREPARING/READY —
+// orderService.modifySentOrderTx). The order's own KOTJob stays one-per-order;
+// each change gets its own slip here listing ONLY what changed ("1 Biryani",
+// "1 CANCEL - Tea"). Unique per (order, revision) — the order revision the
+// edit produced — so a retried request can never print the same change twice.
+// Printed through the same print queue as a KOT (jobType "KOT", same fields),
+// so the on-prem print-service needs no new job type.
+const kotChangeJobSchema = new mongoose.Schema({
+  order:      { type: mongoose.Schema.Types.ObjectId, ref: "Order", required: true },
+  revision:   { type: Number, required: true },
+  orderId:    { type: String },
+  tableNo:    { type: Number, default: null },
+  orderType:  { type: String, enum: ORDER_TYPES },
+  items:      [{ name: String, nameBn: String, qty: Number, notes: String, addons: { type: [String], default: undefined } }],
+  notes:      { type: String, default: "" },
+  diningArea:     { type: String, default: "" },
+  tableName:      { type: String, default: "" },
+  tableDisplayNo: { type: Number, default: null },
+  status:      { type: String, enum: ["PENDING","PRINTING","PRINTED","FAILED","SKIPPED"], default: "PENDING" },
+  printerId:   { type: mongoose.Schema.Types.ObjectId, ref: "PrinterDevice", default: null },
+  attempts:    { type: Number, default: 0 },
+  lastError:   { type: String, default: "" },
+  printedAt:   { type: Date, default: null },
+  createdBy:  { type: actorSchema, default: () => ({}) },
+}, { timestamps: true });
+kotChangeJobSchema.index({ order: 1, revision: 1 }, { unique: true });
+kotChangeJobSchema.index({ status: 1, createdAt: 1 });
+
 // ── Bill print jobs (Phase 5) ───────────────────────────────────────────────
 // Unlike KOTJob, this is deliberately NOT unique-per-order — a bill can be
 // legitimately reprinted (e.g. customer wants another copy). Each "print
@@ -1094,6 +1123,7 @@ export function getModels(conn) {
     Table:             conn.models.Table             || conn.model("Table",             tableSchema),
     TableSession:      conn.models.TableSession      || conn.model("TableSession",      tableSessionSchema),
     KOTJob:            conn.models.KOTJob            || conn.model("KOTJob",            kotJobSchema),
+    KOTChangeJob:      conn.models.KOTChangeJob      || conn.model("KOTChangeJob",      kotChangeJobSchema),
     BillPrintJob:      conn.models.BillPrintJob      || conn.model("BillPrintJob",      billPrintJobSchema),
     PrinterDevice:     conn.models.PrinterDevice     || conn.model("PrinterDevice",     printerDeviceSchema),
     Invoice:           conn.models.Invoice           || conn.model("Invoice",           invoiceSchema),

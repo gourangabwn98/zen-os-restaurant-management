@@ -35,6 +35,7 @@ export default {
   "Mark ready": "তৈরি হয়েছে",
   "My duty": "আমার ডিউটি",
   "New order {id}": "নতুন অর্ডার {id}",
+  "Order {id} changed — check the items": "অর্ডার {id} বদলেছে — আইটেমগুলো দেখে নিন",
   "No tickets": "কোনো টিকিট নেই",
   "Note": "নোট",
   "OTP sent to +91 {phone}": "+91 {phone} নম্বরে OTP পাঠানো হয়েছে",

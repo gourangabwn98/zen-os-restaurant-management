@@ -22,8 +22,12 @@ export const renderKot = (job, { header = null, width = DEFAULT_WIDTH } = {}) =>
 
   lines.push(...restaurantHeader(header, W));
 
+  // An order-change slip (the order was edited after its KOT): only the
+  // differences are listed; "CANCEL - …" lines mean stop making that.
+  const changed = !!d.changed;
   lines.push(separator(W));
-  lines.push({ text: "*** KITCHEN ORDER TICKET ***", bold: true, align: "center" });
+  lines.push({ text: changed ? "*** ORDER CHANGED ***" : "*** KITCHEN ORDER TICKET ***", bold: true, align: "center" });
+  if (changed) lines.push({ text: "Only the changes below", align: "center" });
   lines.push(separator(W));
 
   const customer = d.customerName || d.guestName;
@@ -64,7 +68,7 @@ export const renderKot = (job, { header = null, width = DEFAULT_WIDTH } = {}) =>
   lines.push(separator(W));
   lines.push({ text: `Total Items: ${items.reduce((s, i) => s + (Number(i.qty) || 0), 0)}`, bold: true, align: "right" });
   lines.push({ type: "feed" });
-  lines.push({ text: "[ KOT ]", bold: true, align: "center" }); // KH-14 (was "[ KITCHEN COPY ]")
+  lines.push({ text: changed ? "[ KOT CHANGE ]" : "[ KOT ]", bold: true, align: "center" }); // KH-14 (was "[ KITCHEN COPY ]")
   lines.push({ type: "feed" });
   lines.push({ type: "cut" });
   return lines;
