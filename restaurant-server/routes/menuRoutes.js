@@ -36,7 +36,7 @@ router.get("/best-sellers", autoAuth, getBestSellers);
 // Admin routes — use protect (token has mongoUri)
 // router.post("/",              protect, uploadMiddleware, addMenuItem);
 // router.put("/:id",            protect, uploadMiddleware, updateMenuItem);
-// Bulk scheduled-visibility update for categories and/or items — admin only.
+// Bulk scheduled-visibility update for CATEGORIES — admin only (items have no schedule).
 router.patch("/schedule",     protect, requireAdmin, bulkUpdateSchedule);
 // Big-menu tools (Admin → Menu items). Registered before the "/:id" routes.
 router.patch("/availability", protect, requireStaff, setItemsAvailability); // On · Sold out today · Off

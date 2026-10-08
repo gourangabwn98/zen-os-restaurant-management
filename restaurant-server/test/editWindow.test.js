@@ -163,15 +163,19 @@ await test("waiter/admin orders start Placed (CONFIRMED) with a 3-minute timer �
   }
 });
 
-await test("customer/guest orders start Awaiting confirmation — no timer, cancellable any time", async () => {
-  for (const user of [null, CUSTOMER]) {
-    const w = makeWorld();
-    const { order } = await place(w, user);
-    assert.equal(order.status, "PENDING_CONFIRMATION");
-    assert.equal(order.autoPrepareAt, null, "nothing happens until staff accept it");
-    assert.equal(order.cancelDeadline, null);
-    assert.equal(w.state.kots.length, 0);
-  }
+await test("customer orders start Awaiting confirmation — no timer, cancellable any time", async () => {
+  const w = makeWorld();
+  const { order } = await place(w, CUSTOMER);
+  assert.equal(order.status, "PENDING_CONFIRMATION");
+  assert.equal(order.autoPrepareAt, null, "nothing happens until staff accept it");
+  assert.equal(order.cancelDeadline, null);
+  assert.equal(w.state.kots.length, 0);
+});
+
+await test("a guest (not logged in) can't place an order — 401, nothing written", async () => {
+  const w = makeWorld();
+  await assert.rejects(place(w, null), (e) => e.statusCode === 401 && /log in/i.test(e.message));
+  assert.equal(w.state.kots.length, 0);
 });
 
 await test("0-minute window: a staff order goes straight to PREPARING with its KOT; a customer order still waits", async () => {

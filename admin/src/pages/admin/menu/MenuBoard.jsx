@@ -14,10 +14,10 @@ import Loader from "../shared/Loader.jsx";
 import EmptyState from "../shared/EmptyState.jsx";
 import ErrorState from "../shared/ErrorState.jsx";
 import { t, tn, fmtNum, localName } from "../../../i18n/core.js";
-import { VegDot, ScheduleBadge, Thumb, CatThumb } from "./menuUI.jsx";
+import { VegDot, Thumb, CatThumb } from "./menuUI.jsx";
 import { ITEM_FLAGS } from "./menuKit.js";
 import {
-  VIEWS, VIEW_CHIPS, hasSchedule, hasPhoto, isOutOfStock, scheduledAt, availState,
+  VIEWS, VIEW_CHIPS, hasPhoto, isOutOfStock, scheduledAt, availState,
   timeLabel, daysLabel, datesLabel, fmtMinutes, hhmmOf, windowSegments, DAY_SHORT, hasExtraFilters,
 } from "./menuKit.js";
 
@@ -247,15 +247,12 @@ function AvailSeg({ item, busy, onSet }) {
   );
 }
 
-const DinerTags = ({ item, clock }) => (
+const DinerTags = ({ item }) => (
   <span style={{ display: "inline-flex", gap: 5, flexWrap: "wrap", alignItems: "center" }}>
     {ITEM_FLAGS.filter((f) => item[f.flag]).map((f) => <span key={f.flag} className="zc-tag live sq mb-dtag">{t(f.label)}</span>)}
     {(item.tags || []).map((x) => <span key={x} className="zc-tag vio mb-dtag">{x}</span>)}
     {isOutOfStock(item) && <span className="zc-tag stop sq"><i />{t("Out of stock")}</span>}
-    {hasSchedule(item) && (
-      <ScheduleBadge schedule={item.schedule} off={!clock && item.scheduledNow === false && item.isAvailable} />
-    )}
-    {!(item.tags || []).length && !ITEM_FLAGS.some((f) => item[f.flag]) && !isOutOfStock(item) && !hasSchedule(item) && (
+    {!(item.tags || []).length && !ITEM_FLAGS.some((f) => item[f.flag]) && !isOutOfStock(item) && (
       <span style={{ color: "var(--text-3)", fontSize: 11 }}>—</span>
     )}
   </span>
@@ -430,7 +427,6 @@ export function ItemsPanel({
             <button type="button" className="zc-btn sm" disabled={bulk.busy} onClick={() => bulk.setState("soldout")}>{t("Sold out today")}</button>
             <button type="button" className="zc-btn sm" disabled={bulk.busy} onClick={() => bulk.setState("off")}>{t("Turn off")}</button>
             <button type="button" className="zc-btn sm" disabled={bulk.busy} onClick={bulk.edit}>✎ {t("Bulk edit…")}</button>
-            <button type="button" className="zc-btn sm" disabled={bulk.busy} onClick={bulk.schedule}>🕒 {t("Own time window…")}</button>
             <span style={{ flex: 1 }} />
             {bulk.busy && <span style={{ color: "var(--text-3)" }}>{t("Saving…")}</span>}
             <button type="button" className="zc-btn ghost sm" disabled={bulk.busy} onClick={bulk.clear}>{t("Clear")} ✕</button>
@@ -517,7 +513,7 @@ export function ItemsPanel({
                           </div>
                         </td>
                         <td className="num"><Price item={item} /></td>
-                        <td><DinerTags item={item} clock={previewClock} /></td>
+                        <td><DinerTags item={item} /></td>
                         <td onClick={(e) => e.stopPropagation()}>
                           <AvailSeg item={item} busy={busyIds.has(item._id)} onSet={onAvail} />
                           {timeOffNote(item, g)}
@@ -564,7 +560,7 @@ export function ItemsPanel({
                           <span className="tnum" style={{ marginLeft: "auto" }}><Price item={item} /></span>
                         </div>
                         {item.description && <div className="mb-note" style={{ marginLeft: 0, display: "block" }}>{item.description}</div>}
-                        <div style={{ marginTop: 5 }}><DinerTags item={item} clock={previewClock} /></div>
+                        <div style={{ marginTop: 5 }}><DinerTags item={item} /></div>
                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, flexWrap: "wrap" }}
                           onClick={(e) => e.stopPropagation()}>
                           <AvailSeg item={item} busy={busyIds.has(item._id)} onSet={onAvail} />

@@ -12,7 +12,7 @@ import { resolveCouponForOrder } from "./couponService.js";
 import { getScheduleContext } from "./menuScheduleService.js";
 import { normalizeOrderType, assertValidTransition, effectiveBillStatus, requiresPaidForTransition, ORDER_STATUSES } from "../utils/orderStateMachine.js";
 import { createKotJobForOrder, kotCustomerName } from "./kotService.js";
-import { normalizeDiningArea } from "../utils/diningArea.js";
+import { normalizeDiningArea, tableDisplayNo, tableDisplayName } from "../utils/diningArea.js";
 import { findOrOpenTableSession, closeTableSession } from "./tableSessionService.js";
 import { findNextMatch } from "./waitlistService.js";
 import { signGuestOrderToken, verifyGuestOrderToken } from "../utils/guestOrderToken.js";
@@ -141,7 +141,6 @@ export const resolveFollowUpParent = async ({ Order, parentId, user }) => {
     inherit: {
       orderType: root.orderType,
       tableNo: root.tableNo ?? undefined,
-      diningArea: root.diningArea || "",
       customerName: root.guestName || "",
       customerPhone: root.guestPhone || "",
       tableToken: undefined,
@@ -158,6 +157,14 @@ export const placeOrderTx = async ({ req, body }) => {
   if (getRoleFromUser(req.user) === "chef") {
     const err = new Error("Chef accounts cannot place orders");
     err.statusCode = 403;
+    throw err;
+  }
+
+  // Customers must be logged in to order (no guest orders). Staff are always
+  // logged in. Browsing the menu and the cart price quote stay open to all.
+  if (!req.user) {
+    const err = new Error("Please log in to place an order");
+    err.statusCode = 401;
     throw err;
   }
 
@@ -220,6 +227,8 @@ export const placeOrderTx = async ({ req, body }) => {
   // ── Table / QR verification (soft — see schema comment) + session ─────────
   let tableSessionId = null;
   let tableVerified  = false;
+  let tableArea      = ""; // the table's configured area (Table Management)
+  let tableDisplay   = null; // its number within that area ("Indoor-AC 1" → 1)
 
   if (normalizedType === "DINE_IN" && tableNo) {
     const tableDoc = await Table.findOne({ tableNo: Number(tableNo) });
@@ -229,6 +238,8 @@ export const placeOrderTx = async ({ req, body }) => {
       throw err;
     }
 
+    tableArea = tableDoc.diningArea || "";
+    tableDisplay = tableDisplayNo(tableDoc);
     if (isStaffOrder) {
       tableVerified = true; // trusted staff placing the order in person
     } else if (tableToken) {
@@ -275,8 +286,12 @@ export const placeOrderTx = async ({ req, body }) => {
     coupon,
     orderType:     normalizedType,
     tableNo:       tableNo ? Number(tableNo) : null,
-    // KH-10: AC Room / Garden — staff only, dine-in only (utils/diningArea.js).
-    diningArea:    isStaffOrder ? normalizeDiningArea(effBody.diningArea, normalizedType) : "",
+    // Area (Indoor / AC Room / Garden) comes from the TABLE the admin set up —
+    // never from the client — so every order at an AC Room table is AC Room.
+    diningArea:    normalizeDiningArea(tableArea, normalizedType),
+    // How people know this table ("Indoor-AC 1") — snapshotted for screens / KOT / bill.
+    tableDisplayNo: tableDisplay,
+    tableName:     tableDisplay != null ? tableDisplayName(tableArea, tableDisplay) : "",
     // KH-07: link to the original order (root) when this is a follow-up.
     parentOrder:   followUp ? followUp.rootId : null,
     parentOrderNo: followUp ? followUp.rootOrderNo : "",

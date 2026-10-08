@@ -146,7 +146,7 @@ function KitchenTicket({ order, now, busy, onStartPreparing, onAdvance, action, 
       }}>
         <div>
           <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-.02em", color: T1 }}>
-            {order.tableNo ? t("Table {n}", { n: order.tableNo }) : t("Takeaway")}
+            {order.tableNo ? (order.tableName || t("Table {n}", { n: order.tableNo })) : t("Takeaway")}
           </div>
           <div style={{ fontSize: 10.5, color: T3 }}>{order.orderId}{order.waiterName ? ` · ${order.waiterName}` : ""}</div>
         </div>

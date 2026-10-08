@@ -13,6 +13,7 @@ import { useVisibleInterval } from "../../hooks/useVisibleInterval.js";
 import { t, tn, N_, fmtNum, fmtTime, localName } from "../../i18n/core.js";
 import { customerName } from "./shared/customerName.js";
 import { takenByName, takenByIsAcceptor } from "./shared/takenBy.js";
+import { TABLE_AREAS, TABLE_AREA_LABEL, groupTablesByArea, tableLabel, tableLabelByNo } from "./shared/diningArea.js";
 
 // ── Dark tokens ───────────────────────────────────────────────────────────────
 const PINK       = PRIMARY;
@@ -142,7 +143,7 @@ if (!document.getElementById("tables-page-styles")) {
 // carries no token, so there's nothing to rotate).
 function QRModal({ table, onClose, onRegenerate }) {
   const isTakeaway = !!table.takeaway;
-  const name = isTakeaway ? t("Takeaway") : t("Table {n}", { n: table.tableNo });
+  const name = isTakeaway ? t("Takeaway") : tableLabel(table);
   const [regen, setRegen] = useState(false);
   const [qrData, setQrData] = useState({ code: table.qrCode, url: table.qrUrl });
   const [stale, setStale] = useState(!!table.qrStale);
@@ -278,7 +279,7 @@ const Chair = ({ pos, occupied }) => {
 };
 
 // ── TableCard ─────────────────────────────────────────────────────────────────
-const TableCard = ({ config, order, onClick, isSelected, tableStatus, onToggleStatus, onDelete, onQR, qrStale }) => {
+const TableCard = ({ config, order, onClick, isSelected, tableStatus, onToggleStatus, onDelete, onQR, qrStale, area = "", onAreaChange }) => {
   const status = order ? order.status : "Empty";
   const s      = STATUS_STYLE[status] || STATUS_STYLE.Empty;
   const occ    = !!(order && ACTIVE_STATUSES.includes(status));
@@ -321,7 +322,7 @@ const TableCard = ({ config, order, onClick, isSelected, tableStatus, onToggleSt
           }}>
           <div style={{ fontSize:11, fontWeight:700, color:isSelected?"#c4b5fd":s.tc,
             fontFamily:"'DM Mono',monospace", letterSpacing:0.5 }}>
-            {t("T{n}", { n: config.id })}
+            {t("T{n}", { n: config.displayNo ?? config.id })}
           </div>
           <div style={{ fontSize:9, fontWeight:600, letterSpacing:0.5, textTransform:"uppercase",
             color:isSelected?PINK:s.tc, marginTop:1 }}>
@@ -365,6 +366,13 @@ const TableCard = ({ config, order, onClick, isSelected, tableStatus, onToggleSt
           ✕
         </button>
       </div>
+      {onAreaChange && (
+        <select value={area} onClick={e=>e.stopPropagation()} onChange={e=>onAreaChange(config.id, e.target.value)}
+          aria-label={t("Area of {table}", { table: config.name || t("Table {n}", { n: config.id }) })} className="input-dark"
+          style={{ marginTop:4, padding:"3px 6px", fontSize:11, width:"auto" }}>
+          {TABLE_AREAS.map((a) => <option key={a || "indoor"} value={a}>{t(TABLE_AREA_LABEL[a])}</option>)}
+        </select>
+      )}
     </div>
   );
 };
@@ -409,7 +417,7 @@ const OrderDrawer = ({ config, order, session, onClose, onStatusChange, onClearT
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 }}>
         <div>
           <div style={{ fontWeight:700, fontSize:16, display:"flex", alignItems:"center", gap:10, color:T1 }}>
-            <span style={{ fontFamily:"'DM Mono',monospace", color:PINK }}>{t("T{n}", { n: config.id })}</span>
+            <span style={{ fontFamily:"'DM Mono',monospace", color:PINK }}>{config.name || t("T{n}", { n: config.id })}</span>
             <span style={{ fontSize:13, color:T2, fontWeight:400, display:"inline-flex", alignItems:"center", gap:6 }}>
               ·
               <label htmlFor="tbl-seats" style={{ fontSize:12 }}>{t("Seats")}</label>
@@ -630,7 +638,7 @@ const WaitlistRow = ({ entry, freeTables, onSeat, onCancel, busy }) => {
           ) : eligible.map(tb => (
             <button key={tb.tableNo} onClick={() => { onSeat(entry._id, tb.tableNo); setPicking(false); }}
               className="btn-ghost-dark" style={{ color:GREEN, borderColor:"rgba(16,185,129,0.3)" }}>
-              {t("T{n}", { n: tb.tableNo })} · {t("{n} seats", { n: tb.seats })}
+              {tableLabel(tb)} · {t("{n} seats", { n: tb.seats })}
             </button>
           ))}
         </div>
@@ -686,7 +694,7 @@ function WaitlistPanel({ entries, freeTables, suggestion, onDismissSuggestion, o
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, flexWrap:"wrap",
           padding:"10px 14px", background:GREEN_LIGHT, border:"1px solid rgba(16,185,129,0.3)", borderRadius:10, marginBottom:14 }}>
           <span style={{ fontSize:12.5, color:"#34d399" }}>
-            🟢 {t("Table {n} just freed up ({seats} seats) — seat {name} (party of {size})?", { n: suggestion.tableNo, seats: suggestion.seats, name: suggestion.suggestedEntry.guestName, size: suggestion.suggestedEntry.partySize })}
+            🟢 {t("{table} just freed up ({seats} seats) — seat {name} (party of {size})?", { table: suggestion.tableName || t("Table {n}", { n: suggestion.tableNo }), seats: suggestion.seats, name: suggestion.suggestedEntry.guestName, size: suggestion.suggestedEntry.partySize })}
           </span>
           <div style={{ display:"flex", gap:8 }}>
             <button onClick={() => { handleSeat(suggestion.suggestedEntry._id, suggestion.tableNo); onDismissSuggestion(); }}
@@ -768,6 +776,7 @@ export default function TablesPage({ onNavigate }) {
   const [showModal,  setShowModal]  = useState(false);
   const [newTableNo, setNewTableNo] = useState("");
   const [newSeats,   setNewSeats]   = useState("4");
+  const [newArea,    setNewArea]    = useState(""); // Indoor
   const [creating,   setCreating]   = useState(false);
   const [qrTable,    setQrTable]    = useState(null);
   const [waitlist,   setWaitlist]   = useState([]);
@@ -824,9 +833,13 @@ export default function TablesPage({ onNavigate }) {
   }, [fetchData]);
 
   const handleStatusChange  = async (id, ns) => { try { await updateOrderStatus(id,ns); toast.success(`→ ${t(ns)}`); await fetchData(); setSelected(null); } catch (err) { toast.error(err?.response?.data?.message || t("Update failed")); } };
-  const handleSeatsChange   = async (tableNo, seats) => { try { await updateTable(tableNo,{ seats }); toast.success(t("Table {n} now seats {s}", { n: tableNo, s: seats })); await fetchData(); } catch(e) { toast.error(e.response?.data?.message||t("Failed to update")); } };
-  const handleToggleStatus  = async (tableNo) => { const tb=tables.find(x=>x.tableNo===tableNo); if(!tb)return; const ns=tb.status==="Active"?"Inactive":"Active"; try { await updateTable(tableNo,{status:ns}); toast.success(`${t("Table {n}", { n: tableNo })} → ${t(ns)}`); fetchData(); } catch { toast.error(t("Failed to update")); } };
-  const handleDelete        = async (tableNo) => { if(!window.confirm(t("Delete Table {n}?", { n: tableNo })))return; try { await deleteTable(tableNo); toast.success(t("Table {n} deleted", { n: tableNo })); fetchData(); if(selected===tableNo)setSelected(null); } catch(e){ toast.error(e.response?.data?.message||t("Failed")); } };
+  const handleSeatsChange   = async (tableNo, seats) => { try { await updateTable(tableNo,{ seats }); toast.success(t("{table} now seats {s}", { table: tableLabelByNo(tables, tableNo), s: seats })); await fetchData(); } catch(e) { toast.error(e.response?.data?.message||t("Failed to update")); } };
+  // A table in use can't be switched off — the server says so (409).
+  const handleToggleStatus  = async (tableNo) => { const tb=tables.find(x=>x.tableNo===tableNo); if(!tb)return; const ns=tb.status==="Active"?"Inactive":"Active"; try { await updateTable(tableNo,{status:ns}); toast.success(`${tableLabel(tb)} → ${t(ns)}`); fetchData(); } catch (e) { toast.error(e.response?.data?.message || t("Failed to update")); } };
+  // Area (Indoor / AC Room / Garden): both Table Maps group by it, and new
+  // orders on this table take it (AC Room → service charge on the bill).
+  const handleAreaChange    = async (tableNo, diningArea) => { try { await updateTable(tableNo,{ diningArea }); toast.success(t("{table} → {area}", { table: tableLabelByNo(tables, tableNo), area: t(TABLE_AREA_LABEL[diningArea]) })); fetchData(); } catch (e) { toast.error(e.response?.data?.message || t("Failed to update")); } };
+  const handleDelete        = async (tableNo) => { if(!window.confirm(t("Delete {table}?", { table: tableLabelByNo(tables, tableNo) })))return; try { await deleteTable(tableNo); toast.success(t("{table} deleted", { table: tableLabelByNo(tables, tableNo) })); fetchData(); if(selected===tableNo)setSelected(null); } catch(e){ toast.error(e.response?.data?.message||t("Failed")); } };
   const handleTakeawayQR = async () => {
     try {
       const { data } = await getTakeawayQR();
@@ -835,14 +848,14 @@ export default function TablesPage({ onNavigate }) {
   };
   // Mockup parity: every active table's QR on one printout (one per card).
   const handlePrintAll = () => {
-    const list = tables.filter((tb) => tb.qrCode && (tb.status || "Active") === "Active").sort((a, b) => a.tableNo - b.tableNo);
+    const list = tables.filter((tb) => tb.qrCode && (tb.status || "Active") === "Active"); // server order: by area, then number
     if (!list.length) return toast.error(t("No table QR codes to print"));
     let el = document.getElementById("qr-print-area");
     if (!el) { el = document.createElement("div"); el.id = "qr-print-area"; document.body.appendChild(el); }
     el.style.display = "none";
     el.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:24px;justify-content:center;font-family:sans-serif;padding:20px">${list.map((tb) => `
       <div style="width:240px;text-align:center;page-break-inside:avoid;border:1px solid #ddd;border-radius:12px;padding:14px">
-        <div style="font-size:20px;font-weight:800;margin-bottom:10px">${t("Table {n}", { n: Number(tb.tableNo) })}</div>
+        <div style="font-size:20px;font-weight:800;margin-bottom:10px">${tableLabel(tb)}</div>
         <img src="${tb.qrCode}" style="width:200px;height:200px"/>
         <div style="font-size:11px;color:#777;margin-top:8px">${t("Scan to order instantly")}</div>
       </div>`).join("")}</div>`;
@@ -851,12 +864,12 @@ export default function TablesPage({ onNavigate }) {
   const handleRegenerate    = async (tableNo, opts) => { const { data }=await regenerateQR(tableNo, opts); setTables(p=>p.map(tb=>tb.tableNo===tableNo?{...tb,qrCode:data.qrCode,qrUrl:data.qrUrl,qrStale:false}:tb)); return { data }; };
   const handleClearTable    = async (session) => {
     if (!session?._id) return;
-    if (!window.confirm(t("Clear Table {n}? This closes the table's session.", { n: session.tableNo }))) return;
+    if (!window.confirm(t("Clear {table}? This closes the table's session.", { table: tableLabelByNo(tables, session.tableNo) }))) return;
     try {
       const { data } = await clearTableSession(session._id);
-      toast.success(t("Table {n} cleared", { n: session.tableNo }));
+      toast.success(t("{table} cleared", { table: tableLabelByNo(tables, session.tableNo) }));
       if (data?.suggestedEntry) {
-        setFreedSuggestion({ tableNo: session.tableNo, seats: selectedConf?.seats, suggestedEntry: data.suggestedEntry });
+        setFreedSuggestion({ tableNo: session.tableNo, tableName: tableLabelByNo(tables, session.tableNo), seats: selectedConf?.seats, suggestedEntry: data.suggestedEntry });
       }
       await fetchData();
       setSelected(null);
@@ -872,7 +885,7 @@ export default function TablesPage({ onNavigate }) {
   const handleSeatWaitlist = async (id, tableNo) => {
     try {
       await seatWaitlistEntry(id, tableNo);
-      toast.success(t("Seated at Table {n}", { n: tableNo }));
+      toast.success(t("Seated at {table}", { table: tableLabelByNo(tables, tableNo) }));
       setFreedSuggestion(null);
       await fetchData();
     } catch (e) { toast.error(e.response?.data?.message || t("Failed to seat — table may already be taken")); }
@@ -889,12 +902,15 @@ export default function TablesPage({ onNavigate }) {
     if (err) return toast.error(err);
     setCreating(true);
     try {
-      await createTable({ tableNo:parseInt(newTableNo), seats:parseInt(newSeats) });
-      toast.success(t("Table {n} created!", { n: newTableNo }));
-      setShowModal(false); setNewTableNo(""); setNewSeats("4");
+      const { data: made } = await createTable({ tableNo:parseInt(newTableNo), seats:parseInt(newSeats), diningArea:newArea });
+      toast.success(t("{table} created!", { table: tableLabel({ displayNo: no, diningArea: newArea }) }));
+      setShowModal(false); setNewTableNo(""); setNewSeats("4"); // keep the area for the next table
       await fetchData();
       const res = await getAllTables();
-      const created = (res.data?.tables||[]).find(tb=>tb.tableNo===parseInt(newTableNo));
+      // By the new table's internal key — "Indoor-AC 1" may be internal table 15,
+      // and internal table 1 may be a different (Indoor) table.
+      const createdNo = made?.table?.tableNo;
+      const created = (res.data?.tables||[]).find(tb=>tb.tableNo===createdNo);
       if (created) setQrTable(created);
     } catch(e) { toast.error(e.response?.data?.message||t("Failed to create")); }
     finally { setCreating(false); }
@@ -1037,10 +1053,17 @@ export default function TablesPage({ onNavigate }) {
             </button>
           </div>
         ) : (
-          <div style={{ display:"flex", flexWrap:"wrap", gap:40, justifyContent:"center", paddingBottom:28 }}>
-            {tables.sort((a,b)=>a.tableNo-b.tableNo).map(tb => (
+          groupTablesByArea(tables).map((g) => (
+          <div key={g.area || "indoor"} style={{ paddingBottom:28 }}>
+          <div style={{ fontSize:12, fontWeight:700, color:T1, letterSpacing:0.5, textAlign:"center", marginBottom:14 }}>
+            {t(TABLE_AREA_LABEL[g.area] || g.area)} <span style={{ color:T3, fontWeight:500 }}>· {tn(g.tables.filter(x=>(x.status||"Active")==="Active").length, "{n} active table", "{n} active tables")}</span>
+          </div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:40, justifyContent:"center" }}>
+            {g.tables.map(tb => (
               <TableCard key={tb.tableNo}
-                config={{ id:tb.tableNo, seats:tb.seats }}
+                area={tb.diningArea || ""}
+                onAreaChange={handleAreaChange}
+                config={{ id:tb.tableNo, seats:tb.seats, displayNo:tb.displayNo ?? tb.tableNo, name:tableLabel(tb) }}
                 order={tableMap[tb.tableNo]||null}
                 qrStale={!!tb.qrStale}
                 onClick={()=>setSelected(selected===tb.tableNo?null:tb.tableNo)}
@@ -1052,6 +1075,8 @@ export default function TablesPage({ onNavigate }) {
               />
             ))}
           </div>
+          </div>
+          ))
         )}
 
         <div style={{ width:"100%", height:1, margin:"0 0 18px",
@@ -1071,7 +1096,7 @@ export default function TablesPage({ onNavigate }) {
       {/* Order Drawer */}
       {selected && selectedConf && (
         <OrderDrawer
-          config={{ id:selectedConf.tableNo, seats:selectedConf.seats }}
+          config={{ id:selectedConf.tableNo, seats:selectedConf.seats, name:tableLabel(selectedConf) }}
           order={selectedOrder} session={selectedSession}
           onClose={()=>setSelected(null)}
           onStatusChange={handleStatusChange}
@@ -1101,6 +1126,11 @@ export default function TablesPage({ onNavigate }) {
             {newSeats && seatsError(newSeats) && (
               <div style={{ fontSize:11.5, color:"#f87171", marginBottom:14 }}>{seatsError(newSeats)}</div>
             )}
+
+            <label style={{ fontSize:12, color:T2, fontWeight:600, display:"block", marginBottom:6 }}>{t("Area")}</label>
+            <select value={newArea} onChange={e=>setNewArea(e.target.value)} className="input-dark" style={{ marginBottom:14 }}>
+              {TABLE_AREAS.map((a) => <option key={a || "indoor"} value={a}>{t(TABLE_AREA_LABEL[a])}</option>)}
+            </select>
 
             <div style={{ fontSize:12, color:T2, marginBottom:20 }}>
               {t("Unique QR code for the table will be auto generated.")}

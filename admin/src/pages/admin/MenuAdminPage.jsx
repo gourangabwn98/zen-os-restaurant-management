@@ -11,21 +11,19 @@
 //   delete                   deleteMenuItem
 //   availability On / Off    updateMenuItem(id, { isAvailable })  (also in bulk)
 //   categories               getCategories / createCategory / updateCategory / deleteCategory
-//   scheduled visibility     updateMenuSchedule (PATCH /menu/schedule, bulk)
 //   restaurant timezone      getRestaurantProfile (for the timeline's "now")
 // Images go to Cloudinary through the backend, same as before.
 //
-// Scheduling is separate from availability: a customer sees an item only if
-// it is Available AND its category's window AND its own window allow the
-// current restaurant time (enforced server-side — this page just edits it).
+// A customer sees an item when it is Available AND its category's time window
+// (if the category has one — Menu times) allows the current restaurant time.
+// Menu items have no time schedule of their own (enforced server-side).
 // Layout pieces live in ./menu/ (MenuBoard.jsx, menuUI.jsx, menuKit.js).
 // ─────────────────────────────────────────────────────────────────────────────
-import TimePicker from "../../components/TimePicker.jsx";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import toast from "react-hot-toast";
 import {
   getMenu, getCategories, createMenuItem, updateMenuItem, deleteMenuItem,
-  createCategory, updateCategory, deleteCategory, updateMenuSchedule,
+  createCategory, updateCategory, deleteCategory,
   getMenuTimes, setMenuAvailability, reorderCategories, mergeCategory,
 } from "../../services/menuService.js";
 import { getRestaurantProfile } from "../../services/adminService.js";
@@ -36,7 +34,7 @@ import { invalidate } from "../../services/cache.js";
 import { VegDot, Switch, ScheduleBadge, CatThumb, TagEditor } from "./menu/menuUI.jsx";
 import CategoryIcon from "../../components/CategoryIcon.jsx";
 import {
-  isUrl, hasSchedule, schedLabel, schedError, fmt12, fmtMinutes, isSoldOut,
+  isUrl, hasSchedule, schedLabel, fmt12, fmtMinutes, isSoldOut,
   clockInTimezone, previewClock, isScheduleActive, buildTimeGroups, findCleanup,
   VIEWS, VIEW_KEYS, EMPTY_FILTERS, hasExtraFilters, matchesFilters, matchesSearch,
   loadSavedViews, storeSavedViews, errMsg,
@@ -488,12 +486,8 @@ function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategor
   const [loading, setLoading] = useState(false);
   const [showCat, setShowCat] = useState(false);
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
-  const origSched = hasSchedule(item)
-    ? { enabled: true, startTime: item.schedule.startTime, endTime: item.schedule.endTime }
-    : { enabled: false, startTime: "", endTime: "" };
-  const [sched, setSched] = useState(origSched);
-  const schedChanged = sched.enabled !== origSched.enabled ||
-    (sched.enabled && (sched.startTime !== origSched.startTime || sched.endTime !== origSched.endTime));
+  // Menu items have no time schedule of their own; only the category's
+  // window (if any) can hide the item — shown read-only below.
   const catSched = categories.find((c) => c.name === form.category && hasSchedule(c))?.schedule;
   const extraChoices = manualCats(categories).filter((c) => c.name !== form.category);
   const toggleExtra = (name) => set("categories", form.categories.includes(name)
@@ -528,10 +522,6 @@ function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategor
     const addonRows = (form.addons || []).filter((a) => a.name.trim() || String(a.price).trim());
     if (addonRows.some((a) => !a.name.trim() || a.price === "" || isNaN(Number(a.price)) || Number(a.price) < 0))
       return toast.error(t("Every add-on needs a name and a price"));
-    if (sched.enabled) {
-      const err = schedError(sched.startTime, sched.endTime);
-      if (err) return toast.error(err);
-    }
 
     setLoading(true);
     try {
@@ -563,22 +553,8 @@ function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategor
       } else {
         ({ data } = await createMenuItem(fd));
       }
-      // Schedule is saved through its own validated endpoint (the item form
-      // endpoint never touches it). The item is already saved at this point,
-      // so a schedule failure is reported on its own, not as "not saved".
-      let scheduleChanged = false;
-      if (schedChanged) {
-        try {
-          const schedule = sched.enabled ? { startTime: sched.startTime, endTime: sched.endTime } : null;
-          const { data: r } = await updateMenuSchedule({ itemIds: [data._id], schedule });
-          data = { ...data, schedule: r.schedule };
-          scheduleChanged = true;
-        } catch (e) {
-          toast.error(t("Item saved, but the schedule was not: {reason}", { reason: e?.response?.data?.message || t("request failed") }));
-        }
-      }
       toast.success(isEdit ? t("Item updated") : t("Item created"));
-      onSaved(data, isEdit ? "edit" : "create", { scheduleChanged });
+      onSaved(data, isEdit ? "edit" : "create");
       onClose();
     } catch (e) {
       toast.error(e?.response?.data?.message || t("Failed to save item"));
@@ -723,31 +699,13 @@ function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategor
                   </span>
                 </div>
               </div>
-              <div className="menu-field full">
-                <label>{t("Schedule")}</label>
-                <div className={`menu-toggle-row${sched.enabled ? " on" : ""}`} style={{ flexWrap: "wrap" }}>
-                  <Switch on={sched.enabled} label={t("Toggle schedule")}
-                    onClick={() => setSched((p) => ({ ...p, enabled: !p.enabled }))} />
-                  <span style={{ fontSize: 12.5, fontWeight: 500, color: "var(--text-1)" }}>
-                    {sched.enabled ? t("Only during") : t("All day")}
-                  </span>
-                  {sched.enabled ? (
-                    <span style={{ display: "flex", gap: 6, alignItems: "center", marginLeft: "auto" }}>
-                      <TimePicker ariaLabel={t("Schedule start time")}
-                        value={sched.startTime} onChange={(v) => setSched((p) => ({ ...p, startTime: v }))} />
-                      <span style={{ color: "var(--text-3)" }}>→</span>
-                      <TimePicker ariaLabel={t("Schedule end time")}
-                        value={sched.endTime} onChange={(v) => setSched((p) => ({ ...p, endTime: v }))} />
-                    </span>
-                  ) : (
-                    <span style={{ fontSize: 11, color: "var(--text-3)", marginLeft: "auto" }}>{t("No time restriction")}</span>
-                  )}
+              {catSched && (
+                <div className="menu-field full">
+                  <div className="hint">
+                    🕒 {t("The {category} category is shown only {window} — this item follows it.", { category: catLabel(categories, form.category), window: schedLabel(catSched) })}
+                  </div>
                 </div>
-                <div className="hint">
-                  {t("Customers see this item only inside the window (restaurant time; start included, end excluded — an end earlier than the start runs past midnight). Availability above still applies.")}
-                  {catSched && <> {t("The {category} category is itself limited to {window} — the item must satisfy both.", { category: catLabel(categories, form.category), window: schedLabel(catSched) })}</>}
-                </div>
-              </div>
+              )}
             </div>
 
             <div style={{ marginTop: 14, padding: "10px 13px", background: "var(--card-2)", border: "1px solid var(--edge)", borderRadius: "var(--r-ctl)", fontSize: 11.5, color: "var(--text-3)" }}>
@@ -765,194 +723,6 @@ function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategor
       </div>
 
       {showCat && <CategoryModal onClose={() => setShowCat(false)} onSaved={catCreated} />}
-    </>
-  );
-}
-
-// ── bulk scheduled-visibility modal ─────────────────────────────────────────
-// Opened from the page header. Categories and items are both picked here;
-// the item selection is shared with the checkboxes in the list, so ticking
-// items there first and then opening this modal works too. One PATCH applies
-// (or clears) the window on the whole selection.
-function ScheduleModal({ cats, items, selCats, selItems, setSelCats, setSelItems, onApplied, onClose }) {
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [confirm, setConfirm] = useState(null); // { schedule, text }
-  const [q, setQ] = useState("");
-
-  useEffect(() => {
-    const onKey = (e) => e.key === "Escape" && !busy && !confirm && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, busy, confirm]);
-
-  const nCats = selCats.size, nItems = selItems.size, total = nCats + nItems;
-  const whatText = [nCats && tn(nCats, "{n} category", "{n} categories"), nItems && tn(nItems, "{n} item", "{n} items")]
-    .filter(Boolean).join(` ${t("and")} `);
-
-  const toggle = (setter) => (id) => setter((p) => {
-    const n = new Set(p);
-    if (n.has(id)) n.delete(id); else n.add(id);
-    return n;
-  });
-  const toggleCat = toggle(setSelCats);
-  const toggleItem = toggle(setSelItems);
-
-  const shownItems = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    return s ? items.filter((i) => i.name?.toLowerCase().includes(s) || (i.nameBn || "").toLowerCase().includes(s) || i.category?.toLowerCase().includes(s)) : items;
-  }, [items, q]);
-  const shownIds = shownItems.map((i) => i._id);
-  const allShownSelected = shownIds.length > 0 && shownIds.every((id) => selItems.has(id));
-
-  const run = async (schedule) => {
-    setBusy(true);
-    try {
-      const { data } = await updateMenuSchedule({ itemIds: [...selItems], categoryIds: [...selCats], schedule });
-      toast.success(schedule
-        ? t("Scheduled {what}: {window}", { what: whatText, window: schedLabel(data.schedule) })
-        : t("Schedule cleared on {what}", { what: whatText }));
-      setSelCats(new Set());
-      setSelItems(new Set());
-      onApplied();
-      onClose();
-    } catch (e) {
-      toast.error(e?.response?.data?.message || t("Failed to update schedule"));
-    } finally {
-      setBusy(false);
-      setConfirm(null);
-    }
-  };
-
-  const apply = () => {
-    if (!total) return toast.error(t("Select at least one category or item"));
-    const err = schedError(start, end);
-    if (err) return toast.error(err);
-    const schedule = { startTime: start, endTime: end };
-    if (total >= BULK_CONFIRM_AT) {
-      setConfirm({ schedule, text: t("Apply {window} to {what}?", { window: schedLabel(schedule), what: whatText }) });
-    } else run(schedule);
-  };
-  const clear = () => {
-    if (!total) return toast.error(t("Select at least one category or item"));
-    setConfirm({ schedule: null, text: t("Remove the schedule from {what}? They go back to showing all day (availability still applies).", { what: whatText }) });
-  };
-
-  const sectionLabel = { fontSize: 11.5, color: "var(--text-2)", fontWeight: 600 };
-
-  return (
-    <>
-      <div className="zc-scrim" onClick={() => !busy && onClose()}>
-        <div className="zc-modal" style={{ width: 720 }} role="dialog" aria-modal="true" aria-labelledby="sched-modal-title"
-          onClick={(e) => e.stopPropagation()}>
-          <div className="mh">
-            <div style={{ flex: 1 }}>
-              <div className="t" id="sched-modal-title">🕒 {t("Scheduled visibility")}</div>
-              <div className="s">{t("Show categories / items to customers only during a daily time window (restaurant time)")}</div>
-            </div>
-            <button type="button" className="zc-x" onClick={onClose} disabled={busy} aria-label={t("Close")}>✕</button>
-          </div>
-
-          <div className="mb" style={{ display: "grid", gap: 18 }}>
-            {/* 1 — categories */}
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-                <span style={sectionLabel}>{t("Categories")}</span>
-                <button type="button" className="zc-btn ghost sm" disabled={!cats.length}
-                  onClick={() => setSelCats(new Set(cats.map((c) => c._id)))}>{t("Select all")}</button>
-                {nCats > 0 && <button type="button" className="zc-btn ghost sm" onClick={() => setSelCats(new Set())}>{t("Clear")}</button>}
-              </div>
-              {cats.length === 0 ? (
-                <div style={{ fontSize: 12, color: "var(--text-3)" }}>{t("No categories yet.")}</div>
-              ) : (
-                <div className="menu-catpick">
-                  {cats.map((c) => (
-                    <label key={c._id} className={`menu-catchip${selCats.has(c._id) ? " on" : ""}`}>
-                      <input type="checkbox" className="menu-cb" checked={selCats.has(c._id)} onChange={() => toggleCat(c._id)} />
-                      {localName(c)}
-                      {hasSchedule(c) && <ScheduleBadge schedule={c.schedule} />}
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* 2 — items */}
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-                <span style={sectionLabel}>{t("Items")}</span>
-                <input className="zc-input" value={q} onChange={(e) => setQ(e.target.value)}
-                  placeholder={t("Search items or category")} aria-label={t("Search items to schedule")}
-                  style={{ flex: "1 1 200px", maxWidth: 280, padding: "6px 10px", fontSize: 12.5 }} />
-                <button type="button" className="zc-btn ghost sm" disabled={!shownIds.length || allShownSelected}
-                  onClick={() => setSelItems((p) => new Set([...p, ...shownIds]))}>{t("Select all {n}", { n: shownIds.length })}</button>
-                {nItems > 0 && <button type="button" className="zc-btn ghost sm" onClick={() => setSelItems(new Set())}>{t("Clear")}</button>}
-              </div>
-              <div style={{ maxHeight: 240, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 12 }}>
-                {shownItems.length === 0 ? (
-                  <div style={{ padding: 14, fontSize: 12, color: "var(--text-3)", textAlign: "center" }}>
-                    {items.length === 0 ? t("No items yet.") : t("No items match.")}
-                  </div>
-                ) : shownItems.map((i) => (
-                  <label key={i._id} style={{
-                    display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", cursor: "pointer",
-                    borderBottom: "1px solid var(--border)", fontSize: 13,
-                    background: selItems.has(i._id) ? "var(--card-2)" : undefined,
-                  }}>
-                    <input type="checkbox" className="menu-cb" checked={selItems.has(i._id)} onChange={() => toggleItem(i._id)} />
-                    <VegDot tag={i.tag} />
-                    <span style={{ fontWeight: 500, color: "var(--text-1)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{localName(i)}</span>
-                    <span style={{ fontSize: 11.5, color: "var(--text-3)", whiteSpace: "nowrap" }}>{catLabel(cats, i.category)}</span>
-                    <span style={{ marginLeft: "auto", flexShrink: 0 }}>
-                      {hasSchedule(i) && <ScheduleBadge schedule={i.schedule} off={i.scheduledNow === false && i.isAvailable} />}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* 3 — window */}
-            <div className="menu-sched-bar">
-              <div className="menu-field">
-                <label htmlFor="sch-start">{t("Start (visible from)")}</label>
-                <TimePicker id="sch-start" ariaLabel={t("Start (visible from)")} value={start} onChange={setStart} />
-              </div>
-              <div className="menu-field">
-                <label htmlFor="sch-end">{t("End (hidden from)")}</label>
-                <TimePicker id="sch-end" ariaLabel={t("End (hidden from)")} value={end} onChange={setEnd} />
-              </div>
-            </div>
-            <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: -8 }}>
-              {t("Start time is included, end time is not (10:00 → 12:00 shows at 11:59, hides at 12:00). An end earlier than the start runs past midnight (22:00 → 02:00). A category’s window hides all of its items; an item with its own window must satisfy both. Hidden (unavailable) items stay hidden regardless of schedule.")}
-            </div>
-          </div>
-
-          <div className="mf" style={{ alignItems: "center" }}>
-            <span style={{ fontSize: 12, color: total ? "var(--text-1)" : "var(--text-3)", marginRight: "auto" }}>
-              {t("Selected:")} <b style={{ color: "var(--accent-ink)" }}>{fmtNum(total)}</b>{total ? ` (${whatText})` : ""}
-            </span>
-            <button type="button" className="zc-btn" disabled={busy || !total} onClick={clear}>{t("Clear schedule")}</button>
-            <button type="button" className="zc-btn pri" disabled={busy || !total} onClick={apply}>
-              {busy ? t("Saving…") : t("Apply schedule")}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {confirm && (
-        <div className="zc-scrim" onClick={() => !busy && setConfirm(null)} style={{ zIndex: 1200 }}>
-          <div className="zc-modal" style={{ width: 420 }} onClick={(e) => e.stopPropagation()}>
-            <div className="mh"><div className="t">{confirm.schedule ? t("Apply schedule?") : t("Clear schedule?")}</div></div>
-            <div className="mb" style={{ fontSize: 13, color: "var(--text-2)" }}>{confirm.text}</div>
-            <div className="mf">
-              <button type="button" className="zc-btn" disabled={busy} onClick={() => setConfirm(null)}>{t("Cancel")}</button>
-              <button type="button" className={`zc-btn ${confirm.schedule ? "pri" : "danger"}`} disabled={busy}
-                onClick={() => run(confirm.schedule)}>{busy ? t("Saving…") : confirm.schedule ? t("Apply") : t("Clear schedule")}</button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }
@@ -993,12 +763,10 @@ export default function MenuAdminPage() {
   const [mergeAsk, setMergeAsk] = useState(null); // { from, into }
   const [merging, setMerging] = useState(false);
   const [showCats, setShowCats] = useState(false);
-  const [showSched, setShowSched] = useState(false);
   const [mtForm, setMtForm] = useState(null); // "create" | menuTime | null
   const [showBulk, setShowBulk] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [selItems, setSelItems] = useState(() => new Set()); // list selection — bulk bar + modals
-  const [selCats, setSelCats] = useState(() => new Set());
   const [busyIds, setBusyIds] = useState(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
 
@@ -1155,17 +923,15 @@ export default function MenuAdminPage() {
   ];
 
   // ── actions (all through the API) ─────────────────────────────────────────
-  const handleSaved = (saved, mode, { scheduleChanged } = {}) => {
+  const handleSaved = (saved, mode) => {
     setItems((p) => (mode === "create" ? [saved, ...p] : p.map((i) => (i._id === saved._id ? { ...i, ...saved } : i))));
     loadCats();
-    if (scheduleChanged || mode === "create") load(); // refresh server-computed flags (scheduledNow, stock)
+    if (mode === "create") load(); // refresh server-computed flags (scheduledNow, stock)
   };
 
   const handleCategoryCreated = (newCat) => {
     invalidate("order:categories");
     if (newCat?._deleted) {
-      const gone = cats.filter((c) => c.name === newCat.name).map((c) => c._id);
-      setSelCats((p) => { const n = new Set(p); gone.forEach((id) => n.delete(id)); return n; });
       setCats((p) => p.filter((c) => c.name !== newCat.name));
       return;
     }
@@ -1175,11 +941,10 @@ export default function MenuAdminPage() {
   // A category was saved/deleted/merged. A rename or merge moved items on the
   // server, so reload both lists; keep the category filter pointing at the
   // same category (or reset it if that category is gone).
-  const handleCategoriesChanged = ({ deleted, deletedId, renamedFrom, saved } = {}) => {
+  const handleCategoriesChanged = ({ deleted, renamedFrom, saved } = {}) => {
     invalidate("order:");
     if (deleted) {
       setSelCat((c) => (c === deleted ? "All" : c));
-      if (deletedId) setSelCats((p) => { const n = new Set(p); n.delete(deletedId); return n; });
     }
     if (renamedFrom && saved?.name) setSelCat((c) => (c === renamedFrom ? saved.name : c));
     load();
@@ -1349,7 +1114,7 @@ export default function MenuAdminPage() {
           onNew={() => setModal("create")}
           bulk={{
             busy: bulkBusy, setState: bulkSetState, edit: () => setShowBulk(true),
-            schedule: () => setShowSched(true), clear: () => setSelItems(new Set()),
+            clear: () => setSelItems(new Set()),
           }}
           hasFilters={hasFilters} clearFilters={clearFilters}
         />
@@ -1420,18 +1185,6 @@ export default function MenuAdminPage() {
         />
       )}
 
-      {showSched && (
-        <ScheduleModal
-          cats={cats}
-          items={items}
-          selCats={selCats}
-          selItems={selItems}
-          setSelCats={setSelCats}
-          setSelItems={setSelItems}
-          onApplied={load}
-          onClose={() => setShowSched(false)}
-        />
-      )}
 
       {mtForm && (
         <MenuTimeModal

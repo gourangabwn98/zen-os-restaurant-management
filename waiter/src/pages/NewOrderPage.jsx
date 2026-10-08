@@ -17,7 +17,7 @@ import { t as tr, tn, localName } from "../i18n/index.jsx";
 import NotShareableNote from "../components/NotShareableNote.jsx";
 import AddonPicker, { AddonHint } from "../components/AddonPicker.jsx";
 import { hasAddons, lineKey, unitPrice, addonNames } from "../utils/addons.js";
-import { DINING_AREA_LABEL, DINING_AREA_ICON } from "../utils/diningArea.js";
+import { TABLE_AREA_LABEL, groupTablesByArea, tableLabel } from "../utils/diningArea.js";
 
 export default function NewOrderPage() {
   const nav = useNavigate();
@@ -35,8 +35,14 @@ export default function NewOrderPage() {
 
   const [orderType, setOrderType] = useState(preTable ? "DINE_IN" : "TAKEAWAY"); // takeaway default when nothing picked
   const [tableNo, setTableNo]     = useState(preTable || "");
-  const [diningArea, setDiningArea] = useState(""); // KH-10 — "" hall · AC_ROOM · GARDEN (dine-in only)
+  // The table's area (Indoor / AC Room / Garden) is set by the admin on the
+  // table; the server takes the order's area from the table.
   const [tables, setTables]       = useState([]);
+  // The picked table's area, as the admin configured it (display only — the
+  // server sets the order's area from the table itself).
+  const pickedTable = tables.find((x) => String(x.tableNo) === String(tableNo));
+  // "Indoor-AC 1" — never the internal tableNo (that may be 15).
+  const pickedName = pickedTable ? tableLabel(pickedTable) : tr("Table {n}", { n: tableNo });
 
   // Whole menu (unfiltered), fetched ONCE — the list below and voice ordering
   // both read it. null = still loading. (It used to be fetched twice, and the
@@ -59,7 +65,7 @@ export default function NewOrderPage() {
 
   useEffect(() => {
     // The table list is only shown when no table was picked on the map.
-    if (!locked) getAllTables().then(({ data }) => setTables((data.tables || []).filter((t) => t.status !== "Inactive"))).catch(() => {});
+    getAllTables().then(({ data }) => setTables((data.tables || []).filter((t) => t.status !== "Inactive"))).catch(() => {});
     getMenuCategories().then(({ data }) => setCategories(data || [])).catch(() => {});
     loadFullMenu();
   }, [locked, loadFullMenu]);
@@ -152,7 +158,6 @@ export default function NewOrderPage() {
         items: cart.map((c) => ({ menuItemId: c.item._id, qty: c.qty, notes: c.notes, ...(c.addonIds?.length && { addonIds: c.addonIds }) })),
         orderType,
         tableNo: orderType === "DINE_IN" ? Number(tableNo) : undefined,
-        diningArea: orderType === "DINE_IN" ? diningArea : "", // KH-10
         customerName: customerName.trim(),
         notes: "",
         idempotencyKey: idemKey,
@@ -233,7 +238,7 @@ export default function NewOrderPage() {
             }}
           />
           <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 10 }}>
-            {orderType === "DINE_IN" ? `${diningArea ? tr(DINING_AREA_LABEL[diningArea]) : tr("Dine-in")} · ${tr("Table {n}", { n: tableNo })}` : tr("Takeaway")} · {tr("the order is Placed right away; you can change it for a few minutes, then it goes to the kitchen and the KOT prints.")}
+            {orderType === "DINE_IN" ? pickedName : tr("Takeaway")} · {tr("the order is Placed right away; you can change it for a few minutes, then it goes to the kitchen and the KOT prints.")}
           </div>
         </div>
 
@@ -268,25 +273,24 @@ export default function NewOrderPage() {
             display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 12,
             border: "1.5px solid rgba(59,130,246,0.5)", background: ACCENT_SOFT, color: ACCENT, fontWeight: 800, fontSize: 14,
           }}>
-            {preTable ? `${DINING_AREA_ICON[diningArea]} ${diningArea ? tr(DINING_AREA_LABEL[diningArea]) : tr("Dine-in")} · ${tr("Table {n}", { n: preTable })}` : `🛍️ ${tr("Take Away")}`}
+            {preTable ? `🍽️ ${pickedName}` : `🛍️ ${tr("Take Away")}`}
             <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 600, color: TEXT_MUTED }}>
               {preTable ? tr("picked on the table map") : tr("no table")}
             </span>
           </div>
-          {preTable && <AreaChips value={diningArea} onChange={setDiningArea} />}
         </>) : (<>
         <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
-          {/* KH-10: AC Room and Garden are dine-in orders with a table. */}
-          {[["DINE_IN", ""], ["DINE_IN", "AC_ROOM"], ["DINE_IN", "GARDEN"], ["TAKEAWAY", ""]].map(([t, area]) => {
-            const on = orderType === t && (t !== "DINE_IN" || diningArea === area);
+          {/* Dine-in or takeaway. The area comes from the table (Admin → Tables). */}
+          {["DINE_IN", "TAKEAWAY"].map((t) => {
+            const on = orderType === t;
             return (
-              <button key={`${t}-${area}`} onClick={() => { setOrderType(t); setDiningArea(area); }} style={{
+              <button key={t} onClick={() => setOrderType(t)} style={{
                 flex: 1, padding: "12px 6px", borderRadius: 12, cursor: "pointer",
                 border: `1.5px solid ${on ? "rgba(59,130,246,0.5)" : GLASS_BORDER}`,
                 background: on ? ACCENT_SOFT : GLASS_BG,
                 color: on ? ACCENT : TEXT_MUTED, fontWeight: 700, fontSize: 12.5,
               }}>
-                {t === "TAKEAWAY" ? `🛍️ ${tr("Takeaway")}` : `${DINING_AREA_ICON[area]} ${area ? tr(DINING_AREA_LABEL[area]) : tr("Dine-in")}`}
+                {t === "TAKEAWAY" ? `🛍️ ${tr("Takeaway")}` : `🍽️ ${tr("Dine-in")}`}
               </button>
             );
           })}
@@ -298,10 +302,14 @@ export default function NewOrderPage() {
             fontSize: 14, background: GLASS_BG, color: "#fff",
           }}>
             <option value="" style={{ color: "#111" }}>{tr("Select a table…")}</option>
-            {tables.map((t) => (
+            {groupTablesByArea(tables).map((g) => (
+              <optgroup key={g.area || "indoor"} label={tr(TABLE_AREA_LABEL[g.area] || g.area)} style={{ color: "#111" }}>
+            {g.tables.map((t) => (
               <option key={t.tableNo} value={t.tableNo} style={{ color: "#111" }}>
-                {tr("Table {n}", { n: t.tableNo })} ({tn(t.seats, "{n} seat", "{n} seats")}){t.occupancyStatus === "OCCUPIED" ? ` — ${tr("occupied, adding to it")}` : ""}
+                {tableLabel(t)} ({tn(t.seats, "{n} seat", "{n} seats")}){t.occupancyStatus === "OCCUPIED" ? ` — ${tr("occupied, adding to it")}` : ""}
               </option>
+            ))}
+              </optgroup>
             ))}
           </select>
         )}
@@ -384,22 +392,3 @@ const backBtn = {
   background: GLASS_BG, fontSize: 17, cursor: "pointer", color: "#fff",
 };
 
-// KH-10 — seating area for a table picked on the map (Hall / AC Room / Garden).
-function AreaChips({ value, onChange }) {
-  return (
-    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-      {["", "AC_ROOM", "GARDEN"].map((area) => {
-        const on = value === area;
-        return (
-          <button key={area || "hall"} type="button" onClick={() => onChange(area)} style={{
-            flex: 1, padding: "9px 6px", borderRadius: 10, cursor: "pointer", fontSize: 12, fontWeight: 700,
-            border: `1.5px solid ${on ? "rgba(59,130,246,0.5)" : GLASS_BORDER}`,
-            background: on ? ACCENT_SOFT : GLASS_BG, color: on ? ACCENT : TEXT_MUTED,
-          }}>
-            {DINING_AREA_ICON[area]} {area ? tr(DINING_AREA_LABEL[area]) : tr("Hall")}
-          </button>
-        );
-      })}
-    </div>
-  );
-}

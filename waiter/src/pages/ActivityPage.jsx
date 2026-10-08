@@ -6,6 +6,7 @@ import { Loader, ErrorState } from "../components/StateViews.jsx";
 import { ACCENT, GREEN, AMBER, RED, TEXT_MUTED, TEXT_FAINT, GLASS_BG, GLASS_BORDER, NAV_HEIGHT } from "../theme.js";
 import { RANGE_PRESETS, toDateInput, formatDuration } from "../utils/dateRange.js";
 import { t } from "../i18n/index.jsx";
+import { tableLabel } from "../utils/diningArea.js";
 
 const TODAY_STR = toDateInput(new Date());
 
@@ -115,7 +116,7 @@ export default function ActivityPage() {
             {data.orders.unpaidOrders.length === 0
               ? <EmptyRow text={t("No unpaid orders in this range")} />
               : data.orders.unpaidOrders.map((o) => (
-                  <OrderLine key={o._id} order={o} tint={RED} dateField="confirmedAt" sub={o.tableNo ? t("Table {n}", { n: o.tableNo }) : t(o.orderType)} />
+                  <OrderLine key={o._id} order={o} tint={RED} dateField="confirmedAt" sub={o.tableNo ? tableLabel(o) : t(o.orderType)} />
                 ))}
           </Section>
 
@@ -123,7 +124,7 @@ export default function ActivityPage() {
             {data.orders.cancelledOrders.length === 0
               ? <EmptyRow text={t("No cancelled orders in this range")} />
               : data.orders.cancelledOrders.map((o) => (
-                  <OrderLine key={o._id} order={o} tint={TEXT_MUTED} dateField="cancelledAt" sub={o.cancelReason || (o.tableNo ? t("Table {n}", { n: o.tableNo }) : t(o.orderType))} />
+                  <OrderLine key={o._id} order={o} tint={TEXT_MUTED} dateField="cancelledAt" sub={o.cancelReason || (o.tableNo ? tableLabel(o) : t(o.orderType))} />
                 ))}
           </Section>
         </>

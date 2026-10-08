@@ -41,7 +41,8 @@ export const renderBill = (job, { logo = null, header = null, width = DEFAULT_WI
 
   // ── Order details ──
   const orderType = p.orderType || job.orderType;
-  const tableNo = p.tableNo ?? job.tableNo;
+  // Per-area table number ("Indoor-AC 1" → Table: 1); older jobs: tableNo as before.
+  const tableNo = p.tableDisplayNo ?? p.tableNo ?? job.tableNo;
   const { date, time } = dateTime(p.createdAt || job.createdAt);
   if (combined) kv("Orders", p.orders.map((o) => o.orderId).join(", "));
   else kv("Bill No", p.orderId || job.orderId || "-");

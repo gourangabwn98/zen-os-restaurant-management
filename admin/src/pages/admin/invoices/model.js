@@ -4,6 +4,7 @@
 // calculated once by the server — utils/pricing.js); nothing here re-prices a
 // bill. Canonical enums: restaurant-server/utils/orderStateMachine.js.
 import { t, N_, fmtNum, fmtDate, fmtTime, localName } from "../../../i18n/core.js";
+import { tableLabel as areaTableLabel } from "../shared/diningArea.js";
 
 /** BIL-02: is the bill settled? (Orders from before billStatus: COMPLETED ⇒ settled.) */
 export const isSettled = (o) => (o.billStatus ? o.billStatus === "SETTLED" : o.status === "COMPLETED");
@@ -176,7 +177,7 @@ export const downloadText = (filename, text, type = "text/csv;charset=utf-8") =>
 };
 
 export const TYPE_LABEL = { DINE_IN: N_("Dine-in"), TAKEAWAY: N_("Takeaway"), ONLINE: N_("Online") };
-export const tableLabel = (o) => (o.tableNo ? t("T{n}", { n: fmtNum(o.tableNo) }) : t(TYPE_LABEL[o.orderType] || o.orderType || "—"));
+export const tableLabel = (o) => (o.tableNo ? areaTableLabel(o) : t(TYPE_LABEL[o.orderType] || o.orderType || "—"));
 
 /** "PDF": print only the bill (body.inv-printing hides the app) → Save as PDF. */
 export const printPdf = () => {

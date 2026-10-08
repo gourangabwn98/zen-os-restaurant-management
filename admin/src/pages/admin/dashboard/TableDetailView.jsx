@@ -12,6 +12,7 @@ import Badge from "../shared/Badge.jsx";
 import { FLOOR_FLOW, FLOOR_STATE_OF } from "./model.js";
 import { FLOOR_LABEL } from "./floorLabels.js";
 import { t, N_, fmtNum, fmtTime, localName } from "../../../i18n/core.js";
+import { tableLabel } from "../shared/diningArea.js";
 import { customerName } from "../shared/customerName.js";
 import { COMPLETE_FROM, needsPaidFirst, PAID_FIRST_HINT } from "../shared/paymentRules.js";
 
@@ -45,7 +46,7 @@ export default function TableDetailView({ table, onClose, onStatusChange, onNavi
   return createPortal(
     <div className="zd-pop">
       <Modal
-        title={t("Table {n}", { n: fmtNum(table.tableNo) })}
+        title={tableLabel(table)}
         sub={`${t(FLOOR_LABEL[table.state])}${table.seats ? ` · ${t("{n} seats", { n: fmtNum(table.seats) })}` : ""}${table.amount ? ` · ${money(table.amount)} ${t("on the table")}` : ""}`}
         onClose={onClose} width={720}
         footer={<button type="button" className="zc-btn" onClick={() => { onClose(); onNavigate?.("invoices"); }}>{t("Bills for this table in Invoices")} →</button>}

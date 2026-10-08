@@ -30,7 +30,10 @@ export const renderKot = (job, { header = null, width = DEFAULT_WIDTH } = {}) =>
   if (toPrintable(customer)) kv("Customer", customer);
   kv("Order ID", d.orderId || "-");
   kv("Type", orderTypeLabel(d.orderType, d.diningArea));
-  if (d.tableNo !== null && d.tableNo !== undefined && d.tableNo !== "") kv("Table", String(d.tableNo));
+  // Table numbers are per area ("Indoor-AC 1" → Type: Indoor-AC, Table: 1);
+  // older jobs without one print the table number as before.
+  const tableShown = d.tableDisplayNo ?? d.tableNo;
+  if (tableShown !== null && tableShown !== undefined && tableShown !== "") kv("Table", String(tableShown));
   const { date, time } = dateTime(d.createdAt);
   kv("Date", date);
   kv("Time", time);

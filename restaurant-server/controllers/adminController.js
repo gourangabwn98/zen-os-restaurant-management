@@ -552,6 +552,8 @@ export const printBill = async (req, res) => {
       tableNo:       order.tableNo,
       orderType:     order.orderType,
       diningArea:    order.diningArea || "", // KH-10
+      tableName:     order.tableName || "",
+      tableDisplayNo: order.tableDisplayNo ?? null, // printed "Table : 1" (number within its area)
       items:         order.items,
       subtotal:      order.subtotal || 0,
       tax:           order.tax      || 0,

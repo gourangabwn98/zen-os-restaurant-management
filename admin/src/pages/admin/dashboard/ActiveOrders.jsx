@@ -6,6 +6,7 @@ import Badge from "../shared/Badge.jsx";
 import { needsPaidFirst } from "../shared/paymentRules.js";
 import { ACTIVE_EXCLUDE } from "./model.js";
 import { t, fmtNum, fmtTime, localName } from "../../../i18n/core.js";
+import { tableLabel } from "../shared/diningArea.js";
 import { customerName } from "../shared/customerName.js";
 
 const money = (n) => `₹${fmtNum(Math.round(n || 0))}`;
@@ -51,7 +52,7 @@ export default function ActiveOrders({ orders, nextStatus, statusLabel, statusKe
                   <div className="meta">
                     <Badge label={o.status} format={statusKey} />
                     <span className="zd-chip zd-c-violet">{typeLabel(o.orderType)}</span>
-                    {o.tableNo && <span className="zd-chip zd-c-grey">{t("Table {n}", { n: fmtNum(o.tableNo) })}</span>}
+                    {o.tableNo && <span className="zd-chip zd-c-grey">{tableLabel(o)}</span>}
                     {next.length > 0 && (
                       <select
                         className="zd-select" value="" aria-label={t("Update status…")}

@@ -168,8 +168,9 @@ const restaurantProfileSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // ── Scheduled menu visibility (utils/menuSchedule.js) ─────────────────────────
-// One daily window per category/item, in the restaurant's timezone. Separate
-// from `isAvailable`: customer visibility = isAvailable AND schedule allows now.
+// One daily window per CATEGORY (and per Menu time), in the restaurant's
+// timezone. Menu items have no schedule of their own. Customer visibility =
+// item.isAvailable AND its category's schedule allows now.
 // Only ever written through PATCH /api/menu/schedule or a Menu time (both
 // validated by utils/menuSchedule.js validateSchedule).
 const menuScheduleSchema = new mongoose.Schema({
@@ -243,7 +244,9 @@ const menuItemSchema = new mongoose.Schema({
   image:         { type: String, default: "" },
   isAvailable:   { type: Boolean, default: true },
   rating:        { type: Number, default: 4.0 },
-  schedule:      { type: menuScheduleSchema, default: () => ({}) },
+  // (No per-item time schedule — removed. An item is on the menu whenever it
+  // is available; only a CATEGORY's schedule / Menu time can hide it. Older
+  // documents may still carry a "schedule" value; nothing reads it.)
   // Diner tags ("Fish", "Spicy", "Bestseller") — display/filter only; the
   // Veg / Non Veg `tag` above stays the authoritative food type.
   tags:          { type: [String], default: [] },
@@ -331,6 +334,10 @@ const orderSchema = new mongoose.Schema({
   guestPhone:    { type: String, default: "" },
   orderType:     { type: String, enum: ORDER_TYPES, default: "DINE_IN" },
   tableNo:       { type: Number, default: null },
+  // Snapshot of the table as people know it ("Indoor-AC 1") at order time —
+  // shown on screens, KOT and bill. Old orders: "" → "Table <tableNo>".
+  tableName:      { type: String, default: "" },
+  tableDisplayNo: { type: Number, default: null },
   // KH-10 — AC Room / Garden for a DINE_IN order (utils/diningArea.js);
   // "" = normal hall, which is what every older order reads as.
   diningArea:    { type: String, enum: ["", ...DINING_AREAS], default: "" },
@@ -499,6 +506,14 @@ const tableSchema = new mongoose.Schema({
   status:  { type: String, enum: ["Active","Inactive"], default: "Active" },
   label:   { type: String },
   notes:   { type: String },
+  // Table area — "" (Indoor) | AC_ROOM | GARDEN (utils/diningArea.js). Set by
+  // the admin; a dine-in order on this table takes its area from here.
+  // Older tables have no value = Indoor.
+  diningArea: { type: String, enum: ["", ...DINING_AREAS], default: "" },
+  // Number within the area ("Indoor-AC 1" → 1). Unique per area, checked in
+  // controllers/tableController.js. null on older tables = their tableNo.
+  // tableNo above stays the unique internal key orders / sessions / QR use.
+  displayNo: { type: Number, default: null },
   qrUrl:   { type: String },
   qrCode:  { type: String },
   // ── Occupancy (Phase 4) ────────────────────────────────────────────────────
@@ -548,7 +563,9 @@ const kotJobSchema = new mongoose.Schema({
   // printers room / print queue; stripped before anything reaches the
   // kitchen room (kotService.kitchenSafeKot). "" = no name → line left out.
   customerName: { type: String, default: "" },
-  diningArea:   { type: String, default: "" }, // KH-10 — "AC Room"/"Garden" on the KOT
+  diningArea:   { type: String, default: "" }, // KH-10 — "Indoor-AC"/"Garden"/"Gazebo" on the KOT
+  tableName:      { type: String, default: "" },  // "Indoor-AC 1" (Kitchen app)
+  tableDisplayNo: { type: Number, default: null }, // printed as "Table : 1"
   // Optional — lets a staff-placed order flag its KOT as urgent, so the
   // Kitchen Display can play a distinct, stronger alert tone for it.
   // Never settable by a customer/guest (see services/orderService.js).
@@ -1045,6 +1062,7 @@ const waiterCallSchema = new mongoose.Schema({
   order:          { type: mongoose.Schema.Types.ObjectId, ref: "Order", required: true },
   orderNumber:    { type: String, default: "" },   // order.orderId, for display
   tableNo:        { type: Number, default: null },
+  tableName:      { type: String, default: "" },   // "Indoor-AC 1" — what the waiter sees
   customerName:   { type: String, default: "" },
   attempt:        { type: Number, enum: [1, 2], required: true },
   targets:        [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], // waiters rung

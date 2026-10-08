@@ -55,7 +55,7 @@ export function OccupiedTableCard({ classified, active, onClick, style, classNam
   const elapsed = formatElapsed(mins);
   const kind = elapsedKind(mins);
 
-  const ariaLabel = `${t("Table {n}", { n: table.tableNo })}, ${t(meta.label)}, ${tn(orderCount, "{n} order", "{n} orders")}, ₹${total}${
+  const ariaLabel = `${(table.tableName || t("Table {n}", { n: table.tableNo }))}, ${t(meta.label)}, ${tn(orderCount, "{n} order", "{n} orders")}, ₹${total}${
     payment ? `, ${t(PAYMENT_META[payment].label)}` : ""
   }`;
 
@@ -86,7 +86,7 @@ export function OccupiedTableCard({ classified, active, onClick, style, classNam
 
       <div className="card-mid" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div style={{ minWidth: 0 }}>
-          <div className="card-table-no" style={{ fontFamily: FONT_HEAD, fontWeight: 800, lineHeight: 1 }}>T{table.tableNo}</div>
+          <div className="card-table-no" style={{ fontFamily: FONT_HEAD, fontWeight: 800, lineHeight: 1 }}>T{table.displayNo ?? table.tableNo}</div>
           <div style={{ fontSize: 9.5, color: TEXT_MUTED, marginTop: 4, whiteSpace: "nowrap" }}>{tn(table.seats, "{n} seat", "{n} seats")}</div>
         </div>
         {elapsed && (
@@ -117,7 +117,7 @@ export function FreeTableCard({ table, onClick, style, className }) {
     <button
       type="button"
       onClick={onClick}
-      aria-label={`${t("Table {n}", { n: table.tableNo })}, ${t("Free")}, ${tn(table.seats, "{n} seat", "{n} seats")}`}
+      aria-label={`${(table.tableName || t("Table {n}", { n: table.tableNo }))}, ${t("Free")}, ${tn(table.seats, "{n} seat", "{n} seats")}`}
       className={`pressable card-free ${className || ""}`.trim()}
       style={{
         display: "flex", flexDirection: "column", textAlign: "left", cursor: "pointer",
@@ -135,7 +135,7 @@ export function FreeTableCard({ table, onClick, style, className }) {
       </span>
 
       <div className="card-table-no" style={{ fontFamily: FONT_HEAD, fontWeight: 800, lineHeight: 1, color: "rgba(232,236,242,0.55)" }}>
-        T{table.tableNo}
+        T{table.displayNo ?? table.tableNo}
       </div>
       <div style={{ fontSize: 9.5, color: TEXT_MUTED, marginTop: 4, marginBottom: 10, whiteSpace: "nowrap" }}>{tn(table.seats, "{n} seat", "{n} seats")}</div>
 

@@ -3,7 +3,6 @@
 import { v2 as cloudinary } from "cloudinary";
 import { computeStockStatusForMenuItems } from "../services/inventoryService.js";
 import { getScheduleContext, isItemScheduledNow, applyBulkSchedule } from "../services/menuScheduleService.js";
-import { isScheduleActive } from "../utils/menuSchedule.js";
 import { emitMenuUpdated } from "../sockets/socket.js";
 import { setAvailability, bulkEditItems, normalizeTags, commitImport } from "../services/menuItemService.js";
 import { listMenuTimes, createMenuTime, updateMenuTime, deleteMenuTime } from "../services/menuTimeService.js";
@@ -91,10 +90,9 @@ export const getMenu = async (req, res) => {
     let items = await MenuItem.find(filter).sort({ category: 1, name: 1 }).lean();
     items = items.map((i) => ({ ...i, categoryList: itemCategoryList(i, menuCtx) }));
     if (skipSchedule) {
-      // Annotate so the admin can see what customers currently can't.
+      // Annotate so the admin can see what customers currently can't (its
+      // category is scheduled out). Items have no time schedule of their own.
       items = items.map((i) => ({ ...i, scheduledNow: isItemScheduledNow(i, scheduleCtx) }));
-    } else {
-      items = items.filter((i) => isScheduleActive(i.schedule, scheduleCtx.clock));
     }
 
     // ── Connect inventory availability with menu availability (Phase 2) ──────
@@ -346,7 +344,7 @@ export const getCategoriesWithImage = async (req, res) => {
 };
 
 // ── PATCH /api/menu/schedule (admin) ─────────────────────────────────────────
-// Body: { itemIds?: [id], categoryIds?: [id], schedule: { startTime, endTime } | null }
+// Body: { categoryIds: [id], schedule: { startTime, endTime } | null } — categories only.
 // One request applies (or, with null, clears) the same window on every
 // selected category/item.
 export const bulkUpdateSchedule = async (req, res) => {

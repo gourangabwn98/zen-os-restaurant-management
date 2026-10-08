@@ -4,6 +4,7 @@ import { getSocket } from "../services/socketService.js";
 import { getMyCalls, acknowledgeCall, resolveCall } from "../services/waiterCallService.js";
 import { playNotificationSound } from "../utils/notificationSound.js";
 import { t } from "../i18n/index.jsx";
+import { tableLabel } from "../utils/diningArea.js";
 
 const LIVE = ["OPEN", "ACKNOWLEDGED"];
 
@@ -31,7 +32,7 @@ export function useWaiterCalls(enabled) {
     const onNew = ({ call } = {}) => {
       if (!call) return;
       playNotificationSound();
-      toast(`🛎️ ${call.attempt === 2 ? t("Table {n} is calling again", { n: call.tableNo }) : t("Table {n} is calling", { n: call.tableNo })}`, { duration: 6000 });
+      toast(`🛎️ ${call.attempt === 2 ? t("{table} is calling again", { table: tableLabel(call) }) : t("{table} is calling", { table: tableLabel(call) })}`, { duration: 6000 });
       setCalls((p) => [...p.filter((c) => c._id !== call._id), call]);
     };
     const onUpdated = ({ call } = {}) => {
@@ -81,7 +82,7 @@ export function useWaiterCalls(enabled) {
   const done = async (call) => {
     try {
       await resolveCall(call._id);
-      toast.success(t("Table {n} attended", { n: call.tableNo }));
+      toast.success(t("{table} attended", { table: tableLabel(call) }));
     } catch (err) {
       toast.error(err.response?.data?.message || t("Couldn't close this call"));
     } finally {

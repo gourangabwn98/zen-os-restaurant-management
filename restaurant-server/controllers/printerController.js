@@ -76,6 +76,7 @@ export const getPrintQueue = async (req, res) => {
         orderId: j.orderId, tableNo: j.tableNo, orderType: j.orderType, items: j.items, notes: j.notes || "",
         customerName: j.customerName || "", // KH-08 — paper KOT only
         diningArea: j.diningArea || "", // KH-10
+        tableName: j.tableName || "", tableDisplayNo: j.tableDisplayNo ?? null,
         priority: j.priority || "NORMAL", createdAt: j.createdAt })),
       ...bill.map((j) => ({ jobId: String(j._id), jobType: "BILL", status: j.status, attempts: j.attempts,
         orderId: j.orderId, tableNo: j.tableNo, orderType: j.orderType, payload: j.payload, createdAt: j.createdAt })),

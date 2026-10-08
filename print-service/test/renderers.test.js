@@ -155,12 +155,13 @@ const run = async () => {
     assert.equal(lines.at(-1).type, "cut");
   });
 
-  await test("KH-10: AC Room / Garden print as the order type on KOT and bill; old jobs unchanged", () => {
-    assert.match(text(renderKot(kotJob({ orderType: "DINE_IN", diningArea: "AC_ROOM" }))), /Type {7}: +AC Room/);
+  await test("KH-10: Indoor-AC / Garden / Gazebo print as the order type on KOT and bill; old jobs unchanged", () => {
+    assert.match(text(renderKot(kotJob({ orderType: "DINE_IN", diningArea: "AC_ROOM" }))), /Type {7}: +Indoor-AC/);
+    assert.match(text(renderKot(kotJob({ orderType: "DINE_IN", diningArea: "GAZEBO" }))), /Type {7}: +Gazebo/);
     assert.match(text(renderKot(kotJob({ orderType: "DINE_IN", diningArea: "GARDEN" }))), /Type {7}: +Garden/);
     assert.match(text(renderKot(kotJob({ orderType: "DINE_IN" }))), /Type {7}: +Dine In/);
     assert.match(text(renderKot(kotJob({ orderType: "TAKEAWAY", diningArea: "AC_ROOM" }))), /Type {7}: +Takeaway/, "area ignored unless dine-in");
-    assert.match(text(renderBill(billJob({ orderType: "DINE_IN", diningArea: "AC_ROOM" }))), /Type {7}: +AC Room/);
+    assert.match(text(renderBill(billJob({ orderType: "DINE_IN", diningArea: "AC_ROOM" }))), /Type {7}: +Indoor-AC/);
     assert.match(text(renderBill(billJob({ orderType: "DINE_IN", diningArea: "GARDEN" }))), /Type {7}: +Garden/);
     assert.match(text(renderBill(billJob())), /Type {7}: +Dine In/);
   });
@@ -177,6 +178,17 @@ const run = async () => {
       assertFits(renderKot(kotJob({ items: [{ name: LONG, qty: 1, addons: ["Extra spicy gravy with double cheese topping"] }] }), { width: W }), W);
       assertFits(renderBill(billJob({ items: [{ name: LONG, qty: 1, price: 999, addons: [{ name: "Extra spicy gravy with double cheese topping", price: 120 }] }] }), { width: W }), W);
     }
+  });
+
+  await test("Per-area table numbers: 'Indoor-AC 1' prints Type Indoor-AC + Table 1; old jobs print tableNo", () => {
+    const k = text(renderKot(kotJob({ orderType: "DINE_IN", diningArea: "AC_ROOM", tableNo: 23, tableDisplayNo: 1 })));
+    assert.match(k, /Type {7}: +Indoor-AC/);
+    assert.match(k, /Table {6}: +1$/m);
+    assert.doesNotMatch(k, /23/);
+    const b = text(renderBill(billJob({ orderType: "DINE_IN", diningArea: "GAZEBO", tableNo: 31, tableDisplayNo: 3 })));
+    assert.match(b, /Type {7}: +Gazebo/);
+    assert.match(b, /Table {6}: +3$/m);
+    assert.match(text(renderKot(kotJob({ tableNo: 5 }))), /Table {6}: +5$/m, "old job: unchanged");
   });
 
   await test("KH-11: AC Room bill shows a separate 'Service Charge' line + guests x rate; others unchanged", () => {

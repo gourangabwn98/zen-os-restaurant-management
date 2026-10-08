@@ -11,6 +11,7 @@
 // Never invents data — every line is built from the event's own payload.
 // ─────────────────────────────────────────────────────────────────────────────
 import { t, N_ } from "../i18n/core.js";
+import { tableLabel } from "../pages/admin/shared/diningArea.js";
 
 export const KINDS = [
   { key: "all", label: N_("All") },
@@ -25,7 +26,7 @@ const FLOOR = {
   COMPLETED: N_("Completed"), CONFIRMED: N_("Placed"),
 };
 
-const where = (o) => (o?.tableNo ? t("Table {n}", { n: o.tableNo }) : o?.orderType === "TAKEAWAY" ? t("Takeaway") : "");
+const where = (o) => (o?.tableNo ? tableLabel(o) : o?.orderType === "TAKEAWAY" ? t("Takeaway") : "");
 const ref = (o) => (o ? { _id: o._id, orderId: o.orderId } : null);
 
 /** → entry fields (without id/at/read) or null when the event isn't worth a line. */
@@ -60,7 +61,7 @@ export const describe = (event, p = {}) => {
         title: t("Order {id} couldn't go to the kitchen", { id: o?.orderId || "" }), sub: p.reason || "", go: { page: "orders", order: ref(o) } };
     case "waiter_call:activity": {
       const c = p.call || {};
-      const table = c.tableNo ? t("Table {n}", { n: c.tableNo }) : t("A table");
+      const table = c.tableNo ? tableLabel(c) : t("A table");
       if (p.event === "waiter_call:new") {
         return { kind: "call", tone: "warn", icon: "call", toast: true,
           title: c.attempt === 2 ? t("{table} is calling again", { table }) : t("{table} is calling a waiter", { table }),

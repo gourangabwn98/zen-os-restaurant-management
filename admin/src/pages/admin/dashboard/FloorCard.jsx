@@ -9,6 +9,7 @@ import Ico from "./icons.jsx";
 import TableDetailView from "./TableDetailView.jsx";
 import { FLOOR_LABEL } from "./floorLabels.js";
 import { t, fmtNum } from "../../../i18n/core.js";
+import { tableLabel } from "../shared/diningArea.js";
 
 const money = (n) => `₹${fmtNum(Math.round(n || 0))}`;
 const duration = (minutes) => {
@@ -50,10 +51,10 @@ export default function FloorCard({ tables, tablesLoaded, onStatusChange, onNavi
                 key={tb.tableNo}
                 className={`zd-tb ${tb.state}${tb.longStay ? " long" : ""}`}
                 onClick={() => setActive(tb.tableNo)}
-                aria-label={`${t("Table {n}", { n: fmtNum(tb.tableNo) })} · ${t(FLOOR_LABEL[tb.state])}`}
+                aria-label={`${tableLabel(tb)} · ${t(FLOOR_LABEL[tb.state])}`}
               >
                 <span className="top">
-                  <b>{t("T{n}", { n: fmtNum(tb.tableNo) })}</b>
+                  <b>{tableLabel(tb)}</b>
                   {tb.amount > 0 && <span className="a">{money(tb.amount)}</span>}
                 </span>
                 <span className="s">{t(FLOOR_LABEL[tb.state])}</span>

@@ -5,6 +5,7 @@ import { PINK, STATUS_STYLE } from "./constants";
 import Badge from "./Badge";
 import toast from "react-hot-toast";
 import { t, N_, fmtTime, fmtNum, localName } from "../../../i18n/core.js";
+import { tableLabel } from "./diningArea.js";
 import {
   updateOrderStatus, confirmOrder, rejectOrder, updateOrderPayment,
 } from "../../../services/adminService";
@@ -115,7 +116,7 @@ export default function OrdersTable({ rows: initialRows, hideAction = false }) {
                   )}
                 </td>
                 <td style={{ padding: "11px 12px", color: "#d1cfe0" }}>
-                  {o.tableNo ? t("Table {n}", { n: o.tableNo }) : "—"}
+                  {o.tableNo ? tableLabel(o) : "—"}
                 </td>
                 <td style={{ padding: "11px 12px" }}>
                   <div>{o.user?.name || o.guestName || (o.isGuest ? t("Guest") : "—")}</div>

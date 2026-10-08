@@ -135,8 +135,7 @@ export function floorTables(tables, todayOrders, now = Date.now()) {
     .forEach((o) => { (byTable[Number(o.tableNo)] ||= []).push(o); });
 
   return tables
-    .filter((tb) => tb.status === "Active" || !tb.status)
-    .sort((a, b) => a.tableNo - b.tableNo)
+    .filter((tb) => tb.status === "Active" || !tb.status) // server order: by area, then number
     .map((tb) => {
       const all = byTable[tb.tableNo] || [];
       const current = currentTableOrder(all);
@@ -144,7 +143,7 @@ export function floorTables(tables, todayOrders, now = Date.now()) {
       const state = current ? FLOOR_STATE_OF[current.status] || "placed" : "free";
       const minutes = orders.length ? Math.max(0, Math.floor((now - new Date(orders[0].createdAt).getTime()) / 60000)) : 0;
       return {
-        tableNo: tb.tableNo, seats: tb.seats, state, current, orders, allToday: all,
+        tableNo: tb.tableNo, displayNo: tb.displayNo, diningArea: tb.diningArea || "", tableName: tb.tableName, seats: tb.seats, state, current, orders, allToday: all,
         amount: sum(orders), minutes, longStay: minutes >= LONG_STAY_MIN,
         billOpen: orders.filter((o) => o.status === "DELIVERED" && !isBillSettled(o)).length,
       };

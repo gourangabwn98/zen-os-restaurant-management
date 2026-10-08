@@ -9,6 +9,7 @@ import { createPortal } from "react-dom";
 import { Modal } from "../inventory/invUI.jsx";
 import Badge from "../shared/Badge.jsx";
 import { t, tn, fmtNum, fmtDate, fmtTime, localName } from "../../../i18n/core.js";
+import { tableLabel } from "../shared/diningArea.js";
 import { customerName } from "../shared/customerName.js";
 
 const money = (n) => `₹${fmtNum(Math.round(n || 0))}`;
@@ -32,7 +33,7 @@ function OrderRow({ o, typeLabel, statusKey, children }) {
         <div className="zd-mmeta">
           <Badge label={o.status} format={statusKey} />
           <span className="zd-chip zd-c-violet">{typeLabel(o.orderType)}</span>
-          {o.tableNo && <span className="zd-chip zd-c-grey">{t("Table {n}", { n: fmtNum(o.tableNo) })}</span>}
+          {o.tableNo && <span className="zd-chip zd-c-grey">{tableLabel(o)}</span>}
         </div>
       </div>
       <div className="zd-mside">

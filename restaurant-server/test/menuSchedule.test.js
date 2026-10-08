@@ -141,15 +141,13 @@ const run = async () => {
     assert.equal(isItemScheduledNow(marg, await ctxAt("17:30")), true);
   });
 
-  await test("category active + item schedule inactive → hidden", async () => {
-    assert.equal(isItemScheduledNow(cheese, await ctxAt("17:30")), false);
-  });
-
-  await test("category active + item schedule active → visible (must satisfy both)", async () => {
-    assert.equal(isItemScheduledNow(cheese, await ctxAt("18:00")), true);
-    assert.equal(isItemScheduledNow(cheese, await ctxAt("21:00")), false);
-    assert.equal(isItemScheduledNow(special, await ctxAt("19:59")), true);
-    assert.equal(isItemScheduledNow(special, await ctxAt("12:30")), false);
+  // Menu items have no time schedule of their own any more: an old item
+  // "schedule" left in the database is ignored — only the category counts.
+  await test("an item's own old schedule is ignored: visible whenever its category is", async () => {
+    assert.equal(isItemScheduledNow(cheese, await ctxAt("17:30")), true, "outside the old item window → still visible");
+    assert.equal(isItemScheduledNow(cheese, await ctxAt("22:30")), true);
+    assert.equal(isItemScheduledNow(special, await ctxAt("12:30")), true);
+    assert.equal(isItemScheduledNow(cheese, await ctxAt("10:00")), false, "category (Pizza 17–23) closed → hidden");
   });
 
   await test("unscheduled category/items unchanged at any hour", async () => {
@@ -171,39 +169,46 @@ const run = async () => {
     return { calls, models: { MenuItem: M(existingItems, "items"), Category: M(existingCats, "cats") } };
   };
 
-  await test("applies one schedule to many items + categories in one updateMany each", async () => {
-    const items = [1, 2, 3, 4, 5].map(oid), cats = [9, 10].map(oid);
-    const { calls, models: m } = makeBulkModels(items, cats);
-    const r = await applyBulkSchedule({ models: m, itemIds: items, categoryIds: cats, schedule: { startTime: "18:00", endTime: "23:00" } });
-    assert.equal(calls.length, 2);
-    assert.deepEqual(calls.find((c) => c.label === "items").update, { $set: { schedule: N("18:00", "23:00") } });
-    assert.deepEqual(calls.find((c) => c.label === "cats").update, { $set: { schedule: N("18:00", "23:00"), menuTime: null } },
+  await test("applies one schedule to many categories in one updateMany (items untouched)", async () => {
+    const cats = [9, 10].map(oid);
+    const { calls, models: m } = makeBulkModels([], cats);
+    const r = await applyBulkSchedule({ models: m, categoryIds: cats, schedule: { startTime: "18:00", endTime: "23:00" } });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].label, "cats");
+    assert.deepEqual(calls[0].update, { $set: { schedule: N("18:00", "23:00"), menuTime: null } },
       "a hand-set window takes the category out of its Menu time");
-    assert.equal(r.itemsUpdated, 5);
     assert.equal(r.categoriesUpdated, 2);
   });
 
   await test("duplicate ids collapse to one", async () => {
-    const { calls, models: m } = makeBulkModels([oid(1)], []);
-    await applyBulkSchedule({ models: m, itemIds: [oid(1), oid(1)], schedule: S("10:00", "11:00") });
+    const { calls, models: m } = makeBulkModels([], [oid(1)]);
+    await applyBulkSchedule({ models: m, categoryIds: [oid(1), oid(1)], schedule: S("10:00", "11:00") });
     assert.deepEqual(calls[0].ids, [oid(1)]);
   });
 
   await test("null schedule clears", async () => {
-    const { calls, models: m } = makeBulkModels([oid(1)], []);
-    await applyBulkSchedule({ models: m, itemIds: [oid(1)], schedule: null });
+    const { calls, models: m } = makeBulkModels([], [oid(1)]);
+    await applyBulkSchedule({ models: m, categoryIds: [oid(1)], schedule: null });
     assert.deepEqual(calls[0].update.$set.schedule, CLEARED);
   });
 
+  await test("menu ITEMS can no longer be scheduled — refused, nothing written", async () => {
+    const { calls, models: m } = makeBulkModels([oid(1)], [oid(9)]);
+    await assert.rejects(() => applyBulkSchedule({ models: m, itemIds: [oid(1)], schedule: S("10:00", "11:00") }),
+      (e) => e.statusCode === 400 && /no longer have their own time schedule/.test(e.message));
+    await assert.rejects(() => applyBulkSchedule({ models: m, itemIds: [oid(1)], categoryIds: [oid(9)], schedule: null }), (e) => e.statusCode === 400);
+    assert.equal(calls.length, 0);
+  });
+
   await test("rejects invalid / unknown ids, empty selection, bad schedule — writes nothing", async () => {
-    const { calls, models: m } = makeBulkModels([oid(1)], []);
+    const { calls, models: m } = makeBulkModels([], [oid(1)]);
     const rej = (args, code) => assert.rejects(() => applyBulkSchedule({ models: m, ...args }), (e) => e.statusCode === code);
-    await rej({ itemIds: ["not-an-id"], schedule: S("10:00", "11:00") }, 400);
-    await rej({ itemIds: [oid(1), oid(2)], schedule: S("10:00", "11:00") }, 404);
-    await rej({ itemIds: [], categoryIds: [], schedule: S("10:00", "11:00") }, 400);
-    await rej({ itemIds: [oid(1)], schedule: { startTime: "9", endTime: "10:00" } }, 400);
-    await rej({ itemIds: [oid(1)] }, 400);
-    await rej({ itemIds: "abc", schedule: null }, 400);
+    await rej({ categoryIds: ["not-an-id"], schedule: S("10:00", "11:00") }, 400);
+    await rej({ categoryIds: [oid(1), oid(2)], schedule: S("10:00", "11:00") }, 404);
+    await rej({ categoryIds: [], schedule: S("10:00", "11:00") }, 400);
+    await rej({ categoryIds: [oid(1)], schedule: { startTime: "9", endTime: "10:00" } }, 400);
+    await rej({ categoryIds: [oid(1)] }, 400);
+    await rej({ categoryIds: "abc", schedule: null }, 400);
     assert.equal(calls.length, 0);
   });
 
@@ -313,11 +318,14 @@ const run = async () => {
   ];
   const MenuItem = { findById: async (id) => catalog.find((c) => c._id === id) || null };
 
-  await test("direct order for a scheduled-out item is rejected", async () => {
+  await test("order for an item whose CATEGORY is closed is rejected", async () => {
     const ctx = await ctxAt("10:00");
     await assert.rejects(() => priceItems([{ menuItemId: "m1", qty: 1 }], MenuItem, ctx), /not available at this time/);
-    const ctx2 = await ctxAt("17:30");
-    await assert.rejects(() => priceItems([{ menuItemId: "m2", qty: 1 }], MenuItem, ctx2), /not available at this time/);
+  });
+
+  await test("an item's own old schedule never blocks an order (feature removed)", async () => {
+    const r = await priceItems([{ menuItemId: "m2", qty: 1 }], MenuItem, await ctxAt("17:30")); // old window 18–21
+    assert.equal(r[0].price, 350);
   });
 
   await test("in-window and unscheduled items still price normally", async () => {

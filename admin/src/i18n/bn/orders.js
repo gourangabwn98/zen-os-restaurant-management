@@ -406,4 +406,18 @@ export default {
   "Please enter a number of guests from 1 to 100": "১ থেকে ১০০-র মধ্যে অতিথির সংখ্যা লিখুন",
   "Service Charge": "সার্ভিস চার্জ",
   "{n} guests × ₹{rate}": "{n} জন × ₹{rate}",
+  // Per-area table names ("Indoor-AC 1") instead of the internal table number
+  "{table} is free": "{table} খালি",
+  "New order for {table}": "{table}-এর জন্য নতুন অর্ডার",
+  "Combine Bill · {table}": "কম্বাইন বিল · {table}",
+  "Combined bill · {table}": "কম্বাইন বিল · {table}",
+  "Select table": "টেবিল বাছুন",
+  // "+" add-table tile on the Orders table map
+  "Table number": "টেবিল নম্বর",
+  "Add table": "টেবিল যোগ করুন",
+  "Add table · {area}": "টেবিল যোগ করুন · {area}",
+  "Add a table to {area}": "{area}-এ টেবিল যোগ করুন",
+  "Seats must be a whole number from 1 to 100": "আসন ১ থেকে ১০০-র মধ্যে পূর্ণ সংখ্যা হতে হবে",
+  "The QR code is made automatically.": "QR কোড নিজে থেকেই তৈরি হবে।",
+  "Will appear as {table}": "{table} হিসেবে দেখাবে",
 };

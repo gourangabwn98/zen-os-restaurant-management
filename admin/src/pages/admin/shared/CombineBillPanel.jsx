@@ -38,7 +38,8 @@ const report = (lines, failures) => {
   else toast.success(msg);
 };
 
-export default function CombineBillPanel({ tableNo, orders, onExit, onRefresh }) {
+export default function CombineBillPanel({ tableNo, tableName, orders, onExit, onRefresh }) {
+  const name = tableName || t("Table {n}", { n: tableNo });
   const [selected, setSelected] = useState(() => {
     try { return new Set(JSON.parse(sessionStorage.getItem(storeKey(tableNo)) || "[]")); } catch { return new Set(); }
   });
@@ -134,7 +135,7 @@ export default function CombineBillPanel({ tableNo, orders, onExit, onRefresh })
     <div className="cb">
       <div className="cb-head">
         <div>
-          <b>{t("Combine Bill · Table {n}", { n: tableNo })}</b>
+          <b>{t("Combine Bill · {table}", { table: name })}</b>
           <span>{t("Tick the orders to put on one bill.")}</span>
         </div>
         <button type="button" className="zc-btn sm ghost" onClick={exit}>✕ {t("Exit")}</button>
@@ -217,7 +218,7 @@ export default function CombineBillPanel({ tableNo, orders, onExit, onRefresh })
           <div className="zc-modal cb-modal" role="dialog" aria-label={t("Combined bill")} onClick={(e) => e.stopPropagation()}>
             <div className="mh">
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="t">{t("Combined bill · Table {n}", { n: tableNo })}</div>
+                <div className="t">{t("Combined bill · {table}", { table: name })}</div>
                 <div className="s">{tn(preview.orders.length, "{n} order", "{n} orders")} · {preview.orders.map((o) => `#${o.orderId}`).join(", ")}</div>
               </div>
               <button type="button" className="zc-x" onClick={() => setBillOpen(false)} aria-label={t("Close")}>✕</button>

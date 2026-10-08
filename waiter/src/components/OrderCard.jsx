@@ -2,6 +2,7 @@ import StatusBadge, { statusColor } from "./StatusBadge.jsx";
 import GlassCard from "./ui/GlassCard.jsx";
 import { ACCENT, ACCENT_SOFT, TEXT_FAINT, TEXT_MUTED } from "../theme.js";
 import { t, localName } from "../i18n/index.jsx";
+import { tableLabel } from "../utils/diningArea.js";
 
 export default function OrderCard({ order, onClick, style }) {
   // Same rule as the admin table map / order rail: the card itself is
@@ -22,7 +23,7 @@ export default function OrderCard({ order, onClick, style }) {
               {order.source}
             </span>
             <span style={{ fontSize: 10.5, color: TEXT_MUTED }}>
-              {order.tableNo ? t("Table {n}", { n: order.tableNo }) : t("Takeaway")}
+              {order.tableNo ? tableLabel(order) : t("Takeaway")}
             </span>
           </div>
           <div style={{ fontSize: 12, color: TEXT_FAINT, marginTop: 6 }}>

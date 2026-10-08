@@ -64,7 +64,8 @@ const reqWith = (Order, user = WAITER) => ({
     RestaurantProfile: { findOne: async () => ({ gstRate: 0, serviceCharge: 0, editWindowMinutes: 3 }) },
     Category: { find: () => ({ select: () => ({ lean: async () => [] }) }) },
     Recipe: { find: async () => [] }, InventoryItem: {}, KOTJob: {},
-    Table: { findOne: async ({ tableNo }) => ({ _id: `t${tableNo}`, tableNo, status: "Active" }), updateOne: async () => ({}) },
+    // Table 12 is configured as AC Room (the area now comes from the table).
+    Table: { findOne: async ({ tableNo }) => ({ _id: `t${tableNo}`, tableNo, status: "Active", ...(Number(tableNo) === 12 && { diningArea: "AC_ROOM" }) }), updateOne: async () => ({}) },
     TableSession: { findOne: async () => ({ _id: "ts1" }), findByIdAndUpdate: async () => ({}), updateOne: async () => ({}) },
   },
 });

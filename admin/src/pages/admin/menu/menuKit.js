@@ -171,12 +171,13 @@ export const previewClock = (now, preview) => {
 };
 
 /**
- * Schedule half of the visibility rule (isAvailable is separate).
+ * Time half of the visibility rule (isAvailable is separate): only the
+ * item's CATEGORY window counts — menu items have no schedule of their own.
  * `clock` null → the server's own answer for right now (`item.scheduledNow`).
  */
 export const scheduledAt = (item, cat, clock) => {
   if (!clock) return item.scheduledNow !== false;
-  return isScheduleActive(cat?.schedule, clock) && isScheduleActive(item.schedule, clock);
+  return isScheduleActive(cat?.schedule, clock);
 };
 
 // ── menu times ──────────────────────────────────────────────────────────────
@@ -288,10 +289,9 @@ export const VIEWS = {
   off:      { label: N_("Turned off"),      test: (i) => !i.isAvailable && !isSoldOut(i) },
   noPhoto:  { label: N_("No photo"),        test: (i) => !hasPhoto(i) },
   noStock:  { label: N_("Out of stock"),    test: (i) => isOutOfStock(i) },
-  ownTime:  { label: N_("Own time window"), test: (i) => hasSchedule(i) },
   cleanup:  { label: N_("Needs cleanup"),   test: (i, c) => c.cleanup.has(i.category) },
 };
-export const VIEW_CHIPS = ["all", "onMenu", "soldOut", "off", "noPhoto", "noStock", "ownTime"];
+export const VIEW_CHIPS = ["all", "onMenu", "soldOut", "off", "noPhoto", "noStock"];
 export const VIEW_KEYS = Object.keys(VIEWS);
 
 // Extra filters a saved view can hold, on top of a view.

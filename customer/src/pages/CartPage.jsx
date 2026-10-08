@@ -128,7 +128,8 @@ function ShoppingCart() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingCode]);
 
-  // Guests order with no name, phone or login (the server never required them).
+  // Ordering needs a login (checked in handlePlace and on the server); these
+  // are the remaining checks once logged in.
   const canPlace = useMemo(() => {
     if (cart.itemCount === 0) return false;
     if (table.checking) return false; // a scanned QR is still being verified
@@ -138,6 +139,9 @@ function ShoppingCart() {
   }, [cart.itemCount, table.checking, orderType, canDineIn, canTakeaway]);
 
   const handlePlace = async () => {
+    // Login is required to order (the server refuses guest orders too). The
+    // cart is kept; login brings the customer straight back here.
+    if (!auth.isLoggedIn) { askLogin(); return; }
     if (!canPlace || placing) return;
     setPlacing(true);
     try {
@@ -259,13 +263,13 @@ function ShoppingCart() {
         <Link to="/menu" className="btn btn-ghost" style={{ margin: "12px 0", minHeight: 46 }}>+ Add more items</Link>
       </div>
 
-      {/* ── Optional login (guests order without name, phone or login) ── */}
+      {/* ── Login required to place an order (your cart is kept) ── */}
       {!auth.isLoggedIn && (
         <div className="card login-nudge">
-          <span className="ic" aria-hidden="true">✨</span>
+          <span className="ic" aria-hidden="true">🔐</span>
           <span className="grow">
-            <b>Login is optional</b>
-            <span className="muted small">You can order as a guest. Log in to use coupons, get special offers and hear about upcoming offers first.</span>
+            <b>Log in to place your order</b>
+            <span className="muted small">Quick login with your phone number. Your cart stays as it is — you'll come straight back here.</span>
           </span>
           <button type="button" className="btn btn-ghost sm" onClick={askLogin}>Log in</button>
         </div>
@@ -350,8 +354,9 @@ function ShoppingCart() {
 
       {/* ── Place order ── */}
       {blocker && <div className="notice" role="status">{blocker}</div>}
-      <Button style={{ marginTop: 8 }} onClick={handlePlace} disabled={!canPlace || placing}>
-        {placing ? (payFirst ? "Opening payment…" : "Placing order…")
+      <Button style={{ marginTop: 8 }} onClick={handlePlace} disabled={auth.isLoggedIn ? (!canPlace || placing) : cart.itemCount === 0}>
+        {!auth.isLoggedIn ? "Log in to place order"
+          : placing ? (payFirst ? "Opening payment…" : "Placing order…")
           : payFirst ? `Continue to pay${toPay != null ? ` · ${rupees(toPay)}` : ""}`
           : `Place order${toPay != null ? ` · ${rupees(toPay)}` : ""}`}
       </Button>

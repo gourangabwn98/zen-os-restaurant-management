@@ -72,7 +72,7 @@ const run = async () => {
       orders: [stale],
       orderCreate: async () => { throw err; },
     });
-    const req = { models, db: {}, user: null };
+    const req = { models, db: {}, user: { _id: "cust1", role: "customer", name: "Guest" } }; // customers must be logged in
 
     await assert.rejects(
       () => placeOrderTx({ req, body: { ...baseBody } }), // no idempotencyKey
@@ -87,7 +87,7 @@ const run = async () => {
       orders: [{ _id: "old", orderId: "ORD00001" }],
       orderCreate: async (payload) => ({ ...created, ...payload, _id: "new1", orderId: "ORD00002" }),
     });
-    const req = { models, db: {}, user: null };
+    const req = { models, db: {}, user: { _id: "cust1", role: "customer", name: "Guest" } }; // customers must be logged in
 
     const { order, alreadyExisted } = await placeOrderTx({ req, body: { ...baseBody } });
     assert.equal(alreadyExisted, false);
@@ -105,7 +105,7 @@ const run = async () => {
       orders: [{ _id: "old", orderId: "ORD00001" }, original],
       orderCreate: async () => { throw err; },
     });
-    const req = { models, db: {}, user: null };
+    const req = { models, db: {}, user: { _id: "cust1", role: "customer", name: "Guest" } }; // customers must be logged in
 
     const { order, alreadyExisted } = await placeOrderTx({
       req, body: { ...baseBody, idempotencyKey: "k-abc" },
@@ -121,7 +121,7 @@ const run = async () => {
       orders: [existing],
       orderCreate: async () => { createCalls++; return { _id: "should-not-happen" }; },
     });
-    const req = { models, db: {}, user: null };
+    const req = { models, db: {}, user: { _id: "cust1", role: "customer", name: "Guest" } }; // customers must be logged in
 
     const { order, alreadyExisted } = await placeOrderTx({
       req, body: { ...baseBody, idempotencyKey: "k-dup" },

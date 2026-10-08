@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 import { getSocket } from "../services/socketService.js";
 import { playNotificationSound } from "../utils/notificationSound.js";
 import { t } from "../i18n/index.jsx";
+import { tableLabel } from "../utils/diningArea.js";
 
 /** New customer order (awaiting confirmation) → toast + sound (staff room
  * broadcast from the backend), same as the admin panel. Also warns when a
@@ -18,7 +19,7 @@ export function useOrderNotifications(enabled) {
 
     const onNewOrder = (payload) => {
       playNotificationSound();
-      toast(`🔔 ${t("New order {id}", { id: payload?.order?.orderId || "" })}${payload?.order?.tableNo ? ` · ${t("Table {n}", { n: payload.order.tableNo })}` : ""} — ${t("needs confirmation")}`, { duration: 5000 });
+      toast(`🔔 ${t("New order {id}", { id: payload?.order?.orderId || "" })}${payload?.order?.tableNo ? ` · ${tableLabel(payload.order)}` : ""} — ${t("needs confirmation")}`, { duration: 5000 });
     };
     const onCancelled = (payload) => {
       toast(`❌ ${t("Order {id} cancelled", { id: payload?.order?.orderId || "" })}`);

@@ -14,6 +14,7 @@ const toKitchenTicket = (order) => ({
   _id: order._id,
   orderId: order.orderId,
   tableNo: order.tableNo,
+  tableName: order.tableName || "", diningArea: order.diningArea || "", // "Indoor-AC 1" — not PII
   orderType: order.orderType,
   status: order.status,
   priority: order.priority,

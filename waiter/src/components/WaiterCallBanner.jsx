@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import PrimaryButton from "./ui/PrimaryButton.jsx";
 import { AMBER, GREEN, TEXT_MUTED, GLASS_BORDER, SHADOW_GLASS, BLUR, BG_SECONDARY } from "../theme.js";
 import { t } from "../i18n/index.jsx";
+import { tableLabel } from "../utils/diningArea.js";
 
 const mmss = (ms) => {
   const s = Math.max(0, Math.ceil(ms / 1000));
@@ -34,7 +35,7 @@ export default function WaiterCallBanner({ calls, now, mine, onMyWay, done }) {
               <button type="button" onClick={() => nav(`/order/${c.order}`)}
                 style={{ flex: 1, minWidth: 0, textAlign: "left", background: "none", border: 0, padding: 0, color: "#fff", cursor: "pointer" }}>
                 <div style={{ fontWeight: 800, fontSize: 15 }}>
-                  {taken ? t("Table {n} — you're on the way", { n: c.tableNo }) : c.attempt === 2 ? t("Table {n} is calling again", { n: c.tableNo }) : t("Table {n} is calling", { n: c.tableNo })}
+                  {taken ? t("{table} — you're on the way", { table: tableLabel(c) }) : c.attempt === 2 ? t("{table} is calling again", { table: tableLabel(c) }) : t("{table} is calling", { table: tableLabel(c) })}
                 </div>
                 <div style={{ fontSize: 12, color: TEXT_MUTED, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {c.orderNumber ? t("Order {id}", { id: c.orderNumber }) : ""}{c.customerName ? ` · ${c.customerName}` : ""}

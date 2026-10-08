@@ -158,7 +158,7 @@ export const dateTime = (when) => {
 const ORDER_TYPE_LABEL = { DINE_IN: "Dine In", TAKEAWAY: "Takeaway", ONLINE: "Online" };
 // KH-10: a DINE_IN order seated in the AC Room / Garden prints that instead
 // of "Dine In" (backend utils/diningArea.js). Old jobs have no area → as before.
-const DINING_AREA_LABEL = { AC_ROOM: "AC Room", GARDEN: "Garden" };
+const DINING_AREA_LABEL = { AC_ROOM: "Indoor-AC", GARDEN: "Garden", GAZEBO: "Gazebo" };
 export const orderTypeLabel = (t, area = "") =>
   (t === "DINE_IN" && DINING_AREA_LABEL[area]) || ORDER_TYPE_LABEL[t] || toPrintable(t || "-");
 

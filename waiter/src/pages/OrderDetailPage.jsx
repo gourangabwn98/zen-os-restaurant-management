@@ -20,7 +20,7 @@ import { t, N_, tn, localName } from "../i18n/index.jsx";
 import NotShareableNote from "../components/NotShareableNote.jsx";
 import AddonPicker, { AddonHint } from "../components/AddonPicker.jsx";
 import { hasAddons, lineKey, addonIdsOf } from "../utils/addons.js";
-import { DINING_AREA_LABEL } from "../utils/diningArea.js";
+import { tableLabel } from "../utils/diningArea.js";
 import { STATUS_LABEL } from "../components/StatusBadge.jsx";
 
 // DSH-04: the floor steps a waiter drives. Kitchen marks Ready; the waiter
@@ -296,7 +296,7 @@ export default function OrderDetailPage() {
         <div>
           <div style={{ fontSize: 22, fontWeight: 800, color: "#fff", letterSpacing: -0.4 }}>{order.orderId}</div>
           <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 2 }}>
-            {order.orderType === "DINE_IN" ? `${order.diningArea ? t(DINING_AREA_LABEL[order.diningArea] || order.diningArea) : t("Dine-in")} · ${t("Table {n}", { n: order.tableNo })}` : t("Takeaway")} · {order.source}
+            {order.orderType === "DINE_IN" ? `${t("Dine-in")} · ${tableLabel(order)}` : t("Takeaway")} · {order.source}
           </div>
           {order.parentOrderNo && (
             <div style={{ fontSize: 11.5, color: AMBER, marginTop: 2 }}>{t("Items added to {id}", { id: order.parentOrderNo })}</div>
@@ -400,7 +400,7 @@ export default function OrderDetailPage() {
           <CombinedBillPanel
             scope={billGroup.scope} orders={billGroup.orders} onChanged={load}
             title={billGroup.scope.tableNo
-              ? t("Table {n} bill · {c} orders", { n: billGroup.scope.tableNo, c: billGroup.orders.length })
+              ? t("{table} bill · {c} orders", { table: tableLabel(billGroup.orders.find((o) => Number(o.tableNo) === Number(billGroup.scope.tableNo)) || billGroup.scope), c: billGroup.orders.length })
               : t("Bill · {c} orders", { c: billGroup.orders.length })}
           />
         </div>

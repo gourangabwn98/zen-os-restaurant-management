@@ -328,4 +328,15 @@ export default {
   "Please enter a number of guests from 1 to 100": "১ থেকে ১০০-র মধ্যে অতিথির সংখ্যা লিখুন",
   "Service Charge": "সার্ভিস চার্জ",
   "{n} guests × ₹{rate}": "{n} জন × ₹{rate}",
+  // Table areas (set by the admin)
+  "Indoor": "ভেতরে",
+  "{n} table": "{n}টি টেবিল",
+  "{n} tables": "{n}টি টেবিল",
+  "No running take away orders": "কোনো চলতি টেক অ্যাওয়ে অর্ডার নেই",
+  // Per-area table names ("Indoor-AC 1") instead of the internal table number
+  "{table} attended": "{table}-এ যাওয়া হয়েছে",
+  "{table} is calling": "{table} ডাকছে",
+  "{table} is calling again": "{table} আবার ডাকছে",
+  "{table} — you're on the way": "{table} — আপনি আসছেন",
+  "{table} bill · {c} orders": "{table}-এর বিল · {c}টি অর্ডার",
 };

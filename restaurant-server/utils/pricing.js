@@ -19,7 +19,7 @@ const qtyOf = (raw) => {
  * Resolves raw client line items [{ menuItemId, qty, notes }] into
  * authoritative order-item subdocuments, using ONLY prices from the DB.
  * `scheduleCtx` (from menuScheduleService.getScheduleContext) additionally
- * rejects items whose category/item schedule is outside its window right now
+ * rejects items whose CATEGORY schedule is outside its window right now
  * — the same rule GET /api/menu applies, so a stale cart can't bypass it.
  */
 export const priceItems = async (items, MenuItem, scheduleCtx = null) => {

@@ -38,7 +38,7 @@ const world = (services) => ({
 await test("a customer can't place a takeaway order when Takeaway is off (nothing is priced or saved)", async () => {
   const { models } = world({ dineIn: true, takeAway: false, delivery: false });
   await assert.rejects(
-    placeOrderTx({ req: { models, user: null, headers: {} }, body: { orderType: "TAKEAWAY", items: [{ menuItemId: "m1", qty: 1 }] } }),
+    placeOrderTx({ req: { models, user: { _id: "cust1", role: "customer" }, headers: {} }, body: { orderType: "TAKEAWAY", items: [{ menuItemId: "m1", qty: 1 }] } }),
     (e) => e.statusCode === 400 && e.code === "SERVICE_DISABLED",
   );
 });
@@ -46,7 +46,7 @@ await test("a customer can't place a takeaway order when Takeaway is off (nothin
 await test("legacy 'Delivery' order type maps to ONLINE and is refused while Delivery is off", async () => {
   const { models } = world({ dineIn: true, takeAway: true, delivery: false });
   await assert.rejects(
-    placeOrderTx({ req: { models, user: null, headers: {} }, body: { orderType: "Delivery", items: [{ menuItemId: "m1", qty: 1 }] } }),
+    placeOrderTx({ req: { models, user: { _id: "cust1", role: "customer" }, headers: {} }, body: { orderType: "Delivery", items: [{ menuItemId: "m1", qty: 1 }] } }),
     (e) => e.code === "SERVICE_DISABLED",
   );
 });

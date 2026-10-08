@@ -5,6 +5,8 @@ import { getAllTables, getOpenTableSessions } from "../services/tableService.js"
 import { getAllOrders, confirmOrder, rejectOrder } from "../services/orderService.js";
 import { OccupiedTableCard, FreeTableCard } from "../components/TableCard.jsx";
 import DutyPanel from "../components/DutyPanel.jsx";
+import OrderCard from "../components/OrderCard.jsx";
+
 import { useAppState } from "../context/AppState.jsx";
 import { Loader, ErrorState } from "../components/StateViews.jsx";
 import {
@@ -14,7 +16,11 @@ import {
 import { NAV_HEIGHT } from "../theme.js";
 import { useLiveOrders } from "../hooks/useLiveOrders.js";
 import { t, tn, localName } from "../i18n/index.jsx";
-import { DINING_AREA_LABEL } from "../utils/diningArea.js";
+import { TABLE_AREA_LABEL, groupTablesByArea, tableLabel } from "../utils/diningArea.js";
+
+// Running take away orders shown on the Take Away tab (accepted or waiting,
+// not yet completed / cancelled).
+const RUNNING_TAKEAWAY = ["PENDING_CONFIRMATION", "CONFIRMED", "PREPARING", "READY", "DELIVERED"];
 
 const AMBER = "#F5B83D";
 
@@ -55,13 +61,20 @@ export default function TablesPage() {
   const [pendingOrders, setPendingOrders] = useState([]);
   const [showPending, setShowPending] = useState(false);
   const [busyId, setBusyId]     = useState(null);
+  const [takeaways, setTakeaways] = useState([]); // running takeaway orders (Take Away tab)
+  // Map tab: "all", a table area ("" Indoor / AC_ROOM / GARDEN) or "takeaway".
+  // Remembered on this phone so the waiter's own floor stays selected.
+  const [tab, setTabState] = useState(() => { try { return localStorage.getItem("waiterMapTab") ?? "all"; } catch { return "all"; } });
+  const setTab = (v) => { setTabState(v); setSelected(null); try { localStorage.setItem("waiterMapTab", v); } catch { /* storage off */ } };
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [tRes, sRes, pRes] = await Promise.all([
+      const [tRes, sRes, pRes, twRes] = await Promise.all([
         getAllTables(), getOpenTableSessions(), getAllOrders({ status: "PENDING_CONFIRMATION", limit: 50 }),
+        getAllOrders({ type: "TAKEAWAY", scope: "live", limit: 50 }).catch(() => null),
       ]);
+      if (twRes) setTakeaways((twRes.data?.orders || []).filter((o) => RUNNING_TAKEAWAY.includes(o.status)));
       setTables(tRes.data?.tables || []);
       const map = {};
       (sRes.data?.sessions || []).forEach((s) => { map[Number(s.tableNo)] = s; });
@@ -116,10 +129,16 @@ export default function TablesPage() {
   if (error) return <ErrorState message={error} onRetry={load} />;
   if (tables === null) return <Loader label={t("Loading tables…")} />;
 
-  const liveTables = tables.filter((t) => t.status !== "Inactive").sort((a, b) => a.tableNo - b.tableNo);
+  // Same tables, same order as the admin's Table Map: the server sends them
+  // sorted by area, then table number (Admin → Tables is the one source).
+  const liveTables = tables.filter((t) => t.status !== "Inactive");
   const classified = liveTables.map((t) => classifyTable(t, sessions[t.tableNo]));
   const summary = summarize(classified);
 
+  // Areas the admin set up (server order) → the tabs; a removed area falls back to All.
+  const areaGroups = groupTablesByArea(classified.map((c) => ({ ...c.table, _c: c })));
+  const activeTab = tab === "takeaway" || tab === "all" || areaGroups.some((g) => g.area === tab) ? tab : "all";
+  const shownGroups = activeTab === "all" ? areaGroups : areaGroups.filter((g) => g.area === activeTab);
   const selectedClassified = selected ? classified.find((c) => c.table.tableNo === selected) : null;
   const selectedSession = selected ? sessions[selected] : null;
 
@@ -178,12 +197,56 @@ export default function TablesPage() {
         <DutyPanel />
       </div>
 
+      {/* Quick switch — All · each area the admin set up (seated/total) · Take Away */}
+      <div className="hide-scrollbar" role="tablist" aria-label={t("Tables")}
+        style={{ display: "flex", gap: 8, overflowX: "auto", padding: "12px 16px 0" }}>
+        {[
+          { key: "all", label: t("All"), count: `${summary.occupied}/${classified.length}` },
+          ...(areaGroups.length > 1 ? areaGroups.map((g) => ({
+            key: g.area, label: t(TABLE_AREA_LABEL[g.area] || g.area),
+            count: `${g.tables.filter((x) => x._c.occupied).length}/${g.tables.length}`,
+          })) : []),
+          { key: "takeaway", label: `🛍️ ${t("Take Away")}`, count: takeaways.length ? String(takeaways.length) : "" },
+        ].map((x) => {
+          const on = activeTab === x.key;
+          return (
+            <button key={x.key || "indoor"} type="button" role="tab" aria-selected={on} onClick={() => setTab(x.key)} className="pressable"
+              style={{
+                flexShrink: 0, minHeight: 38, padding: "0 14px", borderRadius: 999, cursor: "pointer", fontFamily: FONT_BODY,
+                fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 6,
+                border: `1px solid ${on ? "transparent" : CARD_BORDER}`,
+                background: on ? (x.key === "takeaway" ? AMBER : "#3B82F6") : CARD_BG,
+                color: on ? (x.key === "takeaway" ? "#0B0E13" : "#fff") : TEXT_MAIN,
+              }}>
+              {x.label}
+              {x.count && <span style={{ fontSize: 11, fontWeight: 800, opacity: on ? 0.85 : 0.6 }}>{x.count}</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      {activeTab === "takeaway" ? (
+        <div style={{ padding: "14px 16px 0", display: "flex", flexDirection: "column", gap: 10 }}>
+          {takeaways.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "20px 0 4px", color: TEXT_MUTED, fontSize: 13 }}>{t("No running take away orders")}</div>
+          ) : takeaways.map((o) => (
+            <OrderCard key={o._id} order={o} onClick={() => nav(`/order/${o._id}`)} />
+          ))}
+        </div>
+      ) : null}
+
       {/* Grid — just the tables, nothing else on this page. */}
-      {classified.length === 0 ? (
+      {activeTab === "takeaway" ? null : classified.length === 0 ? (
         <EmptyBoard title={t("No tables set up yet")} sub={t("Ask an admin to add tables")} />
       ) : (
-        <div className="tables-grid" style={{ padding: "16px 16px 0" }}>
-          {classified.map((c) =>
+        shownGroups.map((g) => (
+        <section key={g.area || "indoor"} aria-label={t(TABLE_AREA_LABEL[g.area] || g.area)}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "16px 18px 0" }}>
+            <span style={{ fontFamily: FONT_HEAD, fontSize: 14, fontWeight: 800, color: TEXT_MAIN }}>{t(TABLE_AREA_LABEL[g.area] || g.area)}</span>
+            <span style={{ fontSize: 11, color: TEXT_MUTED }}>{tn(g.tables.length, "{n} table", "{n} tables")}</span>
+          </div>
+        <div className="tables-grid" style={{ padding: "8px 16px 0" }}>
+          {g.tables.map(({ _c: c }) =>
             c.occupied ? (
               <OccupiedTableCard
                 key={c.table.tableNo}
@@ -201,10 +264,14 @@ export default function TablesPage() {
             )
           )}
         </div>
+        </section>
+        ))
       )}
 
       {/* Take Away — NOT a table: its own full-width, differently styled tile
-          below the table grid. Starts a TAKEAWAY order (no table). */}
+          below the table grid. Starts a TAKEAWAY order (no table). Shown on
+          the All and Take Away tabs (an area tab shows only its tables). */}
+      {(activeTab === "all" || activeTab === "takeaway") && (
       <div style={{ padding: "18px 16px 0" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 10px", color: TEXT_MUTED, fontSize: 10.5, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase" }}>
           <span style={{ flex: 1, height: 1, background: CARD_BORDER }} />{t("Or")}<span style={{ flex: 1, height: 1, background: CARD_BORDER }} />
@@ -226,6 +293,7 @@ export default function TablesPage() {
           <span aria-hidden="true" style={{ color: AMBER, fontSize: 20, fontWeight: 800 }}>＋</span>
         </button>
       </div>
+      )}
 
       {/* Selected occupied table — its active orders, as a modal (not an
           inline block the page had to be scrolled down to reach). */}
@@ -254,7 +322,7 @@ export default function TablesPage() {
               padding: "10px 16px 14px", borderBottom: `1px solid ${CARD_BORDER}`, display: "flex",
               justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, background: CARD_BG, zIndex: 1,
             }}>
-              <div style={{ fontFamily: FONT_HEAD, fontWeight: 800, fontSize: 16, color: TEXT_MAIN }}>{t("Table {n}", { n: selected })}</div>
+              <div style={{ fontFamily: FONT_HEAD, fontWeight: 800, fontSize: 16, color: TEXT_MAIN }}>{selectedClassified ? tableLabel(selectedClassified.table) : t("Table {n}", { n: selected })}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <button
                   onClick={() => goToNewOrder(selected)}
@@ -428,7 +496,7 @@ function OrderRow({ order, onClick }) {
 function PendingOrderRow({ order, busy, onOpen, onConfirm, onReject }) {
   const items = (order.items || []).slice(0, 3).map((i) => `${localName(i)} ×${i.qty}`).join(", ");
   const where = order.orderType === "DINE_IN"
-    ? `${t("Table {n}", { n: order.tableNo })}${order.diningArea ? ` · ${t(DINING_AREA_LABEL[order.diningArea] || order.diningArea)}` : ""}` // KH-10
+    ? tableLabel(order) // "Indoor-AC 1" — the area is part of the name
     : t("Takeaway");
   const who = order.guestName || order.user?.name || t("Guest");
   return (

@@ -50,7 +50,7 @@ export function useMenu({ search = "", diet = "all" } = {}) {
 
   useEffect(() => load(), [load]);
 
-  // Scheduled categories/items open and close during the day (the server
+  // Timed categories (Menu times) open and close during the day (the server
   // filters them in restaurant time) — re-fetch every minute, when the tab
   // comes back, and immediately when an admin changes the menu.
   useEffect(() => {

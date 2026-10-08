@@ -86,7 +86,9 @@ const makeWorld = ({ profile = {}, table = null, orders = [] } = {}) => {
 };
 
 const body = (extra = {}) => ({ items: [{ menuItemId: "m1", qty: 1 }], orderType: "TAKEAWAY", customerName: "Asha", customerPhone: "9999999999", ...extra });
-const place = (models, extra, user = null) => placeOrderTx({ req: { models, db: {}, user }, body: body(extra) });
+// Customers must be logged in to order — default caller is a logged-in customer.
+const CUSTOMER_USER = { _id: "cust1", role: "customer", name: "Asha", phone: "9999999999" };
+const place = (models, extra, user = CUSTOMER_USER) => placeOrderTx({ req: { models, db: {}, user }, body: body(extra) });
 
 // ── paymentMode util ─────────────────────────────────────────────────────────
 await test("effective mode: ONLINE without PhonePe falls back to CASH; unknown → BOTH", () => {

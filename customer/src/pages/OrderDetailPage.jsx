@@ -164,7 +164,7 @@ export default function OrderDetailPage() {
         <button type="button" className="back" onClick={() => nav("/orders")}><Icon name="back" />All orders</button>
         <h2>#{order.orderId}</h2>
         <p className="small">
-          {order.orderType === "DINE_IN" ? `Dine-in${order.tableNo ? ` · Table ${order.tableNo}` : ""}` : "Takeaway"}
+          {order.orderType === "DINE_IN" ? `Dine-in${order.tableNo ? ` · ${order.tableName || `Table ${order.tableNo}`}` : ""}` : "Takeaway"}
           {order.createdAt ? ` · ${formatOrderTime(order.createdAt)}` : ""}
         </p>
       </div>

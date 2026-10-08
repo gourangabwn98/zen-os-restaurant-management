@@ -3,7 +3,7 @@ import { ORDER_STATUS_LABEL } from "./shared/statusLabels.js";
 import toast from "react-hot-toast";
 import {
   getAllOrders, getRestaurantProfile, updateOrderStatus, settleOrders, reopenOrderBill,
-  getAllTables, printOrderOrGroupBill, confirmOrder, rejectOrder, modifyOrderItems,
+  getAllTables, createTable, printOrderOrGroupBill, confirmOrder, rejectOrder, modifyOrderItems,
 } from "../../services/adminService.js";
 import { placeOrder, newIdempotencyKey } from "../../services/orderService.js";
 import { getSocket } from "../../services/socketService.js";
@@ -30,7 +30,7 @@ const prefetchOrderData = () => { menuCached().catch(() => {}); profileCached().
 import { t, tn, fmtNum, fmtDate, fmtDateTime, fmtTime, localName } from "../../i18n/core.js";
 import { customerName } from "./shared/customerName.js";
 import { takenByName, takenByIsAcceptor } from "./shared/takenBy.js";
-import { DINING_AREA_LABEL } from "./shared/diningArea.js";
+import { DINING_AREA_LABEL, TABLE_AREAS, TABLE_AREA_LABEL, groupTablesByArea, tableLabel } from "./shared/diningArea.js";
 import { askGuests, needsGuests } from "./shared/askGuests.js";
 import { hasAddons, cartLineKey, unitPrice, addonIdsOf } from "./shared/addons.js";
 import { AddonLines, AddonHint, AddonPicker } from "./shared/AddonUI.jsx";
@@ -381,7 +381,7 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
           <div style={{ flex:1, minWidth:0 }}>
             <div className="t tnum">{order.orderId}</div>
             <div className="s">
-              {order.tableNo ? `${t("Table {n}", { n: order.tableNo })} · ` : ""}{t("placed {when}", { when: placedAt })}
+              {order.tableNo ? `${tableLabel(order)} · ` : ""}{t("placed {when}", { when: placedAt })}
             </div>
           </div>
           <span className={`zc-tag ${statusKind(order.status)}`}><i />{formatStatus(order.status)}</span>
@@ -616,19 +616,18 @@ const ItemImage = ({ src, name }) => isUrl(src)
   : <span style={{ fontSize:24, flexShrink:0 }}>{src||"🍽️"}</span>;
 
 // ── CreateOrderModal — KFC-style rush ordering ────────────────────────────────
-// KH-10: AC Room / Garden are DINE_IN orders with a table + a diningArea.
+// The area (Indoor / AC Room / Garden) is NOT picked per order — it comes
+// from the table (Admin → Tables), set server-side.
 const ORDER_TYPE_OPTIONS = [
-  { value:"DINE_IN",  area:"",        label:"Dining",    icon:"🪑" },   // labels → t() at render
-  { value:"DINE_IN",  area:"AC_ROOM", label:"AC Room",   icon:"❄️" },
-  { value:"DINE_IN",  area:"GARDEN",  label:"Garden",    icon:"🌳" },
-  { value:"TAKEAWAY", area:"",        label:"Take Away", icon:"🛍️" },
+  { value:"DINE_IN",  label:"Dining",    icon:"🪑" },   // labels → t() at render
+  { value:"TAKEAWAY", label:"Take Away", icon:"🛍️" },
 ];
 const PAYMENT_STATUS_OPTIONS = [
   { value:"PENDING_VERIFICATION", label:"Due",  icon:"⏳" },
   { value:"PAID",                 label:"Paid", icon:"✓"  },
 ];
 
-const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOrderType = "DINE_IN" }) => {
+const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOrderType = "DINE_IN", tables = [] }) => {
   const [vegFilter,  setVegFilter]  = useState("All");
   const [tempFilter, setTempFilter] = useState("All");
   const [mi,          setMi]          = useState([]);
@@ -637,7 +636,6 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
   const [cart,        setCart]        = useState([]); // [{key, item, qty, addonIds}] — KH-12: one line per item + add-ons
   const [picker,      setPicker]      = useState(null); // KH-12: item whose add-ons are being asked about
   const [orderType,   setOrderType]   = useState(initialOrderType);
-  const [diningArea,  setDiningArea]  = useState(""); // KH-10
   // Pre-filled when opened by tapping a specific table on the floor map
   // (see openNewOrder in the parent) — saves re-typing a number just picked.
   const [tableNo,     setTableNo]     = useState(initialTableNo ? String(initialTableNo) : "");
@@ -728,7 +726,6 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
       const { data } = await placeOrder({
         items: cart.map(c=>({ menuItemId:c.item._id, qty:c.qty, ...(c.addonIds?.length && { addonIds:c.addonIds }) })),
         orderType, tableNo: orderType==="DINE_IN" ? Number(tableNo) : null,
-        diningArea: orderType==="DINE_IN" ? diningArea : "", // KH-10
         isGuest: true,
         customerName:  customerName.trim()||undefined,
         customerPhone: customerPhone.trim()||undefined,
@@ -1021,15 +1018,12 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
 
               {/* Order type */}
               <div className="zc-seg" style={{ width:"100%" }}>
-                {ORDER_TYPE_OPTIONS.map(({value,area,label,icon})=>{
-                  const on = orderType===value && (value!=="DINE_IN" || diningArea===area);
-                  return (
-                    <button key={`${value}-${area}`} onClick={()=>{ setOrderType(value); setDiningArea(area); }}
-                      className={on ? "on" : ""} style={{ flex:1, justifyContent:"center" }}>
-                      {icon} {t(label)}
-                    </button>
-                  );
-                })}
+                {ORDER_TYPE_OPTIONS.map(({value,label,icon})=>(
+                  <button key={value} onClick={()=>setOrderType(value)}
+                    className={orderType===value ? "on" : ""} style={{ flex:1, justifyContent:"center" }}>
+                    {icon} {t(label)}
+                  </button>
+                ))}
               </div>
 
               {/* Table number — only for Dining */}
@@ -1038,12 +1032,23 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
                   background:"var(--card-2)", border:`1px solid ${tableNo?"var(--violet-line)":"var(--edge)"}`,
                   borderRadius:"var(--r-ctl)", padding:"6px 14px" }}>
                   <span style={{ fontSize:13, color:"var(--text-2)", fontWeight:500 }}>{t("Table")}</span>
-                  <input ref={tableRef} type="number" min={1} value={tableNo}
+                  {/* Picked by name ("Indoor-AC 1"); the value is the table's
+                      internal key, which the server uses — never typed by hand
+                      (Indoor-AC 1 may be internal table 15). */}
+                  <select ref={tableRef} value={tableNo}
                     onChange={e=>setTableNo(e.target.value)}
-                    placeholder={t("No.")}
                     style={{ flex:1, background:"transparent", border:"none",
                       outline:"none", fontSize:15, fontWeight:700, color:"var(--text-1)",
-                      textAlign:"center" }}/>
+                      textAlign:"center" }}>
+                    <option value="" style={{ color:"#111" }}>{t("Select table")}</option>
+                    {groupTablesByArea(tables.filter((tb) => (tb.status || "Active") === "Active" || String(tb.tableNo) === String(tableNo))).map((g) => (
+                      <optgroup key={g.area || "indoor"} label={t(TABLE_AREA_LABEL[g.area] || TABLE_AREA_LABEL[""])} style={{ color:"#111" }}>
+                        {g.tables.map((tb) => (
+                          <option key={tb.tableNo} value={String(tb.tableNo)} style={{ color:"#111" }}>{tableLabel(tb)}</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
                 </div>
               )}
 
@@ -1306,7 +1311,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }
             </span>
             <span style={{ fontSize:12, color:T2, marginTop:2 }}>
               {order.orderId} · {customerName(order)||t("Guest")}
-              {order.tableNo ? ` · ${t("T{n}", { n: order.tableNo })}` : ""}
+              {order.tableNo ? ` · ${tableLabel(order)}` : ""}
               · <span style={{ color:isPaid?"var(--ready-ink)":"var(--wait-ink)", fontWeight:600 }}>
                   {isPaid?`✓ ${t("PAID")}`:`⏳ ${t("DUE")}`} ₹{fmtNum(Math.round(order.total))}
                 </span>
@@ -1675,7 +1680,63 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }
 
 // `label` / `billTarget` let the same view show a takeaway order (no table):
 // the heading reads "Takeaway #…" and the bill goes by order id, not tableNo.
-const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPaymentChange, onCombinedBill, onAddItems, onNewOrder, label, billTarget, onRefresh }) => {
+// "+" after the last table of an area on the table map: adds a table to THAT
+// area. The number is the one within the area ("Indoor-AC 3"), pre-filled
+// with the next free one; the server picks the internal key and refuses a
+// number the area already has (tableController.createTable).
+const AddTableModal = ({ area, tables, onClose, onCreated }) => {
+  const nextNo = Math.max(0, ...tables.filter((tb) => (tb.diningArea || "") === area).map((tb) => Number(tb.displayNo ?? tb.tableNo) || 0)) + 1;
+  const [no, setNo] = useState(String(nextNo));
+  const [seats, setSeats] = useState("4");
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    const n = Number(no), s = Number(seats);
+    if (!Number.isInteger(n) || n < 1) return toast.error(t("Table number required"));
+    if (!Number.isInteger(s) || s < 1 || s > 100) return toast.error(t("Seats must be a whole number from 1 to 100"));
+    setSaving(true);
+    try {
+      await createTable({ displayNo: n, seats: s, diningArea: area });
+      toast.success(t("{table} created!", { table: tableLabel({ displayNo: n, diningArea: area }) }));
+      onCreated();
+      onClose();
+    } catch (e) {
+      toast.error(e?.response?.data?.message || t("Failed to create"));
+    } finally { setSaving(false); }
+  };
+  return (
+    <div className="zc-scrim" onClick={() => !saving && onClose()} style={{ zIndex: 1100 }}>
+      <form className="zc-modal" style={{ width: 380 }} role="dialog" aria-modal="true" aria-labelledby="add-table-title"
+        onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); save(); }}>
+        <div className="mh">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="t" id="add-table-title">{t("Add table · {area}", { area: t(TABLE_AREA_LABEL[area] || TABLE_AREA_LABEL[""]) })}</div>
+            <div className="s">{t("The QR code is made automatically.")}</div>
+          </div>
+          <button type="button" className="zc-x" onClick={onClose} disabled={saving} aria-label={t("Close")}>✕</button>
+        </div>
+        <div className="mb" style={{ display: "grid", gap: 10 }}>
+          <label style={{ display: "grid", gap: 4, fontSize: 12, color: "var(--text-2)" }}>
+            {t("Table number")}
+            <input className="zc-input" type="number" min={1} value={no} autoFocus onChange={(e) => setNo(e.target.value)} />
+          </label>
+          <label style={{ display: "grid", gap: 4, fontSize: 12, color: "var(--text-2)" }}>
+            {t("Seats")}
+            <input className="zc-input" type="number" min={1} max={100} value={seats} onChange={(e) => setSeats(e.target.value)} />
+          </label>
+          {Number(no) >= 1 && (
+            <div style={{ fontSize: 12, color: "var(--text-3)" }}>{t("Will appear as {table}", { table: tableLabel({ displayNo: Number(no), diningArea: area }) })}</div>
+          )}
+        </div>
+        <div className="mf">
+          <button type="button" className="zc-btn" disabled={saving} onClick={onClose}>{t("Cancel")}</button>
+          <button type="submit" className="zc-btn pri" disabled={saving}>{saving ? t("Saving…") : t("Add table")}</button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+const MultiOrderTableView = ({ orders, tableNo, tableName, nowTick, onStatusChange, onPaymentChange, onCombinedBill, onAddItems, onNewOrder, label, billTarget, onRefresh }) => {
   const [expandedOrder, setExpandedOrder] = useState(null);
   // Combine Bill selection mode (tables only). Restored after a refresh while
   // the panel keeps its ticks in sessionStorage.
@@ -1683,28 +1744,29 @@ const MultiOrderTableView = ({ orders, tableNo, nowTick, onStatusChange, onPayme
     if (label) return false;
     try { return sessionStorage.getItem(`combineBill:${tableNo}`) !== null; } catch { return false; }
   });
-  const heading = label || t("Table {n}", { n: tableNo });
+  const name = tableName || t("Table {n}", { n: tableNo }); // "Indoor-AC 1", never the internal tableNo
+  const heading = label || name;
   const bill = billTarget || { mode: "table", value: tableNo };
 
   if (orders.length === 0) {
     return (
       <div style={{ marginTop:14, textAlign:"center", padding:24, color:T3,
         fontSize:12, border:`1px dashed ${BDR}`, borderRadius:RADIUS }}>
-        <div style={{ marginBottom:12 }}>{t("Table {n} is free", { n: tableNo })}</div>
+        <div style={{ marginBottom:12 }}>{t("{table} is free", { table: name })}</div>
         <button
           type="button"
           onClick={() => onNewOrder?.(tableNo)}
           className="zc-btn pri"
           style={{ justifyContent:"center" }}
         >
-          ＋ {t("New order for Table {n}", { n: tableNo })}
+          ＋ {t("New order for {table}", { table: name })}
         </button>
       </div>
     );
   }
 
   if (combineMode) {
-    return <CombineBillPanel tableNo={tableNo} orders={orders} onExit={() => setCombineMode(false)} onRefresh={onRefresh} />;
+    return <CombineBillPanel tableNo={tableNo} tableName={name} orders={orders} onExit={() => setCombineMode(false)} onRefresh={onRefresh} />;
   }
 
   const grandTotal  = orders.reduce((s,o) => s + Number(o.total||0), 0);
@@ -2100,7 +2162,7 @@ const PendingOrdersModal = ({ orders, busy, onConfirm, onReject, onClose }) => {
                         </div>
                         <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
                           {o.tableNo
-                            ? <span className="zc-tag vio sq">{t("T{n}", { n: o.tableNo })}</span>
+                            ? <span className="zc-tag vio sq">{tableLabel(o)}</span>
                             : <span className="zc-tag done sq">{formatStatus(o.orderType) || t("Takeaway")}</span>}
                           <span className={`zc-tag ${overdue ? "stop" : "wait"}`}><i />{t("Waiting {n} min", { n: waitMin })}</span>
                         </div>
@@ -2159,12 +2221,17 @@ export default function OrdersPage() {
   const [endDate,setEndDate]=useState("");
   const [viewMode,setViewMode]=useState("recent");
   const [tables,setTables]=useState([]);
+  const [addTableArea,setAddTableArea]=useState(null); // area the "+" tile is adding a table to
   const [tablesLoading,setTablesLoading]=useState(true);
   const [tableSelected,setTableSelected]=useState(null);
   const [showCombinedBill, setShowCombinedBill] = useState(null);
   const [showTables, setShowTables] = useState(true);
   // Floor card shows either the dine-in tables or active takeaway orders.
   const [mapMode, setMapMode] = useState("tables"); // "tables" | "takeaway"
+  // Table map area tab: "all" or a table area ("" Indoor / AC_ROOM / GARDEN).
+  // Remembered per browser so the floor you work in stays selected.
+  const [areaTab, setAreaTabState] = useState(() => { try { return localStorage.getItem("adminMapArea") ?? "all"; } catch { return "all"; } });
+  const setAreaTab = (v) => { setAreaTabState(v); try { localStorage.setItem("adminMapArea", v); } catch { /* storage off */ } };
   const [takeawaySelected, setTakeawaySelected] = useState(null); // order _id
   // Ticks every 30s purely to re-render live "since placed" timers — no refetch.
   const [nowTick, setNowTick] = useState(() => Date.now());
@@ -2454,6 +2521,13 @@ export default function OrdersPage() {
   const now = new Date();
   const activeOrders = orders.filter((o) => ACTIVE_ORDER_STATUSES.includes(o.status));
   const occupiedTables = Object.keys(tableOrderMap).length;
+  // Areas for the map tabs — only the ones the admin actually set up (server order).
+  const mapGroups = groupTablesByArea(tables.filter((tb) => (tb.status || "Active") === "Active" || (tableOrderMap[tb.tableNo] || []).length));
+  const activeArea = areaTab !== "all" && mapGroups.some((g) => g.area === areaTab) ? areaTab : "all";
+  // "All" lists every area — one with no tables yet shows just its "+" tile.
+  const allAreaGroups = TABLE_AREAS.map((area) => mapGroups.find((g) => g.area === area) || { area, tables: [] })
+    .concat(mapGroups.filter((g) => !TABLE_AREAS.includes(g.area)));
+  const shownGroups = activeArea === "all" ? allAreaGroups : mapGroups.filter((g) => g.area === activeArea);
 
   // ── Billing pill data — all real aggregates, ALL scoped to today ───────────
   const todayOrders = orders.filter((o) => new Date(o.createdAt).toDateString() === now.toDateString());
@@ -2480,7 +2554,7 @@ export default function OrdersPage() {
   const floorTotalToday = todayDineIn.reduce((s, o) => s + Number(o.total || 0), 0);
   const readyLabelsToday = todayActiveOrders
     .filter((o) => o.status === "READY")
-    .map((o) => (o.tableNo ? t("T{n}", { n: o.tableNo }) : t("Takeaway")));
+    .map((o) => (o.tableNo ? tableLabel(o) : t("Takeaway")));
   const oldestAwaitingMin = (() => {
     const pending = todayOrders.filter((o) => o.status === "PENDING_CONFIRMATION");
     if (!pending.length) return null;
@@ -2742,10 +2816,22 @@ export default function OrdersPage() {
                   : t("{n} tables · {seated} seated", { n: tables.length, seated: occupiedTables })}
               </span>
               <div style={{ flex: 1 }} />
-              <div className="zc-seg">
-                <button type="button" className={mapMode === "tables" ? "on" : ""}
-                  onClick={() => setMapMode("tables")}>{t("Tables")}</button>
-                <button type="button" className={mapMode === "takeaway" ? "on" : ""}
+              {/* Quick switch: All · each configured area (seated/total) · Takeaway */}
+              <div className="zc-seg" role="tablist" aria-label={t("Table map")} style={{ flexWrap: "wrap" }}>
+                <button type="button" role="tab" aria-selected={mapMode === "tables" && activeArea === "all"}
+                  className={mapMode === "tables" && activeArea === "all" ? "on" : ""}
+                  onClick={() => { setMapMode("tables"); setAreaTab("all"); }}>{t("All")}</button>
+                {mapGroups.length > 1 && mapGroups.map((g) => {
+                  const seated = g.tables.filter((tb) => (tableOrderMap[tb.tableNo] || []).length).length;
+                  const on = mapMode === "tables" && activeArea === g.area;
+                  return (
+                    <button key={g.area || "indoor"} type="button" role="tab" aria-selected={on} className={on ? "on" : ""}
+                      onClick={() => { setMapMode("tables"); setAreaTab(g.area); }}>
+                      {t(TABLE_AREA_LABEL[g.area] || g.area)} <span className="tnum" style={{ opacity: 0.7 }}>{fmtNum(seated)}/{fmtNum(g.tables.length)}</span>
+                    </button>
+                  );
+                })}
+                <button type="button" role="tab" aria-selected={mapMode === "takeaway"} className={mapMode === "takeaway" ? "on" : ""}
                   onClick={() => setMapMode("takeaway")}>
                   {t("Takeaway")}{takeawayOrders.length > 0 ? ` · ${fmtNum(takeawayOrders.length)}` : ""}
                 </button>
@@ -2810,11 +2896,18 @@ export default function OrdersPage() {
                     <div key={i} className="zc-skel" style={{ height: 100, borderRadius: 14 }} />
                   ))}
                 </div>
-              ) : tables.length === 0 ? (
-                <div style={{ textAlign: "center", padding: 28, color: "var(--text-3)", fontSize: 13 }}>{t("No tables configured yet")}</div>
               ) : (
+                // Same tables, same order and areas as the waiter map: the server
+                // sorts by area then number (Admin → Tables is the one source).
+                // Disabled tables are hidden unless they still have orders.
+                shownGroups.map((g) => (
+                <div key={g.area || "indoor"} style={{ marginBottom: 14 }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8, margin: "0 2px 8px" }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-1)" }}>{t(TABLE_AREA_LABEL[g.area] || g.area)}</span>
+                  <span style={{ fontSize: 11, color: "var(--text-3)" }}>{tn(g.tables.length, "{n} table", "{n} tables")}</span>
+                </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(94px, 1fr))", gap: 10 }}>
-                  {tables.slice().sort((a, b) => a.tableNo - b.tableNo).map((tb) => {
+                  {g.tables.map((tb) => {
                     const tOrders = tableOrderMap[tb.tableNo] || [];
                     const occupied = tOrders.length > 0;
                     const isSel = tableSelected === tb.tableNo;
@@ -2855,7 +2948,7 @@ export default function OrdersPage() {
                         {occupied && (
                           <span className="dot" style={{ background: hasDue ? "var(--stop)" : KIND_HUE[kind], boxShadow: `0 0 8px ${hasDue ? "var(--stop)" : KIND_HUE[kind]}` }} />
                         )}
-                        <div className="no">{t("T{n}", { n: tb.tableNo })}</div>
+                        <div className="no">{t("T{n}", { n: tb.displayNo ?? tb.tableNo })}</div>
                         <div className="st">{occupied ? tn(tOrders.length, "{n} order", "{n} orders") : t("{n} seats", { n: tb.seats || 4 })}</div>
                         {occupied && (
                           <div style={{ fontSize: 9.5, fontWeight: 700, color: KIND_INK[placedKind], marginTop: 1 }}>
@@ -2874,14 +2967,24 @@ export default function OrdersPage() {
                       <div key={tb.tableNo} style={{ position: "relative" }}>
                         {tile}
                         <button type="button" className="zc-btn sm pri"
-                          title={t("Add items to Table {n}", { n: tb.tableNo })} aria-label={t("Add items to Table {n}", { n: tb.tableNo })}
+                          title={t("Add items to {where}", { where: tableLabel(tb) })} aria-label={t("Add items to {where}", { where: tableLabel(tb) })}
                           onClick={(e) => { e.stopPropagation(); setShowAddItems(addTarget._id); }}
                           style={{ position: "absolute", top: -6, right: -6, width: 26, height: 26, padding: 0, borderRadius: "50%",
                             justifyContent: "center", fontWeight: 800, fontSize: 15, zIndex: 2 }}>＋</button>
                       </div>
                     );
                   })}
+                  <button type="button" className="zc-tbl free"
+                    onClick={() => setAddTableArea(g.area)}
+                    title={t("Add a table to {area}", { area: t(TABLE_AREA_LABEL[g.area] || TABLE_AREA_LABEL[""]) })}
+                    aria-label={t("Add a table to {area}", { area: t(TABLE_AREA_LABEL[g.area] || TABLE_AREA_LABEL[""]) })}
+                    style={{ alignItems: "center", justifyContent: "center", gap: 2 }}>
+                    <span style={{ fontSize: 26, lineHeight: 1, fontWeight: 300, color: "var(--text-3)" }}>＋</span>
+                    <span className="st">{t("Add table")}</span>
+                  </button>
                 </div>
+                </div>
+                ))
               )}
             </div>
           </div>
@@ -2913,6 +3016,7 @@ export default function OrdersPage() {
                 key={tableSelected}
                 orders={selectedTableOrders}
                 tableNo={tableSelected}
+                tableName={tableLabel(tables.find((tb) => tb.tableNo === tableSelected) || selectedTableOrders[0] || { tableNo: tableSelected })}
                 onRefresh={fetchOrders}
                 nowTick={nowTick}
                 onStatusChange={(id, s) => { handleStatusChange(id, s); }}
@@ -3008,7 +3112,7 @@ export default function OrdersPage() {
                         </td>
                         <td>
                           {o.tableNo
-                            ? <span className="zc-tag vio sq">{t("T{n}", { n: o.tableNo })}</span>
+                            ? <span className="zc-tag vio sq">{tableLabel(o)}</span>
                             : <span style={{ color: "var(--text-3)", fontSize: 12 }}>{formatOrderType(o.orderType)}</span>}
                         </td>
                         <td style={{ maxWidth: 190, color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -3053,7 +3157,7 @@ export default function OrdersPage() {
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 9, alignItems: "center" }}>
-                      {o.tableNo && <span className="zc-tag vio sq">{t("T{n}", { n: o.tableNo })}</span>}
+                      {o.tableNo && <span className="zc-tag vio sq">{tableLabel(o)}</span>}
                       <span className={`zc-tag ${statusKind(o.status)}`}><i />{formatStatus(o.status)}</span>
                       <span className={`zc-tag ${statusKind(o.paymentStatus)}`}><i />{formatPayment(o.paymentStatus)}</span>
                       <div style={{ marginLeft: "auto" }}>{rowActions(o)}</div>
@@ -3102,9 +3206,14 @@ export default function OrdersPage() {
         />
       )}
 
+      {addTableArea !== null && (
+        <AddTableModal area={addTableArea} tables={tables} onClose={() => setAddTableArea(null)} onCreated={fetchTables} />
+      )}
+
       {showCreate && (
         <CreateOrderModal
           initialTableNo={presetTableNo}
+          tables={tables}
           initialOrderType={presetTakeaway ? "TAKEAWAY" : "DINE_IN"}
           onClose={() => { setShowCreate(false); setPresetTableNo(null); setPresetTakeaway(false); }}
           onCreated={(o) => upsertOrder(o)}

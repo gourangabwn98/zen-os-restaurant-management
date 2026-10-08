@@ -21,7 +21,7 @@ export const sendWhatsAppBill = async (phone, order, restaurantName) => {
     `🧾 *Bill — ${restaurantName}*`,
     ``,
     `Order ID: *${order.orderId}*`,
-    order.tableNo ? `Table: T${order.tableNo}` : null,
+    order.tableNo ? `Table: ${order.tableName || `T${order.tableNo}`}` : null,
     ``,
     `*Items:*`,
     itemLines,

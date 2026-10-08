@@ -7,7 +7,8 @@
 // stale page, an old URL or a direct API call can't get around it):
 //   visible = item.isAvailable
 //             AND category schedule allows now   (category hidden ⇒ all its items hidden)
-//             AND item schedule allows now       (item must satisfy BOTH)
+// Menu items have NO time schedule of their own (removed) — an old item
+// "schedule" value left in the database is ignored.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import mongoose from "mongoose";
@@ -49,9 +50,9 @@ export const getScheduleContext = async ({ models, profile, now = new Date() }) 
   return { timezone, nowMinutes: clock.minutes, clock, hiddenCategories };
 };
 
-/** Schedule half of the visibility rule (isAvailable is checked separately). */
-export const isItemScheduledNow = (item, ctx) =>
-  !ctx.hiddenCategories.has(item.category) && isScheduleActive(item.schedule, ctx.clock ?? ctx.nowMinutes);
+/** Category half of the visibility rule (isAvailable is checked separately):
+ * an item is hidden by time only when its category is scheduled out. */
+export const isItemScheduledNow = (item, ctx) => !ctx.hiddenCategories.has(item.category);
 
 const normalizeIds = (raw, label) => {
   if (raw === undefined || raw === null) return [];
@@ -64,38 +65,32 @@ const normalizeIds = (raw, label) => {
 };
 
 /**
- * Applies one schedule (or clears it, schedule === null) to many categories
- * and/or items. All ids are validated to exist before anything is written, so
- * a bad id rejects the whole request instead of half-applying it.
+ * Applies one schedule (or clears it, schedule === null) to many CATEGORIES.
+ * All ids are validated to exist before anything is written, so a bad id
+ * rejects the whole request instead of half-applying it. Menu items can't be
+ * scheduled (that feature was removed) — item ids are refused.
  */
 export const applyBulkSchedule = async ({ models, itemIds, categoryIds, schedule }) => {
-  const { MenuItem, Category } = models;
+  const { Category } = models;
   if (schedule === undefined) throw httpError("schedule is required (object, or null to clear)");
+  if (normalizeIds(itemIds, "itemIds").length) {
+    throw httpError("Menu items no longer have their own time schedule — set a time on the category instead");
+  }
   const normalized = validateSchedule(schedule);
 
-  const items = normalizeIds(itemIds, "itemIds");
   const cats = normalizeIds(categoryIds, "categoryIds");
-  if (items.length === 0 && cats.length === 0) throw httpError("Select at least one category or item");
-  if (items.length + cats.length > MAX_BULK_IDS) throw httpError(`At most ${MAX_BULK_IDS} entries per request`);
+  if (cats.length === 0) throw httpError("Select at least one category");
+  if (cats.length > MAX_BULK_IDS) throw httpError(`At most ${MAX_BULK_IDS} entries per request`);
 
-  const [itemCount, catCount] = await Promise.all([
-    items.length ? MenuItem.countDocuments({ _id: { $in: items } }) : 0,
-    cats.length ? Category.countDocuments({ _id: { $in: cats } }) : 0,
-  ]);
-  if (itemCount !== items.length) throw httpError(`${items.length - itemCount} selected item(s) no longer exist — refresh and try again`, 404);
+  const catCount = await Category.countDocuments({ _id: { $in: cats } });
   if (catCount !== cats.length) throw httpError(`${cats.length - catCount} selected categor(ies) no longer exist — refresh and try again`, 404);
 
-  const [itemRes, catRes] = await Promise.all([
-    items.length ? MenuItem.updateMany({ _id: { $in: items } }, { $set: { schedule: normalized } }) : null,
-    // A hand-set window takes the category out of its Menu time.
-    cats.length ? Category.updateMany({ _id: { $in: cats } }, { $set: { schedule: normalized, menuTime: null } }) : null,
-  ]);
+  // A hand-set window takes the category out of its Menu time.
+  const catRes = await Category.updateMany({ _id: { $in: cats } }, { $set: { schedule: normalized, menuTime: null } });
 
   return {
     schedule: normalized,
-    itemsUpdated: itemRes?.modifiedCount ?? 0,
     categoriesUpdated: catRes?.modifiedCount ?? 0,
-    itemsMatched: items.length,
     categoriesMatched: cats.length,
   };
 };

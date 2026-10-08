@@ -147,6 +147,8 @@ export const combinedPrintPayload = ({ tableNo, orders, restaurant }) => {
     tableNo: tableNo ?? orders[0]?.tableNo ?? null, orderType,
     // KH-10: "AC Room"/"Garden" when every order on the bill sits there.
     diningArea: new Set(orders.map((o) => o.diningArea || "")).size === 1 ? (orders[0]?.diningArea || "") : "",
+    tableName: orders.find((o) => o.tableName)?.tableName || "",
+    tableDisplayNo: orders.find((o) => o.tableDisplayNo != null)?.tableDisplayNo ?? null,
     orders: orders.map((o) => ({
       orderId: o.orderId, total: o.total, paymentStatus: o.paymentStatus,
       items: (o.items || []).map((i) => ({ name: i.name, qty: i.qty, price: i.price, addons: i.addons || [] })),

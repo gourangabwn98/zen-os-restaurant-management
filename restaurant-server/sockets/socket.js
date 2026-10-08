@@ -215,7 +215,8 @@ export const initSocket = (httpServer) => {
         const jobs = [
           ...kot.map((j) => ({ jobId: String(j._id), jobType: "KOT", status: j.status, attempts: j.attempts,
             orderId: j.orderId, tableNo: j.tableNo, orderType: j.orderType, items: j.items, notes: j.notes || "",
-            customerName: j.customerName || "", diningArea: j.diningArea || "", createdAt: j.createdAt })),
+            customerName: j.customerName || "", diningArea: j.diningArea || "",
+            tableName: j.tableName || "", tableDisplayNo: j.tableDisplayNo ?? null, createdAt: j.createdAt })),
           ...bill.map((j) => ({ jobId: String(j._id), jobType: "BILL", status: j.status, attempts: j.attempts,
             orderId: j.orderId, tableNo: j.tableNo, orderType: j.orderType, payload: j.payload, createdAt: j.createdAt })),
         ].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
@@ -337,6 +338,7 @@ export const emitOrderConfirmed = (tenantKey, order) => {
 // guarantee as its REST endpoint: no customer PII, no payment/price data.
 const toKitchenSafeOrder = (order) => ({
   _id: order._id, orderId: order.orderId, tableNo: order.tableNo,
+  tableName: order.tableName || "", diningArea: order.diningArea || "", // "Indoor-AC 1" — not PII
   orderType: order.orderType, status: order.status, priority: order.priority,
   waiterName: order.waiterName || "",
   items: (order.items || []).map((i) => ({ name: i.name, qty: i.qty, notes: i.notes || "" })),
@@ -370,6 +372,7 @@ export const emitKotCreated = (tenantKey, kotJob) => {
     items: kotJob.items, notes: kotJob.notes || "", attempts: kotJob.attempts || 0, priority: kotJob.priority || "NORMAL",
     customerName: kotJob.customerName || "", // KH-08 — paper KOT only
     diningArea: kotJob.diningArea || "", // KH-10
+    tableName: kotJob.tableName || "", tableDisplayNo: kotJob.tableDisplayNo ?? null, // per-area table number
   };
   emit(rooms.staff(tenantKey), "kot:created", { kotJob });
   // The Kitchen app's realtime feed — a chef never joins the staff room, so

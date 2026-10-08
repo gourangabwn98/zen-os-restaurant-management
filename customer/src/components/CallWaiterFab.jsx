@@ -60,7 +60,7 @@ export default function CallWaiterFab() {
           {callable ? (
             <>
               <p className="muted small" style={{ margin: "0 0 4px" }}>
-                For your order #{callable.orderId}{callable.tableNo ? ` · Table ${callable.tableNo}` : ""}
+                For your order #{callable.orderId}{callable.tableNo ? ` · ${callable.tableName || `Table ${callable.tableNo}`}` : ""}
               </p>
               <WaiterCallCard
                 orderId={callable._id}

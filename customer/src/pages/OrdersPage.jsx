@@ -46,7 +46,7 @@ export default function OrdersPage() {
               <span className={`status-pill ${statusPillClass(o.status)}`}>{STATUS_LABEL[o.status] || o.status}</span>
             </div>
             <div className="muted small" style={{ marginTop: 2 }}>
-              {o.orderType === "DINE_IN" ? `Dine-in${o.tableNo ? ` · Table ${o.tableNo}` : ""}` : "Takeaway"}
+              {o.orderType === "DINE_IN" ? `Dine-in${o.tableNo ? ` · ${o.tableName || `Table ${o.tableNo}`}` : ""}` : "Takeaway"}
               {" · "}{formatOrderTime(o.createdAt)}{" · "}<b style={{ color: "var(--text)" }}>₹{o.total}</b>
             </div>
             {ACTIVE_STATUSES.includes(o.status) && <StatusStepper status={o.status} />}

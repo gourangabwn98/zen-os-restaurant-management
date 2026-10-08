@@ -7,10 +7,8 @@
 // export const updateMenuItem = (id, data) => api.put(`/menu/${id}`, data);
 // export const deleteMenuItem = (id) => api.delete(`/menu/${id}`);
 
-// Scheduled visibility — one request for any number of categories/items.
-// schedule: { startTime: "HH:MM", endTime: "HH:MM" } to set, null to clear.
-export const updateMenuSchedule = ({ itemIds = [], categoryIds = [], schedule }) =>
-  api.patch("/menu/schedule", { itemIds, categoryIds, schedule });
+// (Menu items have no time schedule. Category time windows are set through
+// Menu times below.)
 
 import api from "./api.js";
 
