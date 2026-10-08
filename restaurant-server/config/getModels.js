@@ -274,13 +274,14 @@ const orderItemSchema = new mongoose.Schema({
   qty:      { type: Number, required: true, min: 1 },
   notes:    { type: String, default: "" },
   // KH-12 — chosen add-ons, snapshotted. `price` above already INCLUDES them
-  // (basePrice + Σ addons.price), so price × qty stays the line amount
+  // (basePrice + Σ addons.price × addons.qty), so price × qty stays the line amount
   // everywhere. Old lines / lines without add-ons: [] and null.
   addons:    {
     type: [new mongoose.Schema({
       addonId: { type: mongoose.Schema.Types.ObjectId, required: true },
       name:    { type: String, required: true },
       price:   { type: Number, required: true },
+      qty:     { type: Number, min: 1, default: undefined }, // 2 × chicken; absent = 1
     }, { _id: false })],
     default: undefined,
   },

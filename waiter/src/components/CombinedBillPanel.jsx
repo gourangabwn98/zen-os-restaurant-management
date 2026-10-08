@@ -17,6 +17,7 @@ import { STATUS_LABEL } from "./StatusBadge.jsx";
 import { askGuests, needsGuests } from "../utils/askGuests.js";
 import { ACCENT, GREEN, AMBER, TEXT_MUTED, TEXT_FAINT, GLASS_BORDER } from "../theme.js";
 import { t, tn, localName } from "../i18n/index.jsx";
+import { addonLabel } from "../utils/addons.js";
 
 /**
  * @param scope     { tableNo } or { groupOf }
@@ -129,7 +130,7 @@ export default function CombinedBillPanel({ scope, orders, title, onChanged }) {
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span>{localName(it)} × {it.qty}</span><span>₹{it.price * it.qty}</span>
                   </div>
-                  {(it.addons || []).map((a) => <div key={a.name} style={{ fontSize: 11.5, color: "#93C5FD" }}>+ {a.name}</div>)}
+                  {(it.addons || []).map((a) => <div key={a.name} style={{ fontSize: 11.5, color: "#93C5FD" }}>+ {addonLabel(a)}</div>)}
                 </div>
               ))}
             </div>

@@ -38,7 +38,8 @@ export function useOrderEdit() {
       const live = byId.get(id);
       // KH-12: a line a waiter gave an add-on keeps it through the customer's
       // edit (customers can't pick add-ons themselves; the server re-prices).
-      const addonIds = (it.addons || []).map((a) => String(a.addonId));
+      // KH-12: a repeated id = more of that add-on (2 × chicken → two ids).
+      const addonIds = (it.addons || []).flatMap((a) => Array(Math.max(1, Math.floor(Number(a.qty) || 1))).fill(String(a.addonId)));
       return {
         // With add-ons the line's own price (item + add-ons) keeps the preview right.
         item: live && !addonIds.length ? live : { ...(live || {}), _id: id, name: it.name, nameBn: it.nameBn || "", price: it.price },

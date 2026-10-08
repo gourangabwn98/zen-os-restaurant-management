@@ -1,17 +1,27 @@
 // src/components/AddonPicker.jsx — KH-12
 // After tapping an item that has add-ons: "Does the customer want an extra?"
-// Tick any number of add-ons (or none) → the line is added with them. The
-// price shown is a preview; the server prices the line itself.
+// − / + per add-on (2 × chicken is fine), or none → the line is added with
+// them. `picked` repeats an id once per piece. The price shown is a preview;
+// the server prices the line itself.
 import { useState } from "react";
 import PrimaryButton from "./ui/PrimaryButton.jsx";
 import { ACCENT, TEXT_MUTED, TEXT_FAINT, GLASS_BORDER, GLASS_BG } from "../theme.js";
 import { t, localName } from "../i18n/index.jsx";
-import { unitPrice } from "../utils/addons.js";
+import { unitPrice, countIds, ADDON_QTY_MAX } from "../utils/addons.js";
 
 export default function AddonPicker({ item, onCancel, onConfirm }) {
   const [picked, setPicked] = useState([]);
-  const toggle = (id) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const counts = countIds(picked);
+  const step = (id, delta) => setPicked((p) => {
+    if (delta > 0) return (counts.get(id) || 0) >= ADDON_QTY_MAX ? p : [...p, id];
+    const i = p.lastIndexOf(id);
+    return i < 0 ? p : [...p.slice(0, i), ...p.slice(i + 1)];
+  });
   const price = unitPrice(item, picked);
+  const stepBtn = (on) => ({
+    width: 34, height: 34, borderRadius: 10, border: `1px solid ${on ? "rgba(59,130,246,0.6)" : GLASS_BORDER}`,
+    background: on ? "rgba(59,130,246,0.25)" : "transparent", color: "#fff", fontSize: 18, fontWeight: 800, cursor: "pointer",
+  });
 
   return (
     <div onClick={onCancel} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 120, display: "flex", alignItems: "flex-end" }}>
@@ -24,17 +34,25 @@ export default function AddonPicker({ item, onCancel, onConfirm }) {
 
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 14 }}>
           {item.addons.map((a) => {
-            const on = picked.includes(String(a._id));
+            const id = String(a._id);
+            const n = counts.get(id) || 0;
+            const on = n > 0;
             return (
-              <button key={a._id} type="button" onClick={() => toggle(String(a._id))} style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "13px 14px",
-                borderRadius: 12, cursor: "pointer", fontSize: 14, fontWeight: 700, textAlign: "left",
+              <div key={a._id} style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "8px 10px 8px 14px",
+                borderRadius: 12, fontSize: 14, fontWeight: 700,
                 border: `1.5px solid ${on ? "rgba(59,130,246,0.6)" : GLASS_BORDER}`,
                 background: on ? "rgba(59,130,246,0.15)" : GLASS_BG, color: "#fff",
               }}>
-                <span>{on ? "☑" : "☐"} {a.name}</span>
-                <span style={{ color: on ? ACCENT : TEXT_FAINT }}>+₹{a.price}</span>
-              </button>
+                <button type="button" onClick={() => step(id, 1)} style={{ flex: 1, minWidth: 0, background: "none", border: "none", color: "#fff", font: "inherit", textAlign: "left", cursor: "pointer", padding: "5px 0" }}>
+                  {a.name} <span style={{ color: on ? ACCENT : TEXT_FAINT }}>+₹{a.price}</span>
+                </button>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <button type="button" aria-label={`− ${a.name}`} disabled={!on} onClick={() => step(id, -1)} style={{ ...stepBtn(on), opacity: on ? 1 : 0.35 }}>−</button>
+                  <span style={{ minWidth: 18, textAlign: "center" }}>{n}</span>
+                  <button type="button" aria-label={`+ ${a.name}`} disabled={n >= ADDON_QTY_MAX} onClick={() => step(id, 1)} style={{ ...stepBtn(on), opacity: n >= ADDON_QTY_MAX ? 0.35 : 1 }}>+</button>
+                </div>
+              </div>
             );
           })}
         </div>

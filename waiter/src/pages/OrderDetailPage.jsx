@@ -19,7 +19,7 @@ import { ACCENT, GREEN, AMBER, RED, TEXT_MUTED, TEXT_FAINT, GLASS_BORDER, GLASS_
 import { t, N_, tn, localName } from "../i18n/index.jsx";
 import NotShareableNote from "../components/NotShareableNote.jsx";
 import AddonPicker, { AddonHint } from "../components/AddonPicker.jsx";
-import { hasAddons, lineKey, addonIdsOf } from "../utils/addons.js";
+import { hasAddons, lineKey, addonIdsOf, addonLabel } from "../utils/addons.js";
 import { tableLabel } from "../utils/diningArea.js";
 import { STATUS_LABEL } from "../components/StatusBadge.jsx";
 
@@ -330,7 +330,7 @@ export default function OrderDetailPage() {
             <div key={editLines ? it.key : i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "5px 0", fontSize: 13.5, color: "#fff" }}>
               <span style={{ flex: 1, minWidth: 0 }}>
                 {localName(it)}{editLines ? "" : ` × ${it.qty}`}{it.notes ? <span style={{ color: TEXT_FAINT }}> · "{it.notes}"</span> : ""}
-                {(it.addons || []).map((a) => <span key={a.name} style={{ display: "block", fontSize: 12, color: "#93C5FD" }}>+ {a.name}</span>)}
+                {(it.addons || []).map((a) => <span key={a.name} style={{ display: "block", fontSize: 12, color: "#93C5FD" }}>+ {addonLabel(a)}</span>)}
               </span>
               {editLines ? (
                 <>
@@ -461,7 +461,7 @@ export default function OrderDetailPage() {
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span>{localName(it)} × {it.qty}</span><span>₹{it.price * it.qty}</span>
                 </div>
-                {(it.addons || []).map((a) => <div key={a.name} style={{ fontSize: 11.5, color: "#93C5FD" }}>+ {a.name}</div>)}
+                {(it.addons || []).map((a) => <div key={a.name} style={{ fontSize: 11.5, color: "#93C5FD" }}>+ {addonLabel(a)}</div>)}
               </div>
             ))}
             <div style={{ borderTop: `1px dashed ${GLASS_BORDER}`, marginTop: 8, paddingTop: 8 }}>

@@ -12,6 +12,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { ORDER_SOURCES } from "../utils/orderStateMachine.js";
+import { addonLabel } from "../utils/menuAddons.js";
 
 const SOURCE_CUSTOMER = ORDER_SOURCES.find((s) => s === "CUSTOMER");
 if (!SOURCE_CUSTOMER) throw new Error("kotService: ORDER_SOURCES has no CUSTOMER");
@@ -53,7 +54,7 @@ export const createKotJobForOrder = async ({ KOTJob, order, actor, session, cust
           orderType: order.orderType,
           items:     order.items.map((i) => ({
             name: i.name, nameBn: i.nameBn || "", qty: i.qty, notes: i.notes || "",
-            ...(i.addons?.length && { addons: i.addons.map((a) => a.name) }), // KH-12 — printed under the item
+            ...(i.addons?.length && { addons: i.addons.map(addonLabel) }), // KH-12 — printed under the item
           })),
           notes:     order.notes || "",
           customerName: String(customerName || "").slice(0, KOT_NAME_MAX), // KH-08 — paper KOT only

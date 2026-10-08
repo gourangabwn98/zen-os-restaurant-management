@@ -20,6 +20,7 @@ import { newIdempotencyKey } from "../../../services/orderService.js";
 import { statusKind } from "./statusKind.js";
 import { customerName } from "./customerName.js";
 import { t, tn, fmtNum, localName } from "../../../i18n/core.js";
+import { addonLabel } from "./addons.js";
 import "./combineBill.css";
 import { ORDER_STATUS_LABEL } from "./statusLabels.js";
 
@@ -231,7 +232,7 @@ export default function CombineBillPanel({ tableNo, tableName, orders, onExit, o
                     <span className={`zc-tag ${o.paymentStatus === "PAID" ? "ready" : "wait"}`}>{o.paymentStatus === "PAID" ? t("Paid") : t("Unpaid")}</span>
                   </div>
                   {o.items.map((it, i) => (
-                    <div key={i} className="cb-bill-line"><span>{localName(it)} × {fmtNum(it.qty)}{(it.addons || []).map((a) => <small key={a.name} style={{ display: "block", color: "var(--live-ink)" }}>+ {a.name}</small>)}</span><span>{money(it.price * it.qty)}</span></div>
+                    <div key={i} className="cb-bill-line"><span>{localName(it)} × {fmtNum(it.qty)}{(it.addons || []).map((a) => <small key={a.name} style={{ display: "block", color: "var(--live-ink)" }}>+ {addonLabel(a)}</small>)}</span><span>{money(it.price * it.qty)}</span></div>
                   ))}
                 </div>
               ))}

@@ -32,7 +32,7 @@ import { customerName } from "./shared/customerName.js";
 import { takenByName, takenByIsAcceptor } from "./shared/takenBy.js";
 import { DINING_AREA_LABEL, TABLE_AREAS, TABLE_AREA_LABEL, groupTablesByArea, tableLabel } from "./shared/diningArea.js";
 import { askGuests, needsGuests } from "./shared/askGuests.js";
-import { hasAddons, cartLineKey, unitPrice, addonIdsOf } from "./shared/addons.js";
+import { hasAddons, cartLineKey, unitPrice, addonIdsOf, addonLabel } from "./shared/addons.js";
 import { AddonLines, AddonHint, AddonPicker } from "./shared/AddonUI.jsx";
 
 // ── add this to adminService.js if not already there ─────────────────────────
@@ -1954,7 +1954,7 @@ const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPayment
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontSize:13, fontWeight:600, color:T1 }}>{displayName}</div>
           <div style={{ fontSize:11, color:T3, marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-            {order.items?.map(i=>`${localName(i)}${i.addons?.length ? ` (+${i.addons.map(a=>a.name).join(", +")})` : ""} ×${fmtNum(i.qty)}`).join(", ")||"—"}
+            {order.items?.map(i=>`${localName(i)}${i.addons?.length ? ` (+${i.addons.map(addonLabel).join(", +")})` : ""} ×${fmtNum(i.qty)}`).join(", ")||"—"}
           </div>
         </div>
 
@@ -2158,7 +2158,7 @@ const PendingOrdersModal = ({ orders, busy, onConfirm, onReject, onClose }) => {
                           {o.orderId} · {phone ? `+91 ${phone}` : t("No phone")}
                         </div>
                         <div style={{ fontSize: 11.5, color: "var(--text-2)", marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {o.items?.map((i) => `${localName(i)}${i.addons?.length ? ` (+${i.addons.map((a) => a.name).join(", +")})` : ""} ×${fmtNum(i.qty)}`).join(", ") || "—"}
+                          {o.items?.map((i) => `${localName(i)}${i.addons?.length ? ` (+${i.addons.map(addonLabel).join(", +")})` : ""} ×${fmtNum(i.qty)}`).join(", ") || "—"}
                         </div>
                         <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
                           {o.tableNo
@@ -3116,7 +3116,7 @@ export default function OrdersPage() {
                             : <span style={{ color: "var(--text-3)", fontSize: 12 }}>{formatOrderType(o.orderType)}</span>}
                         </td>
                         <td style={{ maxWidth: 190, color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {o.items?.map((i) => `${localName(i)}${i.addons?.length ? ` (+${i.addons.map((a) => a.name).join(", +")})` : ""} ×${fmtNum(i.qty)}`).join(", ") || "—"}
+                          {o.items?.map((i) => `${localName(i)}${i.addons?.length ? ` (+${i.addons.map(addonLabel).join(", +")})` : ""} ×${fmtNum(i.qty)}`).join(", ") || "—"}
                         </td>
                         <td><span className={`zc-tag ${statusKind(o.status)}`}><i />{formatStatus(o.status)}</span></td>
                         <td>
@@ -3146,7 +3146,7 @@ export default function OrdersPage() {
                         <div className="tnum" style={{ fontWeight: 700, color: "var(--accent-ink)", fontSize: 12.5 }}>{o.orderId}</div>
                         <div style={{ fontSize: 12.5, color: "var(--text-1)", marginTop: 2, fontWeight: 500 }}>{name}</div>
                         <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {o.items?.map((i) => `${localName(i)}${i.addons?.length ? ` (+${i.addons.map((a) => a.name).join(", +")})` : ""} ×${fmtNum(i.qty)}`).join(", ") || "—"}
+                          {o.items?.map((i) => `${localName(i)}${i.addons?.length ? ` (+${i.addons.map(addonLabel).join(", +")})` : ""} ×${fmtNum(i.qty)}`).join(", ") || "—"}
                         </div>
                       </div>
                       <div style={{ textAlign: "right", flex: "none" }}>

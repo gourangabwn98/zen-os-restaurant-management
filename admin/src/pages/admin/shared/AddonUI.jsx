@@ -1,7 +1,7 @@
 // src/pages/admin/shared/AddonUI.jsx — KH-12 add-on UI (hint, lines, "extra?" picker).
 import { useState } from "react";
 import { t, localName, fmtNum } from "../../../i18n/core.js";
-import { hasAddons, unitPrice, addonNames } from "./addons.js";
+import { hasAddons, unitPrice, addonNames, countIds, ADDON_QTY_MAX } from "./addons.js";
 
 /** "+ 1 pc Chicken" lines under an item (order line or cart line). */
 export function AddonLines({ item, line, style }) {
@@ -22,10 +22,16 @@ export function AddonHint({ item }) {
   );
 }
 
-/** After tapping an item with add-ons: "Does the customer want an extra?" */
+/** After tapping an item with add-ons: "Does the customer want an extra?"
+ *  − / + per add-on; `picked` repeats an id once per piece (2 × chicken). */
 export function AddonPicker({ item, onCancel, onConfirm }) {
   const [picked, setPicked] = useState([]);
-  const toggle = (id) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const counts = countIds(picked);
+  const step = (id, delta) => setPicked((p) => {
+    if (delta > 0) return (counts.get(id) || 0) >= ADDON_QTY_MAX ? p : [...p, id];
+    const i = p.lastIndexOf(id);
+    return i < 0 ? p : [...p.slice(0, i), ...p.slice(i + 1)];
+  });
   return (
     <div className="zc-scrim" onClick={onCancel} style={{ zIndex: 1200 }}>
       <div className="zc-modal" style={{ width: 420 }} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
@@ -38,14 +44,18 @@ export function AddonPicker({ item, onCancel, onConfirm }) {
         </div>
         <div className="mb" style={{ display: "grid", gap: 8 }}>
           {item.addons.map((a) => {
-            const on = picked.includes(String(a._id));
+            const id = String(a._id);
+            const n = counts.get(id) || 0;
+            const on = n > 0;
             return (
-              <label key={a._id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, cursor: "pointer",
+              <div key={a._id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 8px 6px 12px", borderRadius: 10,
                 border: `1px solid ${on ? "var(--violet-line)" : "var(--edge)"}`, background: on ? "var(--violet-weak)" : "var(--card-2)" }}>
-                <input type="checkbox" checked={on} onChange={() => toggle(String(a._id))} />
                 <span style={{ flex: 1, fontWeight: 600, color: "var(--text-1)" }}>{a.name}</span>
                 <span style={{ fontWeight: 700, color: "var(--text-2)" }}>+₹{fmtNum(a.price)}</span>
-              </label>
+                <button type="button" className="zc-btn" aria-label={`− ${a.name}`} disabled={!on} onClick={() => step(id, -1)} style={{ minWidth: 32, padding: "4px 0" }}>−</button>
+                <span style={{ minWidth: 18, textAlign: "center", fontWeight: 700, color: "var(--text-1)" }}>{fmtNum(n)}</span>
+                <button type="button" className="zc-btn" aria-label={`+ ${a.name}`} disabled={n >= ADDON_QTY_MAX} onClick={() => step(id, 1)} style={{ minWidth: 32, padding: "4px 0" }}>+</button>
+              </div>
             );
           })}
         </div>

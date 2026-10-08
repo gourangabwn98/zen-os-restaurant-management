@@ -1,6 +1,6 @@
 // controllers/adminController.js
 import mongoose from "mongoose";
-import { lineAddonKey } from "../utils/menuAddons.js";
+import { lineAddonKey, addonsForPrint } from "../utils/menuAddons.js";
 import { parseGuests, applyGuestsToOrder } from "../services/acServiceCharge.js";
 import { priceItems, computeTotals } from "../utils/pricing.js";
 import { getScheduleContext } from "../services/menuScheduleService.js";
@@ -554,7 +554,11 @@ export const printBill = async (req, res) => {
       diningArea:    order.diningArea || "", // KH-10
       tableName:     order.tableName || "",
       tableDisplayNo: order.tableDisplayNo ?? null, // printed "Table : 1" (number within its area)
-      items:         order.items,
+      // KH-12: add-on qty folded into the printed name ("2 x 1 pc Chicken").
+      items:         order.items.map((i) => {
+        const line = i.toObject ? i.toObject() : { ...i };
+        return line.addons?.length ? { ...line, addons: addonsForPrint(line.addons) } : line;
+      }),
       subtotal:      order.subtotal || 0,
       tax:           order.tax      || 0,
       serviceCharge: order.serviceCharge || 0,

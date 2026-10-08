@@ -19,6 +19,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { ORDER_STATUSES, PAYMENT_STATUSES, ORDER_TYPES } from "../utils/orderStateMachine.js";
 import { roundMoney } from "../utils/recipeCost.js";
+import { addonsForPrint } from "../utils/menuAddons.js";
 import { parseGuests, applyGuestsToSelection } from "./acServiceCharge.js";
 
 const pick = (list, v) => { if (!list.includes(v)) throw new Error(`combinedBillService: unknown enum ${v}`); return v; };
@@ -151,9 +152,9 @@ export const combinedPrintPayload = ({ tableNo, orders, restaurant }) => {
     tableDisplayNo: orders.find((o) => o.tableDisplayNo != null)?.tableDisplayNo ?? null,
     orders: orders.map((o) => ({
       orderId: o.orderId, total: o.total, paymentStatus: o.paymentStatus,
-      items: (o.items || []).map((i) => ({ name: i.name, qty: i.qty, price: i.price, addons: i.addons || [] })),
+      items: (o.items || []).map((i) => ({ name: i.name, qty: i.qty, price: i.price, addons: addonsForPrint(i.addons) })),
     })),
-    items: orders.flatMap((o) => o.items || []).map((i) => ({ name: i.name, qty: i.qty, price: i.price, addons: i.addons || [] })),
+    items: orders.flatMap((o) => o.items || []).map((i) => ({ name: i.name, qty: i.qty, price: i.price, addons: addonsForPrint(i.addons) })),
     subtotal: t.subtotal, discount: t.discount, tax: t.tax, serviceCharge: t.serviceCharge, total: t.total,
     // KH-11 — AC Room guest service charge (inside total), with its guests × rate.
     acServiceCharge: t.acServiceCharge,
