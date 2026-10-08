@@ -10,7 +10,7 @@
 import { priceOrder, priceItems, computeTotals } from "../utils/pricing.js";
 import { resolveCouponForOrder } from "./couponService.js";
 import { getScheduleContext } from "./menuScheduleService.js";
-import { normalizeOrderType, assertValidTransition, effectiveBillStatus, requiresPaidForTransition } from "../utils/orderStateMachine.js";
+import { normalizeOrderType, assertValidTransition, effectiveBillStatus, requiresPaidForTransition, ORDER_STATUSES } from "../utils/orderStateMachine.js";
 import { createKotJobForOrder, kotCustomerName } from "./kotService.js";
 import { normalizeDiningArea } from "../utils/diningArea.js";
 import { findOrOpenTableSession, closeTableSession } from "./tableSessionService.js";
@@ -105,6 +105,51 @@ export const priceOrderDraft = async ({ req, items, couponCode, isStaffOrder, re
  * so it applies uniformly across every route this function is reachable
  * from without this function needing to know which route called it.
  */
+// ── KH-07/KH-13: follow-up orders ──────────────────────────────────────────
+// Statuses a follow-up may be added to: the order is accepted and still on
+// the table / at the counter (same set as combinedBillService.COMBINABLE).
+const FOLLOW_UP_PARENT_STATUSES = ["CONFIRMED", "PREPARING", "READY", "DELIVERED"].map((s) => {
+  if (!ORDER_STATUSES.includes(s)) throw new Error(`orderService: unknown status ${s}`);
+  return s;
+});
+
+/**
+ * Validates `parentId` for a follow-up and returns what the new order
+ * inherits. Staff only. The link always points at the ROOT order, so a
+ * follow-up of a follow-up joins the same group. Refused once the original
+ * order is cancelled, completed or its bill is settled — then it's a new order.
+ * @returns {{ rootId, rootOrderNo, inherit: object }}
+ */
+export const resolveFollowUpParent = async ({ Order, parentId, user }) => {
+  const fail = (message, statusCode = 400) => { const e = new Error(message); e.statusCode = statusCode; throw e; };
+  const source = getSourceFromUser(user);
+  if (source !== "ADMIN" && source !== "WAITER") fail("Only staff can add items to a running order", 403);
+  if (!/^[a-f0-9]{24}$/i.test(String(parentId))) fail("Invalid order");
+  const parent = await Order.findById(parentId);
+  if (!parent) fail("Order not found", 404);
+  const root = parent.parentOrder ? await Order.findById(parent.parentOrder) : parent;
+  if (!root) fail("Order not found", 404);
+  for (const o of [parent, root]) {
+    if (!FOLLOW_UP_PARENT_STATUSES.includes(o.status))
+      fail(`Order ${o.orderId} is no longer running — place a new order instead`, 409);
+    if (effectiveBillStatus(o) === "SETTLED")
+      fail(`The bill for ${o.orderId} is already settled — place a new order instead`, 409);
+  }
+  return {
+    rootId: root._id,
+    rootOrderNo: root.orderId || "",
+    inherit: {
+      orderType: root.orderType,
+      tableNo: root.tableNo ?? undefined,
+      diningArea: root.diningArea || "",
+      customerName: root.guestName || "",
+      customerPhone: root.guestPhone || "",
+      tableToken: undefined,
+      couponCode: undefined, // staff orders take no coupon anyway
+    },
+  };
+};
+
 export const placeOrderTx = async ({ req, body }) => {
   // Chefs are kitchen-only — placing an order (as themselves or as an
   // accidental "customer" via getSourceFromUser's fallback) is outside
@@ -117,10 +162,16 @@ export const placeOrderTx = async ({ req, body }) => {
   }
 
   const { Order, MenuItem, RestaurantProfile, Table, TableSession } = req.models;
+
+  // KH-07/KH-13: "add items" to a running order after its KOT → a linked
+  // follow-up order. Where it belongs (type, table, area, customer) is copied
+  // from the original order — never taken from the client.
+  const followUp = body.parentOrder ? await resolveFollowUpParent({ Order, parentId: body.parentOrder, user: req.user }) : null;
+  const effBody = followUp ? { ...body, ...followUp.inherit } : body;
   const {
     items, orderType, tableNo, tableToken, notes,
     customerName, customerPhone, paymentMethod, idempotencyKey, priority, couponCode,
-  } = body;
+  } = effBody;
 
   // ── Idempotency: replay-safe "place order" ────────────────────────────────
   if (idempotencyKey) {
@@ -225,7 +276,10 @@ export const placeOrderTx = async ({ req, body }) => {
     orderType:     normalizedType,
     tableNo:       tableNo ? Number(tableNo) : null,
     // KH-10: AC Room / Garden — staff only, dine-in only (utils/diningArea.js).
-    diningArea:    isStaffOrder ? normalizeDiningArea(body.diningArea, normalizedType) : "",
+    diningArea:    isStaffOrder ? normalizeDiningArea(effBody.diningArea, normalizedType) : "",
+    // KH-07: link to the original order (root) when this is a follow-up.
+    parentOrder:   followUp ? followUp.rootId : null,
+    parentOrderNo: followUp ? followUp.rootOrderNo : "",
     tableSession:  tableSessionId,
     tableVerified,
     source,

@@ -32,22 +32,33 @@ const PAY_METHODS = ["Cash", "Online"];
 const OBJECT_ID = /^[a-f0-9]{24}$/i;
 const httpError = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 
-/** Pure: request body → { tableNo, ids } or throws 400. Duplicates collapse. */
+/** Pure: request body → { tableNo, groupOf, ids } or throws 400. Duplicates
+ * collapse. Table mode (tableNo) as before; KH-07 group mode (groupOf = any
+ * order of the group) bills an order together with its follow-ups — used for
+ * takeaway, which has no table. */
 export const parseSelection = (body = {}) => {
-  const tableNo = Number(body.tableNo);
-  if (!Number.isInteger(tableNo) || tableNo <= 0) throw httpError("tableNo is required");
+  const groupOf = body.groupOf != null && body.groupOf !== "" ? String(body.groupOf) : null;
+  if (groupOf && !OBJECT_ID.test(groupOf)) throw httpError("Invalid order id");
+  const tableNo = groupOf ? null : Number(body.tableNo);
+  if (!groupOf && (!Number.isInteger(tableNo) || tableNo <= 0)) throw httpError("tableNo is required");
   if (!Array.isArray(body.orderIds) || !body.orderIds.length) throw httpError("Select at least one order");
   const ids = [...new Set(body.orderIds.map(String))];
   if (ids.length > MAX_SELECTION) throw httpError(`At most ${MAX_SELECTION} orders at once`);
   const bad = ids.filter((id) => !OBJECT_ID.test(id));
   if (bad.length) throw httpError(`Invalid order id: ${bad[0]}`);
-  return { tableNo, ids };
+  return groupOf ? { tableNo, groupOf, ids } : { tableNo, ids }; // table mode: shape unchanged
 };
 
-/** Pure: why an order can't be part of this table's combined bill, or null. */
-export const ineligibleReason = (order, tableNo) => {
+/** Root of an order's follow-up group (KH-07): its parent, or itself. */
+export const groupRootId = (order) => String(order?.parentOrder || order?._id || "");
+
+/** Pure: why an order can't be part of this combined bill, or null.
+ * `scope` = a table number (table mode, as before) or { rootId } (group mode). */
+export const ineligibleReason = (order, scope) => {
   if (!order) return "Order not found";
-  if (order.orderType !== DINE_IN || Number(order.tableNo) !== tableNo) return "Not an order of this table";
+  if (scope && typeof scope === "object") {
+    if (groupRootId(order) !== String(scope.rootId)) return "Not part of this order";
+  } else if (order.orderType !== DINE_IN || Number(order.tableNo) !== scope) return "Not an order of this table";
   if (order.status === CANCELLED) return "Cancelled";
   if (!COMBINABLE.includes(order.status)) return order.status === COMPLETED ? "Already completed" : "Not accepted yet";
   return null;
@@ -70,20 +81,41 @@ export const combineTotals = (orders) => {
 // The customer on an order (staff-placed orders keep the waiter in `user`).
 const customerOf = (o) => o.guestName || ((!o.source || o.source === "CUSTOMER") ? o.user?.name : "") || "";
 
-/** Loads + validates a selection. → { tableNo, orders (eligible, oldest first), rejected } */
+/** Loads + validates a selection. → { tableNo, rootId, orders (eligible, oldest first), rejected } */
 export const resolveSelection = async ({ models, body }) => {
-  const { tableNo, ids } = parseSelection(body);
+  const { tableNo, groupOf, ids } = parseSelection(body);
+  let rootId = null;
+  if (groupOf) {
+    const anchor = await models.Order.findById(groupOf).select("_id parentOrder").lean();
+    if (!anchor) throw httpError("Order not found", 404);
+    rootId = groupRootId(anchor);
+  }
+  const scope = rootId ? { rootId } : tableNo;
   const found = await models.Order.find({ _id: { $in: ids } }).populate("user", "name phone").lean();
   const byId = new Map(found.map((o) => [String(o._id), o]));
   const orders = [], rejected = [];
   for (const id of ids) {
     const o = byId.get(id);
-    const why = ineligibleReason(o, tableNo);
+    const why = ineligibleReason(o, scope);
     if (why) rejected.push({ id, orderId: o?.orderId || "", reason: why });
     else orders.push(o);
   }
   orders.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-  return { tableNo, orders, rejected };
+  return { tableNo, rootId, orders, rejected };
+};
+
+/** KH-07 — an order with its follow-ups (root first, oldest first), for the
+ * waiter/admin order screen. Cancelled and unpaid pay-first ones are left out. */
+export const orderGroup = async ({ models, id }) => {
+  if (!OBJECT_ID.test(String(id))) throw httpError("Invalid order id");
+  const anchor = await models.Order.findById(id).select("_id parentOrder").lean();
+  if (!anchor) throw httpError("Order not found", 404);
+  const rootId = groupRootId(anchor);
+  const orders = await models.Order.find({
+    $or: [{ _id: rootId }, { parentOrder: rootId }],
+    status: { $nin: [CANCELLED, "AWAITING_PAYMENT"] },
+  }).sort({ createdAt: 1 }).lean();
+  return { rootId, orders };
 };
 
 /** Preview ("Generate Combined Bill") — read only. */
@@ -103,6 +135,7 @@ export const previewCombinedBill = async ({ models, body }) => {
 
 /** The BillPrintJob payload for ONE combined bill (billRenderer's `orders` layout). */
 export const combinedPrintPayload = ({ tableNo, orders, restaurant }) => {
+  const orderType = orders[0]?.orderType || DINE_IN; // KH-07: a takeaway group too
   const t = combineTotals(orders);
   const methods = [...new Set(orders.filter((o) => o.paymentStatus === PAID).map((o) => o.paymentMethod || "Cash"))];
   return {
@@ -110,7 +143,7 @@ export const combinedPrintPayload = ({ tableNo, orders, restaurant }) => {
     restaurantName: restaurant?.restaurantName || "",
     logoUrl: /^https?:\/\//i.test(restaurant?.logo || "") ? restaurant.logo : "",
     orderId: `${orders.length} orders`,
-    tableNo, orderType: DINE_IN,
+    tableNo: tableNo ?? orders[0]?.tableNo ?? null, orderType,
     // KH-10: "AC Room"/"Garden" when every order on the bill sits there.
     diningArea: new Set(orders.map((o) => o.diningArea || "")).size === 1 ? (orders[0]?.diningArea || "") : "",
     orders: orders.map((o) => ({
@@ -150,7 +183,7 @@ export const printCombinedBill = async ({ models, body, actor }) => {
   const payload = combinedPrintPayload({ tableNo, orders, restaurant });
   try {
     const job = await BillPrintJob.create({
-      order: null, orderId: payload.orderId, tableNo, orderType: DINE_IN, payload,
+      order: null, orderId: payload.orderId, tableNo: payload.tableNo, orderType: payload.orderType, payload,
       combinedKey: key, combinedOrders: orders.map((o) => o._id), ...(requestKey && { requestKey }),
       createdBy: actor,
     });
@@ -171,13 +204,15 @@ export const markSelectedPaid = async ({ models, body, canPay }) => {
   const method = body.paymentMethod;
   if (!PAY_METHODS.includes(method)) throw httpError(`paymentMethod must be one of: ${PAY_METHODS.join(", ")}`);
   if (!canPay) throw httpError("You are not allowed to mark payments", 403);
-  const { tableNo, orders, rejected } = await resolveSelection({ models, body });
+  const { tableNo, rootId, orders, rejected } = await resolveSelection({ models, body });
   const paid = [], alreadyPaid = [], changed = [];
+  // Re-checked at write time: still in this table / group (KH-07).
+  const scopeFilter = rootId ? { $or: [{ _id: rootId }, { parentOrder: rootId }] } : { orderType: DINE_IN, tableNo };
   for (const o of orders) {
     if (o.paymentStatus === PAID) { alreadyPaid.push(o.orderId); continue; }
     const updated = await models.Order.findOneAndUpdate(
       // Re-checked at write time: still this table, still combinable, still unpaid.
-      { _id: o._id, orderType: DINE_IN, tableNo, status: { $in: COMBINABLE }, paymentStatus: { $ne: PAID } },
+      { _id: o._id, ...scopeFilter, status: { $in: COMBINABLE }, paymentStatus: { $ne: PAID } },
       { $set: { paymentStatus: PAID, paymentMethod: method } },
       { returnDocument: "after" },
     );

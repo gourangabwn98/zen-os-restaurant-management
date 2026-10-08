@@ -2,7 +2,7 @@
 // Admin → Orders → table → "Generate Combine Bill" (services/combinedBillService.js).
 // Thin HTTP wrappers; admin-only routes in routes/adminRoutes.js.
 import {
-  previewCombinedBill, printCombinedBill, markSelectedPaid, completeSelected,
+  previewCombinedBill, printCombinedBill, markSelectedPaid, completeSelected, orderGroup,
 } from "../services/combinedBillService.js";
 import { buildActor, getRoleFromUser } from "../services/orderService.js";
 import { settleBills } from "../services/billingService.js";
@@ -12,7 +12,12 @@ import { emitBillPrint, emitPaymentStatusChanged } from "../sockets/socket.js";
 
 const fail = (res, err) => res.status(err.statusCode || 500).json({ message: err.message });
 
-// POST /api/admin/combined-bill/preview  { tableNo, orderIds }
+// GET /api/admin/orders/:id/group — KH-07: the order with its follow-ups.
+export const getOrderGroup = async (req, res) => {
+  try { res.json(await orderGroup({ models: req.models, id: req.params.id })); } catch (err) { fail(res, err); }
+};
+
+// POST /api/admin/combined-bill/preview  { tableNo, orderIds } | { groupOf, orderIds }
 export const previewCombined = async (req, res) => {
   try { res.json(await previewCombinedBill({ models: req.models, body: req.body || {} })); } catch (err) { fail(res, err); }
 };

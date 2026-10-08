@@ -12,7 +12,7 @@ import {
   getAdminAttendanceEmployee, getAdminAttendanceSummary, getAdminDutyHistory,
 } from "../controllers/attendanceController.js";
 import { objectIdParam } from "../middleware/validateIds.js";
-import { previewCombined, printCombined, paySelected, completeSelectedOrders } from "../controllers/combinedBillController.js";
+import { previewCombined, printCombined, paySelected, completeSelectedOrders, getOrderGroup } from "../controllers/combinedBillController.js";
 import { settleOrders, reopenOrderBill } from "../controllers/billingController.js";
 
 const router = express.Router();
@@ -24,11 +24,15 @@ router.use(protect);
 router.get("/dashboard",             requireStaff, getDashboardStats);
 router.get("/orders",                requireStaff, getAllOrders);
 router.get("/orders/combined-bill",  requireStaff, getCombinedBill);
-// Combine Bill for a table — admin picks SOME orders (services/combinedBillService.js).
-router.post("/combined-bill/preview",  requireAdmin, previewCombined);
-router.post("/combined-bill/print",    requireAdmin, printCombined);
-router.post("/combined-bill/pay",      requireAdmin, paySelected);
-router.post("/combined-bill/complete", requireAdmin, completeSelectedOrders);
+// Combine Bill for a table, or an order + its follow-ups (KH-07) — staff pick
+// SOME running orders (services/combinedBillService.js). KH-03: on-duty
+// waiters too (same as their single-order print / pay / settle). The service
+// only ever accepts running orders and re-checks every id server-side.
+router.post("/combined-bill/preview",  requireStaff, previewCombined);
+router.post("/combined-bill/print",    requireStaff, requireWaiterOnDuty, printCombined);
+router.post("/combined-bill/pay",      requireStaff, requireWaiterOnDuty, paySelected);
+router.post("/combined-bill/complete", requireStaff, requireWaiterOnDuty, completeSelectedOrders);
+router.get("/orders/:id/group",        requireStaff, getOrderGroup); // KH-07 — order + follow-ups
 router.get("/invoices/all",          requireStaff, getAllInvoices);
 router.patch("/invoices/:id/status", requireAdmin, updateInvoiceStatus);
 router.put("/orders/:id/status",     requireStaff, requireWaiterOnDuty, updateOrderStatus);

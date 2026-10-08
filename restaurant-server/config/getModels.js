@@ -303,6 +303,12 @@ const orderSchema = new mongoose.Schema({
   // KH-10 — AC Room / Garden for a DINE_IN order (utils/diningArea.js);
   // "" = normal hall, which is what every older order reads as.
   diningArea:    { type: String, enum: ["", ...DINING_AREAS], default: "" },
+  // KH-07/KH-13 — "add items" to a running order AFTER its KOT: a follow-up
+  // order (own KOT, own stock deduction — one-KOT-per-order stays true),
+  // linked to the ORIGINAL order (always the root, never a chain). Billed
+  // together with it (combinedBillService group mode). null = normal order.
+  parentOrder:   { type: mongoose.Schema.Types.ObjectId, ref: "Order", default: null },
+  parentOrderNo: { type: String, default: "" }, // root's orderId, for display
 
   // ── Table / session management (Phase 1) ──────────────────────────────────
   tableSession:  { type: mongoose.Schema.Types.ObjectId, ref: "TableSession", default: null },
@@ -436,6 +442,8 @@ orderSchema.index({ status: 1, createdAt: -1 });
 // Newest-first lists and date-range filters (admin Orders "All", Invoices, Insights).
 orderSchema.index({ createdAt: -1 });
 orderSchema.index({ tableSession: 1 });
+// KH-07 — a running order's follow-ups. Sparse: only follow-ups carry it.
+orderSchema.index({ parentOrder: 1 }, { partialFilterExpression: { parentOrder: { $type: "objectId" } } });
 // PhonePe callbacks/status polls look an order up by its gateway txn id.
 orderSchema.index(
   { "payment.merchantTransactionId": 1 },
