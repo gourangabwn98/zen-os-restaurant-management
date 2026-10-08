@@ -54,6 +54,7 @@ export const createKotJobForOrder = async ({ KOTJob, order, actor, session, cust
           items:     order.items.map((i) => ({ name: i.name, nameBn: i.nameBn || "", qty: i.qty, notes: i.notes || "" })),
           notes:     order.notes || "",
           customerName: String(customerName || "").slice(0, KOT_NAME_MAX), // KH-08 — paper KOT only
+          diningArea: order.diningArea || "", // KH-10
           priority:  order.priority === "URGENT" ? "URGENT" : "NORMAL",
           status:    "PENDING",
           createdBy: actor,

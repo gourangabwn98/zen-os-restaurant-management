@@ -12,6 +12,7 @@ import { resolveCouponForOrder } from "./couponService.js";
 import { getScheduleContext } from "./menuScheduleService.js";
 import { normalizeOrderType, assertValidTransition, effectiveBillStatus, requiresPaidForTransition } from "../utils/orderStateMachine.js";
 import { createKotJobForOrder, kotCustomerName } from "./kotService.js";
+import { normalizeDiningArea } from "../utils/diningArea.js";
 import { findOrOpenTableSession, closeTableSession } from "./tableSessionService.js";
 import { findNextMatch } from "./waitlistService.js";
 import { signGuestOrderToken, verifyGuestOrderToken } from "../utils/guestOrderToken.js";
@@ -223,6 +224,8 @@ export const placeOrderTx = async ({ req, body }) => {
     coupon,
     orderType:     normalizedType,
     tableNo:       tableNo ? Number(tableNo) : null,
+    // KH-10: AC Room / Garden — staff only, dine-in only (utils/diningArea.js).
+    diningArea:    isStaffOrder ? normalizeDiningArea(body.diningArea, normalizedType) : "",
     tableSession:  tableSessionId,
     tableVerified,
     source,

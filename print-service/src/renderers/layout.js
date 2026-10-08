@@ -156,7 +156,11 @@ export const dateTime = (when) => {
 };
 
 const ORDER_TYPE_LABEL = { DINE_IN: "Dine In", TAKEAWAY: "Takeaway", ONLINE: "Online" };
-export const orderTypeLabel = (t) => ORDER_TYPE_LABEL[t] || toPrintable(t || "-");
+// KH-10: a DINE_IN order seated in the AC Room / Garden prints that instead
+// of "Dine In" (backend utils/diningArea.js). Old jobs have no area → as before.
+const DINING_AREA_LABEL = { AC_ROOM: "AC Room", GARDEN: "Garden" };
+export const orderTypeLabel = (t, area = "") =>
+  (t === "DINE_IN" && DINING_AREA_LABEL[area]) || ORDER_TYPE_LABEL[t] || toPrintable(t || "-");
 
 const PAYMENT_STATUS_LABEL = { PAID: "Paid", PENDING_VERIFICATION: "Pending", FAILED: "Failed" };
 export const paymentStatusLabel = (s) => PAYMENT_STATUS_LABEL[s] || toPrintable(s || "");

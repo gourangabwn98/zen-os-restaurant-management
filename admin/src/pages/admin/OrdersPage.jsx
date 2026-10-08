@@ -30,6 +30,7 @@ const prefetchOrderData = () => { menuCached().catch(() => {}); profileCached().
 import { t, tn, fmtNum, fmtDate, fmtDateTime, fmtTime, localName } from "../../i18n/core.js";
 import { customerName } from "./shared/customerName.js";
 import { takenByName, takenByIsAcceptor } from "./shared/takenBy.js";
+import { DINING_AREA_LABEL } from "./shared/diningArea.js";
 
 // ── add this to adminService.js if not already there ─────────────────────────
 // export const updateOrderPayment = (id, data) => api.patch(`/admin/orders/${id}/payment`, data);
@@ -348,7 +349,7 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
   const info = [
     [t("Customer"), displayName],
     [t("Phone"), displayPhone ? `+91 ${displayPhone}` : "—"],
-    [t("Type"), formatOrderType(order.orderType)],
+    [t("Type"), `${formatOrderType(order.orderType)}${order.orderType==="DINE_IN" && order.diningArea ? ` · ${t(DINING_AREA_LABEL[order.diningArea] || order.diningArea)}` : ""}`], // KH-10
     [t("Payment"), `${t(order.paymentMethod || "Cash")} · ${formatPayment(order.paymentStatus)}`],
     // KH-09 — old orders without a name show "—".
     [t("Waiter"), takenByName(order) ? `${takenByName(order)}${takenByIsAcceptor(order) ? ` (${t("accepted")})` : ""}` : "—"],
@@ -602,9 +603,12 @@ const ItemImage = ({ src, name }) => isUrl(src)
   : <span style={{ fontSize:24, flexShrink:0 }}>{src||"🍽️"}</span>;
 
 // ── CreateOrderModal — KFC-style rush ordering ────────────────────────────────
+// KH-10: AC Room / Garden are DINE_IN orders with a table + a diningArea.
 const ORDER_TYPE_OPTIONS = [
-  { value:"DINE_IN",  label:"Dining",   icon:"🪑" },   // labels → t() at render
-  { value:"TAKEAWAY", label:"Take Away", icon:"🛍️" },
+  { value:"DINE_IN",  area:"",        label:"Dining",    icon:"🪑" },   // labels → t() at render
+  { value:"DINE_IN",  area:"AC_ROOM", label:"AC Room",   icon:"❄️" },
+  { value:"DINE_IN",  area:"GARDEN",  label:"Garden",    icon:"🌳" },
+  { value:"TAKEAWAY", area:"",        label:"Take Away", icon:"🛍️" },
 ];
 const PAYMENT_STATUS_OPTIONS = [
   { value:"PENDING_VERIFICATION", label:"Due",  icon:"⏳" },
@@ -619,6 +623,7 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
   const [search,      setSearch]      = useState("");
   const [cart,        setCart]        = useState([]);
   const [orderType,   setOrderType]   = useState(initialOrderType);
+  const [diningArea,  setDiningArea]  = useState(""); // KH-10
   // Pre-filled when opened by tapping a specific table on the floor map
   // (see openNewOrder in the parent) — saves re-typing a number just picked.
   const [tableNo,     setTableNo]     = useState(initialTableNo ? String(initialTableNo) : "");
@@ -703,6 +708,7 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
       const { data } = await placeOrder({
         items: cart.map(c=>({ menuItemId:c.item._id, qty:c.qty })),
         orderType, tableNo: orderType==="DINE_IN" ? Number(tableNo) : null,
+        diningArea: orderType==="DINE_IN" ? diningArea : "", // KH-10
         isGuest: true,
         customerName:  customerName.trim()||undefined,
         customerPhone: customerPhone.trim()||undefined,
@@ -992,12 +998,15 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
 
               {/* Order type */}
               <div className="zc-seg" style={{ width:"100%" }}>
-                {ORDER_TYPE_OPTIONS.map(({value,label,icon})=>(
-                  <button key={value} onClick={()=>setOrderType(value)}
-                    className={orderType===value ? "on" : ""} style={{ flex:1, justifyContent:"center" }}>
-                    {icon} {t(label)}
-                  </button>
-                ))}
+                {ORDER_TYPE_OPTIONS.map(({value,area,label,icon})=>{
+                  const on = orderType===value && (value!=="DINE_IN" || diningArea===area);
+                  return (
+                    <button key={`${value}-${area}`} onClick={()=>{ setOrderType(value); setDiningArea(area); }}
+                      className={on ? "on" : ""} style={{ flex:1, justifyContent:"center" }}>
+                      {icon} {t(label)}
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Table number — only for Dining */}

@@ -292,4 +292,8 @@ export default {
   "Reason: {reason}": "কারণ: {reason}",
   // KH-05 — red note under e.g. Thali items
   "{name} not shareable": "{name} ভাগ করে খাওয়া যাবে না",
+  // KH-10 — seating area
+  "AC Room": "এসি রুম",
+  "Garden": "বাগান",
+  "Hall": "হল",
 };

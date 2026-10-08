@@ -29,7 +29,7 @@ export const renderKot = (job, { header = null, width = DEFAULT_WIDTH } = {}) =>
   const customer = d.customerName || d.guestName;
   if (toPrintable(customer)) kv("Customer", customer);
   kv("Order ID", d.orderId || "-");
-  kv("Type", orderTypeLabel(d.orderType));
+  kv("Type", orderTypeLabel(d.orderType, d.diningArea));
   if (d.tableNo !== null && d.tableNo !== undefined && d.tableNo !== "") kv("Table", String(d.tableNo));
   const { date, time } = dateTime(d.createdAt);
   kv("Date", date);

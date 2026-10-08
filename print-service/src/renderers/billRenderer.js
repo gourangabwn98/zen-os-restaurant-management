@@ -45,7 +45,7 @@ export const renderBill = (job, { logo = null, header = null, width = DEFAULT_WI
   const { date, time } = dateTime(p.createdAt || job.createdAt);
   if (combined) kv("Orders", p.orders.map((o) => o.orderId).join(", "));
   else kv("Bill No", p.orderId || job.orderId || "-");
-  kv("Type", orderTypeLabel(orderType));
+  kv("Type", orderTypeLabel(orderType, p.diningArea));
   if (tableNo !== null && tableNo !== undefined && tableNo !== "") kv("Table", String(tableNo));
   kv("Date", date);
   kv("Time", time);

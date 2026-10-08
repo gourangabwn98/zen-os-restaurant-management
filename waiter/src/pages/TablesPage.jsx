@@ -14,6 +14,7 @@ import {
 import { NAV_HEIGHT } from "../theme.js";
 import { useLiveOrders } from "../hooks/useLiveOrders.js";
 import { t, tn, localName } from "../i18n/index.jsx";
+import { DINING_AREA_LABEL } from "../utils/diningArea.js";
 
 const AMBER = "#F5B83D";
 
@@ -426,7 +427,9 @@ function OrderRow({ order, onClick }) {
 
 function PendingOrderRow({ order, busy, onOpen, onConfirm, onReject }) {
   const items = (order.items || []).slice(0, 3).map((i) => `${localName(i)} ×${i.qty}`).join(", ");
-  const where = order.orderType === "DINE_IN" ? t("Table {n}", { n: order.tableNo }) : t("Takeaway");
+  const where = order.orderType === "DINE_IN"
+    ? `${t("Table {n}", { n: order.tableNo })}${order.diningArea ? ` · ${t(DINING_AREA_LABEL[order.diningArea] || order.diningArea)}` : ""}` // KH-10
+    : t("Takeaway");
   const who = order.guestName || order.user?.name || t("Guest");
   return (
     <div style={{ background: `${AMBER}12`, border: `1px solid ${AMBER}40`, borderRadius: 14, padding: "12px 12px" }}>

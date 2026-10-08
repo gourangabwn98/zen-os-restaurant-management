@@ -155,6 +155,16 @@ const run = async () => {
     assert.equal(lines.at(-1).type, "cut");
   });
 
+  await test("KH-10: AC Room / Garden print as the order type on KOT and bill; old jobs unchanged", () => {
+    assert.match(text(renderKot(kotJob({ orderType: "DINE_IN", diningArea: "AC_ROOM" }))), /Type {7}: +AC Room/);
+    assert.match(text(renderKot(kotJob({ orderType: "DINE_IN", diningArea: "GARDEN" }))), /Type {7}: +Garden/);
+    assert.match(text(renderKot(kotJob({ orderType: "DINE_IN" }))), /Type {7}: +Dine In/);
+    assert.match(text(renderKot(kotJob({ orderType: "TAKEAWAY", diningArea: "AC_ROOM" }))), /Type {7}: +Takeaway/, "area ignored unless dine-in");
+    assert.match(text(renderBill(billJob({ orderType: "DINE_IN", diningArea: "AC_ROOM" }))), /Type {7}: +AC Room/);
+    assert.match(text(renderBill(billJob({ orderType: "DINE_IN", diningArea: "GARDEN" }))), /Type {7}: +Garden/);
+    assert.match(text(renderBill(billJob())), /Type {7}: +Dine In/);
+  });
+
   await test("kot: the order's own note is printed after the items, in bold", () => {
     const lines = renderKot(kotJob({ notes: "Birthday table — bring candles" }));
     const t = text(lines);

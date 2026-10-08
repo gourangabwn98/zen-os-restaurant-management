@@ -15,6 +15,7 @@ import { useAppState } from "../context/AppState.jsx";
 import { ACCENT, ACCENT_SOFT, ACCENT_GRADIENT, TEXT_MUTED, TEXT_FAINT, GLASS_BG, GLASS_BORDER, NAV_HEIGHT } from "../theme.js";
 import { t as tr, tn, localName } from "../i18n/index.jsx";
 import NotShareableNote from "../components/NotShareableNote.jsx";
+import { DINING_AREA_LABEL, DINING_AREA_ICON } from "../utils/diningArea.js";
 
 export default function NewOrderPage() {
   const nav = useNavigate();
@@ -32,6 +33,7 @@ export default function NewOrderPage() {
 
   const [orderType, setOrderType] = useState(preTable ? "DINE_IN" : "TAKEAWAY"); // takeaway default when nothing picked
   const [tableNo, setTableNo]     = useState(preTable || "");
+  const [diningArea, setDiningArea] = useState(""); // KH-10 — "" hall · AC_ROOM · GARDEN (dine-in only)
   const [tables, setTables]       = useState([]);
 
   // Whole menu (unfiltered), fetched ONCE — the list below and voice ordering
@@ -133,6 +135,7 @@ export default function NewOrderPage() {
         items: cart.map((c) => ({ menuItemId: c.item._id, qty: c.qty, notes: c.notes })),
         orderType,
         tableNo: orderType === "DINE_IN" ? Number(tableNo) : undefined,
+        diningArea: orderType === "DINE_IN" ? diningArea : "", // KH-10
         customerName: customerName.trim(),
         notes: "",
         idempotencyKey: idemKey,
@@ -209,7 +212,7 @@ export default function NewOrderPage() {
             }}
           />
           <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 10 }}>
-            {orderType === "DINE_IN" ? `${tr("Dine-in")} · ${tr("Table {n}", { n: tableNo })}` : tr("Takeaway")} · {tr("the order is Placed right away; you can change it for a few minutes, then it goes to the kitchen and the KOT prints.")}
+            {orderType === "DINE_IN" ? `${diningArea ? tr(DINING_AREA_LABEL[diningArea]) : tr("Dine-in")} · ${tr("Table {n}", { n: tableNo })}` : tr("Takeaway")} · {tr("the order is Placed right away; you can change it for a few minutes, then it goes to the kitchen and the KOT prints.")}
           </div>
         </div>
 
@@ -235,28 +238,33 @@ export default function NewOrderPage() {
 
       {/* Order type + table */}
       <div style={{ padding: "12px 16px" }}>
-        {locked ? (
+        {locked ? (<>
           <div style={{
             display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 12,
             border: "1.5px solid rgba(59,130,246,0.5)", background: ACCENT_SOFT, color: ACCENT, fontWeight: 800, fontSize: 14,
           }}>
-            {preTable ? `🍽️ ${tr("Dine-in")} · ${tr("Table {n}", { n: preTable })}` : `🛍️ ${tr("Take Away")}`}
+            {preTable ? `${DINING_AREA_ICON[diningArea]} ${diningArea ? tr(DINING_AREA_LABEL[diningArea]) : tr("Dine-in")} · ${tr("Table {n}", { n: preTable })}` : `🛍️ ${tr("Take Away")}`}
             <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 600, color: TEXT_MUTED }}>
               {preTable ? tr("picked on the table map") : tr("no table")}
             </span>
           </div>
-        ) : (<>
+          {preTable && <AreaChips value={diningArea} onChange={setDiningArea} />}
+        </>) : (<>
         <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
-          {["DINE_IN", "TAKEAWAY"].map((t) => (
-            <button key={t} onClick={() => setOrderType(t)} style={{
-              flex: 1, padding: "12px", borderRadius: 12, cursor: "pointer",
-              border: `1.5px solid ${orderType === t ? "rgba(59,130,246,0.5)" : GLASS_BORDER}`,
-              background: orderType === t ? ACCENT_SOFT : GLASS_BG,
-              color: orderType === t ? ACCENT : TEXT_MUTED, fontWeight: 700, fontSize: 12.5,
-            }}>
-              {t === "DINE_IN" ? `🍽️ ${tr("Dine-in")}` : `🛍️ ${tr("Takeaway")}`}
-            </button>
-          ))}
+          {/* KH-10: AC Room and Garden are dine-in orders with a table. */}
+          {[["DINE_IN", ""], ["DINE_IN", "AC_ROOM"], ["DINE_IN", "GARDEN"], ["TAKEAWAY", ""]].map(([t, area]) => {
+            const on = orderType === t && (t !== "DINE_IN" || diningArea === area);
+            return (
+              <button key={`${t}-${area}`} onClick={() => { setOrderType(t); setDiningArea(area); }} style={{
+                flex: 1, padding: "12px 6px", borderRadius: 12, cursor: "pointer",
+                border: `1.5px solid ${on ? "rgba(59,130,246,0.5)" : GLASS_BORDER}`,
+                background: on ? ACCENT_SOFT : GLASS_BG,
+                color: on ? ACCENT : TEXT_MUTED, fontWeight: 700, fontSize: 12.5,
+              }}>
+                {t === "TAKEAWAY" ? `🛍️ ${tr("Takeaway")}` : `${DINING_AREA_ICON[area]} ${area ? tr(DINING_AREA_LABEL[area]) : tr("Dine-in")}`}
+              </button>
+            );
+          })}
         </div>
 
         {orderType === "DINE_IN" && (
@@ -349,3 +357,23 @@ const backBtn = {
   width: 36, height: 36, borderRadius: "50%", border: `1px solid ${GLASS_BORDER}`,
   background: GLASS_BG, fontSize: 17, cursor: "pointer", color: "#fff",
 };
+
+// KH-10 — seating area for a table picked on the map (Hall / AC Room / Garden).
+function AreaChips({ value, onChange }) {
+  return (
+    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+      {["", "AC_ROOM", "GARDEN"].map((area) => {
+        const on = value === area;
+        return (
+          <button key={area || "hall"} type="button" onClick={() => onChange(area)} style={{
+            flex: 1, padding: "9px 6px", borderRadius: 10, cursor: "pointer", fontSize: 12, fontWeight: 700,
+            border: `1.5px solid ${on ? "rgba(59,130,246,0.5)" : GLASS_BORDER}`,
+            background: on ? ACCENT_SOFT : GLASS_BG, color: on ? ACCENT : TEXT_MUTED,
+          }}>
+            {DINING_AREA_ICON[area]} {area ? tr(DINING_AREA_LABEL[area]) : tr("Hall")}
+          </button>
+        );
+      })}
+    </div>
+  );
+}

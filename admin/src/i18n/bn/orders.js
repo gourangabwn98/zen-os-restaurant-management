@@ -389,4 +389,7 @@ export default {
   // KH-09 — who took the order
   "Waiter": "ওয়েটার",
   "accepted": "গ্রহণ করেছেন",
+  // KH-10 — seating area
+  "AC Room": "এসি রুম",
+  "Garden": "বাগান",
 };

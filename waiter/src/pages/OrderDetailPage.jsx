@@ -15,6 +15,7 @@ import { Loader, ErrorState, EmptyState } from "../components/StateViews.jsx";
 import { ACCENT, GREEN, AMBER, RED, TEXT_MUTED, TEXT_FAINT, GLASS_BORDER, GLASS_BG } from "../theme.js";
 import { t, N_, tn, localName } from "../i18n/index.jsx";
 import NotShareableNote from "../components/NotShareableNote.jsx";
+import { DINING_AREA_LABEL } from "../utils/diningArea.js";
 import { STATUS_LABEL } from "../components/StatusBadge.jsx";
 
 // DSH-04: the floor steps a waiter drives. Kitchen marks Ready; the waiter
@@ -242,7 +243,7 @@ export default function OrderDetailPage() {
         <div>
           <div style={{ fontSize: 22, fontWeight: 800, color: "#fff", letterSpacing: -0.4 }}>{order.orderId}</div>
           <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 2 }}>
-            {order.orderType === "DINE_IN" ? `${t("Dine-in")} · ${t("Table {n}", { n: order.tableNo })}` : t("Takeaway")} · {order.source}
+            {order.orderType === "DINE_IN" ? `${order.diningArea ? t(DINING_AREA_LABEL[order.diningArea] || order.diningArea) : t("Dine-in")} · ${t("Table {n}", { n: order.tableNo })}` : t("Takeaway")} · {order.source}
           </div>
         </div>
         <StatusBadge status={order.status} />

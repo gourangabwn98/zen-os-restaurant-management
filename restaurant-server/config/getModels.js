@@ -14,6 +14,7 @@ import { nextOrderId } from "../utils/orderNumber.js";
 import { INGREDIENT_SOURCES } from "../utils/recipeCost.js";
 import { CATEGORY_KINDS, SMART_KEYS } from "../utils/menuCategories.js";
 import { DUTY_ACTIONS, DUTY_CHANGE_SOURCES, BREAK_REASON_MAX } from "../utils/attendanceStateMachine.js";
+import { DINING_AREAS } from "../utils/diningArea.js";
 
 // ── Atomic counters ──────────────────────────────────────────────────────────
 // One document per sequence (currently just "orderId"). Incremented with a
@@ -299,6 +300,9 @@ const orderSchema = new mongoose.Schema({
   guestPhone:    { type: String, default: "" },
   orderType:     { type: String, enum: ORDER_TYPES, default: "DINE_IN" },
   tableNo:       { type: Number, default: null },
+  // KH-10 — AC Room / Garden for a DINE_IN order (utils/diningArea.js);
+  // "" = normal hall, which is what every older order reads as.
+  diningArea:    { type: String, enum: ["", ...DINING_AREAS], default: "" },
 
   // ── Table / session management (Phase 1) ──────────────────────────────────
   tableSession:  { type: mongoose.Schema.Types.ObjectId, ref: "TableSession", default: null },
@@ -505,6 +509,7 @@ const kotJobSchema = new mongoose.Schema({
   // printers room / print queue; stripped before anything reaches the
   // kitchen room (kotService.kitchenSafeKot). "" = no name → line left out.
   customerName: { type: String, default: "" },
+  diningArea:   { type: String, default: "" }, // KH-10 — "AC Room"/"Garden" on the KOT
   // Optional — lets a staff-placed order flag its KOT as urgent, so the
   // Kitchen Display can play a distinct, stronger alert tone for it.
   // Never settable by a customer/guest (see services/orderService.js).
