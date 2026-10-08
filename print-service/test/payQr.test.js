@@ -134,5 +134,29 @@ await test("bill layout: no QR block when none is given", () => {
   assert.ok(!renderBill({ payload: BILL }).some((l) => /Scan & Pay/.test(l.text || "")));
 });
 
+// KH-02 — verified end to end through the real print path (Processor →
+// mock printer): an unpaid TAKEAWAY bill prints the QR, a paid one doesn't.
+await test("KH-02: unpaid TAKEAWAY bill prints the QR (in both copies); a PAID one prints none", async () => {
+  const { Processor } = await import("../src/processor.js");
+  const { PrinterManager } = await import("../src/printerManager.js");
+  const { PrintQueue } = await import("../src/queue.js");
+  const run = async (paymentStatus) => {
+    const manager = new PrinterManager([{ id: "counter", role: "BOTH", type: "LAN" }], { useMock: true });
+    const queue = new PrintQueue(path.join(os.tmpdir(), `kh02-${Date.now()}-${Math.random()}.json`));
+    const processor = new Processor(queue, manager, async () => {}, {
+      profileProvider: { get: async () => ({ ...PROFILE, paymentQr: "" }) }, // UPI ID path — no download
+      payQrProvider: new PayQrProvider(),
+    });
+    await processor.ingest({ jobId: `b-${paymentStatus}`, jobType: "BILL", payload: { ...BILL, orderType: "TAKEAWAY", tableNo: null, paymentStatus } });
+    return manager.drivers[0].driver.printedJobs[0];
+  };
+  const unpaid = await run("PENDING_VERIFICATION");
+  assert.equal(unpaid.filter((l) => l.type === "image" && l.label === "payment QR").length, 2, "one QR per copy");
+  assert.ok(unpaid.some((l) => /Type +: +Takeaway/.test(l.text || "")));
+  const paid = await run("PAID");
+  assert.equal(paid.filter((l) => l.type === "image" && l.label === "payment QR").length, 0);
+  assert.ok(!paid.some((l) => /Scan & Pay/.test(l.text || "")));
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
