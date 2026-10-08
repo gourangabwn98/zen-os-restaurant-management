@@ -386,4 +386,7 @@ export default {
   "Menu": "মেনু",
   "Cart is empty": "কার্ট খালি",
   "View cart": "কার্ট দেখুন",
+  // KH-09 — who took the order
+  "Waiter": "ওয়েটার",
+  "accepted": "গ্রহণ করেছেন",
 };

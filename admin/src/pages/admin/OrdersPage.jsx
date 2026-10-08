@@ -29,6 +29,7 @@ const categoriesCached = () => cached("order:categories", ORDER_DATA_TTL, () => 
 const prefetchOrderData = () => { menuCached().catch(() => {}); profileCached().catch(() => {}); categoriesCached().catch(() => {}); };
 import { t, tn, fmtNum, fmtDate, fmtDateTime, fmtTime, localName } from "../../i18n/core.js";
 import { customerName } from "./shared/customerName.js";
+import { takenByName, takenByIsAcceptor } from "./shared/takenBy.js";
 
 // ── add this to adminService.js if not already there ─────────────────────────
 // export const updateOrderPayment = (id, data) => api.patch(`/admin/orders/${id}/payment`, data);
@@ -349,6 +350,8 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
     [t("Phone"), displayPhone ? `+91 ${displayPhone}` : "—"],
     [t("Type"), formatOrderType(order.orderType)],
     [t("Payment"), `${t(order.paymentMethod || "Cash")} · ${formatPayment(order.paymentStatus)}`],
+    // KH-09 — old orders without a name show "—".
+    [t("Waiter"), takenByName(order) ? `${takenByName(order)}${takenByIsAcceptor(order) ? ` (${t("accepted")})` : ""}` : "—"],
   ];
   const summary = [
     [t("Subtotal"), subtotal],
@@ -426,8 +429,9 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
 
           {/* info grid */}
           <div className="op-detail-grid" style={{ marginBottom:20 }}>
-            {info.map(([k,v]) => (
-              <div key={k} style={{ padding:"11px 13px", borderRadius:12, background:"var(--card-2)", border:"1px solid var(--edge)" }}>
+            {info.map(([k,v], i) => (
+              <div key={k} style={{ padding:"11px 13px", borderRadius:12, background:"var(--card-2)", border:"1px solid var(--edge)",
+                ...(i === 4 && { gridColumn:"1 / -1" }) /* KH-09 Waiter: its own full row */ }}>
                 <div style={{ fontSize:10.5, color:T3 }}>{k}</div>
                 <div style={{ fontSize:12.5, fontWeight:600, marginTop:3, color:T1, wordBreak:"break-word" }}>{v}</div>
               </div>

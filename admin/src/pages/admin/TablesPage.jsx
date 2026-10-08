@@ -12,6 +12,7 @@ import { getSocket } from "../../services/socketService.js";
 import { useVisibleInterval } from "../../hooks/useVisibleInterval.js";
 import { t, tn, N_, fmtNum, fmtTime, localName } from "../../i18n/core.js";
 import { customerName } from "./shared/customerName.js";
+import { takenByName, takenByIsAcceptor } from "./shared/takenBy.js";
 
 // ── Dark tokens ───────────────────────────────────────────────────────────────
 const PINK       = PRIMARY;
@@ -428,6 +429,13 @@ const OrderDrawer = ({ config, order, session, onClose, onStatusChange, onClearT
             <div style={{ fontSize:12, color:T2, marginTop:5, fontFamily:"'DM Mono',monospace" }}>
               {order.orderId}
               {customerName(order) && <span style={{ fontFamily:"'DM Sans',sans-serif", marginLeft:8, color:T3 }}>· {customerName(order)}</span>}
+            </div>
+          )}
+          {order && (
+            // KH-09 — who took the order; "—" for old orders without a name.
+            <div style={{ fontSize:12, color:T3, marginTop:3 }}>
+              {t("Waiter")}: <span style={{ color:T2 }}>{takenByName(order) || "—"}</span>
+              {takenByIsAcceptor(order) && <span> ({t("accepted")})</span>}
             </div>
           )}
         </div>
