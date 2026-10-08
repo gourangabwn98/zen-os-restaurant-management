@@ -2,9 +2,11 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
-  getOrder, confirmOrder, rejectOrder, updateOrderStatus, addItemsToOrder,
+  getOrder, confirmOrder, rejectOrder, updateOrderStatus,
   updateOrderPayment, getCombinedBill, printBill, modifyOrderItems, settleOrders,
+  placeOrder, getOrderGroup, newIdempotencyKey,
 } from "../services/orderService.js";
+import CombinedBillPanel from "../components/CombinedBillPanel.jsx";
 import { getMenu, getMenuCategories } from "../services/menuService.js";
 import StatusBadge, { statusColor } from "../components/StatusBadge.jsx";
 import GlassCard from "../components/ui/GlassCard.jsx";
@@ -68,11 +70,28 @@ export default function OrderDetailPage() {
   const [menuSearch, setMenuSearch] = useState("");
   const [menuCategory, setMenuCategory] = useState("");
   const [addQtys, setAddQtys] = useState({});
+  const [addKey, setAddKey] = useState(newIdempotencyKey); // KH-07: one follow-up per "add" tap
+  // KH-03 / KH-07: the running orders billed together with this one — the
+  // table's orders (dine-in) or this order + its follow-ups (takeaway).
+  const [billGroup, setBillGroup] = useState(null);
+
+  const loadBillGroup = useCallback(async (o) => {
+    if (!o || !SETTLEABLE.includes(o.status)) { setBillGroup(null); return; }
+    try {
+      if (o.orderType === "DINE_IN" && o.tableNo) {
+        const { data } = await getCombinedBill({ tableNo: o.tableNo });
+        setBillGroup({ scope: { tableNo: o.tableNo }, orders: (data.orders || []).filter((x) => SETTLEABLE.includes(x.status)) });
+      } else {
+        const { data } = await getOrderGroup(o._id);
+        setBillGroup({ scope: { groupOf: data.rootId }, orders: (data.orders || []).filter((x) => SETTLEABLE.includes(x.status)) });
+      }
+    } catch { setBillGroup(null); }
+  }, []);
 
   const load = useCallback(() => {
     setError(null);
-    getOrder(id).then((r) => setOrder(r.data)).catch(() => setError(t("Couldn't load this order")));
-  }, [id]);
+    getOrder(id).then((r) => { setOrder(r.data); loadBillGroup(r.data); }).catch(() => setError(t("Couldn't load this order")));
+  }, [id, loadBillGroup]);
 
   useEffect(() => { load(); const iv = setInterval(load, 10000); return () => clearInterval(iv); }, [load]);
 
@@ -164,17 +183,21 @@ export default function OrderDetailPage() {
     if (items.length === 0) return toast.error(t("Pick at least one item"));
     setBusy(true);
     try {
-      if (order.status === "CONFIRMED" || order.status === "PENDING_CONFIRMATION") {
+      if ((order.status === "CONFIRMED" || order.status === "PENDING_CONFIRMATION") && !order.stockDeducted) {
         const merged = new Map((order.items || []).map((it) => [lineId(it), { menuItemId: lineId(it), qty: it.qty, notes: it.notes || "" }]));
         for (const it of items) {
           const ex = merged.get(it.menuItemId);
           merged.set(it.menuItemId, ex ? { ...ex, qty: ex.qty + it.qty } : { ...it, notes: "" });
         }
         await modifyOrderItems(id, [...merged.values()], order.revision ?? 0);
+        toast.success(t("Items added"));
       } else {
-        await addItemsToOrder(id, items);
+        // KH-07: after the KOT → a follow-up order on a NEW KOT, billed
+        // together with this one. Table / type / customer come from this order.
+        const { data: added } = await placeOrder({ parentOrder: id, items, idempotencyKey: addKey });
+        setAddKey(newIdempotencyKey());
+        toast.success(t("Added as {id} — it goes to the kitchen on a new KOT", { id: added.orderId }));
       }
-      toast.success(t("Items added"));
       setShowAdd(false); setAddQtys({});
       load();
     } catch (err) { toast.error(err.response?.data?.message || t("Couldn't add items")); }
@@ -211,7 +234,9 @@ export default function OrderDetailPage() {
   // on the bill. Scanning it is not proof of payment — still Mark Paid.
   const handleShowQr = async () => {
     try {
-      const { data } = await getCombinedBill({ orderIds: id }); // fresh — items/total may have changed
+      // fresh — items/total may have changed; KH-03/07: the whole combined bill
+      const ids = billGroup && billGroup.orders.length > 1 ? billGroup.orders.map((o) => o._id).join(",") : id;
+      const { data } = await getCombinedBill({ orderIds: ids });
       setBill(data);
       if (!data.paymentQr) return toast.error(t("No payment QR yet — admin can add one in Profile → Payment"));
       setShowQr(true);
@@ -234,7 +259,10 @@ export default function OrderDetailPage() {
   // or Placed — i.e. before its KOT prints.
   const isPlaced = order.status === "CONFIRMED" && !order.stockDeducted;
   const isHeld = (isPending || order.status === "CONFIRMED") && !order.stockDeducted;
-  const canAddItems = isHeld;
+  // KH-07: after the KOT, "Add items" places a follow-up order (new KOT).
+  const canFollowUp = !isHeld && SETTLEABLE.includes(order.status) && !settled;
+  const canAddItems = isHeld || canFollowUp;
+  const combined = !!billGroup && billGroup.orders.length > 1;
   const stageIdx = STAGES.indexOf(order.status);
 
   return (
@@ -245,6 +273,9 @@ export default function OrderDetailPage() {
           <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 2 }}>
             {order.orderType === "DINE_IN" ? `${order.diningArea ? t(DINING_AREA_LABEL[order.diningArea] || order.diningArea) : t("Dine-in")} · ${t("Table {n}", { n: order.tableNo })}` : t("Takeaway")} · {order.source}
           </div>
+          {order.parentOrderNo && (
+            <div style={{ fontSize: 11.5, color: AMBER, marginTop: 2 }}>{t("Items added to {id}", { id: order.parentOrderNo })}</div>
+          )}
         </div>
         <StatusBadge status={order.status} />
       </div>
@@ -310,7 +341,7 @@ export default function OrderDetailPage() {
             <div style={{ fontSize: 12, color: TEXT_MUTED }}>{t("Bill")}</div>
             <span style={{ fontSize: 12, fontWeight: 800, color: settled ? GREEN : AMBER }}>{settled ? t("Settled") : t("Open")}</span>
           </div>
-          {canSettle && (
+          {canSettle && !combined && (
             <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
               {order.paymentStatus === "PAID" ? (
                 <PrimaryButton disabled={busy} onClick={() => handleSettle()} variant="success" style={{ width: "100%", padding: "10px", fontSize: 12.5 }}>{t("Settle bill")} · ₹{order.total}</PrimaryButton>
@@ -330,6 +361,17 @@ export default function OrderDetailPage() {
           )}
         </GlassCard>
       </div>
+
+      {combined && (
+        <div style={{ margin: "0 16px 14px" }}>
+          <CombinedBillPanel
+            scope={billGroup.scope} orders={billGroup.orders} onChanged={load}
+            title={billGroup.scope.tableNo
+              ? t("Table {n} bill · {c} orders", { n: billGroup.scope.tableNo, c: billGroup.orders.length })
+              : t("Bill · {c} orders", { c: billGroup.orders.length })}
+          />
+        </div>
+      )}
 
       {/* Actions */}
       <div style={{ margin: "0 16px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -362,11 +404,18 @@ export default function OrderDetailPage() {
         {canAddItems && (
           <PrimaryButton disabled={busy} onClick={openAddItems} variant="outline">+ {t("Add items")}</PrimaryButton>
         )}
+        {canFollowUp && (
+          <div style={{ fontSize: 11.5, color: TEXT_FAINT, textAlign: "center", marginTop: -4 }}>
+            {t("Already in the kitchen — added items go on a new KOT and the same bill.")}
+          </div>
+        )}
 
-        <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={handleBill} style={outlineBtn}>🧾 {t("Generate bill")}</button>
-          <button onClick={handlePrint} style={outlineBtn}>🖨️ {t("Print bill")}</button>
-        </div>
+        {!combined && (
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={handleBill} style={outlineBtn}>🧾 {t("Generate bill")}</button>
+            <button onClick={handlePrint} style={outlineBtn}>🖨️ {t("Print bill")}</button>
+          </div>
+        )}
         <button onClick={handleShowQr} style={{ ...outlineBtn, width: "100%" }}>📱 {t("Payment QR")}</button>
       </div>
 

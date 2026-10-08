@@ -26,4 +26,14 @@ export const settleOrders = (orderIds, paymentMethod) => api.post("/admin/orders
 export const getCombinedBill = (params) => api.get("/admin/orders/combined-bill", { params });
 export const printBill       = (id) => api.post(`/admin/orders/${id}/print-bill`);
 
+// ── KH-07 / KH-03 — follow-up orders + combined bill ─────────────────────
+// An order with its follow-ups ("add items" after the KOT).
+export const getOrderGroup = (id) => api.get(`/admin/orders/${id}/group`);
+// Combined bill — body: { tableNo, orderIds } (a table) or { groupOf, orderIds }
+// (an order + its follow-ups, e.g. takeaway). Every id is re-checked server-side.
+export const previewCombinedBill  = (body) => api.post("/admin/combined-bill/preview", body);
+export const printCombinedBill    = (body) => api.post("/admin/combined-bill/print", body);
+export const payCombinedBill      = (body) => api.post("/admin/combined-bill/pay", body);
+export const settleCombinedBill   = (body) => api.post("/admin/combined-bill/complete", body);
+
 export const newIdempotencyKey = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
