@@ -1,6 +1,6 @@
 import express from "express";
 import { protect } from "../middleware/authMiddleware.js";
-import { requireStaff, requireAdmin } from "../middleware/rbac.js";
+import { requireStaff, requireAdmin, requireManagement } from "../middleware/rbac.js";
 import { requireWaiterOnDuty } from "../middleware/dutyMiddleware.js";
 import {
   getDashboardStats, getAllOrders, updateOrderPayment, updateOrderStatus,
@@ -34,7 +34,7 @@ router.post("/combined-bill/pay",      requireStaff, requireWaiterOnDuty, paySel
 router.post("/combined-bill/complete", requireStaff, requireWaiterOnDuty, completeSelectedOrders);
 router.get("/orders/:id/group",        requireStaff, getOrderGroup); // KH-07 — order + follow-ups
 router.get("/invoices/all",          requireStaff, getAllInvoices);
-router.patch("/invoices/:id/status", requireAdmin, updateInvoiceStatus);
+router.patch("/invoices/:id/status", requireManagement, updateInvoiceStatus);
 router.put("/orders/:id/status",     requireStaff, requireWaiterOnDuty, updateOrderStatus);
 router.patch("/orders/:id/payment",  requireStaff, requireWaiterOnDuty, updateOrderPayment);
 router.post("/orders/:id/add-items", requireStaff, requireWaiterOnDuty, addItemsToOrder);
@@ -42,7 +42,7 @@ router.post("/orders/:id/print-bill",requireStaff, printBill);
 // BIL-01/BIL-02 — billing workflow: settle bills (records payment if needed,
 // completes served orders) and admin-only reopen of a mistaken settlement.
 router.post("/orders/settle",        requireStaff, requireWaiterOnDuty, settleOrders);
-router.post("/orders/:id/reopen-bill", requireAdmin, reopenOrderBill);
+router.post("/orders/:id/reopen-bill", requireManagement, reopenOrderBill);
 
 // Admin only — account/user management
 // Admin → Insights: revenue by item/category, making cost, gross profit.
@@ -52,10 +52,10 @@ router.get("/users",         requireAdmin, getAllUsers);
 router.delete("/users/:id",  requireAdmin, deleteUser);
 
 // Admin only — employee attendance monitoring (Admin → Employees → Attendance)
-router.get("/attendance/today",         requireAdmin, getAdminAttendanceToday);
-router.get("/attendance/summary",       requireAdmin, getAdminAttendanceSummary);
-router.get("/attendance/duty-history",  requireAdmin, getAdminDutyHistory); // ON/OFF audit log
-router.get("/attendance/employee/:id",  requireAdmin, getAdminAttendanceEmployee);
-router.get("/attendance",               requireAdmin, getAdminAttendanceHistory);
+router.get("/attendance/today",         requireManagement, getAdminAttendanceToday);
+router.get("/attendance/summary",       requireManagement, getAdminAttendanceSummary);
+router.get("/attendance/duty-history",  requireManagement, getAdminDutyHistory); // ON/OFF audit log
+router.get("/attendance/employee/:id",  requireManagement, getAdminAttendanceEmployee);
+router.get("/attendance",               requireManagement, getAdminAttendanceHistory);
 
 export default router;

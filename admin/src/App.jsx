@@ -5,6 +5,7 @@ import { Toaster } from "react-hot-toast";
 
 import { useAuth } from "./hooks/useAuth";
 import { useLang } from "./hooks/useLang.js";
+import { isManager } from "./utils/access.js";
 //test
 
 // import LoginPage from "./pages/auth/LoginPage";
@@ -16,7 +17,7 @@ const LoginPage = lazy(() => import("./pages/LoginPage"));
 const KitchenDisplayPage = lazy(() => import("./pages/KitchenDisplayPage"));
 const RouteFallback = () => <div style={{ minHeight: "100vh", display: "grid", placeItems: "center" }}><div className="zc-spin" /></div>;
 
-function ProtectedAdmin({ children }) {
+function ProtectedAdmin({ children, adminOnly = false }) {
   const { user, isLoading } = useAuth();
 
   if (isLoading)
@@ -25,6 +26,8 @@ function ProtectedAdmin({ children }) {
     );
 
   if (!user) return <Navigate to="/login" replace />;
+  // A manager has the admin app without the admin-only screens (utils/access.js).
+  if (adminOnly && isManager(user)) return <Navigate to="/admin" replace />;
 
   // Optional: stricter admin check
   // if (user.role !== 'admin') return <Navigate to="/login" replace />;
@@ -58,7 +61,7 @@ export default function App() {
         <Route
           path="/kitchen"
           element={
-            <ProtectedAdmin>
+            <ProtectedAdmin adminOnly>
               <KitchenDisplayPage />
             </ProtectedAdmin>
           }

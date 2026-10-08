@@ -406,7 +406,7 @@ export const getMySummaryForRange = async ({ AttendanceSession, employeeId, from
 
 // ── Admin reads ──────────────────────────────────────────────────────────────
 
-const EMPLOYEE_ROLES_ALL = ["admin", "waiter", "chef", "staff"];
+const EMPLOYEE_ROLES_ALL = ["admin", "manager", "waiter", "chef", "staff"];
 
 /** Live board: every active employee + their today status, grouped by role
  * on the frontend (kept flat here — filtering/grouping is a display

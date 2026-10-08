@@ -4,7 +4,8 @@ import {
   toggleEmployeeStatus, getEmployeeStatsById, getPerformanceReport, getMyDashboard, getMyActivity, setShift,
 } from "../controllers/employeeController.js";
 import { protect } from "../middleware/authMiddleware.js";
-import { requireAdmin, requireEmployee } from "../middleware/rbac.js";
+import { requireAdmin, requireManagement, requireEmployee } from "../middleware/rbac.js";
+import { guardManagerTarget, guardManagerLeave, guardManagerReview } from "../middleware/managerScope.js";
 import { upload } from "../middleware/uploadMiddleware.js";
 import {
   hrSummary, updatePolicy, getReviews, reviewLookedInto, getPay, addAdvance, paySalary,
@@ -31,13 +32,18 @@ router.patch("/me/leave/:leaveId/cancel", requireEmployee, myLeaveCancel);
 // Admin-only — creating/managing OTHER people's accounts and viewing
 // performance across staff is structural/sensitive, matches how table and
 // menu management are already admin-only in this system.
-router.use(requireAdmin);
+// Admin, or a manager (who may only touch waiter / chef / other-staff records —
+// middleware/managerScope.js). The leave/pay policy is restaurant-wide: admin only.
+router.use(requireManagement);
+router.param("id", guardManagerTarget);
+router.param("leaveId", guardManagerLeave);
+router.param("reviewId", guardManagerReview);
 router.post("/",                addEmployee);
 router.get("/",                 getEmployees);
 router.get("/performance",      getPerformanceReport);
 // HR (Employees page tabs). Literal paths are mounted before "/:id".
 router.get("/hr/summary",       hrSummary);
-router.patch("/hr/policy",      updatePolicy);
+router.patch("/hr/policy",      requireAdmin, updatePolicy);
 router.patch("/reviews/:reviewId/looked-into", reviewLookedInto);
 router.patch("/leave/:leaveId", decide);
 router.get("/:id",              getEmployeeById);

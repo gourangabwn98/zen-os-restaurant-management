@@ -10,6 +10,8 @@ import {
 import { Loader, Badge } from "../shared/index.js";
 import ErrorState from "../shared/ErrorState.jsx";
 import { t, N_, fmtNum, fmtDate } from "../../../i18n/core.js";
+import { useAuth } from "../../../hooks/useAuth.js";
+import { isManager } from "../../../utils/access.js";
 
 const money = (n) => `₹${fmtNum(Math.round(n || 0))}`;
 const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -192,6 +194,7 @@ function PaySettings({ employee, hr, onSaved, onCancel }) {
 
 // Team-wide rules (RestaurantProfile.staffPolicy) — shared by Pay and Leave.
 export function TeamRules({ policy, onChanged }) {
+  const canChange = !isManager(useAuth().user); // restaurant-wide rules: admin only
   const [open, setOpen] = useState(false);
   const [f, setF] = useState({ paidLeavePerMonth: policy?.paidLeavePerMonth ?? 1, salaryDay: policy?.salaryDay ?? 5 });
   const [busy, setBusy] = useState(false);
@@ -214,7 +217,7 @@ export function TeamRules({ policy, onChanged }) {
           <span className="emp-hint">
             {t("Team rules: salary paid on day {d} of the next month · {n} paid leave days a month", { d: fmtNum(policy.salaryDay), n: fmtNum(policy.paidLeavePerMonth) })}
           </span>
-          <button type="button" className="zc-btn sm ghost" onClick={() => setOpen(true)}>{t("Change")}</button>
+          {canChange && <button type="button" className="zc-btn sm ghost" onClick={() => setOpen(true)}>{t("Change")}</button>}
         </>
       ) : (
         <form className="emp-inline-form" onSubmit={save}>

@@ -11,30 +11,36 @@ import { revenueOrderMatch } from "./insightsService.js";
 import { zonedInstant } from "./offerStatsService.js";
 
 // "staff" = EMP-03's "Other": a custom job (jobTitle) with no app login.
-export const EMPLOYEE_ROLES = ["waiter", "chef", "staff"]; // extensible — add new categories here only
+// "manager" = admin-app login limited to some pages (utils/roles.js).
+export const EMPLOYEE_ROLES = ["manager", "waiter", "chef", "staff"]; // extensible — add new categories here only
+
+/** The employee categories this person may see and manage: everything for
+ *  an admin; a manager never another manager (middleware/managerScope.js). */
+export const employeeRolesFor = (user) =>
+  (!user?.isAdmin && user?.role === "manager" ? EMPLOYEE_ROLES.filter((r) => r !== "manager") : EMPLOYEE_ROLES);
 
 /** EMP-03: a custom role name — trimmed, single-spaced, Title-ish as typed. */
 export const cleanJobTitle = (v) => String(v ?? "").trim().replace(/\s+/g, " ").slice(0, 40);
 
 const PHONE_RE = /^[6-9]\d{9}$/; // Indian mobile numbers, matching the OTP flow already in place
 
-export const validateEmployeeInput = ({ name, phone, role, jobTitle }) => {
+export const validateEmployeeInput = ({ name, phone, role, jobTitle, roles = EMPLOYEE_ROLES }) => {
   if (!name || !name.trim()) {
     const err = new Error("Employee name is required"); err.statusCode = 400; throw err;
   }
   if (!phone || !PHONE_RE.test(String(phone).trim())) {
     const err = new Error("Enter a valid 10-digit phone number"); err.statusCode = 400; throw err;
   }
-  if (!EMPLOYEE_ROLES.includes(role)) {
-    const err = new Error(`Category must be one of: ${EMPLOYEE_ROLES.join(", ")}`); err.statusCode = 400; throw err;
+  if (!roles.includes(role)) {
+    const err = new Error(`Category must be one of: ${roles.join(", ")}`); err.statusCode = 400; throw err;
   }
   if (role === "staff" && !cleanJobTitle(jobTitle)) {
     const err = new Error("Type the role for \"Other\" (e.g. Cashier, Helper)"); err.statusCode = 400; throw err;
   }
 };
 
-export const createEmployee = async ({ User, name, phone, address, role, jobTitle }) => {
-  validateEmployeeInput({ name, phone, role, jobTitle });
+export const createEmployee = async ({ User, name, phone, address, role, jobTitle, roles = EMPLOYEE_ROLES }) => {
+  validateEmployeeInput({ name, phone, role, jobTitle, roles });
   const cleanPhone = String(phone).trim();
 
   // Uniqueness among ACTIVE accounts only — a deactivated ex-employee's old
@@ -108,15 +114,15 @@ export const cleanHrInput = (input = {}) => {
   return out;
 };
 
-export const updateEmployee = async ({ User, id, name, address, role, jobTitle, hr }) => {
-  const employee = await User.findOne({ _id: id, role: { $in: EMPLOYEE_ROLES } });
+export const updateEmployee = async ({ User, id, name, address, role, jobTitle, hr, roles = EMPLOYEE_ROLES }) => {
+  const employee = await User.findOne({ _id: id, role: { $in: roles } });
   if (!employee) { const err = new Error("Employee not found"); err.statusCode = 404; throw err; }
 
   if (name !== undefined) employee.name = name.trim();
   if (address !== undefined) employee.address = address.trim();
   if (role !== undefined) {
-    if (!EMPLOYEE_ROLES.includes(role)) {
-      const err = new Error(`Category must be one of: ${EMPLOYEE_ROLES.join(", ")}`); err.statusCode = 400; throw err;
+    if (!roles.includes(role)) {
+      const err = new Error(`Category must be one of: ${roles.join(", ")}`); err.statusCode = 400; throw err;
     }
     employee.role = role;
   }
@@ -136,12 +142,12 @@ export const updateEmployee = async ({ User, id, name, address, role, jobTitle, 
   return employee;
 };
 
-export const setEmployeeStatus = async ({ User, id, status }) => {
+export const setEmployeeStatus = async ({ User, id, status, roles = EMPLOYEE_ROLES }) => {
   if (!["Active","Inactive"].includes(status)) {
     const err = new Error('status must be "Active" or "Inactive"'); err.statusCode = 400; throw err;
   }
   const employee = await User.findOneAndUpdate(
-    { _id: id, role: { $in: EMPLOYEE_ROLES } },
+    { _id: id, role: { $in: roles } },
     { $set: { status } },
     { returnDocument: "after" }
   );
@@ -149,9 +155,9 @@ export const setEmployeeStatus = async ({ User, id, status }) => {
   return employee;
 };
 
-export const listEmployees = async ({ User, role, search, status }) => {
-  const filter = { role: { $in: EMPLOYEE_ROLES } };
-  if (role && EMPLOYEE_ROLES.includes(role)) filter.role = role;
+export const listEmployees = async ({ User, role, search, status, roles = EMPLOYEE_ROLES }) => {
+  const filter = { role: { $in: roles } };
+  if (role && roles.includes(role)) filter.role = role;
   if (status && ["Active","Inactive"].includes(status)) filter.status = status;
   if (search?.trim()) {
     const re = new RegExp(search.trim(), "i");
@@ -251,8 +257,8 @@ export const getEmployeeTodayStats = async ({ Order, employeeId, role, from, to,
 };
 
 /** Admin-wide employee performance list, optionally scoped to a date range. */
-export const getEmployeePerformance = async ({ User, Order, from, to, role, tz }) => {
-  const employees = await listEmployees({ User, role });
+export const getEmployeePerformance = async ({ User, Order, from, to, role, tz, roles = EMPLOYEE_ROLES }) => {
+  const employees = await listEmployees({ User, role, roles });
   // Same day boundaries as every other employee figure (was new Date(from),
   // i.e. UTC midnight, and an inclusive "to" that stopped at its 00:00).
   const { start: rangeStart, end: rangeEnd } = resolveRange(from, to, tz);

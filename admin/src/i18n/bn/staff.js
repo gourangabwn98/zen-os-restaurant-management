@@ -274,4 +274,8 @@ export default {
   "by admin": "অ্যাডমিন",
   "No duty changes": "ডিউটির কোনো পরিবর্তন নেই",
   "Nobody went on or off duty on this day with these filters.": "এই দিনে এই ফিল্টারে কেউ ডিউটি চালু বা বন্ধ করেননি।",
+  // Manager role — a limited admin-app login.
+  "Manager": "ম্যানেজার",
+  "Managers": "ম্যানেজার",
+  "A manager signs in to this admin app and sees only Orders, Invoices, Tables, Inventory, Employees, Menu and Help.": "ম্যানেজার এই অ্যাডমিন অ্যাপে লগইন করেন এবং শুধু অর্ডার, ইনভয়েস, টেবিল, ইনভেন্টরি, কর্মী, মেনু ও সাহায্য দেখতে পান।",
 };

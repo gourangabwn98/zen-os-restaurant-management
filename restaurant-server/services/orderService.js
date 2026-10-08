@@ -20,12 +20,13 @@ import {
   deductStockForOrder, reverseStockForOrder, calculateRecipeConsumption, validateInventoryForConsumption,
 } from "./inventoryService.js";
 import { isPhonePeConfigured } from "./paymentService.js";
+import { isStaffRole, isManagementRole } from "../utils/roles.js";
 import { assertServiceEnabled } from "../utils/serviceToggles.js";
 import { resolveCustomerPaymentMethod, isPayFirst, PAYMENT_METHODS, PAY_FIRST_WINDOW_MS } from "../utils/paymentMode.js";
 
 // ── Identity helpers ──────────────────────────────────────────────────────
 
-/** Lowercase role: "admin" | "waiter" | "customer" — never trust req.body for this. */
+/** Lowercase role: "admin" | "manager" | "waiter" | "chef" | "customer" — never trust req.body for this. */
 export const getRoleFromUser = (user) => {
   if (!user) return "customer";
   if (user.isAdmin) return "admin";
@@ -38,7 +39,7 @@ export const getRoleFromUser = (user) => {
  * performed a given action) below. */
 export const getSourceFromUser = (user) => {
   const role = getRoleFromUser(user);
-  if (role === "admin") return "ADMIN";
+  if (isManagementRole(role)) return "ADMIN"; // a manager places orders as the office (utils/roles.js)
   if (role === "waiter") return "WAITER";
   return "CUSTOMER";
 };
@@ -51,7 +52,7 @@ export const getSourceFromUser = (user) => {
  * wrong for reporting/statistics. */
 const getActorRole = (user) => {
   const role = getRoleFromUser(user);
-  if (role === "admin") return "ADMIN";
+  if (isManagementRole(role)) return "ADMIN"; // actor.name still says which person
   if (role === "waiter") return "WAITER";
   if (role === "chef") return "CHEF";
   return "CUSTOMER";
@@ -541,7 +542,7 @@ export const modifyOrderItemsTx = async ({ req, orderId, items, revision }) => {
   }
 
   const role = getRoleFromUser(req.user);
-  const isStaff = role === "admin" || role === "waiter";
+  const isStaff = isStaffRole(role);
   if (role === "chef") {
     const err = new Error("Chef accounts cannot edit orders");
     err.statusCode = 403;
@@ -655,7 +656,7 @@ export const cancelOrderTx = async ({ req, orderId, reason }) => {
 
   if (req.user) {
     role = getRoleFromUser(req.user);
-    const isStaff = role === "admin" || role === "waiter";
+    const isStaff = isStaffRole(role);
     if (!isStaff && String(order.user) !== String(req.user._id)) {
       const err = new Error("You can only cancel your own order");
       err.statusCode = 403;
@@ -901,7 +902,7 @@ export const completeOrderByAdminTx = async ({ req, current, note }) => {
 // ── Ownership check for read access ───────────────────────────────────────
 export const assertCanViewOrder = (req, order) => {
   const role = getRoleFromUser(req.user);
-  const isStaff = role === "admin" || role === "waiter";
+  const isStaff = isStaffRole(role);
   if (isStaff) return;
 
   if (req.user) {

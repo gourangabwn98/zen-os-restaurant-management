@@ -1,5 +1,6 @@
 // controllers/menuController.js
 // ADD at the top of menuController.js
+import { isManagementRole } from "../utils/roles.js";
 import { v2 as cloudinary } from "cloudinary";
 import { computeStockStatusForMenuItems } from "../services/inventoryService.js";
 import { getScheduleContext, isItemScheduledNow, applyBulkSchedule } from "../services/menuScheduleService.js";
@@ -47,7 +48,7 @@ export const getMenu = async (req, res) => {
   try {
     const { MenuItem, Category } = req.models;
     const { category, search, vegOnly, includeUnavailable, ignoreSchedule } = req.query;
-    const isAdmin = !!(req.user?.isAdmin || req.user?.role === "admin");
+    const isAdmin = !!(req.user?.isAdmin || isManagementRole(req.user?.role)); // admin or manager (Menu page)
     const filter = { isAvailable: true };
     const and = [];
     // Admin menu management needs to see hidden items too (to un-hide them or

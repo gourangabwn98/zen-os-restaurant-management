@@ -43,6 +43,7 @@
 //   waiter_call:activity { event, call }             → staff room, silent (admin notification panel)
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { isStaffRole } from "../utils/roles.js";
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import { getDB } from "../config/db.js";
@@ -94,7 +95,7 @@ export const initSocket = (httpServer) => {
         socket.tenantKey = tenantKeyFromUri(mongoUri);
         socket.userId    = String(user._id);
         socket.role       = user.isAdmin ? "admin" : (user.role || "customer");
-        socket.isStaff     = socket.role === "admin" || socket.role === "waiter";
+        socket.isStaff     = isStaffRole(socket.role); // admin / manager / waiter
         // A chef joins the kitchen room (KOT + status events only), never
         // the staff room — that room carries payment status and guest
         // name/phone, which a chef must never receive.

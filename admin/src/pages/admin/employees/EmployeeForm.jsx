@@ -8,9 +8,11 @@ import { addEmployee, editEmployee } from "../../../services/adminService.js";
 import { Modal } from "../inventory/invUI.jsx";
 import { t } from "../../../i18n/core.js";
 import { ROLE_LABEL } from "./shared.js";
+import { useAuth } from "../../../hooks/useAuth.js";
+import { isManager } from "../../../utils/access.js";
 
 // EMP-03 — common jobs offered for "Other"; anything else can be typed.
-const SUGGESTED_JOBS = ["Cashier", "Cleaner", "Dishwasher", "Helper", "Manager", "Delivery", "Security"];
+const SUGGESTED_JOBS = ["Cashier", "Cleaner", "Dishwasher", "Helper", "Delivery", "Security"]; // "Manager" is a real role now
 
 const Field = ({ label, hint, children }) => (
   <label style={{ display: "block", marginBottom: 14 }}>
@@ -22,6 +24,8 @@ const Field = ({ label, hint, children }) => (
 
 export default function EmployeeForm({ employee, customRoles = [], onClose, onSaved }) {
   const isEdit = !!employee;
+  // Only the admin makes managers (the server refuses it from a manager too).
+  const canMakeManager = !isManager(useAuth().user);
   const [name, setName] = useState(employee?.name || "");
   const [phone, setPhone] = useState(employee?.phone || "");
   const [address, setAddress] = useState(employee?.address || "");
@@ -54,7 +58,8 @@ export default function EmployeeForm({ employee, customRoles = [], onClose, onSa
   return (
     <Modal
       title={isEdit ? t("Edit Employee") : t("Add Employee")}
-      sub={isEdit ? undefined : t("Waiters and kitchen staff log in with their own phone + OTP. Other staff are kept for attendance and pay only.")}
+      sub={isEdit ? undefined : t("Waiters and kitchen staff log in with their own phone + OTP. Other staff are kept for attendance and pay only.")
+        + (canMakeManager ? ` ${t("A manager signs in to this admin app and sees only Orders, Invoices, Tables, Inventory, Employees, Menu and Help.")}` : "")}
       onClose={onClose}
       width={460}
       footer={
@@ -82,6 +87,7 @@ export default function EmployeeForm({ employee, customRoles = [], onClose, onSa
         </Field>
         <Field label={t("Role")}>
           <select className="zc-select" value={role} onChange={(e) => setRole(e.target.value)}>
+            {canMakeManager && <option value="manager">{t("Manager")}</option>}
             <option value="waiter">{t("Waiter")}</option>
             <option value="chef">{t("Chef")}</option>
             <option value="staff">{t("Other (type the job)")}</option>

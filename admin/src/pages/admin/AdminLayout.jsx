@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.js";
+import { canOpenPage, isManager } from "../../utils/access.js";
 import { getDashboard, getRestaurantProfile } from "../../services/adminService.js";
 import { getSocket } from "../../services/socketService.js";
 import { useLiveOrders } from "../../hooks/useLiveOrders.js";
@@ -206,10 +207,19 @@ export default function AdminLayout() {
 
   // Open page survives a refresh and a language switch (which remounts the
   // app — see i18n/LanguageProvider.jsx). Per tab, so two tabs stay independent.
-  const [page, setPage]               = useState(() => {
+  const [page, setPageRaw]            = useState(() => {
     // Attendance now lives inside Employees (person → Attendance tab).
-    try { const p = sessionStorage.getItem("adminPage") || "orders"; return p === "attendance" ? "employees" : p; } catch { return "orders"; }
+    try {
+      const p = sessionStorage.getItem("adminPage") || "orders";
+      const want = p === "attendance" ? "employees" : p;
+      return canOpenPage(user, want) ? want : "orders"; // a manager never lands on an admin-only page
+    } catch { return "orders"; }
   });
+  // Every way of changing page (sidebar, bell, a page's own links) goes
+  // through here, so a manager can't be sent to a page they don't have.
+  const setPage = useCallback((id) => { if (canOpenPage(user, id)) setPageRaw(id); }, [user]);
+  const manager = isManager(user);
+  const allowed = (list) => list.filter((n) => canOpenPage(user, n.id));
   useEffect(() => { try { sessionStorage.setItem("adminPage", page); } catch { /* storage disabled */ } }, [page]);
   const [dashboardData, setDashboardData] = useState(null);
   const [restaurant, setRestaurant]   = useState(null);
@@ -333,30 +343,32 @@ export default function AdminLayout() {
           )}
 
           <div className="zc-navgrp">{t("Operations")}</div>
-          {OPERATIONS_NAV_A.map((n) => (
+          {allowed(OPERATIONS_NAV_A).map((n) => (
             <NavItem key={n.id} {...n} rail={rail} active={page === n.id} count={badgeFor(n.badgeKey)} onClick={() => go(n.id)} />
           ))}
-          <a href="/kitchen" target="_blank" rel="noopener noreferrer" className="zc-nav" style={{ textDecoration: "none" }}
-            title={rail ? t("Kitchen Display") : undefined} aria-label={rail ? t("Kitchen Display") : undefined}>
-            <Icon id="chef" />{!rail && t("Kitchen Display")}
-          </a>
-          {OPERATIONS_NAV_B.map((n) => (
+          {!manager && (
+            <a href="/kitchen" target="_blank" rel="noopener noreferrer" className="zc-nav" style={{ textDecoration: "none" }}
+              title={rail ? t("Kitchen Display") : undefined} aria-label={rail ? t("Kitchen Display") : undefined}>
+              <Icon id="chef" />{!rail && t("Kitchen Display")}
+            </a>
+          )}
+          {allowed(OPERATIONS_NAV_B).map((n) => (
             <NavItem key={n.id} {...n} rail={rail} active={page === n.id} onClick={() => go(n.id)} />
           ))}
 
           <div className="zc-navgrp">{t("Management")}</div>
-          {MANAGEMENT_NAV.map((n) => (
+          {allowed(MANAGEMENT_NAV).map((n) => (
             <NavItem key={n.id} {...n} rail={rail} active={page === n.id} onClick={() => go(n.id)} />
           ))}
 
-          <div className="zc-navgrp">{t("Finance")}</div>
-          {FINANCE_NAV.map((n) => (
+          {allowed(FINANCE_NAV).length > 0 && <div className="zc-navgrp">{t("Finance")}</div>}
+          {allowed(FINANCE_NAV).map((n) => (
             <NavItem key={n.id} {...n} rail={rail} active={page === n.id} onClick={() => go(n.id)} />
           ))}
 
           <div className="side-sp" />
           <div className="zc-navgrp">{t("Settings")}</div>
-          {SETTINGS_NAV.map((n) => (
+          {allowed(SETTINGS_NAV).map((n) => (
             <NavItem key={n.id} {...n} rail={rail} active={page === n.id} onClick={() => go(n.id)} />
           ))}
 
@@ -364,7 +376,7 @@ export default function AdminLayout() {
             <div className="side-who">
               <div className="av">{(user.name || user.email || "A").charAt(0).toUpperCase()}</div>
               <div style={{ minWidth: 0 }}>
-                <div className="n">{user.name || t("Admin")}</div>
+                <div className="n">{user.name || t(manager ? "Manager" : "Admin")}{manager && <span style={{ color: "var(--text-3)", fontWeight: 500 }}> · {t("Manager")}</span>}</div>
                 <div className="r">{user.email || user.phone || ""}</div>
               </div>
             </div>

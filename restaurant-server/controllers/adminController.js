@@ -1,6 +1,7 @@
 // controllers/adminController.js
 import mongoose from "mongoose";
 import { lineAddonKey, addonsForPrint } from "../utils/menuAddons.js";
+import { isManagementRole } from "../utils/roles.js";
 import { parseGuests, applyGuestsToOrder } from "../services/acServiceCharge.js";
 import { priceItems, computeTotals } from "../utils/pricing.js";
 import { getScheduleContext } from "../services/menuScheduleService.js";
@@ -189,8 +190,8 @@ export const getAllOrders = async (req, res) => {
       else filter.$or = live;
     }
     // Unpaid pay-first orders haven't reached the floor yet — waiters never
-    // see them (admin does, to follow up). See utils/paymentMode.js.
-    if (getRoleFromUser(req.user) !== "admin") {
+    // see them (admin / manager do, to follow up). See utils/paymentMode.js.
+    if (!isManagementRole(getRoleFromUser(req.user))) {
       filter.status = filter.status === "AWAITING_PAYMENT" ? { $in: [] } : (filter.status || { $ne: "AWAITING_PAYMENT" });
     }
 

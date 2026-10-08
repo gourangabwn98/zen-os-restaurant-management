@@ -762,11 +762,13 @@ export const firebaseLogin = async (req, res) => {
     const { User } = getModels(await getDB(process.env.MONGO_URI));
 
     // "admin" is the only admin role (middleware/rbac.js); isAdmin covers
-    // accounts created before `role` existed.
-    const user = await User.findOne({ phone, $or: [{ isAdmin: true }, { role: "admin" }] });
+    // accounts created before `role` existed. A "manager" (made by an admin
+    // in Employees) signs in here too and gets a limited admin app —
+    // utils/roles.js; the server's RBAC enforces the limit, not the UI.
+    const user = await User.findOne({ phone, $or: [{ isAdmin: true }, { role: { $in: ["admin", "manager"] } }] });
 
     if (!user)
-      return res.status(403).json({ message: "Phone not registered as admin" });
+      return res.status(403).json({ message: "Phone not registered as admin or manager" });
     if (user.status === "Inactive")
       return res.status(403).json({ message: "This admin account has been deactivated" });
 

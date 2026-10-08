@@ -45,8 +45,9 @@ const userSchema = new mongoose.Schema({
   themePreference: { type: String, enum: ["light","dark","system"], default: "dark" },
   isAdmin:    { type: Boolean, default: false },
   // "staff" (EMP-03) = an employee with a custom job (Cashier, Helper …) and
-  // no app login — the OTP login and RBAC only ever accept admin/waiter/chef.
-  role:       { type: String, enum: ["admin","waiter","chef","customer","staff"], default: "customer" },
+  // no app login — the OTP login and RBAC only ever accept admin/manager/waiter/chef.
+  // "manager" = admin-app login limited to some pages (utils/roles.js).
+  role:       { type: String, enum: ["admin","manager","waiter","chef","customer","staff"], default: "customer" },
   // EMP-03 — the custom role name for role "staff" (reused for later hires).
   jobTitle:   { type: String, default: "", trim: true, maxlength: 40 },
   address:    { type: String, default: "" }, // employee address (Employee Management)
@@ -868,7 +869,7 @@ const attendanceBreakSchema = new mongoose.Schema({
 
 const attendanceSessionSchema = new mongoose.Schema({
   employee:     { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  role:         { type: String, enum: ["admin","waiter","chef","staff"], required: true },
+  role:         { type: String, enum: ["admin","manager","waiter","chef","staff"], required: true },
   // EMP-01 — a manager set this person's shift state. Such a session isn't
   // closed by the heartbeat sweep (the person may have no app open at all).
   managed:      { type: Boolean, default: false },
@@ -920,7 +921,7 @@ attendanceSessionSchema.index({ loginAt: -1 });
 const dutyHistorySchema = new mongoose.Schema({
   employee:     { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   employeeName: { type: String, default: "" },
-  employeeRole: { type: String, enum: ["admin","waiter","chef","staff"], required: true },
+  employeeRole: { type: String, enum: ["admin","manager","waiter","chef","staff"], required: true },
   action:       { type: String, enum: DUTY_ACTIONS, required: true },
   source:       { type: String, enum: DUTY_CHANGE_SOURCES, required: true },
   changedBy:    { type: actorSchema, required: true },

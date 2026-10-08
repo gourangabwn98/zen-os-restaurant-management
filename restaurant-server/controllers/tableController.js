@@ -1,4 +1,5 @@
 // controllers/tableController.js
+import { isStaffRole } from "../utils/roles.js";
 import * as QRCode from "qrcode";
 import crypto from "crypto";
 
@@ -102,7 +103,7 @@ export const getTables = async (req, res) => {
     const base = customerBaseUrl();
     // qrStale: the printed QR doesn't open today's customer app — regenerate it.
     // The token itself is never sent to non-staff (it's what proves a scan).
-    const staff = ["admin", "waiter"].includes(req.user?.isAdmin ? "admin" : req.user?.role);
+    const staff = isStaffRole(req.user?.isAdmin ? "admin" : req.user?.role);
     res.json({
       tables: tables.map((t) => (staff
         ? { ...t, ...withNames(t), qrStale: isQrStale(t, base) }

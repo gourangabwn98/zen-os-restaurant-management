@@ -1,6 +1,7 @@
 // controllers/categoryController.js
 // Thin HTTP layer over services/categoryService.js (rename cascade, in-use
 // delete guard, case-insensitive unique names live there).
+import { isManagementRole } from "../utils/roles.js";
 import { getScheduleContext } from "../services/menuScheduleService.js";
 import {
   listCategoriesWithCounts,
@@ -13,7 +14,7 @@ import {
 } from "../services/categoryService.js";
 import { emitMenuUpdated } from "../sockets/socket.js";
 
-const isAdminUser = (user) => !!(user?.isAdmin || user?.role === "admin");
+const isAdminUser = (user) => !!(user?.isAdmin || isManagementRole(user?.role)); // admin or manager (Menu page)
 const fail = (res, err) => res.status(err.statusCode || 500).json({ message: err.message });
 
 /** Uploads a multer memory file to Cloudinary; resolves to its https URL. */

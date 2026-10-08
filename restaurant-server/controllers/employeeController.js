@@ -1,7 +1,7 @@
 // controllers/employeeController.js
 import {
   createEmployee, updateEmployee, setEmployeeStatus, listEmployees,
-  getEmployeeTodayStats, getEmployeePerformance, getWaiterOrderActivity, EMPLOYEE_ROLES, listCustomRoles,
+  getEmployeeTodayStats, getEmployeePerformance, getWaiterOrderActivity, employeeRolesFor, listCustomRoles,
 } from "../services/employeeService.js";
 import { getMySummaryForRange, setEmployeeShift, shiftStateOf } from "../services/attendanceService.js";
 import { buildActor } from "../services/orderService.js";
@@ -18,7 +18,7 @@ export const addEmployee = async (req, res) => {
   try {
     const { User } = req.models;
     const { name, phone, address, role, jobTitle } = req.body;
-    const employee = await createEmployee({ User, name, phone, address, role, jobTitle });
+    const employee = await createEmployee({ User, name, phone, address, role, jobTitle, roles: employeeRolesFor(req.user) });
     res.status(201).json({ employee });
   } catch (err) {
     res.status(err.statusCode || 500).json({ message: err.message });
@@ -29,14 +29,15 @@ export const getEmployees = async (req, res) => {
   try {
     const { User } = req.models;
     const { role, search, status } = req.query;
-    const employees = await listEmployees({ User, role, search, status });
+    const roles = employeeRolesFor(req.user);
+    const employees = await listEmployees({ User, role, search, status, roles });
     // EMP-01: each person's current shift state (from their open session, if any).
     const open = await req.models.AttendanceSession.find({ employee: { $in: employees.map((e) => e._id) }, status: "OPEN" })
       .select("employee status presenceStatus managed").lean();
     const byEmp = new Map(open.map((s) => [String(s.employee), s]));
     res.json({
       employees: employees.map((e) => ({ ...e.toObject(), shiftState: shiftStateOf(byEmp.get(String(e._id))) })),
-      categories: EMPLOYEE_ROLES,
+      categories: roles, // a manager can't add another manager
       customRoles: await listCustomRoles({ User }), // EMP-03
     });
   } catch (err) {
@@ -47,7 +48,7 @@ export const getEmployees = async (req, res) => {
 export const getEmployeeById = async (req, res) => {
   try {
     const { User } = req.models;
-    const employee = await User.findOne({ _id: req.params.id, role: { $in: EMPLOYEE_ROLES } })
+    const employee = await User.findOne({ _id: req.params.id, role: { $in: employeeRolesFor(req.user) } })
       .select("-otp -otpExpiry -password");
     if (!employee) return res.status(404).json({ message: "Employee not found" });
     res.json({ employee });
@@ -60,7 +61,7 @@ export const editEmployee = async (req, res) => {
   try {
     const { User } = req.models;
     const { name, address, role, jobTitle, hr } = req.body;
-    const employee = await updateEmployee({ User, id: req.params.id, name, address, role, jobTitle, hr });
+    const employee = await updateEmployee({ User, id: req.params.id, name, address, role, jobTitle, hr, roles: employeeRolesFor(req.user) });
     res.json({ employee });
   } catch (err) {
     res.status(err.statusCode || 500).json({ message: err.message });
@@ -70,7 +71,7 @@ export const editEmployee = async (req, res) => {
 export const toggleEmployeeStatus = async (req, res) => {
   try {
     const { User } = req.models;
-    const employee = await setEmployeeStatus({ User, id: req.params.id, status: req.body.status });
+    const employee = await setEmployeeStatus({ User, id: req.params.id, status: req.body.status, roles: employeeRolesFor(req.user) });
     res.json({ employee });
   } catch (err) {
     res.status(err.statusCode || 500).json({ message: err.message });
@@ -82,7 +83,7 @@ export const getEmployeeStatsById = async (req, res) => {
   try {
     const { User, Order } = req.models;
     const { from, to } = req.query;
-    const employee = await User.findOne({ _id: req.params.id, role: { $in: EMPLOYEE_ROLES } });
+    const employee = await User.findOne({ _id: req.params.id, role: { $in: employeeRolesFor(req.user) } });
     if (!employee) return res.status(404).json({ message: "Employee not found" });
     const stats = await getEmployeeTodayStats({ Order, employeeId: employee._id, role: employee.role, from, to, tz: await restaurantTz(req.models) });
     res.json({ employee: { _id: employee._id, name: employee.name, role: employee.role }, stats });
@@ -96,7 +97,7 @@ export const getPerformanceReport = async (req, res) => {
   try {
     const { User, Order } = req.models;
     const { from, to, role } = req.query;
-    const performance = await getEmployeePerformance({ User, Order, from, to, role, tz: await restaurantTz(req.models) });
+    const performance = await getEmployeePerformance({ User, Order, from, to, role, tz: await restaurantTz(req.models), roles: employeeRolesFor(req.user) });
     res.json({ performance });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -131,11 +132,11 @@ export const getMyDashboard = async (req, res) => {
   try {
     const { Order } = req.models;
     const role = getRoleFromUser(req.user);
-    if (!["waiter","chef","admin"].includes(role)) {
+    if (!["waiter","chef","admin","manager"].includes(role)) {
       return res.status(403).json({ message: "Not an employee account" });
     }
     const tz = await restaurantTz(req.models);
-    const stats = role === "admin"
+    const stats = role === "admin" || role === "manager"
       ? await getEmployeeTodayStats({ Order, employeeId: req.user._id, role: "waiter", tz }) // admins acting as staff, e.g. taking orders themselves
       : await getEmployeeTodayStats({ Order, employeeId: req.user._id, role, tz });
     res.json({
@@ -153,7 +154,7 @@ export const getMyDashboard = async (req, res) => {
 export const setShift = async (req, res) => {
   try {
     const { User, AttendanceSession, DutyHistory } = req.models;
-    const employee = await User.findOne({ _id: req.params.id, role: { $in: EMPLOYEE_ROLES }, status: { $ne: "Inactive" } });
+    const employee = await User.findOne({ _id: req.params.id, role: { $in: employeeRolesFor(req.user) }, status: { $ne: "Inactive" } });
     if (!employee) return res.status(404).json({ message: "Employee not found" });
     const r = await setEmployeeShift({
       AttendanceSession, DutyHistory, employee, state: req.body?.state, reason: req.body?.reason, actor: buildActor(req.user),

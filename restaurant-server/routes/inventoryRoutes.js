@@ -1,6 +1,6 @@
 import express from "express";
 import { protect } from "../middleware/authMiddleware.js";
-import { requireStaff, requireAdmin } from "../middleware/rbac.js";
+import { requireStaff, requireManagement } from "../middleware/rbac.js";
 import { importUploadSingle } from "../middleware/importUploadMiddleware.js";
 import {
   getOverview,
@@ -29,9 +29,9 @@ router.get("/overview", requireStaff, getOverview);
 // floor action (physical counts, spoil corrections) so it's staff.
 router.get("/items",            requireStaff, getItems);
 router.get("/items/:id",        requireStaff, getItemById);
-router.post("/items",           requireAdmin, createItem);
-router.put("/items/:id",        requireAdmin, updateItem);
-router.delete("/items/:id",     requireAdmin, deleteItem);
+router.post("/items",           requireManagement, createItem);
+router.put("/items/:id",        requireManagement, updateItem);
+router.delete("/items/:id",     requireManagement, deleteItem);
 router.patch("/items/:id/adjust", requireStaff, adjustItemStock);
 
 // Purchases — routine floor/back-of-house receiving, staff-allowed.
@@ -41,16 +41,16 @@ router.post("/purchases",       requireStaff, createPurchase);
 // INV-05 — photo of the supplier's bill (kept as proof; its number is read to suggest INV-02).
 router.post("/purchases/bill-photo", requireStaff, importUploadSingle("file"), uploadPurchaseBillPhoto);
 // INV-06/07 — what's still owed to the owner (Owner's Pocket) and suppliers (Credit).
-router.get("/payables",         requireAdmin, getPayables);
-router.post("/purchases/:id/settle-payable", requireAdmin, settlePayable);
+router.get("/payables",         requireManagement, getPayables);
+router.post("/purchases/:id/settle-payable", requireManagement, settlePayable);
 router.get("/cash-out",         requireStaff, getCashOut);
 
 // Purchase import (PDF/image → extracted lines → reviewed → recordPurchase).
 // Admin-only: importing can create new InventoryItem definitions, which is
 // already an admin-only action (see POST /items above) — the import path
 // doesn't get a looser rule just because it's new.
-router.post("/import/extract",  requireAdmin, importUploadSingle("file"), extractPurchaseDocument);
-router.post("/import/confirm",  requireAdmin, confirmPurchaseImport);
+router.post("/import/extract",  requireManagement, importUploadSingle("file"), extractPurchaseDocument);
+router.post("/import/confirm",  requireManagement, confirmPurchaseImport);
 
 // Stock Movements (ledger) — read-only audit trail.
 router.get("/movements",        requireStaff, getMovements);
@@ -66,14 +66,14 @@ router.post("/wastage",         requireStaff, createWastage);
 // (useful while taking orders) and check a single menu item's live status.
 router.get("/recipes",                     requireStaff, getRecipes);
 router.get("/recipes/menu-item/:menuItemId", requireStaff, getRecipeForMenuItem);
-router.post("/recipes",                    requireAdmin, upsertRecipe);
-router.delete("/recipes/:id",              requireAdmin, deleteRecipe);
+router.post("/recipes",                    requireManagement, upsertRecipe);
+router.delete("/recipes/:id",              requireManagement, deleteRecipe);
 
 // Suppliers — structural config, admin only.
 router.get("/suppliers",        requireStaff, getSuppliers);
 // INV-01: a new supplier can be added inline while recording a purchase (staff).
 router.post("/suppliers",       requireStaff, createSupplier);
-router.put("/suppliers/:id",    requireAdmin, updateSupplier);
-router.delete("/suppliers/:id", requireAdmin, deleteSupplier);
+router.put("/suppliers/:id",    requireManagement, updateSupplier);
+router.delete("/suppliers/:id", requireManagement, deleteSupplier);
 
 export default router;

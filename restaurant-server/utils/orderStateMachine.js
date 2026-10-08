@@ -29,7 +29,7 @@
 // ADMIN_COMPLETE_FROM) — (forward, backward, or sideways into/out of
 // CANCELLED) to correct a mis-click or a support dispute — see the
 // `role === "admin"` bypass in validateTransition below. Every other role
-// (waiter/chef/customer) stays restricted to the explicit TRANSITIONS /
+// (manager/waiter/chef/customer) stays restricted to the explicit TRANSITIONS /
 // TRANSITION_ROLES maps exactly as before.
 //
 // An admin override is always a pure `status` field flip — it never
@@ -103,15 +103,15 @@ const TRANSITION_ROLES = {
   // Only the server itself, on a checksum-verified payment — never a person.
   "AWAITING_PAYMENT->PENDING_CONFIRMATION": ["system"],
   // Customer gives up before paying, or the server expires it unpaid.
-  "AWAITING_PAYMENT->CANCELLED":     ["admin", "customer", "system"],
-  "PENDING_CONFIRMATION->CONFIRMED": ["admin", "waiter"],
-  "PENDING_CONFIRMATION->CANCELLED": ["admin", "waiter", "customer"],
+  "AWAITING_PAYMENT->CANCELLED":     ["admin", "manager", "customer", "system"],
+  "PENDING_CONFIRMATION->CONFIRMED": ["admin", "manager", "waiter"],
+  "PENDING_CONFIRMATION->CANCELLED": ["admin", "manager", "waiter", "customer"],
   // "system" = the edit-window timer (orderService.autoSendDueOrders).
-  "CONFIRMED->PREPARING":            ["admin", "waiter", "chef", "system"],
-  "CONFIRMED->CANCELLED":            ["admin", "waiter"],
-  "PREPARING->READY":                ["admin", "waiter", "chef"],
-  "PREPARING->CANCELLED":            ["admin"], // once kitchen has started, only admin can void
-  "READY->DELIVERED":                ["admin", "waiter"], // waiter taps "Served" → Eating
+  "CONFIRMED->PREPARING":            ["admin", "manager", "waiter", "chef", "system"],
+  "CONFIRMED->CANCELLED":            ["admin", "manager", "waiter"],
+  "PREPARING->READY":                ["admin", "manager", "waiter", "chef"],
+  "PREPARING->CANCELLED":            ["admin", "manager"], // once kitchen has started, only admin/manager can void
+  "READY->DELIVERED":                ["admin", "manager", "waiter"], // waiter taps "Served" → Eating
   // Bill settled in billing → Completed (services/billingService.js).
   "DELIVERED->COMPLETED":            ["system"],
 };
@@ -123,7 +123,7 @@ const TRANSITION_ROLES = {
 // puts `paymentStatus: "PAID"` into its atomic update filter, so a payment
 // change racing the completion can't slip through.
 const PAYMENT_REQUIRED_INTO = {
-  COMPLETED: ["waiter", "admin", "system"],
+  COMPLETED: ["waiter", "admin", "manager", "system"],
 };
 
 /** True when this role must see paymentStatus === "PAID" before this transition. */
@@ -138,7 +138,7 @@ export const requiresPaidForTransition = (fromStatus, toStatus, role) =>
 // in the enum only for historic data.
 const PAYMENT_STATUS_ROLES = {
   PENDING_VERIFICATION: ["admin"],
-  PAID:                 ["admin", "waiter"],
+  PAID:                 ["admin", "manager", "waiter"],
   FAILED:               [],
 };
 
@@ -182,7 +182,8 @@ export const validateTransition = (fromStatus, toStatus, role) => {
 
   // Checked BEFORE the generic admin override (see ADMIN_COMPLETE_FROM).
   if (toStatus === "COMPLETED" && role !== "system") {
-    if (role !== "admin") {
+    // A manager runs the floor for the admin: same hand "Complete" (PAID only).
+    if (role !== "admin" && role !== "manager") {
       return {
         ok: false,
         code: 400,

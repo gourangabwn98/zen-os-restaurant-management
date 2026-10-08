@@ -9,13 +9,14 @@
 //   • reading one requires its owner or staff (it used to be any login).
 // ─────────────────────────────────────────────────────────────────────────────
 import mongoose from "mongoose";
+import { isStaffRole } from "../utils/roles.js";
 import { effectiveRole } from "../middleware/rbac.js";
 import { ORDER_STATUSES } from "../utils/orderStateMachine.js";
 
 const CANCELLED = "CANCELLED";
 if (!ORDER_STATUSES.includes(CANCELLED)) throw new Error("invoiceController: CANCELLED is not an order status");
 
-const isStaff = (user) => ["admin", "waiter"].includes(effectiveRole(user));
+const isStaff = (user) => isStaffRole(effectiveRole(user));
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 // POST /api/invoices/generate   Body: { orders: [orderId, …] }   (staff)

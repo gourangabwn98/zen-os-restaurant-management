@@ -54,7 +54,7 @@ const run = async () => {
   });
 
   await test("rejects an unknown category", () => {
-    assert.throws(() => validateEmployeeInput({ name: "Rahul", phone: "9876543210", role: "manager" }), /Category must be/);
+    assert.throws(() => validateEmployeeInput({ name: "Rahul", phone: "9876543210", role: "owner" }), /Category must be/);
   });
 
   await test("accepts a valid WAITER and a valid CHEF", () => {
@@ -115,7 +115,7 @@ const run = async () => {
 
   await test("editEmployee rejects an unknown target category", async () => {
     const User = makeFakeUserModel([{ _id: "e1", name: "Priya", phone: "9876543212", role: "waiter", status: "Active" }]);
-    await assert.rejects(() => updateEmployee({ User, id: "e1", role: "manager" }), /Category must be/);
+    await assert.rejects(() => updateEmployee({ User, id: "e1", role: "owner" }), /Category must be/);
   });
 
   console.log("──────────────────────────────────────────────");

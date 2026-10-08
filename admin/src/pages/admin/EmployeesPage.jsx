@@ -20,10 +20,13 @@ import DutyHistory from "./employees/DutyHistory.jsx";
 import { DUTY_LABEL, initials, fmtDuration, count, roleText } from "./employees/shared.js";
 import { t, N_, tn, fmtTime, fmtNum, fmtDate } from "../../i18n/core.js";
 import "./employees/employees.css";
+import { useAuth } from "../../hooks/useAuth.js";
+import { isManager } from "../../utils/access.js";
 
-const STAFF_ROLES = ["waiter", "chef", "staff"];
+const STAFF_ROLES = ["manager", "waiter", "chef", "staff"];
 const ROLE_FILTERS = [
   { key: "", label: N_("All") },
+  { key: "manager", label: N_("Managers"), adminOnly: true },
   { key: "waiter", label: N_("Waiters") },
   { key: "chef", label: N_("Chefs") },
   { key: "staff", label: N_("Others") },
@@ -31,6 +34,7 @@ const ROLE_FILTERS = [
 const DUTY_FILTER_LABEL = { on: N_("On duty now"), worked: N_("Worked today") };
 
 export default function EmployeesPage() {
+  const managerView = isManager(useAuth().user); // a manager doesn't see other managers
   const [employees, setEmployees] = useState(null); // null = loading
   const [loadError, setLoadError] = useState(false);
   const [attendance, setAttendance] = useState([]); // today's rows, incl. admins
@@ -246,7 +250,7 @@ export default function EmployeesPage() {
                 <input className="zc-input" type="search" placeholder={t("Search name or phone…")} value={search} onChange={(e) => setSearch(e.target.value)} aria-label={t("Search name or phone…")} />
                 <div className="row">
                   <div className="zc-seg" role="group" aria-label={t("Role")}>
-                    {ROLE_FILTERS.map((r) => (
+                    {ROLE_FILTERS.filter((r) => !r.adminOnly || !managerView).map((r) => (
                       <button type="button" key={r.key || "all"} className={roleFilter === r.key ? "on" : ""} onClick={() => setRoleFilter(r.key)}>{t(r.label)}</button>
                     ))}
                   </div>

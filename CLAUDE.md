@@ -41,9 +41,15 @@ system for any role.** Every app above authenticates against the same
    one of these fields should be re-derived server-side, not copied from
    `req.body`.
 3. **Employees are `User` documents**, not a separate directory. `role` is
-   one of `admin | waiter | chef | customer`. An admin creates
-   waiter/chef accounts via `Admin → Employees`; there is no public
-   employee signup anywhere. A legacy `Chef` model / `chefRoutes.js` /
+   one of `admin | manager | waiter | chef | customer`. An admin creates
+   manager/waiter/chef accounts via `Admin → Employees`; there is no public
+   employee signup anywhere. A **manager** signs in to the admin app but only
+   gets Orders, Invoices, Tables, Inventory, Employees, Menu and Help
+   (`utils/roles.js`; routes in those areas use `requireManagement`, everything
+   else stays `requireAdmin`). In orders a manager follows `TRANSITION_ROLES`
+   (no admin any-status override) and is recorded as source/actor `ADMIN`. A
+   manager can only manage waiter/chef/other staff — never another manager's
+   or the admin's record (`middleware/managerScope.js`). A legacy `Chef` model / `chefRoutes.js` /
    `ChefsPage.jsx` still exists, unused, left in place for safety — do not
    build new features on it.
 4. **Order status is a strict state machine** (`utils/orderStateMachine.js`):
@@ -105,7 +111,7 @@ scoped by role, **not just for organization but for data protection**:
 | Room | Who joins | Carries |
 |---|---|---|
 | `tenant:{key}` | everyone connected | general presence |
-| `tenant:{key}:staff` | admin, waiter | full order data, **payment status, guest name/phone** |
+| `tenant:{key}:staff` | admin, manager, waiter | full order data, **payment status, guest name/phone** |
 | `tenant:{key}:kitchen` | admin, chef | KOT/status events, **PII-stripped** |
 | `tenant:{key}:printers` | print-service (auth'd by a `PrinterDevice` key, not a JWT) | print job payloads |
 | `tenant:{key}:order:{id}` | the specific customer/guest tracking that order | that order's updates only |
@@ -305,7 +311,7 @@ to itself.
   `services/*.js` (pure-ish functions taking `{ models, ...args }`);
   controllers are a thin HTTP wrapper that calls a service and maps errors
   (`err.statusCode || 500`); routes wire RBAC middleware
-  (`middleware/rbac.js`: `requireAdmin`, `requireStaff`,
+  (`middleware/rbac.js`: `requireAdmin`, `requireManagement`, `requireStaff`,
   `requireKitchen`, `requireEmployee`).
 - **Audit/actor fields**: use `buildActor(user)` (in
   `services/orderService.js`) for any "who did this" field. Note

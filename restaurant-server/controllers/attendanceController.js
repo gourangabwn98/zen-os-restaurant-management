@@ -127,7 +127,7 @@ export const getAdminAttendanceHistory = async (req, res) => {
 export const getAdminAttendanceEmployee = async (req, res) => {
   try {
     const { AttendanceSession, User } = req.models;
-    const employee = await User.findOne({ _id: req.params.id, role: { $in: ["admin","waiter","chef"] } })
+    const employee = await User.findOne({ _id: req.params.id, role: { $in: ["admin","manager","waiter","chef"] } })
       .select("name phone role");
     if (!employee) return res.status(404).json({ message: "Employee not found" });
 

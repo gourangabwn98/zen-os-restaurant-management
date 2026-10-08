@@ -17,6 +17,7 @@
 // nothing needs a background sweep.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { isStaffRole } from "../utils/roles.js";
 import { verifyGuestOrderToken } from "../utils/guestOrderToken.js";
 
 export const CALL_WINDOW_MS = { 1: 3 * 60 * 1000, 2: 2 * 60 * 1000 };
@@ -34,7 +35,7 @@ const httpError = (msg, statusCode = 400, extra = {}) => Object.assign(new Error
  * logged-in owner or a valid guest order token. Staff don't call themselves.
  */
 export const assertCanCallForOrder = (req, order, role) => {
-  if (role === "admin" || role === "waiter" || role === "chef") {
+  if (isStaffRole(role) || role === "chef") {
     throw httpError("Staff accounts can't call a waiter", 403);
   }
   if (req.user) {
