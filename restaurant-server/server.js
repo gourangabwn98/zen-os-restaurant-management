@@ -150,9 +150,17 @@ connectDB().then(() => {
     getDB(process.env.MONGO_URI)
       .then((conn) => ensureSmartCategories({ models: getModels(conn) }))
       .catch((err) => console.error("smart categories setup failed:", err.message));
-    startScheduledOfferTick();
-    startPayFirstTick();
-    startAutoSendTick();
+    // DISABLE_BACKGROUND_JOBS=true — for a second, local copy of the server
+    // pointed at the live database: it must not race production on real
+    // orders (auto-send → KOT announced where no printer listens), offer
+    // pushes or pay-first cancels. Unset (production) = unchanged.
+    if (process.env.DISABLE_BACKGROUND_JOBS === "true") {
+      console.log("⏸  Background jobs disabled (DISABLE_BACKGROUND_JOBS=true) — offers, pay-first and auto-send ticks NOT started");
+    } else {
+      startScheduledOfferTick();
+      startPayFirstTick();
+      startAutoSendTick();
+    }
   });
 });
 
