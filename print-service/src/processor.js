@@ -8,6 +8,9 @@ import { renderKot } from "./renderers/kotRenderer.js";
 import { renderBill } from "./renderers/billRenderer.js";
 import { logger } from "./logger.js";
 
+// KH-01 — copies per bill (single and combined). KOTs always print once.
+export const BILL_COPIES = 2;
+
 export class Processor {
   /**
    * @param {PrintQueue} queue
@@ -140,6 +143,10 @@ export class Processor {
         });
       // Bengali/other non-Latin text → drawn as images (src/textImage.js).
       if (this.textImages) lines = await this.textImages.apply(lines, { charsPerLine: width });
+      // KH-01: a bill prints BILL_COPIES identical copies (each ends with its
+      // own cut) in ONE printer write — still one job, one status, one
+      // PRINTED report, so the duplicate protection is unchanged. KOT: 1.
+      if (job.jobType === "BILL") lines = Array.from({ length: BILL_COPIES }, () => lines).flat();
       await entry.driver.printText(lines);
 
       this.queue.markPrinted(jobId);

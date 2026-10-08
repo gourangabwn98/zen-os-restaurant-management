@@ -3,7 +3,7 @@ import path from "path";
 import os from "os";
 import { PrintQueue } from "../src/queue.js";
 import { PrinterManager } from "../src/printerManager.js";
-import { Processor } from "../src/processor.js";
+import { Processor, BILL_COPIES } from "../src/processor.js";
 import { MockDriver } from "../src/drivers/mockDriver.js";
 
 let passed = 0, failed = 0;
@@ -159,6 +159,48 @@ const run = async () => {
     await processor.ingest({ jobId: "bill-8", jobType: "BILL", orderId: "ORD00008", payload: { items: [], subtotal: 0, total: 0 } });
 
     assert.equal(kotDriver.printedJobs.length, 1);
+    assert.equal(billDriver.printedJobs.length, 1);
+  });
+
+  // ── KH-01: bill = 2 identical copies in one job; KOT stays 1 copy ──
+  const cuts = (lines) => lines.filter((l) => l.type === "cut").length;
+  const texts = (lines) => lines.filter((l) => l.text !== undefined).map((l) => l.text);
+
+  await test("KH-01: a bill prints 2 identical copies in ONE printer write (one job, one PRINTED report)", async () => {
+    const { processor, queue, billDriver, backend } = setup();
+    await processor.ingest({ jobId: "bill-c1", jobType: "BILL", orderId: "ORD00042",
+      payload: { orderId: "ORD00042", items: [{ name: "Tea", qty: 2, price: 20 }], subtotal: 40, total: 40 } });
+    assert.equal(queue.get("bill-c1").status, "PRINTED");
+    assert.equal(billDriver.printedJobs.length, 1, "one physical write");
+    const lines = billDriver.printedJobs[0];
+    assert.equal(cuts(lines), BILL_COPIES, "each copy ends with its own cut");
+    const all = texts(lines);
+    const half = all.length / 2;
+    assert.deepEqual(all.slice(0, half), all.slice(half), "the copies are identical (no 'customer copy' label)");
+    const printedReports = backend.reports.filter((r) => r.jobId === "bill-c1" && r.status === "PRINTED");
+    assert.equal(printedReports.length, 1);
+  });
+
+  await test("KH-01: a combined bill also prints 2 copies", async () => {
+    const { processor, billDriver } = setup();
+    await processor.ingest({ jobId: "bill-c2", jobType: "BILL", payload: {
+      combined: true, orders: [{ orderId: "ORD1", items: [{ name: "Tea", qty: 1, price: 20 }] }, { orderId: "ORD2", items: [{ name: "Dosa", qty: 1, price: 60 }] }],
+      subtotal: 80, total: 80 } });
+    assert.equal(cuts(billDriver.printedJobs[0]), 2);
+  });
+
+  await test("KH-01: KOT still prints exactly 1 copy", async () => {
+    const { processor, kotDriver } = setup();
+    await processor.ingest({ jobId: "kot-c1", jobType: "KOT", orderId: "ORD00042", items: [{ name: "Tea", qty: 2 }] });
+    assert.equal(kotDriver.printedJobs.length, 1);
+    assert.equal(cuts(kotDriver.printedJobs[0]), 1);
+  });
+
+  await test("KH-01: re-delivering an already printed bill never prints it again (no 4 copies)", async () => {
+    const { processor, billDriver } = setup();
+    const job = { jobId: "bill-c3", jobType: "BILL", payload: { items: [], subtotal: 0, total: 0 } };
+    await processor.ingest(job);
+    await processor.ingest(job);
     assert.equal(billDriver.printedJobs.length, 1);
   });
 
