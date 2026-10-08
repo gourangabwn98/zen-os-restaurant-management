@@ -323,4 +323,9 @@ export default {
   "No extra": "এক্সট্রা লাগবে না",
   "Add with extra": "এক্সট্রা সহ যোগ করুন",
   "Extras": "এক্সট্রা",
+  // KH-11 — AC Room service charge
+  "How many guests are seated?": "কতজন অতিথি বসেছেন?",
+  "Please enter a number of guests from 1 to 100": "১ থেকে ১০০-র মধ্যে অতিথির সংখ্যা লিখুন",
+  "Service Charge": "সার্ভিস চার্জ",
+  "{n} guests × ₹{rate}": "{n} জন × ₹{rate}",
 };

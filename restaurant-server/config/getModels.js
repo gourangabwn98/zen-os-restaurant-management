@@ -103,6 +103,10 @@ const restaurantProfileSchema = new mongoose.Schema({
   contactPerson:     { type: String, default: "" },
   gstRate:           { type: Number, default: 0 },
   serviceCharge:     { type: Number, default: 0 },
+  // KH-11 — AC Room service charge, ₹ per guest seated. Snapshotted onto an
+  // order at its first bill print (Order.acServiceRate), so changing it only
+  // affects future bills. Admin → Profile → Pricing.
+  acServiceChargePerGuest: { type: Number, default: 20, min: 0, max: 10000 },
   packingCharge:     { type: Number, default: 0 },
   logo:              { type: String, default: "" },
   banners:           [{ imageUrl: String, link: String, active: { type: Boolean, default: true } }],
@@ -300,6 +304,12 @@ const orderSchema = new mongoose.Schema({
   subtotal:      { type: Number, required: true },
   tax:           { type: Number, required: true },
   serviceCharge: { type: Number, default: 0 },
+  // KH-11 — AC Room only: guests × acServiceRate, set when the bill is
+  // printed (services/acServiceCharge.js) and already included in `total`.
+  // Never changed once the order is PAID or its bill SETTLED.
+  guests:          { type: Number, default: null },
+  acServiceRate:   { type: Number, default: null },
+  acServiceCharge: { type: Number, default: 0 },
   discount:      { type: Number, default: 0 },
   total:         { type: Number, required: true },
   // Snapshot of the coupon the customer applied (services/couponService.js).

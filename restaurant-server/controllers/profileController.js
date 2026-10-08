@@ -52,6 +52,15 @@ export const updateRestaurantProfile = async (req, res) => {
       }
       req.body.editWindowMinutes = m;
     }
+    // KH-11: AC Room service charge per guest (₹). Only future bills use a new
+    // value — a printed bill keeps the rate it was printed with.
+    if (req.body.acServiceChargePerGuest !== undefined) {
+      const r = Number(req.body.acServiceChargePerGuest);
+      if (!Number.isFinite(r) || r < 0 || r > 10000) {
+        return res.status(400).json({ message: "AC Room service charge per guest must be from ₹0 to ₹10000" });
+      }
+      req.body.acServiceChargePerGuest = Math.round(r * 100) / 100;
+    }
     // SET-01: service toggles are booleans, merged onto what's saved so a
     // partial update can never silently switch another service off.
     if (req.body.services !== undefined) {

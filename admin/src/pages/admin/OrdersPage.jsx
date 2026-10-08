@@ -31,6 +31,7 @@ import { t, tn, fmtNum, fmtDate, fmtDateTime, fmtTime, localName } from "../../i
 import { customerName } from "./shared/customerName.js";
 import { takenByName, takenByIsAcceptor } from "./shared/takenBy.js";
 import { DINING_AREA_LABEL } from "./shared/diningArea.js";
+import { askGuests, needsGuests } from "./shared/askGuests.js";
 import { hasAddons, cartLineKey, unitPrice, addonIdsOf } from "./shared/addons.js";
 import { AddonLines, AddonHint, AddonPicker } from "./shared/AddonUI.jsx";
 
@@ -368,6 +369,7 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
   const summary = [
     [t("Subtotal"), subtotal],
     ...(order.serviceCharge > 0 ? [[t("Service charge"), order.serviceCharge]] : []),
+    ...(order.acServiceCharge > 0 ? [[`${t("Service Charge")} (${t("{n} guests × ₹{rate}", { n: order.guests, rate: order.acServiceRate })})`, order.acServiceCharge]] : []), // KH-11
     ...(order.tax > 0 ? [[t("GST"), order.tax]] : []),
     ...(order.discount > 0 ? [[`${t("Discount")}${order.coupon?.code ? ` (${order.coupon.code})` : ""}`, -order.discount]] : []),
   ];
@@ -2021,9 +2023,11 @@ const OrderCard = ({ order, idx, isExpanded, onExpand, onStatusChange, onPayment
             )}
             <button className="op-btn" onClick={async()=>{
               try{
-                await printOrderOrGroupBill(order); // KH-07
+                let guests; // KH-11: dine-in bills ask how many guests are seated
+                if (needsGuests(order.orderType)) { guests = askGuests(order.guests); if (guests === null) return; }
+                await printOrderOrGroupBill(order, guests); // KH-07
                 toast.success(t("Bill sent to printer ✓"));
-              }catch{ toast.error(t("Printer not running")); }
+              }catch(err){ toast.error(err?.response?.data?.message || t("Printer not running")); }
             }} style={{ padding:"5px 12px", borderRadius:8, fontSize:12, cursor:"pointer",
               border:"1px solid var(--ready-line)", background:"var(--ready-fill)",
               color:"var(--ready-ink)", whiteSpace:"nowrap" }}>
@@ -2564,8 +2568,11 @@ export default function OrdersPage() {
 
   const handlePrint = async (o) => {
     try {
-      await printOrderOrGroupBill(o); // KH-07: whole group when it has follow-ups
+      let guests; // KH-11: dine-in bills ask how many guests are seated
+      if (needsGuests(o.orderType)) { guests = askGuests(o.guests); if (guests === null) return; }
+      await printOrderOrGroupBill(o, guests); // KH-07: whole group when it has follow-ups
       toast.success(t("Bill sent to printer ✓"));
+      fetchOrders();
     } catch (err) {
       toast.error(err?.response?.data?.message || t("Printer not running"));
     }

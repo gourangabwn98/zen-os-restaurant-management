@@ -224,4 +224,8 @@ export default {
   "Describe the problem, and what you were doing when it happened.": "সমস্যাটি এবং তখন আপনি কী করছিলেন তা লিখুন।",
   "Sending…": "পাঠানো হচ্ছে…",
   "Send to support": "সাপোর্টে পাঠান",
+  // KH-11 — AC Room service charge
+  "AC Room service charge": "এসি রুম সার্ভিস চার্জ",
+  "₹{n} per guest": "প্রতি অতিথি ₹{n}",
+  "AC Room service charge per guest (₹)": "এসি রুম সার্ভিস চার্জ, প্রতি অতিথি (₹)",
 };

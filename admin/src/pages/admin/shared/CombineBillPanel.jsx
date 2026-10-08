@@ -10,6 +10,7 @@
 // whenever an order stops being eligible.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useEffect, useMemo, useRef, useState } from "react";
+import { askGuests } from "./askGuests.js";
 import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 import {
@@ -93,11 +94,16 @@ export default function CombineBillPanel({ tableNo, orders, onExit, onRefresh })
     finally { setBusy(null); }
   };
 
-  const print = () => run("print", async () => {
-    const { data } = await printCombinedBill(tableNo, ids, printKey.current);
+  const print = () => {
+    // KH-11: asked ONCE for the whole table bill — the AC Room charge goes on one order.
+    const guests = askGuests(Math.max(0, ...orders.map((o) => Number(o.guests) || 0)) || undefined);
+    if (guests === null) return;
+    return run("print", async () => {
+    const { data } = await printCombinedBill(tableNo, ids, printKey.current, guests);
     printKey.current = newIdempotencyKey(); // the next click is a new, intended print
     report([data.duplicate ? t("Already sent to the printer") : t("Combined bill sent to the printer — {n} orders", { n: ids.length - (data.rejected?.length || 0) })], data.rejected || []);
   });
+  };
 
   const pay = (method) => run("pay", async () => {
     const { data } = await paySelectedOrders(tableNo, ids, method);

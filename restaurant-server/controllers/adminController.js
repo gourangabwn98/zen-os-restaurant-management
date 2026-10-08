@@ -1,6 +1,7 @@
 // controllers/adminController.js
 import mongoose from "mongoose";
 import { lineAddonKey } from "../utils/menuAddons.js";
+import { parseGuests, applyGuestsToOrder } from "../services/acServiceCharge.js";
 import { priceItems, computeTotals } from "../utils/pricing.js";
 import { getScheduleContext } from "../services/menuScheduleService.js";
 import { transitionOrderStatusTx, buildActor, getRoleFromUser, EDITABLE_STATUSES } from "../services/orderService.js";
@@ -415,7 +416,7 @@ export const addItemsToOrder = async (req, res) => {
 
     const restaurant = await RestaurantProfile.findOne();
     // Re-applies the customer's coupon snapshot, if any (utils/pricing.js).
-    const totals = computeTotals(order.items, restaurant, order.coupon);
+    const totals = computeTotals(order.items, restaurant, order.coupon, { acServiceCharge: order.acServiceCharge }); // KH-11: keep it
     order.subtotal      = totals.subtotal;
     order.tax            = totals.tax;
     order.serviceCharge  = totals.serviceCharge;
@@ -502,6 +503,7 @@ export const getCombinedBill = async (req, res) => {
     const grandTotal = matchOrders.reduce((s,o) => s + Number(o.total||0), 0);
     const totalTax   = matchOrders.reduce((s,o) => s + (o.tax||0), 0);
     const totalSC    = matchOrders.reduce((s,o) => s + (o.serviceCharge||0), 0);
+    const totalAC    = matchOrders.reduce((s,o) => s + (o.acServiceCharge||0), 0); // KH-11
     const totalDiscount = matchOrders.reduce((s,o) => s + (o.discount||0), 0);
     const subtotal   = mergedItems.reduce((s,i) => s + i.price * i.qty, 0);
     const restaurant = await RestaurantProfile.findOne();
@@ -512,6 +514,7 @@ export const getCombinedBill = async (req, res) => {
       subtotal,
       tax: totalTax,
       serviceCharge: totalSC,
+      acServiceCharge: totalAC,
       discount: totalDiscount,
       grandTotal,
       restaurantName: restaurant?.restaurantName || "Restaurant",
@@ -528,9 +531,16 @@ export const getCombinedBill = async (req, res) => {
 export const printBill = async (req, res) => {
   try {
     const { Order, BillPrintJob, RestaurantProfile } = req.models;
-    const order = await Order.findById(req.params.id).populate("user","name phone");
+    let order = await Order.findById(req.params.id).populate("user","name phone");
     if (!order) return res.status(404).json({ message: "Order not found" });
-    const restaurant = await RestaurantProfile.findOne().select("restaurantName logo").lean();
+    const restaurant = await RestaurantProfile.findOne().select("restaurantName logo acServiceChargePerGuest").lean();
+    // KH-11: guests seated (asked at print) → AC Room service charge. A paid /
+    // settled bill never changes; the rate is snapshotted at first print.
+    const guests = parseGuests(req.body?.guests);
+    if (guests != null) {
+      await applyGuestsToOrder({ Order, order, guests, profile: restaurant });
+      order = await Order.findById(req.params.id).populate("user","name phone");
+    }
     const byCustomer = !order.source || order.source === "CUSTOMER";
 
     const payload = {
@@ -546,6 +556,10 @@ export const printBill = async (req, res) => {
       subtotal:      order.subtotal || 0,
       tax:           order.tax      || 0,
       serviceCharge: order.serviceCharge || 0,
+      // KH-11 — AC Room guest service charge (already inside `total`).
+      acServiceCharge: order.acServiceCharge || 0,
+      acServiceRate:   order.acServiceRate ?? null,
+      guests:          order.guests ?? null,
       discount:      order.discount || 0,
       couponCode:    order.coupon?.code || "",
       total:         order.total,
@@ -574,6 +588,6 @@ export const printBill = async (req, res) => {
 
     res.json({ success: true, message: "Bill sent to printer", jobId: job._id });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(err.statusCode || 500).json({ message: err.message }); // KH-11: 400 bad guests / 409 race
   }
 };

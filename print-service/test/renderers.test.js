@@ -179,6 +179,22 @@ const run = async () => {
     }
   });
 
+  await test("KH-11: AC Room bill shows a separate 'Service Charge' line + guests x rate; others unchanged", () => {
+    const job = billJob({ orderType: "DINE_IN", diningArea: "AC_ROOM", items: [{ name: "Biryani", qty: 2, price: 140 }],
+      subtotal: 280, tax: 0, serviceCharge: 0, acServiceCharge: 80, guests: 4, acServiceRate: 20, total: 360 });
+    for (const W of [32, 42, 48]) {
+      const lines = renderBill(job, { width: W });
+      assertFits(lines, W);
+      const t = text(lines);
+      assert.match(t, /^Service Charge +Rs80$/m);
+      assert.match(t, /^  4 guests x Rs20$/m);
+      assert.match(t, /^Guests +: +4$/m);
+      assert.match(t, /^TOTAL +: +Rs360$/m);
+    }
+    const plain = text(renderBill(billJob()));
+    assert.doesNotMatch(plain, /Service Charge|Guests/, "no AC charge → bill exactly as before");
+  });
+
   await test("kot: the order's own note is printed after the items, in bold", () => {
     const lines = renderKot(kotJob({ notes: "Birthday table — bring candles" }));
     const t = text(lines);

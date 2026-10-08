@@ -81,23 +81,24 @@ export const deleteRestaurantBanner = (bannerId) =>
 export const addRestaurantPrinter    = (data)       => api.post("admin/restaurant/printer", data);
 export const updateRestaurantPrinter = (id, data)   => api.patch(`admin/restaurant/printer/${id}`, data);
 export const deleteRestaurantPrinter = (id)         => api.delete(`admin/restaurant/printer/${id}`);
-export const printOrderBill = (id) => api.post(`/admin/orders/${id}/print-bill`);
+// KH-11: guests seated (dine-in) → AC Room service charge on the server.
+export const printOrderBill = (id, guests) => api.post(`/admin/orders/${id}/print-bill`, guests ? { guests } : {});
 // KH-07 — an order + the follow-ups added after its KOT.
 export const getOrderGroup = (id) => api.get(`/admin/orders/${id}/group`);
 const RUNNING = ["CONFIRMED", "PREPARING", "READY", "DELIVERED"];
 /** KH-07: an order that has live follow-ups prints ONE combined bill for the
  * whole group (every item, one total); any other order prints exactly as
  * before. Resolves to the API response. */
-export const printOrderOrGroupBill = async (order) => {
+export const printOrderOrGroupBill = async (order, guests) => {
   try {
     const { data } = await getOrderGroup(order._id);
     const live = (data.orders || []).filter((o) => RUNNING.includes(o.status));
     if (live.length > 1) {
       const requestKey = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-      return await api.post("/admin/combined-bill/print", { groupOf: data.rootId, orderIds: live.map((o) => o._id), requestKey });
+      return await api.post("/admin/combined-bill/print", { groupOf: data.rootId, orderIds: live.map((o) => o._id), requestKey, ...(guests && { guests }) });
     }
   } catch { /* fall back to the single bill below */ }
-  return printOrderBill(order._id);
+  return printOrderBill(order._id, guests);
 };
 export const getCategories = () => api.get("/menu/categories");
 
@@ -166,7 +167,7 @@ export const cancelWaitlistEntry= (id) => api.post(`/admin/waitlist/${id}/cancel
 // Combine Bill for a table — the admin ticks SOME orders; the server
 // re-validates every id and uses only stored amounts (combinedBillService.js).
 export const previewCombinedBill  = (tableNo, orderIds) => api.post("/admin/combined-bill/preview", { tableNo, orderIds });
-export const printCombinedBill    = (tableNo, orderIds, requestKey) => api.post("/admin/combined-bill/print", { tableNo, orderIds, requestKey });
+export const printCombinedBill    = (tableNo, orderIds, requestKey, guests) => api.post("/admin/combined-bill/print", { tableNo, orderIds, requestKey, ...(guests && { guests }) });
 export const paySelectedOrders    = (tableNo, orderIds, paymentMethod) => api.post("/admin/combined-bill/pay", { tableNo, orderIds, paymentMethod });
 // BIL-01: "settle selected" (the route kept its old name) — never a hand completion.
 export const completeSelectedOrders = (tableNo, orderIds, paymentMethod) => api.post("/admin/combined-bill/complete", { tableNo, orderIds, paymentMethod });

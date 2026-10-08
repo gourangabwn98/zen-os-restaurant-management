@@ -14,6 +14,7 @@ import {
   previewCombinedBill, printCombinedBill, payCombinedBill, settleCombinedBill, newIdempotencyKey,
 } from "../services/orderService.js";
 import { STATUS_LABEL } from "./StatusBadge.jsx";
+import { askGuests, needsGuests } from "../utils/askGuests.js";
 import { ACCENT, GREEN, AMBER, TEXT_MUTED, TEXT_FAINT, GLASS_BORDER } from "../theme.js";
 import { t, tn, localName } from "../i18n/index.jsx";
 
@@ -69,10 +70,18 @@ export default function CombinedBillPanel({ scope, orders, title, onChanged }) {
     finally { setBusy(false); }
   };
 
-  const handlePrint = () => run(
-    () => printCombinedBill({ ...body, requestKey: printKey }),
+  const handlePrint = () => {
+    // KH-11: asked ONCE for the whole bill (dine-in) — AC Room charge goes on one order.
+    let guests;
+    if (needsGuests(orders[0]?.orderType)) {
+      guests = askGuests(Math.max(0, ...orders.map((o) => Number(o.guests) || 0)) || undefined);
+      if (guests === null) return;
+    }
+    return run(
+    () => printCombinedBill({ ...body, requestKey: printKey, ...(guests && { guests }) }),
     (d) => (d.duplicate ? t("Already sent to the printer") : t("Combined bill sent to printer")),
   );
+  };
   const handleSettle = (paymentMethod) => run(
     () => settleCombinedBill({ ...body, paymentMethod }),
     (d) => tn(d.settled?.length || 0, "{n} bill settled", "{n} bills settled"),
@@ -127,6 +136,7 @@ export default function CombinedBillPanel({ scope, orders, title, onChanged }) {
           ))}
           {totals?.tax > 0 && <Line label={t("GST")} value={`₹${totals.tax}`} />}
           {totals?.serviceCharge > 0 && <Line label={t("Service charge")} value={`₹${totals.serviceCharge}`} />}
+          {totals?.acServiceCharge > 0 && <Line label={t("Service Charge")} value={`₹${totals.acServiceCharge}`} />}
           {totals?.discount > 0 && <Line label={t("Coupon discount")} value={`−₹${totals.discount}`} />}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontWeight: 800, color: "#fff", marginTop: 6 }}>
             <span style={{ fontSize: 14 }}>{t("Grand total")}</span>

@@ -19,6 +19,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { ORDER_STATUSES, PAYMENT_STATUSES, ORDER_TYPES } from "../utils/orderStateMachine.js";
 import { roundMoney } from "../utils/recipeCost.js";
+import { parseGuests, applyGuestsToSelection } from "./acServiceCharge.js";
 
 const pick = (list, v) => { if (!list.includes(v)) throw new Error(`combinedBillService: unknown enum ${v}`); return v; };
 const CANCELLED = pick(ORDER_STATUSES, "CANCELLED");
@@ -71,7 +72,7 @@ export const combineTotals = (orders) => {
   return {
     orderCount: orders.length,
     subtotal: sum("subtotal"), discount: sum("discount"), tax: sum("tax"),
-    serviceCharge: sum("serviceCharge"), total: sum("total"),
+    serviceCharge: sum("serviceCharge"), acServiceCharge: sum("acServiceCharge"), total: sum("total"),
     paidTotal: roundMoney(paid.reduce((s, o) => s + (Number(o.total) || 0), 0)),
     dueTotal: roundMoney(orders.filter((o) => o.paymentStatus !== PAID).reduce((s, o) => s + (Number(o.total) || 0), 0)),
     allPaid: orders.length > 0 && paid.length === orders.length,
@@ -152,6 +153,9 @@ export const combinedPrintPayload = ({ tableNo, orders, restaurant }) => {
     })),
     items: orders.flatMap((o) => o.items || []).map((i) => ({ name: i.name, qty: i.qty, price: i.price, addons: i.addons || [] })),
     subtotal: t.subtotal, discount: t.discount, tax: t.tax, serviceCharge: t.serviceCharge, total: t.total,
+    // KH-11 — AC Room guest service charge (inside total), with its guests × rate.
+    acServiceCharge: t.acServiceCharge,
+    ...(() => { const o = orders.find((x) => Number(x.acServiceCharge) > 0); return o ? { guests: o.guests ?? null, acServiceRate: o.acServiceRate ?? null } : {}; })(),
     couponCode: "",
     paymentStatus: t.allPaid ? PAID : "PENDING_VERIFICATION",
     paymentMethod: t.allPaid ? methods.join(" + ") : "",
@@ -167,8 +171,9 @@ export const combinedPrintPayload = ({ tableNo, orders, restaurant }) => {
  * selection printed in the last 15 s by anyone returns that job too. */
 export const printCombinedBill = async ({ models, body, actor }) => {
   const { BillPrintJob, RestaurantProfile } = models;
-  const { tableNo, orders, rejected } = await resolveSelection({ models, body });
+  let { tableNo, orders, rejected } = await resolveSelection({ models, body });
   if (!orders.length) throw httpError("None of the selected orders can be billed", 409);
+  const guests = parseGuests(body.guests); // KH-11 — asked once for the whole bill
   const key = orders.map((o) => String(o._id)).sort().join(",");
   const requestKey = typeof body.requestKey === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(body.requestKey) ? body.requestKey : null;
 
@@ -179,7 +184,10 @@ export const printCombinedBill = async ({ models, body, actor }) => {
   const recent = await BillPrintJob.findOne({ combinedKey: key, createdAt: { $gte: new Date(Date.now() - 15000) } }).lean();
   if (recent) return { job: recent, duplicate: true, rejected, payload: recent.payload };
 
-  const restaurant = await RestaurantProfile.findOne().select("restaurantName logo").lean();
+  const restaurant = await RestaurantProfile.findOne().select("restaurantName logo acServiceChargePerGuest").lean();
+  if (guests != null && await applyGuestsToSelection({ Order: models.Order, orders, guests, profile: restaurant })) {
+    ({ tableNo, orders, rejected } = await resolveSelection({ models, body })); // re-read: totals changed
+  }
   const payload = combinedPrintPayload({ tableNo, orders, restaurant });
   try {
     const job = await BillPrintJob.create({

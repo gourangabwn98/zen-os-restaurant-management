@@ -95,7 +95,9 @@ export const computeCouponDiscount = (coupon, subtotal) => {
  * dbItems. The only discount is a customer's coupon (`coupon`, validated
  * server-side by couponService — never an amount sent by a client); GST is
  * charged on the discounted item value. */
-export const computeTotals = (dbItems, restaurantProfile, coupon = null) => {
+// `acServiceCharge` (KH-11): an AC Room order's guest service charge, already
+// fixed at bill print — carried through a re-price so an edit never drops it.
+export const computeTotals = (dbItems, restaurantProfile, coupon = null, { acServiceCharge = 0 } = {}) => {
   const gstRate           = (restaurantProfile?.gstRate || 0) / 100;
   const serviceChargeRate = restaurantProfile?.serviceCharge || 0;
   const subtotal          = dbItems.reduce((s, i) => s + i.price * i.qty, 0);
@@ -103,7 +105,8 @@ export const computeTotals = (dbItems, restaurantProfile, coupon = null) => {
   const discount           = computeCouponDiscount(coupon, subtotal);
   const tax                = Math.round((subtotal - discount) * gstRate);
   const serviceCharge      = Math.round(serviceChargeRate * totalQty);
-  const total               = subtotal - discount + tax + serviceCharge;
+  const ac                  = Math.max(0, Number(acServiceCharge) || 0);
+  const total               = subtotal - discount + tax + serviceCharge + ac;
   return { subtotal, tax, serviceCharge, discount, total, totalQty };
 };
 
@@ -111,8 +114,8 @@ export const computeTotals = (dbItems, restaurantProfile, coupon = null) => {
  * Full convenience wrapper used by placeOrder: resolve + compute in one call.
  * @returns {{ dbItems, subtotal, tax, serviceCharge, discount, total, totalQty }}
  */
-export const priceOrder = async ({ items, MenuItem, restaurantProfile, scheduleCtx = null, coupon = null }) => {
+export const priceOrder = async ({ items, MenuItem, restaurantProfile, scheduleCtx = null, coupon = null, acServiceCharge = 0 }) => {
   const dbItems = await priceItems(items, MenuItem, scheduleCtx);
-  const totals  = computeTotals(dbItems, restaurantProfile, coupon);
+  const totals  = computeTotals(dbItems, restaurantProfile, coupon, { acServiceCharge });
   return { dbItems, ...totals };
 };

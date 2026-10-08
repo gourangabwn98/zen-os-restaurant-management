@@ -17,7 +17,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import {
   DEFAULT_WIDTH, separator, centered, keyValue, billItemHeader, billItemRows, amountWidth,
-  money, dateTime, orderTypeLabel, paymentStatusLabel, restaurantHeader, toPrintable, wrapText,
+  money, dateTime, orderTypeLabel, paymentStatusLabel, restaurantHeader, toPrintable, wrapText, padRight,
 } from "./layout.js";
 
 export const renderBill = (job, { logo = null, header = null, width = DEFAULT_WIDTH, footer = "", payQr = null } = {}) => {
@@ -52,6 +52,7 @@ export const renderBill = (job, { logo = null, header = null, width = DEFAULT_WI
   const status = paymentStatusLabel(p.paymentStatus);
   if (combined && p.paymentStatus !== "PAID") kv("Payment", status || "Pending");
   else kv("Payment", `${toPrintable(p.paymentMethod || "Cash")}${status ? ` (${status})` : ""}`);
+  if (Number(p.guests) > 0) kv("Guests", String(p.guests)); // KH-11
   if (toPrintable(p.guestName)) kv("Customer", p.guestName);
   if (toPrintable(p.guestPhone)) kv("Phone", p.guestPhone);
 
@@ -85,6 +86,19 @@ export const renderBill = (job, { logo = null, header = null, width = DEFAULT_WI
   if (p.discount) kv("Discount", `${p.couponCode ? `(${p.couponCode}) ` : ""}${money(-p.discount)}`, t);
   if (p.tax) kv("GST", money(p.tax), t);
   if (p.serviceCharge) kv("Service Chg", money(p.serviceCharge), t);
+  // KH-11: AC Room guest service charge — its own "Service Charge" line (full
+  // width, so the other total rows keep their exact layout), with guests × rate.
+  if (Number(p.acServiceCharge) > 0) {
+    const amt = money(p.acServiceCharge);
+    const label = "Service Charge";
+    lines.push({
+      text: padRight(label, Math.max(label.length + 1, W - amt.length)) + amt,
+      cells: [{ text: label, start: 0, width: W - amt.length, align: "left" }, { text: amt, start: W - amt.length, width: amt.length, align: "right" }],
+    });
+    if (Number(p.guests) > 0 && p.acServiceRate != null) {
+      lines.push({ text: `  ${p.guests} guest${Number(p.guests) === 1 ? "" : "s"} x ${money(p.acServiceRate)}` });
+    }
+  }
   lines.push(separator(W));
   kv("TOTAL", money(p.total), { ...t, bold: true });
   // Part of a combined bill already paid → show what is still to pay.

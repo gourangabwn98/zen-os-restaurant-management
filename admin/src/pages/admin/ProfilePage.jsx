@@ -162,7 +162,7 @@ const DEFAULTS = {
   fssaiNumber: "", gstNumber: "", aboutRestaurant: "", gstRate: 0,
   openingTime: "09:00", closingTime: "22:00", avgDeliveryTime: 30,
   minOrderAmount: 0, freeDeliveryAbove: 300, deliveryBaseFee: 40,
-  deliveryFeePerKm: 8, serviceCharge: 0, packingCharge: 0,
+  deliveryFeePerKm: 8, serviceCharge: 0, packingCharge: 0, acServiceChargePerGuest: 20,
   socialInstagram: "", socialFacebook: "", website: "",
   services: { dineIn: true, takeAway: true, delivery: true },
   notificationSound: true, banners: [], printerIps: [], editWindowMinutes: 3,
@@ -218,7 +218,7 @@ export default function ProfilePage() {
       case "address": return pick("address", "city", "latitude", "longitude", "dineInRange", "deliveryRange");
       case "biz": return pick("fssaiNumber", "gstNumber", "aboutRestaurant");
       case "hours": return pick("openingTime", "closingTime", "avgDeliveryTime");
-      case "pricing": return pick("minOrderAmount", "freeDeliveryAbove", "deliveryBaseFee", "deliveryFeePerKm", "serviceCharge", "packingCharge", "gstRate");
+      case "pricing": return pick("minOrderAmount", "freeDeliveryAbove", "deliveryBaseFee", "deliveryFeePerKm", "serviceCharge", "packingCharge", "gstRate", "acServiceChargePerGuest");
       case "payment": return pick("upiId", "upiPayeeName", "paymentMode");
       case "social": return pick("socialInstagram", "socialFacebook", "website");
       case "services": return pick("services", "notificationSound", "editWindowMinutes");
@@ -609,6 +609,7 @@ export default function ProfilePage() {
               [t("GST rate"), `${fmtNum(profile.gstRate ?? 0)}%`],
               [t("Service charge"), profile.serviceCharge > 0 ? `₹${fmtNum(profile.serviceCharge)}` : t("Not set")],
               [t("Packing charge"), profile.packingCharge > 0 ? `₹${fmtNum(profile.packingCharge)}` : t("Not set")],
+              [t("AC Room service charge"), t("₹{n} per guest", { n: fmtNum(profile.acServiceChargePerGuest ?? 20) })], // KH-11
               [t("Min order amount"), profile.minOrderAmount > 0 ? `₹${fmtNum(profile.minOrderAmount)}` : t("None")],
               [t("Free delivery above"), profile.freeDeliveryAbove > 0 ? `₹${fmtNum(profile.freeDeliveryAbove)}` : "—"],
               [t("Delivery base fee"), `₹${fmtNum(profile.deliveryBaseFee ?? 0)}`],
@@ -618,6 +619,7 @@ export default function ProfilePage() {
               <Field label={t("GST rate (%)")}><input className="zc-input" type="number" value={draft.gstRate} onChange={(e) => setNum("gstRate", e.target.value)} /></Field>
               <Field label={t("Service charge (₹)")}><input className="zc-input" type="number" value={draft.serviceCharge} onChange={(e) => setNum("serviceCharge", e.target.value)} /></Field>
               <Field label={t("Packing charge (₹)")}><input className="zc-input" type="number" value={draft.packingCharge} onChange={(e) => setNum("packingCharge", e.target.value)} /></Field>
+              <Field label={t("AC Room service charge per guest (₹)")}><input className="zc-input" type="number" min={0} value={draft.acServiceChargePerGuest ?? 20} onChange={(e) => setNum("acServiceChargePerGuest", e.target.value)} /></Field>
               <Field label={t("Min order amount (₹)")}><input className="zc-input" type="number" value={draft.minOrderAmount} onChange={(e) => setNum("minOrderAmount", e.target.value)} /></Field>
               <Field label={t("Free delivery above (₹)")}><input className="zc-input" type="number" value={draft.freeDeliveryAbove} onChange={(e) => setNum("freeDeliveryAbove", e.target.value)} /></Field>
               <Field label={t("Delivery base fee (₹)")}><input className="zc-input" type="number" value={draft.deliveryBaseFee} onChange={(e) => setNum("deliveryBaseFee", e.target.value)} /></Field>

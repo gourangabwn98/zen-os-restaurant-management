@@ -586,7 +586,7 @@ export const modifyOrderItemsTx = async ({ req, orderId, items, revision }) => {
   const restaurant = await RestaurantProfile.findOne();
   const scheduleCtx = await getScheduleContext({ models: req.models, profile: restaurant });
   const { dbItems, subtotal, tax, serviceCharge, discount, total } =
-    await priceOrder({ items, MenuItem, restaurantProfile: restaurant, scheduleCtx, coupon: order.coupon });
+    await priceOrder({ items, MenuItem, restaurantProfile: restaurant, scheduleCtx, coupon: order.coupon, acServiceCharge: order.acServiceCharge }); // KH-11: keep it
   await assertStockForItems({ models: req.models, items: dbItems });
 
   const actor = buildActor(req.user, order.guestName);

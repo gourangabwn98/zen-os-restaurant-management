@@ -28,7 +28,8 @@ assert.equal(ineligibleReason(o({ status: "AWAITING_PAYMENT" }), 5), "Not accept
 // combineTotals — sums of stored figures only
 const A = { subtotal: 400, discount: 40, tax: 54, serviceCharge: 20, total: 434, paymentStatus: "PAID" };
 const B = { subtotal: 280, discount: 0, tax: 42, serviceCharge: 10, total: 332, paymentStatus: "PENDING_VERIFICATION" };
-assert.deepEqual(combineTotals([A, B]), { orderCount: 2, subtotal: 680, discount: 40, tax: 96, serviceCharge: 30, total: 766, paidTotal: 434, dueTotal: 332, allPaid: false });
+// KH-11 added acServiceCharge (AC Room guest charge; 0 when none).
+assert.deepEqual(combineTotals([A, B]), { orderCount: 2, subtotal: 680, discount: 40, tax: 96, serviceCharge: 30, acServiceCharge: 0, total: 766, paidTotal: 434, dueTotal: 332, allPaid: false });
 assert.equal(combineTotals([A]).allPaid, true);
 assert.equal(combineTotals([]).allPaid, false);
 

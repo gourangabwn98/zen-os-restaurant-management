@@ -24,7 +24,8 @@ export const settleOrders = (orderIds, paymentMethod) => api.post("/admin/orders
 
 // ── Billing ────────────────────────────────────────────────────────────────
 export const getCombinedBill = (params) => api.get("/admin/orders/combined-bill", { params });
-export const printBill       = (id) => api.post(`/admin/orders/${id}/print-bill`);
+// KH-11: guests seated (dine-in) → AC Room service charge on the server.
+export const printBill       = (id, guests) => api.post(`/admin/orders/${id}/print-bill`, guests ? { guests } : {});
 
 // ── KH-07 / KH-03 — follow-up orders + combined bill ─────────────────────
 // An order with its follow-ups ("add items" after the KOT).
