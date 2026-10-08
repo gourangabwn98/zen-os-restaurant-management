@@ -27,6 +27,8 @@ const menuCached       = () => cached("order:menu", ORDER_DATA_TTL, () => getMen
 const profileCached    = () => cached("order:profile", 5 * ORDER_DATA_TTL, () => getRestaurantProfile());
 const categoriesCached = () => cached("order:categories", ORDER_DATA_TTL, () => getCategories());
 const prefetchOrderData = () => { menuCached().catch(() => {}); profileCached().catch(() => {}); categoriesCached().catch(() => {}); };
+import { useAuth } from "../../hooks/useAuth.js";
+import { isManager } from "../../utils/access.js";
 import { t, tn, N_, fmtNum, fmtDate, fmtDateTime, fmtTime, localName } from "../../i18n/core.js";
 import { customerName } from "./shared/customerName.js";
 import { takenByName, takenByIsAcceptor } from "./shared/takenBy.js";
@@ -194,6 +196,15 @@ const GlobalOrdersStyle = () => (
       cursor: pointer; transition: var(--theme-transition), border-color .12s ease;
     }
     .op-ocard:hover { border-color: var(--edge-hi); }
+    /* A metric that needs attention now (orders awaiting confirmation). */
+    @keyframes op-blink {
+      0%, 100% { border-color: var(--wait-line); background: var(--wait-fill); box-shadow: 0 0 0 0 transparent; }
+      50% { border-color: var(--wait-ink); background: transparent; box-shadow: 0 0 0 3px var(--wait-line); }
+    }
+    .zc-metric.op-blink { animation: op-blink 1.1s ease-in-out infinite; border: 1px solid var(--wait-line); }
+    @media (prefers-reduced-motion: reduce) {
+      .zc-metric.op-blink { animation: none; border-color: var(--wait-ink); background: var(--wait-fill); }
+    }
     /* Table view order card — always open, read top to bottom. */
     .op-ocard2 { border: 1px solid var(--edge); border-radius: var(--r-row); padding: 12px 13px; margin-bottom: 8px;
       display: grid; gap: 10px; transition: var(--theme-transition); }
@@ -225,9 +236,10 @@ const GlobalOrdersStyle = () => (
 );
 
 // ── BillMetric — compact reference-style pill (Billing's two dense rows) ──────
-const BillMetric = ({ label, value, caption, tone, grad, onClick }) => (
+// `alert`: blinks to get attention (e.g. customer orders waiting to be accepted).
+const BillMetric = ({ label, value, caption, tone, grad, onClick, alert = false }) => (
   <div
-    className="zc-metric sm"
+    className={`zc-metric sm${alert ? " op-blink" : ""}`}
     onClick={onClick}
     role={onClick ? "button" : undefined}
     tabIndex={onClick ? 0 : undefined}
@@ -2221,6 +2233,7 @@ const PendingOrdersModal = ({ orders, busy, onConfirm, onReject, onClose }) => {
 // ══════════════════════════════════════════════════════════════════════════════
 
 export default function OrdersPage() {
+  const managerView = isManager(useAuth().user);
   const [orders,setOrders]=useState([]);
   const [loading,setLoading]=useState(true);
   const [search,setSearch]=useState("");
@@ -2621,6 +2634,7 @@ export default function OrdersPage() {
       caption: oldestAwaitingMin ? t("Oldest waiting {n} min", { n: oldestAwaitingMin }) : t("Queue clear"),
       tone: "var(--wait-ink)",
       onClick: () => setShowPending(true),
+      alert: countStatus("PENDING_CONFIRMATION", true) > 0, // blinks while anything waits
     },
     {
       label: t("Total orders"),
@@ -2787,9 +2801,13 @@ export default function OrdersPage() {
           <div className="op-pills" style={{ marginBottom: 8 }}>
             {STAT_ROW.map((m) => <BillMetric key={m.label} {...m} />)}
           </div>
-          <div className="op-pills" style={{ marginBottom: 16 }}>
-            {STAGE_ROW.map((m) => <BillMetric key={m.label} {...m} />)}
-          </div>
+          {/* A manager sees only the first row (payment due, active, awaiting
+              confirmation, total orders, open tables). */}
+          {!managerView && (
+            <div className="op-pills" style={{ marginBottom: 16 }}>
+              {STAGE_ROW.map((m) => <BillMetric key={m.label} {...m} />)}
+            </div>
+          )}
         </div>
       )}
       {!showOverview && <div style={{ marginBottom: 10 }} />}
