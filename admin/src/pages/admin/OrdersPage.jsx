@@ -867,6 +867,7 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
                       <div style={{ padding:"10px 10px 6px", flex:1 }}>
                         <div style={{ fontWeight:600, fontSize:13, color:"var(--text-1)",
                           lineHeight:1.3, marginBottom:3 }}>{localName(m)}</div>
+                        {m.notShareableCategory && <div style={{ fontSize:11, fontWeight:700, color:"var(--stop-ink)", marginBottom:3 }}>{t("{name} not shareable", { name: m.notShareableCategory })}</div>}
                         <div style={{ fontSize:11, color:"var(--text-3)" }}>{(catBn[m.category] && localName({ name: m.category, nameBn: catBn[m.category] })) || m.category}</div>
                         <div style={{ fontWeight:700, fontSize:15, color:"var(--text-1)",
                           marginTop:4 }}>₹{fmtNum(m.price)}</div>
@@ -1427,6 +1428,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded }) => {
                       <div style={{ padding:"10px 10px 6px", flex:1 }}>
                         <div style={{ fontWeight:600, fontSize:13, color:T1,
                           lineHeight:1.3, marginBottom:3 }}>{localName(m)}</div>
+                        {m.notShareableCategory && <div style={{ fontSize:11, fontWeight:700, color:"var(--stop-ink)", marginBottom:3 }}>{t("{name} not shareable", { name: m.notShareableCategory })}</div>}
                         <div style={{ fontSize:11, color:T3 }}>{(catBn[m.category] && localName({ name: m.category, nameBn: catBn[m.category] })) || m.category}</div>
                         <div style={{ fontWeight:700, fontSize:15, color:PINK, marginTop:4 }}>₹{fmtNum(m.price)}</div>
                       </div>

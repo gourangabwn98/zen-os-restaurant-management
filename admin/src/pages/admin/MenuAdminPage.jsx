@@ -181,6 +181,7 @@ function CategoryModal({ category = null, onClose, onSaved }) {
   const [removeImage, setRemoveImage] = useState(false);
   const [loading, setLoading] = useState(false);
   const [icon, setIcon] = useState(category?.icon || "");
+  const [notShareable, setNotShareable] = useState(!!category?.notShareable); // KH-05
   const smart = isSmartCat(category);
   const currentImage = removeImage ? "" : (category?.image || "");
   const renaming = isEdit && name.trim() && name.trim() !== category.name;
@@ -200,6 +201,7 @@ function CategoryModal({ category = null, onClose, onSaved }) {
       fd.append("name", name.trim());
       fd.append("nameBn", nameBn.trim());
       fd.append("icon", icon);
+      if (!smart) fd.append("notShareable", String(notShareable));
       if (file) fd.append("image", file);
       else if (isEdit && removeImage) fd.append("removeImage", "true");
       if (isEdit) {
@@ -272,6 +274,17 @@ function CategoryModal({ category = null, onClose, onSaved }) {
             </div>
             <div className="hint">{t("Shown on the customer menu when the category has no photo.")}</div>
           </div>
+          {!smart && (
+            <div className="menu-field">
+              <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
+                <input type="checkbox" className="menu-cb" checked={notShareable} onChange={(e) => setNotShareable(e.target.checked)} />
+                {t("Not shareable")}
+              </label>
+              <div className="hint">
+                {t("Its items show a red “{name} not shareable” note on the menu and order screens.", { name: name.trim() || t("Category") })}
+              </div>
+            </div>
+          )}
           <div className="menu-field">
             <label>{t("Category image")} <span style={{ color: "var(--text-3)", fontWeight: 400 }}>({t("optional")})</span></label>
             <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>

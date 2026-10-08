@@ -14,6 +14,7 @@ import QtyStepper, { AddButton } from "../components/ui/QtyStepper.jsx";
 import { Loader, ErrorState, EmptyState } from "../components/StateViews.jsx";
 import { ACCENT, GREEN, AMBER, RED, TEXT_MUTED, TEXT_FAINT, GLASS_BORDER, GLASS_BG } from "../theme.js";
 import { t, N_, tn, localName } from "../i18n/index.jsx";
+import NotShareableNote from "../components/NotShareableNote.jsx";
 import { STATUS_LABEL } from "../components/StatusBadge.jsx";
 
 // DSH-04: the floor steps a waiter drives. Kitchen marks Ready; the waiter
@@ -461,6 +462,7 @@ export default function OrderDetailPage() {
                         <GlassCard key={it._id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", opacity: outOfStock ? 0.5 : 1 }}>
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff" }}>{localName(it)}</div>
+                            <NotShareableNote item={it} />
                             <div style={{ fontSize: 12, color: TEXT_FAINT, marginTop: 2 }}>₹{it.price}{outOfStock ? ` · ${t("Out of stock")}` : ""}</div>
                           </div>
                           {!outOfStock && (

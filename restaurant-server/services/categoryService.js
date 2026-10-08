@@ -89,12 +89,18 @@ const cleanIcon = (icon) => {
 
 const cleanNameBn = (v) => String(v ?? "").trim().replace(/\s+/g, " ").slice(0, MAX_NAME);
 
-export const createCategory = async ({ models, name, nameBn = "", image = "", icon }) => {
+// KH-05: multipart forms send "true"/"false"; undefined = leave unchanged.
+const cleanNotShareable = (v) => (v === undefined ? undefined : v === true || v === "true");
+
+export const createCategory = async ({ models, name, nameBn = "", image = "", icon, notShareable }) => {
   const { Category } = models;
   const clean = normalizeCategoryName(name);
   await assertNameFree(Category, clean);
   try {
-    return await Category.create({ name: clean, nameBn: cleanNameBn(nameBn), image: image || "", icon: cleanIcon(icon) || "" });
+    return await Category.create({
+      name: clean, nameBn: cleanNameBn(nameBn), image: image || "", icon: cleanIcon(icon) || "",
+      notShareable: cleanNotShareable(notShareable) || false,
+    });
   } catch (err) {
     if (err?.code === 11000) throw httpError(`A category named "${clean}" already exists`, 409);
     throw err;
@@ -107,7 +113,7 @@ export const createCategory = async ({ models, name, nameBn = "", image = "", ic
  * @param image  new image URL, "" to remove it, undefined to keep it.
  * @returns {{ category, renamedFrom: string|null, itemsMoved: number }}
  */
-export const updateCategory = async ({ models, db, id, name, nameBn, image, icon }) => {
+export const updateCategory = async ({ models, db, id, name, nameBn, image, icon, notShareable }) => {
   const { Category, MenuItem } = models;
   const current = await Category.findById(id);
   if (!current) throw httpError("Category not found", 404);
@@ -123,6 +129,8 @@ export const updateCategory = async ({ models, db, id, name, nameBn, image, icon
   if (image !== undefined) set.image = image || "";
   const iconValue = cleanIcon(icon);
   if (iconValue !== undefined && iconValue !== (current.icon || "")) set.icon = iconValue;
+  const notShareableValue = cleanNotShareable(notShareable);
+  if (notShareableValue !== undefined && notShareableValue !== !!current.notShareable) set.notShareable = notShareableValue;
   if (!Object.keys(set).length) return { category: current, renamedFrom: null, itemsMoved: 0 };
 
   if (!renaming) {

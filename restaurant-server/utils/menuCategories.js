@@ -88,6 +88,20 @@ export const itemCategoryList = (item, { smartCats = [], dataSets = new Map(), h
 };
 
 /**
+ * KH-05 — the first of the item's own categories (primary, then extras)
+ * whose admin switch `notShareable` is on, or "" when none is. Smart
+ * categories never count. Apps show "<name> not shareable" in red.
+ * @param flaggedNames Set<string> of category names with notShareable: true
+ */
+export const notShareableCategoryOf = (item, flaggedNames) => {
+  if (!flaggedNames?.size) return "";
+  for (const name of [item.category, ...(item.categories || [])]) {
+    if (name && flaggedNames.has(name)) return name;
+  }
+  return "";
+};
+
+/**
  * Validates an item's extra categories: names of existing MANUAL categories,
  * trimmed, unique, never the primary. Throws a 400-style Error.
  * @param raw        array, JSON array string (multipart), or "" / undefined

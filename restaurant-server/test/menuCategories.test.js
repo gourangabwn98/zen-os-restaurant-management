@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import assert from "node:assert/strict";
 import {
-  itemCategoryList, cleanExtraCategories, categoryIcon, topIds, highestRatedIds, parseFlag,
+  itemCategoryList, cleanExtraCategories, categoryIcon, notShareableCategoryOf, topIds, highestRatedIds, parseFlag,
   SMART_CATEGORIES, SMART_DATA_RULES,
 } from "../utils/menuCategories.js";
 
@@ -77,6 +77,15 @@ test("MNU-06: icon = own pick → smart default → guessed from the name → pl
   assert.equal(categoryIcon({ name: "Fish Curry" }), "fish");
   assert.equal(categoryIcon({ name: "Zzz" }), "plate");
   assert.equal(categoryIcon({ name: "x", icon: "🍔" }), "plate");
+});
+
+test("KH-05: notShareableCategoryOf — only the item's own flagged categories count", () => {
+  const flagged = new Set(["Thali"]);
+  assert.equal(notShareableCategoryOf({ category: "Thali" }, flagged), "Thali");
+  assert.equal(notShareableCategoryOf({ category: "Specials", categories: ["Thali"] }, flagged), "Thali");
+  assert.equal(notShareableCategoryOf({ category: "Biryani", categories: ["Rice"] }, flagged), "");
+  assert.equal(notShareableCategoryOf({ category: "Thali" }, new Set()), "", "no flagged category → no note anywhere");
+  assert.equal(notShareableCategoryOf({ category: "Thali" }, undefined), "");
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -378,5 +378,9 @@ export default {
   "Price looks high": "দাম বেশি মনে হচ্ছে",
   "Only a Half price — used it": "শুধু হাফের দাম ছিল — সেটাই নেওয়া হয়েছে",
   "No price found": "দাম পাওয়া যায়নি",
+  // KH-05 — "Thali not shareable"
+  "Not shareable": "ভাগ করা যাবে না",
+  "{name} not shareable": "{name} ভাগ করে খাওয়া যাবে না",
+  "Its items show a red “{name} not shareable” note on the menu and order screens.": "এর আইটেমগুলোর নিচে মেনু ও অর্ডার স্ক্রিনে লাল “{name} ভাগ করে খাওয়া যাবে না” লেখা দেখাবে।",
 
 };

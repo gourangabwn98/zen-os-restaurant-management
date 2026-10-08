@@ -36,6 +36,9 @@ export default function ItemDetailSheet({ item, onClose, onAdd }) {
         <VegDot veg={item.tag === "Veg"} />{item.tag === "Veg" ? "Veg" : "Non-veg"} · {item.category}
       </div>
       <h3 style={{ marginTop: 6, marginBottom: 0 }}>{item.name}</h3>
+      {item.notShareableCategory && (
+        <div className="danger" style={{ fontSize: 13, fontWeight: 800, marginTop: 4 }}>{item.notShareableCategory} not shareable</div>
+      )}
       <Stars rating={item.rating} />
       {item.description && <p className="muted">{item.description}</p>}
 

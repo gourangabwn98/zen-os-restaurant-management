@@ -204,6 +204,10 @@ const categorySchema = new mongoose.Schema({
   // MNU-06 — a line icon from the shared category icon set (admin picks);
   // shown when the category has no photo. "" = derived from the name.
   icon:     { type: String, default: "" },
+  // KH-05 — items of this category show a red "<name> not shareable" note
+  // (menu / order screens). Admin switch; off by default, so nothing changes
+  // until it is turned on (e.g. for Thali). Display only — never affects price.
+  notShareable: { type: Boolean, default: false },
 }, { timestamps: true });
 categorySchema.index({ smartKey: 1 }, { unique: true, partialFilterExpression: { smartKey: { $type: "string" } } });
 

@@ -14,7 +14,7 @@ import { CATEGORY_SORT } from "../services/categoryService.js";
 import { listBestSellers } from "../services/bestSellerService.js";
 import { getMenuContext, ensureSmartCategories } from "../services/smartCategoryService.js";
 import {
-  smartByKey, itemCategoryList, cleanExtraCategories, parseFlag, ITEM_FLAGS, categoryIcon,
+  smartByKey, itemCategoryList, cleanExtraCategories, parseFlag, ITEM_FLAGS, categoryIcon, notShareableCategoryOf,
 } from "../utils/menuCategories.js";
 
 cloudinary.config({
@@ -105,9 +105,17 @@ export const getMenu = async (req, res) => {
       models: req.models,
       menuItemIds: items.map((i) => i._id),
     });
+    // KH-05: "<category> not shareable" note (e.g. Thali) — display only.
+    // Added after every visibility rule above, so it never changes which
+    // items are listed. Field present only on flagged items.
+    const flagged = new Set((await Category.find({ notShareable: true }).select("name").lean()).map((c) => c.name));
     const withStock = items.map((i) => {
       const s = stockStatus.get(String(i._id));
-      return { ...i, stockAvailable: s ? s.inStock : true, stockTracked: !!s?.tracked };
+      const notShareableCategory = notShareableCategoryOf(i, flagged);
+      return {
+        ...i, stockAvailable: s ? s.inStock : true, stockTracked: !!s?.tracked,
+        ...(notShareableCategory && { notShareableCategory }),
+      };
     });
 
     res.json(withStock);

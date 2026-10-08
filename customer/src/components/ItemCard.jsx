@@ -26,6 +26,9 @@ export default function ItemCard({ item, qty, onOpen, onAdd, onInc, onDec, conte
           <VegDot veg={item.tag === "Veg"} />{item.name}
         </button>
         <div className="ds">{item.description || item.category}</div>
+        {item.notShareableCategory && (
+          <div className="danger" style={{ fontSize: 11.5, fontWeight: 800 }}>{item.notShareableCategory} not shareable</div>
+        )}
         <Stars rating={item.rating} />
         <div className="pf">
           <div className="price">₹{item.price}{hasOriginal && <s>₹{item.originalPrice}</s>}</div>

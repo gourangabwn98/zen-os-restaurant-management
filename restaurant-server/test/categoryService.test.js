@@ -237,6 +237,20 @@ await test("delete: refused (409) while items use it; allowed once empty", async
   await assert.rejects(deleteCategory({ models, id: "c1" }), (e) => e.statusCode === 404);
 });
 
+await test("KH-05: notShareable is off by default, set on create, toggled on edit, string or boolean", async () => {
+  const { models, db, state } = fakeWorld({ cats: [{ _id: "c1", name: "Thali" }] });
+  const plain = await createCategory({ models, name: "Rolls" });
+  assert.equal(plain.notShareable, false, "default off — nothing changes until the admin turns it on");
+  const made = await createCategory({ models, name: "Combo", notShareable: "true" });
+  assert.equal(made.notShareable, true);
+  let r = await updateCategory({ models, db, id: "c1", notShareable: "true" });
+  assert.equal(r.category.notShareable, true);
+  r = await updateCategory({ models, db, id: "c1", notShareable: false });
+  assert.equal(r.category.notShareable, false);
+  await updateCategory({ models, db, id: "c1", nameBn: "থালি" }); // not sent → unchanged
+  assert.equal(state.cats.find((c) => c._id === "c1").notShareable, false);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
 console.log("ALL TESTS PASSED");

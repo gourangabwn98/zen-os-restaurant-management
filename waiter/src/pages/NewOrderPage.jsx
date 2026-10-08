@@ -14,6 +14,7 @@ import QtyStepper, { AddButton } from "../components/ui/QtyStepper.jsx";
 import { useAppState } from "../context/AppState.jsx";
 import { ACCENT, ACCENT_SOFT, ACCENT_GRADIENT, TEXT_MUTED, TEXT_FAINT, GLASS_BG, GLASS_BORDER, NAV_HEIGHT } from "../theme.js";
 import { t as tr, tn, localName } from "../i18n/index.jsx";
+import NotShareableNote from "../components/NotShareableNote.jsx";
 
 export default function NewOrderPage() {
   const nav = useNavigate();
@@ -313,6 +314,7 @@ export default function NewOrderPage() {
                   >
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff" }}>{localName(it)}</div>
+                      <NotShareableNote item={it} />
                       <div style={{ fontSize: 12, color: TEXT_FAINT, marginTop: 2 }}>₹{it.price}{outOfStock ? ` · ${tr("Out of stock")}` : ""}</div>
                     </div>
                     {!outOfStock && (

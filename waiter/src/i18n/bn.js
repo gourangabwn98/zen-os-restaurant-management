@@ -290,4 +290,6 @@ export default {
   "On duty {on} · Off duty {off} · Break {brk} · By you {self} · By admin {admin}": "ডিউটিতে {on} · ডিউটি বন্ধ {off} · বিরতি {brk} · আপনি {self} · অ্যাডমিন {admin}",
   "BREAK": "বিরতি",
   "Reason: {reason}": "কারণ: {reason}",
+  // KH-05 — red note under e.g. Thali items
+  "{name} not shareable": "{name} ভাগ করে খাওয়া যাবে না",
 };
