@@ -1814,6 +1814,9 @@ const MultiOrderTableView = ({ orders, tableNo, tableName, nowTick, onStatusChan
     if (label) return false;
     try { return sessionStorage.getItem(`combineBill:${tableNo}`) !== null; } catch { return false; }
   });
+  // One order at a time with Prev / Next (no long scroll). Kept by order id,
+  // so a live refresh that reorders the list stays on the same order.
+  const [curId, setCurId] = useState(null);
   const name = tableName || t("Table {n}", { n: tableNo }); // "Indoor-AC 1", never the internal tableNo
   const heading = label || name;
   const bill = billTarget || { mode: "table", value: tableNo };
@@ -1879,18 +1882,48 @@ const MultiOrderTableView = ({ orders, tableNo, tableName, nowTick, onStatusChan
         </div>
       </div>
 
-      {unpaidOrders.length > 0 && (
-        <div style={{ marginBottom:10 }}>
-          <div style={{ fontSize:10, fontWeight:700, color:"var(--stop-ink)", letterSpacing:1,
-            textTransform:"uppercase", marginBottom:6, display:"flex", alignItems:"center", gap:6 }}>
-            <div style={{ width:6, height:6, borderRadius:"50%", background:"var(--stop-ink)" }}/>
-            {t("Pending Payment")} ({fmtNum(unpaidOrders.length)})
-          </div>
-          {unpaidOrders.map((order, idx) => (
+      {/* Unpaid first, then paid — one card at a time, Prev / Next to move. */}
+      {(() => {
+        const list = [...unpaidOrders, ...paidOrders];
+        const found = list.findIndex((o) => String(o._id) === String(curId));
+        const pos = found < 0 ? 0 : found;
+        const order = list[pos];
+        const go = (i) => setCurId(String(list[(i + list.length) % list.length]._id));
+        const paid = order.paymentStatus === "PAID";
+        return (
+          <div style={{ marginBottom:10 }}>
+            {list.length > 1 && (
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+                <button type="button" className="zc-btn sm" onClick={() => go(pos - 1)} aria-label={t("Previous order")}>‹ {t("Prev")}</button>
+                <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:5, minWidth:0 }}>
+                  <span style={{ fontSize:12, fontWeight:700, color:T1 }}>
+                    {t("Order {n} of {total}", { n: pos + 1, total: list.length })}
+                    <span style={{ marginLeft:6, fontSize:10.5, fontWeight:700, color: paid ? "var(--ready-ink)" : "var(--stop-ink)" }}>
+                      · {paid ? t("Paid") : t("Pending Payment")}
+                    </span>
+                  </span>
+                  <div style={{ display:"flex", gap:4, flexWrap:"wrap", justifyContent:"center" }}>
+                    {list.map((o, i) => (
+                      <button key={o._id} type="button" onClick={() => go(i)}
+                        aria-label={t("Order {n} of {total}", { n: i + 1, total: list.length })}
+                        aria-current={i === pos ? "true" : undefined}
+                        title={`${o.orderId} · ${o.paymentStatus === "PAID" ? t("Paid") : t("Not paid")}`}
+                        style={{ minWidth:22, height:22, padding:"0 6px", borderRadius:11, cursor:"pointer", fontSize:11, fontWeight:700,
+                          border:`1px solid ${i === pos ? "var(--violet-mid)" : BDR}`,
+                          background: i === pos ? "var(--violet-faint)" : "transparent",
+                          color: o.paymentStatus === "PAID" ? "var(--ready-ink)" : "var(--stop-ink)" }}>
+                        {i + 1}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <button type="button" className="zc-btn sm pri" onClick={() => go(pos + 1)} aria-label={t("Next order")}>{t("Next")} ›</button>
+              </div>
+            )}
             <OrderCard
               key={order._id}
               order={order}
-              idx={idx}
+              idx={pos}
               onStatusChange={onStatusChange}
               onPaymentChange={onPaymentChange}
               onAddItems={addHere}
@@ -1898,32 +1931,9 @@ const MultiOrderTableView = ({ orders, tableNo, tableName, nowTick, onStatusChan
               onOpenDetail={onOpenDetail}
               nowTick={nowTick}
             />
-          ))}
-        </div>
-      )}
-
-      {paidOrders.length > 0 && (
-        <div style={{ marginBottom:10 }}>
-          <div style={{ fontSize:10, fontWeight:700, color:"var(--ready-ink)", letterSpacing:1,
-            textTransform:"uppercase", marginBottom:6, display:"flex", alignItems:"center", gap:6 }}>
-            <div style={{ width:6, height:6, borderRadius:"50%", background:"var(--ready-ink)" }}/>
-            {t("Paid")} ({fmtNum(paidOrders.length)})
           </div>
-          {paidOrders.map((order, idx) => (
-            <OrderCard
-              key={order._id}
-              order={order}
-              idx={idx}
-              onStatusChange={onStatusChange}
-              onPaymentChange={onPaymentChange}
-              onAddItems={addHere}
-              onEditItems={onEditItems}
-              onOpenDetail={onOpenDetail}
-              nowTick={nowTick}
-            />
-          ))}
-        </div>
-      )}
+        );
+      })()}
 
       {onCombinedBill && (
         <button className="op-btn" onClick={()=>(label ? onCombinedBill(bill.mode, bill.value) : setCombineMode(true))}
