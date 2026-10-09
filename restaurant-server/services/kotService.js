@@ -11,13 +11,11 @@
 // tell the two cases apart via `created`.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { ORDER_SOURCES, ORDER_TYPES } from "../utils/orderStateMachine.js";
+import { ORDER_SOURCES } from "../utils/orderStateMachine.js";
 import { addonLabel, lineAddonKey } from "../utils/menuAddons.js";
 
 const SOURCE_CUSTOMER = ORDER_SOURCES.find((s) => s === "CUSTOMER");
 if (!SOURCE_CUSTOMER) throw new Error("kotService: ORDER_SOURCES has no CUSTOMER");
-const TYPE_TAKEAWAY = ORDER_TYPES.find((t) => t === "TAKEAWAY");
-if (!TYPE_TAKEAWAY) throw new Error("kotService: ORDER_TYPES has no TAKEAWAY");
 const KOT_NAME_MAX = 100; // sanity cap only — the KOT layout wraps long names
 
 /**
@@ -34,14 +32,13 @@ export const kotCustomerName = (order, accountName = "") => {
 };
 
 /**
- * The CUSTOMER's phone for the paper KOT, or "" (line left out). Only on a
- * TAKEAWAY order — a dine-in KOT has the table instead. Same source rule as
+ * The CUSTOMER's phone for the paper KOT, or "" (line left out). Printed on
+ * every order type (takeaway and every dine-in area). Same source rule as
  * the bill: the typed guest phone, else — only on a customer-placed order —
  * the account's phone (on a staff order the account is the waiter).
  * @param accountPhone  phone of order.user (caller looks it up), or ""
  */
 export const kotCustomerPhone = (order, accountPhone = "") => {
-  if (order?.orderType !== TYPE_TAKEAWAY) return "";
   const placedByCustomer = !order?.source || order.source === SOURCE_CUSTOMER;
   const phone = String(order?.guestPhone || (placedByCustomer ? accountPhone : "") || "").replace(/[^\d+]/g, "");
   return phone.slice(0, 15);

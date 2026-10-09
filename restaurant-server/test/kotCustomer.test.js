@@ -85,14 +85,17 @@ await test("phone: typed guest phone, else the account's only on a customer orde
   assert.equal(kotCustomerPhone({ ...ta, source: "ADMIN" }), "");
 });
 
-await test("phone: only on a TAKEAWAY KOT — never dine-in (any area) or online, for every role", () => {
+await test("phone: on every order type — takeaway and every dine-in area — for every role", () => {
+  const types = [
+    { orderType: "TAKEAWAY" }, { orderType: "ONLINE" },
+    ...["", "AC_ROOM", "GARDEN", "GAZEBO"].map((diningArea) => ({ orderType: "DINE_IN", diningArea })),
+  ];
   for (const source of ["WAITER", "ADMIN", "CUSTOMER"]) {
-    assert.equal(kotCustomerPhone({ orderType: "TAKEAWAY", source, guestPhone: "9876543210" }), "9876543210", source);
-    assert.equal(kotCustomerPhone({ orderType: "DINE_IN", source, guestPhone: "9876543210" }, "9000000001"), "", source);
-    assert.equal(kotCustomerPhone({ orderType: "DINE_IN", diningArea: "AC_ROOM", source, guestPhone: "9876543210" }), "", source);
-    assert.equal(kotCustomerPhone({ orderType: "ONLINE", source, guestPhone: "9876543210" }), "", source);
+    for (const t of types) {
+      assert.equal(kotCustomerPhone({ ...t, source, guestPhone: "9876543210" }), "9876543210", `${source} ${t.orderType} ${t.diningArea ?? ""}`);
+      assert.equal(kotCustomerPhone({ ...t, source }), "", "no phone entered → no line");
+    }
   }
-  assert.equal(kotCustomerPhone({ source: "WAITER", guestPhone: "9876543210" }), "", "no type → no phone");
 });
 
 await test("KOT job stores the phone for paper; the Kitchen app copy never has it", async () => {
