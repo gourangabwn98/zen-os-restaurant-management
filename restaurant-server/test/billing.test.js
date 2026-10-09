@@ -68,6 +68,7 @@ const makeWorld = (orders, { sessions = [] } = {}) => {
     countDocuments: async (f) => state.orders.filter((o) => matches(o, f)).length,
   };
   const TableSession = {
+    findOne: async (f) => state.sessions.find((s) => matches(s, f)) || null,
     findById: async (id) => {
       const s = state.sessions.find((x) => String(x._id) === String(id));
       return s ? Object.assign(s, { save: async () => s }) : null;
@@ -191,6 +192,68 @@ await test("combined bill 'settle selected' goes through settleBills (table-chec
   assert.deepEqual(r.completed, ["ORD10"]);
   assert.equal(r.rejected[0].reason, "Not an order of this table");
   assert.equal(get(state, oid(11)).status, "DELIVERED");
+});
+
+// Admin / manager "Complete all" on the table map: paid orders still cooking
+// complete too, so the table is cleared. A waiter's settle is unchanged.
+const tableWorld = () => {
+  const rows = [
+    { _id: oid(20), orderId: "ORD20", orderType: "DINE_IN", tableNo: 4, status: "DELIVERED", paymentStatus: "PAID", billStatus: "OPEN", tableSession: "s4", createdAt: new Date(1) },
+    { _id: oid(21), orderId: "ORD21", orderType: "DINE_IN", tableNo: 4, status: "PREPARING", paymentStatus: "PAID", billStatus: "OPEN", tableSession: "s4", createdAt: new Date(2) },
+    { _id: oid(22), orderId: "ORD22", orderType: "DINE_IN", tableNo: 4, status: "READY", paymentStatus: "PAID", billStatus: "OPEN", tableSession: "s4", createdAt: new Date(3) },
+  ];
+  const w = makeWorld(rows, { sessions: [{ _id: "s4", status: "OPEN", orders: rows.map((r) => r._id), table: "t4", tableNo: 4 }] });
+  w.models.Order.find = (f) => {
+    const out = () => w.state.orders.filter((o) => matches(o, f)).map((o) => ({ ...o }));
+    return { populate: () => ({ lean: async () => out() }), lean: async () => out(), select: () => ({ lean: async () => out() }) };
+  };
+  return w;
+};
+const tableIds = [oid(20), oid(21), oid(22)];
+
+for (const role of ["admin", "manager"]) {
+  await test(`${role} 'Complete all': paid orders still cooking / ready complete too → the table is cleared`, async () => {
+    const { completeSelected } = await import("../services/combinedBillService.js");
+    const { completeOrderByAdminTx } = await import("../services/orderService.js");
+    const { state, models } = tableWorld();
+    const user = role === "admin" ? { _id: "a1", isAdmin: true, name: "Boss" } : { _id: "m1", role: "manager", name: "Mona" };
+    const r = await completeSelected({
+      req: { models, user }, body: { tableNo: 4, orderIds: tableIds }, settle: settleBills, completeByAdmin: completeOrderByAdminTx,
+      actor: { id: user._id, role: "ADMIN", name: user.name }, role,
+    });
+    for (const id of tableIds) assert.equal(get(state, id).status, "COMPLETED");
+    assert.deepEqual([...r.completed].sort(), ["ORD20", "ORD21", "ORD22"]);
+    assert.equal(r.tableCleared, true);
+    assert.equal(state.sessions[0].status, "CLOSED");
+    assert.deepEqual(r.keepingTable, []);
+  });
+}
+
+await test("admin 'Complete all': a Placed (not yet in the kitchen) order keeps the table — reported, never force-completed", async () => {
+  const { completeSelected } = await import("../services/combinedBillService.js");
+  const { completeOrderByAdminTx } = await import("../services/orderService.js");
+  const { state, models } = tableWorld();
+  get(state, oid(22)).status = "CONFIRMED";
+  const r = await completeSelected({
+    req: { models, user: { _id: "a1", isAdmin: true } }, body: { tableNo: 4, orderIds: tableIds }, settle: settleBills,
+    completeByAdmin: completeOrderByAdminTx, actor: ACTOR, role: "admin",
+  });
+  assert.equal(get(state, oid(22)).status, "CONFIRMED", "KOT + stock are never skipped");
+  assert.equal(r.tableCleared, false);
+  assert.deepEqual(r.keepingTable.map((o) => o.orderId), ["ORD22"]);
+});
+
+await test("waiter settle: unchanged — an order still cooking stays cooking and keeps the table", async () => {
+  const { completeSelected } = await import("../services/combinedBillService.js");
+  const { completeOrderByAdminTx } = await import("../services/orderService.js");
+  const { state, models } = tableWorld();
+  const r = await completeSelected({
+    req: { models, user: waiter }, body: { tableNo: 4, orderIds: tableIds }, settle: settleBills,
+    completeByAdmin: completeOrderByAdminTx, actor: ACTOR, role: "waiter",
+  });
+  assert.equal(get(state, oid(21)).status, "PREPARING");
+  assert.deepEqual(r.completed, ["ORD20"]);
+  assert.equal(r.tableCleared, false);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

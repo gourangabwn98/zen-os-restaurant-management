@@ -17,7 +17,8 @@
 // clicks and two admins at once are safe; the result lists what happened to
 // every requested id.
 // ─────────────────────────────────────────────────────────────────────────────
-import { ORDER_STATUSES, PAYMENT_STATUSES, ORDER_TYPES } from "../utils/orderStateMachine.js";
+import { ORDER_STATUSES, PAYMENT_STATUSES, ORDER_TYPES, ADMIN_COMPLETE_FROM } from "../utils/orderStateMachine.js";
+import { isManagementRole } from "../utils/roles.js";
 import { roundMoney } from "../utils/recipeCost.js";
 import { addonsForPrint } from "../utils/menuAddons.js";
 import { parseGuests, applyGuestsToSelection } from "./acServiceCharge.js";
@@ -238,11 +239,18 @@ export const markSelectedPaid = async ({ models, body, canPay }) => {
 /** "Settle Selected" (BIL-01/BIL-02) — settles the ticked orders' bills
  * through the billing workflow (services/billingService.js settleBills): a
  * not-yet-paid order needs `paymentMethod` (it's collected now); a served
- * order is completed right after; one still cooking stays cooking and
- * completes when it's served. Nobody completes an order by hand any more.
- * `settle` is billingService.settleBills (injected to keep this module free
- * of the order-service import chain in tests). */
-export const completeSelected = async ({ req, body, settle, actor, role }) => {
+ * order is completed right after. For a waiter, one still cooking stays
+ * cooking and completes when it's served.
+ * Admin / manager "Complete all" (table map) also completes every ticked
+ * PAID order still PREPARING / READY via `completeByAdmin`
+ * (orderService.completeOrderByAdminTx — same role / PAID / state rules as
+ * the single "Complete"), so the table is cleared when its last order
+ * completes. A Placed (CONFIRMED) order is never completed: it must reach the
+ * kitchen first (KOT + stock). `tableCleared` / `keepingTable` tell the
+ * caller whether the table was freed, and if not, which orders hold it.
+ * `settle` / `completeByAdmin` are injected to keep this module free of the
+ * order-service import chain in tests. */
+export const completeSelected = async ({ req, body, settle, completeByAdmin = null, actor, role }) => {
   const { orders, rejected } = await resolveSelection({ models: req.models, body });
   if (!orders.length) {
     const done = rejected.filter((r) => r.reason === "Already completed");
@@ -254,11 +262,41 @@ export const completeSelected = async ({ req, body, settle, actor, role }) => {
   // Ids that were already COMPLETED at selection time come back as rejected
   // "Already completed" from resolveSelection — their bills are settled.
   const done = rejected.filter((x) => x.reason === "Already completed");
+  const completions = [...r.completions];
+  const extraRejected = [];
+  if (completeByAdmin && isManagementRole(role)) {
+    const { Order } = req.models;
+    const finished = new Set(completions.map((c) => String(c.order._id)));
+    const running = await Order.find({
+      _id: { $in: orders.map((o) => o._id) }, status: { $in: ADMIN_COMPLETE_FROM }, paymentStatus: PAID,
+    }).lean();
+    for (const o of running) {
+      if (finished.has(String(o._id))) continue;
+      try {
+        const c = await completeByAdmin({ req, current: o, note: "Completed with the table bill" });
+        completions.push({ ...c, previousStatus: o.status });
+      } catch (err) {
+        extraRejected.push({ id: String(o._id), orderId: o.orderId, reason: err.message });
+      }
+    }
+  }
+  // Is the table free now? If not, say which orders still hold it.
+  let tableCleared = completions.some((c) => c.closedTableSession);
+  let keepingTable = [];
+  if (!tableCleared && body.tableNo != null && req.models.TableSession) {
+    const open = await req.models.TableSession.findOne({ tableNo: Number(body.tableNo), status: "OPEN" });
+    if (!open) tableCleared = completions.length > 0;
+    else {
+      keepingTable = (await req.models.Order.find({ tableSession: open._id, status: { $nin: [COMPLETED, CANCELLED] } })
+        .select("orderId status paymentStatus").lean())
+        .map((o) => ({ orderId: o.orderId, status: o.status, paymentStatus: o.paymentStatus }));
+    }
+  }
   return {
     settled: r.settled,
     alreadySettled: [...r.alreadySettled, ...done.map((x) => x.orderId)],
-    completed: r.completions.map((c) => c.order.orderId),
-    rejected: [...rejected.filter((x) => x.reason !== "Already completed"), ...r.rejected],
-    changed: r.changed, completions: r.completions,
+    completed: completions.map((c) => c.order.orderId),
+    rejected: [...rejected.filter((x) => x.reason !== "Already completed"), ...r.rejected, ...extraRejected],
+    changed: r.changed, completions, tableCleared, keepingTable,
   };
 };

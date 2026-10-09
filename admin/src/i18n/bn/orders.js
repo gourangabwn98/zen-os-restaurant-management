@@ -462,6 +462,11 @@ export default {
   "Mark all paid": "সব পরিশোধিত করুন",
   "All paid": "সব পরিশোধিত",
   "Complete all": "সব শেষ করুন",
+  "Complete {n} orders and clear {table}? Their bills are closed.": "{n}টি অর্ডার শেষ করে {table} খালি করবেন? বিল বন্ধ হয়ে যাবে।",
+  "{table} is cleared": "{table} খালি হয়েছে",
+  "Table not cleared": "টেবিল খালি হয়নি",
+  "still open: {list}": "এখনও চালু: {list}",
+  "unpaid": "বাকি",
   "Mark them paid first": "আগে পরিশোধিত করুন",
   "Complete {n} orders? Their bills are closed; served orders leave the table.": "{n}টি অর্ডার শেষ করবেন? বিল বন্ধ হবে; পরিবেশিত অর্ডার টেবিল থেকে সরে যাবে।",
 };

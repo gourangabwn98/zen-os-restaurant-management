@@ -17,11 +17,11 @@ import {
 } from "../../../services/adminService.js";
 import { newIdempotencyKey } from "../../../services/orderService.js";
 import { statusKind } from "./statusKind.js";
+import { ORDER_STATUS_LABEL } from "./statusLabels.js";
 import { customerName } from "./customerName.js";
 import { t, tn, fmtNum, localName } from "../../../i18n/core.js";
 import { addonLabel } from "./addons.js";
 import "./combineBill.css";
-import { ORDER_STATUS_LABEL } from "./statusLabels.js";
 
 // Same rule as the server (COMBINABLE): accepted and still on the table.
 const COMBINABLE = ["CONFIRMED", "PREPARING", "READY", "DELIVERED"];
@@ -117,18 +117,26 @@ export default function CombineBillPanel({ tableNo, tableName, orders, onExit, o
     onRefresh?.();
   });
 
-  // BIL-01/02 — settle the selected PAID bills. A served order completes as a
-  // result (and leaves the table); one still cooking completes when served.
+  // BIL-01/02 — settle the selected PAID bills and complete them. Admin /
+  // manager: orders still cooking / ready complete too, so the table is
+  // cleared (server: combinedBillService.completeSelected). Anything still
+  // holding the table (unpaid, not yet in the kitchen, unticked) is named.
   const settle = () => {
-    if (!window.confirm(t("Complete {n} orders? Their bills are closed; served orders leave the table.", { n: ids.length }))) return;
+    if (!window.confirm(t("Complete {n} orders and clear {table}? Their bills are closed.", { n: ids.length, table: name }))) return;
     run("complete", async () => {
       const { data } = await completeSelectedOrders(tableNo, ids);
+      const holding = (data.keepingTable || []).map((o) => `${o.orderId} (${t(ORDER_STATUS_LABEL[o.status] || o.status)}${o.paymentStatus !== "PAID" ? ` · ${t("unpaid")}` : ""})`);
       report([
         data.settled?.length ? t("{n} bills settled", { n: data.settled.length }) : "",
         data.completed?.length ? t("{n} orders completed", { n: data.completed.length }) : "",
         data.alreadySettled?.length ? t("{n} already settled", { n: data.alreadySettled.length }) : "",
-      ], data.rejected);
+        data.tableCleared ? `✓ ${t("{table} is cleared", { table: name })}` : "",
+      ], [
+        ...(data.rejected || []),
+        ...(!data.tableCleared && holding.length ? [{ id: t("Table not cleared"), reason: t("still open: {list}", { list: holding.join(", ") }) }] : []),
+      ]);
       onRefresh?.();
+      if (data.tableCleared) exit();
     });
   };
 

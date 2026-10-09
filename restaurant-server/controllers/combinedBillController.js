@@ -4,7 +4,7 @@
 import {
   previewCombinedBill, printCombinedBill, markSelectedPaid, completeSelected, orderGroup,
 } from "../services/combinedBillService.js";
-import { buildActor, getRoleFromUser } from "../services/orderService.js";
+import { buildActor, getRoleFromUser, completeOrderByAdminTx } from "../services/orderService.js";
 import { settleBills } from "../services/billingService.js";
 import { emitSettlement } from "./billingController.js";
 import { canSetPaymentStatus } from "../utils/orderStateMachine.js";
@@ -45,16 +45,18 @@ export const paySelected = async (req, res) => {
 
 // POST /api/admin/combined-bill/complete  { tableNo, orderIds, paymentMethod? }
 // BIL-01/BIL-02: settles the selected bills (services/billingService.js);
-// served orders complete as a result — never by hand.
+// served orders complete as a result. Admin/manager: paid orders still
+// cooking / ready complete too, so the table clears (completeSelected).
 export const completeSelectedOrders = async (req, res) => {
   try {
     const r = await completeSelected({
-      req, body: req.body || {}, settle: settleBills,
+      req, body: req.body || {}, settle: settleBills, completeByAdmin: completeOrderByAdminTx,
       actor: buildActor(req.user), role: getRoleFromUser(req.user),
     });
     emitSettlement(req.tenantKey, r);
     res.json({
       settled: r.settled, alreadySettled: r.alreadySettled, completed: r.completed, rejected: r.rejected,
+      tableCleared: r.tableCleared, keepingTable: r.keepingTable, // admin/manager: was the table freed?
       // kept for older admin builds that read these names
       alreadyCompleted: r.alreadySettled,
     });
