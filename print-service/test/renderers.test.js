@@ -246,6 +246,13 @@ const run = async () => {
     assert.match(text(renderKot(kotJob({ customerName: "Rahul" }))), /Customer {3}: +Rahul/);
   });
 
+  await test("kot: phone shown under the customer only when the job has one", () => {
+    assert.doesNotMatch(text(renderKot(kotJob())), /Phone/);
+    const t = text(renderKot(kotJob({ customerName: "Rahul", customerPhone: "9876543210" })));
+    assert.match(t, /^Customer {3}: +Rahul\nPhone {6}: +9876543210$/m);
+    for (const W of [32, 42, 48]) assertFits(renderKot(kotJob({ customerPhone: "9876543210" }), { width: W }), W);
+  });
+
   // ── Width safety across every scenario and paper size ──
   await test("no line ever exceeds the paper width (32 / 42 / 48 chars)", () => {
     const names = ["Customer With A Really Very Long Full Name For Testing Wrap", ""];

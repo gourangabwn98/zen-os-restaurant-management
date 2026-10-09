@@ -219,7 +219,7 @@ export const initSocket = (httpServer) => {
         const jobs = [
           ...kot.map((j) => ({ jobId: String(j._id), jobType: "KOT", status: j.status, attempts: j.attempts,
             orderId: j.orderId, tableNo: j.tableNo, orderType: j.orderType, items: j.items, notes: j.notes || "",
-            customerName: j.customerName || "", diningArea: j.diningArea || "",
+            customerName: j.customerName || "", customerPhone: j.customerPhone || "", diningArea: j.diningArea || "",
             tableName: j.tableName || "", tableDisplayNo: j.tableDisplayNo ?? null, createdAt: j.createdAt })),
           ...bill.map((j) => ({ jobId: String(j._id), jobType: "BILL", status: j.status, attempts: j.attempts,
             orderId: j.orderId, tableNo: j.tableNo, orderType: j.orderType, payload: j.payload, createdAt: j.createdAt })),
@@ -376,6 +376,7 @@ export const emitKotCreated = (tenantKey, kotJob) => {
     orderId: kotJob.orderId, tableNo: kotJob.tableNo, orderType: kotJob.orderType,
     items: kotJob.items, notes: kotJob.notes || "", attempts: kotJob.attempts || 0, priority: kotJob.priority || "NORMAL",
     customerName: kotJob.customerName || "", // KH-08 — paper KOT only
+    customerPhone: kotJob.customerPhone || "", // paper KOT only
     diningArea: kotJob.diningArea || "", // KH-10
     tableName: kotJob.tableName || "", tableDisplayNo: kotJob.tableDisplayNo ?? null, // per-area table number
   };
@@ -383,7 +384,7 @@ export const emitKotCreated = (tenantKey, kotJob) => {
   // The Kitchen app's realtime feed — a chef never joins the staff room, so
   // without this, kot:created would never reach them and the whole KDS
   // "new order" alert/sound would silently never fire. KH-08: without the
-  // customer's name — that is for the paper KOT only.
+  // customer's name / phone — those are for the paper KOT only.
   emit(rooms.kitchen(tenantKey), "kot:created", { kotJob: kitchenSafeKot(kotJob) });
   emit(rooms.printers(tenantKey), "kot:created", payload);
   emit(rooms.staff(tenantKey), "kot-print", kotJob); // legacy shape/name

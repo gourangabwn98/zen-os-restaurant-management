@@ -32,18 +32,31 @@ export const kotCustomerName = (order, accountName = "") => {
 };
 
 /**
+ * The CUSTOMER's phone for the paper KOT, or "" (line left out). Same rule as
+ * the bill: the typed guest phone, else — only on a customer-placed order —
+ * the account's phone (on a staff order the account is the waiter).
+ * @param accountPhone  phone of order.user (caller looks it up), or ""
+ */
+export const kotCustomerPhone = (order, accountPhone = "") => {
+  const placedByCustomer = !order?.source || order.source === SOURCE_CUSTOMER;
+  const phone = String(order?.guestPhone || (placedByCustomer ? accountPhone : "") || "").replace(/[^\d+]/g, "");
+  return phone.slice(0, 15);
+};
+
+/**
  * KH-08 — a KOT job as the Kitchen app may see it: without the customer's
- * name. The name is for the paper ticket only (printers room / print queue);
- * the kitchen room is PII-stripped by design (CLAUDE.md → Socket.IO rooms).
+ * name or phone. Those are for the paper ticket only (printers room / print
+ * queue); the kitchen room is PII-stripped by design (CLAUDE.md → Socket.IO rooms).
  */
 export const kitchenSafeKot = (kotJob) => {
   if (!kotJob) return kotJob;
   const plain = typeof kotJob.toObject === "function" ? kotJob.toObject() : { ...kotJob };
   delete plain.customerName;
+  delete plain.customerPhone;
   return plain;
 };
 
-export const createKotJobForOrder = async ({ KOTJob, order, actor, session, customerName = "" }) => {
+export const createKotJobForOrder = async ({ KOTJob, order, actor, session, customerName = "", customerPhone = "" }) => {
   try {
     const created = await KOTJob.create(
       [
@@ -58,6 +71,7 @@ export const createKotJobForOrder = async ({ KOTJob, order, actor, session, cust
           })),
           notes:     order.notes || "",
           customerName: String(customerName || "").slice(0, KOT_NAME_MAX), // KH-08 — paper KOT only
+          customerPhone: String(customerPhone || "").slice(0, 15),        // paper KOT only
           diningArea: order.diningArea || "", // KH-10
           tableName: order.tableName || "",
           tableDisplayNo: order.tableDisplayNo ?? null,

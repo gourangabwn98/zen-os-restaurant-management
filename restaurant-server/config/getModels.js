@@ -565,6 +565,7 @@ const kotJobSchema = new mongoose.Schema({
   // printers room / print queue; stripped before anything reaches the
   // kitchen room (kotService.kitchenSafeKot). "" = no name → line left out.
   customerName: { type: String, default: "" },
+  customerPhone: { type: String, default: "" }, // same rule: paper KOT only, never the kitchen room
   diningArea:   { type: String, default: "" }, // KH-10 — "Indoor-AC"/"Garden"/"Gazebo" on the KOT
   tableName:      { type: String, default: "" },  // "Indoor-AC 1" (Kitchen app)
   tableDisplayNo: { type: Number, default: null }, // printed as "Table : 1"

@@ -11,7 +11,7 @@ import { priceOrder, priceItems, computeTotals } from "../utils/pricing.js";
 import { resolveCouponForOrder } from "./couponService.js";
 import { getScheduleContext } from "./menuScheduleService.js";
 import { normalizeOrderType, assertValidTransition, effectiveBillStatus, requiresPaidForTransition, ORDER_STATUSES } from "../utils/orderStateMachine.js";
-import { createKotJobForOrder, createKotChangeJob, kotCustomerName } from "./kotService.js";
+import { createKotJobForOrder, createKotChangeJob, kotCustomerName, kotCustomerPhone } from "./kotService.js";
 import { normalizeDiningArea, tableDisplayNo, tableDisplayName, DINING_AREA_AC_ROOM } from "../utils/diningArea.js";
 import { parseGuests, acChargeForNewOrder } from "./acServiceCharge.js";
 import { findOrOpenTableSession, closeTableSession } from "./tableSessionService.js";
@@ -425,13 +425,15 @@ export const sendToKitchenTx = async ({ models, db, orderId, actor, role }) => {
   // KH-08: customer's name for the paper KOT (account name only on a
   // customer-placed order — kotService.kotCustomerName). Read before the
   // transaction and never fatal: a failed lookup just leaves the line out.
-  let customerName = "";
+  // The phone follows the same rule (kotService.kotCustomerPhone).
+  let customerName = "", customerPhone = "";
   try {
-    const account = !current.guestName && current.user && models.User
-      ? await models.User.findById(current.user).select("name").lean()
+    const account = (!current.guestName || !current.guestPhone) && current.user && models.User
+      ? await models.User.findById(current.user).select("name phone").lean()
       : null;
     customerName = kotCustomerName(current, account?.name || "");
-  } catch { customerName = kotCustomerName(current, ""); }
+    customerPhone = kotCustomerPhone(current, account?.phone || "");
+  } catch { customerName = kotCustomerName(current, ""); customerPhone = kotCustomerPhone(current, ""); }
 
   const session = await db.startSession();
   let sentOrder, kotResult, inventoryAlerts = [];
@@ -454,7 +456,7 @@ export const sendToKitchenTx = async ({ models, db, orderId, actor, role }) => {
       sentOrder = updated;
       const stockResult = await deductStockForOrder({ models, order: updated, actor, session });
       inventoryAlerts = stockResult.alerts || [];
-      kotResult = await createKotJobForOrder({ KOTJob, order: updated, actor, session, customerName });
+      kotResult = await createKotJobForOrder({ KOTJob, order: updated, actor, session, customerName, customerPhone });
     });
   } finally {
     session.endSession();

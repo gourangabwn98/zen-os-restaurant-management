@@ -1,7 +1,7 @@
 // test/kotCustomer.test.js — KH-08: customer's name on the paper KOT only.
 // No DB — fakes.  node test/kotCustomer.test.js
 import assert from "node:assert/strict";
-import { kotCustomerName, kitchenSafeKot, createKotJobForOrder } from "../services/kotService.js";
+import { kotCustomerName, kotCustomerPhone, kitchenSafeKot, createKotJobForOrder } from "../services/kotService.js";
 
 let passed = 0, failed = 0;
 const test = async (name, fn) => {
@@ -75,6 +75,23 @@ await test("kitchenSafeKot strips the name (plain object and mongoose-like doc),
   const doc = { toObject: () => ({ orderId: "ORD2", customerName: "Priya" }) };
   assert.equal("customerName" in kitchenSafeKot(doc), false);
   assert.equal(kitchenSafeKot(null), null);
+});
+
+await test("phone: typed guest phone, else the account's only on a customer order — never the waiter's", () => {
+  assert.equal(kotCustomerPhone({ source: "WAITER", guestPhone: "98765 43210" }), "9876543210");
+  assert.equal(kotCustomerPhone({ source: "CUSTOMER" }, "+919000000001"), "+919000000001");
+  assert.equal(kotCustomerPhone({ source: "WAITER" }, "9111111111"), "", "staff order: account is the waiter");
+  assert.equal(kotCustomerPhone({ source: "ADMIN" }), "");
+});
+
+await test("KOT job stores the phone for paper; the Kitchen app copy never has it", async () => {
+  const KOTJob = fakeKOTJob();
+  const { job } = await createKotJobForOrder({ KOTJob, order: order(), actor: {}, customerName: "Rahul", customerPhone: "9876543210" });
+  assert.equal(job.customerPhone, "9876543210");
+  const safe = kitchenSafeKot(job);
+  assert.equal("customerPhone" in safe, false);
+  assert.equal("customerName" in safe, false);
+  assert.equal((await createKotJobForOrder({ KOTJob: fakeKOTJob(), order: order(), actor: {} })).job.customerPhone, "");
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

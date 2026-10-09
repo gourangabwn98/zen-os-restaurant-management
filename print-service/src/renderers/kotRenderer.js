@@ -3,8 +3,8 @@
 // KITCHEN ORDER TICKET layout. Never shows prices or totals — only what the
 // kitchen needs. Data is the KOT job exactly as the backend sends it
 // (KOTJob: orderId, orderType, tableNo, items[{name, qty, notes}],
-// createdAt); `customerName` is printed only if a job carries one (KOTJob
-// doesn't store it today).
+// createdAt); `customerName` / `customerPhone` are printed only when the job
+// carries them (paper only — never sent to the Kitchen app).
 //
 // `opts`: header – { name, address, city, phone } (src/restaurantProfile.js)
 //         width  – characters per line of the target printer (layout.js)
@@ -32,6 +32,7 @@ export const renderKot = (job, { header = null, width = DEFAULT_WIDTH } = {}) =>
 
   const customer = d.customerName || d.guestName;
   if (toPrintable(customer)) kv("Customer", customer);
+  if (toPrintable(d.customerPhone)) kv("Phone", d.customerPhone); // printed only when the order has one
   kv("Order ID", d.orderId || "-");
   kv("Type", orderTypeLabel(d.orderType, d.diningArea));
   // Table numbers are per area ("Indoor-AC 1" → Type: Indoor-AC, Table: 1);

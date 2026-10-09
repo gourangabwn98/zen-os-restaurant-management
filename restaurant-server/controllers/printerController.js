@@ -83,6 +83,7 @@ export const getPrintQueue = async (req, res) => {
       ...kot.map((j) => ({ jobId: String(j._id), jobType: "KOT", status: j.status, attempts: j.attempts,
         orderId: j.orderId, tableNo: j.tableNo, orderType: j.orderType, items: j.items, notes: j.notes || "",
         customerName: j.customerName || "", // KH-08 — paper KOT only
+        customerPhone: j.customerPhone || "", // paper KOT only
         diningArea: j.diningArea || "", // KH-10
         tableName: j.tableName || "", tableDisplayNo: j.tableDisplayNo ?? null,
         priority: j.priority || "NORMAL", createdAt: j.createdAt })),
