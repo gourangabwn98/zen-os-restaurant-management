@@ -55,6 +55,7 @@ export default function NewOrderPage() {
   const [cart, setCart]           = useState([]); // [{key, item, qty, notes, addonIds}] — KH-12: one line per item + add-ons
   const [picker, setPicker]       = useState(null); // KH-12: item whose add-ons are being asked about
   const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState(""); // optional — printed on the KOT and bill
   const [guests, setGuests]       = useState(""); // KH-11: Indoor-AC only
   const [acRate, setAcRate]       = useState(20); // ₹ per guest (profile) — preview; the server prices it
   const [placing, setPlacing]     = useState(false);
@@ -171,6 +172,7 @@ export default function NewOrderPage() {
         orderType,
         tableNo: orderType === "DINE_IN" ? Number(tableNo) : undefined,
         customerName: customerName.trim(),
+        ...(customerPhone && { customerPhone }),
         ...(acTable && guestsN > 0 && { guests: guestsN }),
         notes: "",
         idempotencyKey: idemKey,
@@ -251,6 +253,15 @@ export default function NewOrderPage() {
           <input
             value={customerName} onChange={(e) => setCustomerName(e.target.value)}
             placeholder={tr("Walk-in guest")}
+            style={{
+              width: "100%", padding: "12px 14px", borderRadius: 12, border: `1px solid ${GLASS_BORDER}`,
+              fontSize: 14, boxSizing: "border-box", background: GLASS_BG, color: "#fff",
+            }}
+          />
+          <label style={{ fontSize: 11.5, fontWeight: 700, color: TEXT_FAINT, display: "block", margin: "12px 0 6px" }}>{tr("Phone number (optional)")}</label>
+          <input
+            value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+            inputMode="tel" maxLength={10} placeholder={tr("Phone number")}
             style={{
               width: "100%", padding: "12px 14px", borderRadius: 12, border: `1px solid ${GLASS_BORDER}`,
               fontSize: 14, boxSizing: "border-box", background: GLASS_BG, color: "#fff",

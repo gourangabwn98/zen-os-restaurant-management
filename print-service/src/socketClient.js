@@ -76,6 +76,13 @@ export class SocketClient {
         jobId: payload.jobId, jobType: "KOT",
         orderId: payload.orderId, tableNo: payload.tableNo, orderType: payload.orderType,
         items: payload.items, notes: payload.notes || "",
+        // Customer (paper KOT only), area and per-area table number — the
+        // queue pull passes these through; the live push must too, or the
+        // KOT prints without the phone and with the internal table number.
+        customerName: payload.customerName || "", customerPhone: payload.customerPhone || "",
+        diningArea: payload.diningArea || "", tableName: payload.tableName || "",
+        tableDisplayNo: payload.tableDisplayNo ?? null,
+        ...(payload.createdAt && { createdAt: payload.createdAt }),
         ...(payload.changed && { changed: true }), // order-change slip (only the differences)
       });
     });

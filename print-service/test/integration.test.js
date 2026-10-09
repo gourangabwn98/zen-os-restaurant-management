@@ -144,6 +144,48 @@ const run = async () => {
     await backend.close();
   });
 
+  await test("a live kot:created push keeps the customer phone/name, area and per-area table number", async () => {
+    const backend = await startFakeBackend([]);
+    const { processor, queue, driver, setClient } = makeClientStack();
+    const client = new SocketClient({ backendUrl: backend.url, printerKey: VALID_KEY, processor }).connect();
+    setClient(client);
+    await wait(400);
+
+    // Exactly the shape the backend emits (sockets/socket.js emitKotCreated).
+    backend.io.emit("kot:created", {
+      jobId: "int-ph", jobType: "KOT", orderId: "ORD00142", orderType: "DINE_IN", tableNo: 23,
+      diningArea: "AC_ROOM", tableName: "Indoor-AC 2", tableDisplayNo: 2,
+      customerName: "Rahul", customerPhone: "9876543210", items: [{ name: "Biryani", qty: 1 }],
+    });
+    backend.io.emit("kot:created", {
+      jobId: "int-ta", jobType: "KOT", orderId: "ORD00143", orderType: "TAKEAWAY", tableNo: null,
+      customerName: "Priya", customerPhone: "9123456780", items: [{ name: "Tea", qty: 1 }],
+    });
+    await wait(400);
+
+    assert.equal(queue.get("int-ph")?.status, "PRINTED");
+    assert.equal(queue.get("int-ta")?.status, "PRINTED");
+    const texts = driver.printedJobs.map((lines) => lines.map((l) => l.text || "").join("\n"));
+    const ac = texts.find((t) => t.includes("ORD00142"));
+    assert.match(ac, /Customer {3}: +Rahul/);
+    assert.match(ac, /Phone {6}: +9876543210/);
+    assert.match(ac, /Type {7}: +Indoor-AC$/m);
+    assert.match(ac, /Table {6}: +2$/m, "per-area number, not the internal 23");
+    const ta = texts.find((t) => t.includes("ORD00143"));
+    assert.match(ta, /Phone {6}: +9123456780/);
+    assert.match(ta, /Type {7}: +Takeaway/);
+    assert.doesNotMatch(ta, /Table {6}:/);
+
+    // A push without customer details still prints, with no empty lines for them.
+    backend.io.emit("kot:created", { jobId: "int-np", jobType: "KOT", orderId: "ORD00144", orderType: "TAKEAWAY", items: [{ name: "Tea", qty: 1 }] });
+    await wait(300);
+    const np = driver.printedJobs.map((lines) => lines.map((l) => l.text || "").join("\n")).find((t) => t.includes("ORD00144"));
+    assert.doesNotMatch(np, /Phone {6}:|Customer {3}:|undefined|null/);
+
+    client.socket.disconnect();
+    await backend.close();
+  });
+
   await test("reconnect never reprints: backend still lists an already-printed job, client must skip it", async () => {
     const backend = await startFakeBackend([
       { jobId: "int-3", jobType: "KOT", status: "PENDING", orderId: "ORD00003", items: [{ name: "Vada", qty: 1 }] },

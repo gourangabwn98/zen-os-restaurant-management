@@ -72,6 +72,7 @@ export default {
   "Couldn't withdraw": "ফেরত নেওয়া গেল না",
   "Coupon discount": "কুপন ছাড়",
   "Customer name (optional)": "গ্রাহকের নাম (ঐচ্ছিক)",
+  "Phone number (optional)": "ফোন নম্বর (ঐচ্ছিক)",
   "DINE_IN": "টেবিলে বসে",
   "Declined": "নামঞ্জুর",
   "Dine-in": "টেবিলে বসে",
