@@ -69,8 +69,8 @@ await test("table area input: Indoor / AC Room / Garden only; unknown refused", 
 
 await test("order on an AC Room table is AC Room — from the TABLE, whatever the client sends", async () => {
   const { req } = makeReq(WAITER);
-  assert.equal((await placeOrderTx({ req, body: body({ tableNo: 11 }) })).order.diningArea, "AC_ROOM");
-  assert.equal((await placeOrderTx({ req, body: body({ tableNo: 11, diningArea: "GARDEN" }) })).order.diningArea, "AC_ROOM");
+  assert.equal((await placeOrderTx({ req, body: body({ tableNo: 11, guests: 2 }) })).order.diningArea, "AC_ROOM");
+  assert.equal((await placeOrderTx({ req, body: body({ tableNo: 11, guests: 2, diningArea: "GARDEN" }) })).order.diningArea, "AC_ROOM");
   assert.equal((await placeOrderTx({ req, body: body({ tableNo: 20 }) })).order.diningArea, "GARDEN");
   assert.equal((await placeOrderTx({ req, body: body({ tableNo: 3, diningArea: "AC_ROOM" }) })).order.diningArea, "", "Indoor table stays Indoor");
 });
@@ -84,6 +84,28 @@ await test("takeaway never gets an area; dine-in still needs a table", async () 
   const { req } = makeReq(WAITER);
   assert.equal((await placeOrderTx({ req, body: body({ orderType: "TAKEAWAY", tableNo: undefined, diningArea: "AC_ROOM" }) })).order.diningArea, "");
   await assert.rejects(placeOrderTx({ req, body: body({ tableNo: undefined }) }), (e) => e.statusCode === 400);
+});
+
+await test("KH-11: staff Indoor-AC order needs the guest count; guests × ₹20 is in the subtotal", async () => {
+  const { req } = makeReq(WAITER);
+  await assert.rejects(placeOrderTx({ req, body: body({ tableNo: 11 }) }), (e) => e.statusCode === 400 && /guests/i.test(e.message));
+  const { order } = await placeOrderTx({ req, body: body({ tableNo: 11, guests: 4 }) });
+  assert.equal(order.guests, 4);
+  assert.equal(order.acServiceRate, 20);
+  assert.equal(order.acServiceCharge, 80);
+  assert.equal(order.subtotal, 90 + 80);
+  assert.equal(order.total, 90 + 80);
+  const garden = (await placeOrderTx({ req, body: body({ tableNo: 20 }) })).order;
+  assert.equal(garden.acServiceCharge, undefined, "Garden: no guests asked, no charge");
+  assert.equal(garden.subtotal, 90);
+});
+
+await test("KH-11: a second order while the AC table's guests are already counted is not charged again", async () => {
+  const { req } = makeReq(WAITER);
+  req.models.Order.findOne = async (q) => (q?.tableSession ? { _id: "earlier", guests: 4 } : null);
+  const { order } = await placeOrderTx({ req, body: body({ tableNo: 11 }) });
+  assert.equal(order.acServiceCharge, undefined);
+  assert.equal(order.subtotal, 90);
 });
 
 await test("one table ordering for every map: Indoor → Indoor-AC → Garden → Gazebo, then number in area", () => {
@@ -101,7 +123,7 @@ await test("one table ordering for every map: Indoor → Indoor-AC → Garden �
 
 await test("the order remembers the table as people know it (Indoor-AC 1), for screens / KOT / bill", async () => {
   const { req } = makeReq(WAITER);
-  const { order } = await placeOrderTx({ req, body: body({ tableNo: 11 }) });
+  const { order } = await placeOrderTx({ req, body: body({ tableNo: 11, guests: 2 }) });
   assert.equal(order.tableName, "Indoor-AC 11", "fixture table 11 has no per-area number → 11");
   assert.equal(order.tableDisplayNo, 11);
   const take = (await placeOrderTx({ req, body: body({ orderType: "TAKEAWAY", tableNo: undefined }) })).order;

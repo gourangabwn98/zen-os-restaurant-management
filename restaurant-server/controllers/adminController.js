@@ -506,7 +506,7 @@ export const getCombinedBill = async (req, res) => {
     const totalSC    = matchOrders.reduce((s,o) => s + (o.serviceCharge||0), 0);
     const totalAC    = matchOrders.reduce((s,o) => s + (o.acServiceCharge||0), 0); // KH-11
     const totalDiscount = matchOrders.reduce((s,o) => s + (o.discount||0), 0);
-    const subtotal   = mergedItems.reduce((s,i) => s + i.price * i.qty, 0);
+    const subtotal   = mergedItems.reduce((s,i) => s + i.price * i.qty, 0) + totalAC; // KH-11: AC charge is part of the subtotal
     const restaurant = await RestaurantProfile.findOne();
 
     res.json({
@@ -535,7 +535,7 @@ export const printBill = async (req, res) => {
     let order = await Order.findById(req.params.id).populate("user","name phone");
     if (!order) return res.status(404).json({ message: "Order not found" });
     const restaurant = await RestaurantProfile.findOne().select("restaurantName logo acServiceChargePerGuest").lean();
-    // KH-11: guests seated (asked at print) → AC Room service charge. A paid /
+    // KH-11: guests (optional here — normally entered on the order) → AC charge. A paid /
     // settled bill never changes; the rate is snapshotted at first print.
     const guests = parseGuests(req.body?.guests);
     if (guests != null) {

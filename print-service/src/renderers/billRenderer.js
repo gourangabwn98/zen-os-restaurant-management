@@ -63,7 +63,10 @@ export const renderBill = (job, { logo = null, header = null, width = DEFAULT_WI
   const groups = combined
     ? p.orders.map((o) => ({ title: `Order ${o.orderId}${o.paymentStatus === "PAID" ? " (paid)" : ""}`, rows: toRows(o.items) }))
     : [{ title: null, rows: toRows(p.items) }];
-  const amtW = amountWidth(groups.flatMap((g) => g.rows.map((r) => r.amt)));
+  // KH-11: Indoor-AC guest charge — a row under the items (it is part of the
+  // Subtotal), qty = guests: "AC Charge @20.00   4   80.00".
+  const acAmt = Number(p.acServiceCharge) > 0 ? money(p.acServiceCharge) : null;
+  const amtW = amountWidth([...groups.flatMap((g) => g.rows.map((r) => r.amt)), ...(acAmt ? [acAmt] : [])]);
   lines.push(billItemHeader(W, amtW));
   lines.push(separator(W));
   for (const g of groups) {
@@ -79,6 +82,10 @@ export const renderBill = (job, { logo = null, header = null, width = DEFAULT_WI
       }
     }
   }
+  if (acAmt) {
+    const label = p.acServiceRate != null ? `AC Charge @${money(p.acServiceRate)}` : "AC Charge";
+    lines.push(...billItemRows(label, Number(p.guests) > 0 ? p.guests : 1, acAmt, W, amtW));
+  }
   lines.push(separator(W));
 
   // ── Totals — the order's own figures, only the ones it has ──
@@ -87,19 +94,6 @@ export const renderBill = (job, { logo = null, header = null, width = DEFAULT_WI
   if (p.discount) kv("Discount", `${p.couponCode ? `(${p.couponCode}) ` : ""}${money(-p.discount)}`, t);
   if (p.tax) kv("GST", money(p.tax), t);
   if (p.serviceCharge) kv("Service Chg", money(p.serviceCharge), t);
-  // KH-11: AC Room guest service charge — its own "Service Charge" line (full
-  // width, so the other total rows keep their exact layout), with guests × rate.
-  if (Number(p.acServiceCharge) > 0) {
-    const amt = money(p.acServiceCharge);
-    const label = "Service Charge";
-    lines.push({
-      text: padRight(label, Math.max(label.length + 1, W - amt.length)) + amt,
-      cells: [{ text: label, start: 0, width: W - amt.length, align: "left" }, { text: amt, start: W - amt.length, width: amt.length, align: "right" }],
-    });
-    if (Number(p.guests) > 0 && p.acServiceRate != null) {
-      lines.push({ text: `  ${p.guests} guest${Number(p.guests) === 1 ? "" : "s"} x ${money(p.acServiceRate)}` });
-    }
-  }
   lines.push(separator(W));
   kv("TOTAL", money(p.total), { ...t, bold: true });
   // Part of a combined bill already paid → show what is still to pay.

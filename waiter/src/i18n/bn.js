@@ -323,11 +323,16 @@ export default {
   "No extra": "এক্সট্রা লাগবে না",
   "Add with extra": "এক্সট্রা সহ যোগ করুন",
   "Extras": "এক্সট্রা",
-  // KH-11 — AC Room service charge
-  "How many guests are seated?": "কতজন অতিথি বসেছেন?",
+  // KH-11 — Indoor-AC guest charge (entered on the order)
   "Please enter a number of guests from 1 to 100": "১ থেকে ১০০-র মধ্যে অতিথির সংখ্যা লিখুন",
-  "Service Charge": "সার্ভিস চার্জ",
   "{n} guests × ₹{rate}": "{n} জন × ₹{rate}",
+  "AC charge": "এসি চার্জ",
+  "incl. AC charge": "এসি চার্জ সহ",
+  "Number of guests": "অতিথির সংখ্যা",
+  "Number of guests *": "অতিথির সংখ্যা *",
+  "e.g. 4": "যেমন ৪",
+  "Required for Indoor-AC · ₹{rate} per guest": "ইনডোর-এসি-তে আবশ্যক · প্রতি অতিথি ₹{rate}",
+  "Table in use — only if guests weren't entered on its first order": "টেবিল চালু আছে — প্রথম অর্ডারে অতিথির সংখ্যা না দেওয়া থাকলে তবেই লিখুন",
   // Table areas (set by the admin)
   "Indoor": "ভেতরে",
   "{n} table": "{n}টি টেবিল",

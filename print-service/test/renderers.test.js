@@ -201,20 +201,22 @@ const run = async () => {
     assert.match(text(renderKot(kotJob({ tableNo: 5 }))), /Table {6}: +5$/m, "old job: unchanged");
   });
 
-  await test("KH-11: AC Room bill shows a separate 'Service Charge' line + guests x rate; others unchanged", () => {
+  await test("KH-11: Indoor-AC bill lists 'AC Charge @rate x guests' with the items, inside the Subtotal; others unchanged", () => {
     const job = billJob({ orderType: "DINE_IN", diningArea: "AC_ROOM", items: [{ name: "Biryani", qty: 2, price: 140 }],
-      subtotal: 280, tax: 0, serviceCharge: 0, acServiceCharge: 80, guests: 4, acServiceRate: 20, total: 360 });
+      subtotal: 360, tax: 0, serviceCharge: 0, acServiceCharge: 80, guests: 4, acServiceRate: 20, total: 360 });
     for (const W of [32, 42, 48]) {
       const lines = renderBill(job, { width: W });
       assertFits(lines, W);
       const t = text(lines);
-      assert.match(t, /^Service Charge +Rs80$/m);
-      assert.match(t, /^  4 guests x Rs20$/m);
+      assert.match(t, /^AC Charge @Rs20 +4 +Rs80$/m);
+      assert.ok(t.indexOf("AC Charge") < t.indexOf("Subtotal"), "AC charge sits above the Subtotal");
+      assert.match(t, /^Subtotal +: +Rs360$/m);
       assert.match(t, /^Guests +: +4$/m);
       assert.match(t, /^TOTAL +: +Rs360$/m);
+      assert.doesNotMatch(t, /Service Charge/);
     }
     const plain = text(renderBill(billJob()));
-    assert.doesNotMatch(plain, /Service Charge|Guests/, "no AC charge → bill exactly as before");
+    assert.doesNotMatch(plain, /AC Charge|Guests/, "no AC charge → bill exactly as before");
   });
 
   await test("kot: the order's own note is printed after the items, in bold", () => {

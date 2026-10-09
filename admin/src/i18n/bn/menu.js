@@ -395,4 +395,9 @@ export default {
   // Manager's simple Menu items page.
   "hidden": "লুকানো",
   "customers can't see these now": "গ্রাহকরা এখন এগুলো দেখতে পাচ্ছেন না",
+  "Show all": "সব দেখান",
+  "Manage": "পরিচালনা",
+  "Renaming moves the category’s items with it. A category can only be deleted once it has no items.": "নাম বদলালে ক্যাটাগরির আইটেমগুলোও সাথে যাবে। কোনো আইটেম না থাকলে তবেই ক্যাটাগরি মোছা যাবে।",
+  "Opening…": "খোলা হচ্ছে…",
+  "Couldn't open this category": "এই ক্যাটাগরি খোলা গেল না",
 };

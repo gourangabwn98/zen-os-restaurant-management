@@ -60,6 +60,16 @@ if (typeof document !== "undefined" && !document.getElementById("menu-styles")) 
       color: var(--text-1); min-width: 0; transition: var(--theme-transition);
     }
     .mb-strip button:first-child { border-left: 0; }
+    /* Counts-only tiles (no filter on tap) — 4 across, 2 on a phone. */
+    .mb-strip.cols4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .mb-strip > div { border-left: 1px solid var(--edge); padding: 14px 18px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .mb-strip > div:first-child { border-left: 0; }
+    @media (max-width: 900px) {
+      .mb-strip.cols4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .mb-strip.cols4 > div:nth-child(3) { border-left: 0; }
+      .mb-strip.cols4 > div:nth-child(n+3) { border-top: 1px solid var(--edge); }
+    }
+    @media (max-width: 520px) { .mb-strip.cols4 > div { padding: 11px 13px; } }
     .mb-strip button:hover { background: var(--violet-faint); }
     .mb-strip button.on { background: var(--violet-weak); box-shadow: inset 0 -2px 0 var(--violet); }
     .mb-strip .k { font-size: 11.5px; color: var(--text-2); font-weight: 500; }
@@ -81,7 +91,41 @@ if (typeof document !== "undefined" && !document.getElementById("menu-styles")) 
     }
 
     .mb-body { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 16px; align-items: start; }
-    .mb-body.mb-simple { grid-template-columns: minmax(0, 1fr); } /* manager: items only, full width */
+    /* Simple page: category list on the left (one per row), items on the right.
+       Laptop: 240px rail · tablet: 190px rail · phone (≤760px): the
+       categories become one scrolling row of chips above the items. */
+    .mb-body.mb-simple { grid-template-columns: 240px minmax(0, 1fr); }
+    .mb-catcol { position: sticky; top: 12px; min-width: 0; max-height: calc(100vh - 24px); display: flex; flex-direction: column; }
+    .mb-catcol .zc-card-b { overflow-y: auto; padding-top: 6px; }
+    .mb-catgrid { display: flex; flex-direction: column; gap: 2px; }
+    .mb-catbtn { display: flex; align-items: center; gap: 8px; min-width: 0; width: 100%; text-align: left;
+      padding: 9px 10px; border-radius: 9px; cursor: pointer; font: inherit;
+      border: 1px solid transparent; background: transparent; color: var(--text-2); transition: var(--theme-transition); }
+    .mb-catbtn:hover { background: var(--raise); color: var(--text-1); }
+    .mb-catbtn.on { border-color: var(--violet-line); background: var(--violet-weak); color: var(--text-1); }
+    .mb-catbtn .nm { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mb-catbtn .ct { flex: none; font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+    .mb-catbtn.on .ct { color: var(--accent-ink); font-weight: 700; }
+    .mb-catbtn.all { margin-bottom: 4px; }
+    .mb-catacts { display: flex; gap: 6px; flex-wrap: wrap; }
+    @media (max-width: 1100px) { .mb-body.mb-simple { grid-template-columns: 190px minmax(0, 1fr); } }
+    @media (max-width: 760px) {
+      .mb-body.mb-simple { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+      .mb-catcol { position: sticky; top: 0; z-index: 5; max-height: none; }
+      .mb-catcol .zc-card-h { display: none; }
+      .mb-catcol .zc-card-b { overflow-x: auto; overflow-y: hidden; padding: 8px; }
+      .mb-catgrid { flex-direction: row; gap: 6px; width: max-content; }
+      .mb-catbtn { width: auto; padding: 7px 12px; border: 1px solid var(--edge); border-radius: 999px; white-space: nowrap; }
+      .mb-catbtn .nm { flex: none; }
+      .mb-catbtn.all { margin-bottom: 0; }
+    }
+    /* The items list switches to cards by its OWN width, not the screen's —
+       next to the category rail on a tablet/small laptop it is narrow. */
+    .mb-items { container-type: inline-size; }
+    @container (max-width: 700px) {
+      .mb-items .mb-list-wide { display: none; }
+      .mb-items .mb-list-narrow { display: block; }
+    }
     .mb-left { display: flex; flex-direction: column; gap: 16px; min-width: 0; position: sticky; top: 12px; }
     @media (max-width: 1180px) {
       .mb-body { grid-template-columns: minmax(0, 1fr); }

@@ -403,7 +403,11 @@ export default function AdminLayout() {
         </div>
       )}
       <main style={{
-        flex: 1, minWidth: 0, padding: narrow ? 14 : 24, overflowY: "auto", minHeight: "100vh",
+        // The window scrolls, not <main>. overflow-x "clip" (not "auto") keeps
+        // wide content from side-scrolling the page WITHOUT making <main> a
+        // scroll box — a scroll box that never scrolls breaks every
+        // position:sticky inside it (menu categories, Orders rail, bill bar).
+        flex: 1, minWidth: 0, padding: narrow ? 14 : 24, overflowX: "clip", minHeight: "100vh",
         background: BG_MAIN,
         backgroundImage: "var(--glow-main)",
         backgroundAttachment: "fixed",

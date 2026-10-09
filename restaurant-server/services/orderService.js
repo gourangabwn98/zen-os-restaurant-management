@@ -12,7 +12,8 @@ import { resolveCouponForOrder } from "./couponService.js";
 import { getScheduleContext } from "./menuScheduleService.js";
 import { normalizeOrderType, assertValidTransition, effectiveBillStatus, requiresPaidForTransition, ORDER_STATUSES } from "../utils/orderStateMachine.js";
 import { createKotJobForOrder, createKotChangeJob, kotCustomerName } from "./kotService.js";
-import { normalizeDiningArea, tableDisplayNo, tableDisplayName } from "../utils/diningArea.js";
+import { normalizeDiningArea, tableDisplayNo, tableDisplayName, DINING_AREA_AC_ROOM } from "../utils/diningArea.js";
+import { parseGuests, acChargeForNewOrder } from "./acServiceCharge.js";
 import { findOrOpenTableSession, closeTableSession } from "./tableSessionService.js";
 import { findNextMatch } from "./waitlistService.js";
 import { signGuestOrderToken, verifyGuestOrderToken } from "../utils/guestOrderToken.js";
@@ -180,6 +181,7 @@ export const placeOrderTx = async ({ req, body }) => {
     items, orderType, tableNo, tableToken, notes,
     customerName, customerPhone, paymentMethod, idempotencyKey, priority, couponCode,
   } = effBody;
+  const guests = parseGuests(body.guests); // KH-11: Indoor-AC only (see below)
 
   // ── Idempotency: replay-safe "place order" ────────────────────────────────
   if (idempotencyKey) {
@@ -221,15 +223,17 @@ export const placeOrderTx = async ({ req, body }) => {
   }
   const payFirst = !isStaffOrder && isPayFirst(method, phonePeEnabled);
 
-  const { dbItems, coupon, subtotal, tax, serviceCharge, discount, total } = await priceOrderDraft({
+  const draft = await priceOrderDraft({
     req, items, couponCode, isStaffOrder, restaurant,
   });
+  const { dbItems, coupon } = draft;
 
   // ── Table / QR verification (soft — see schema comment) + session ─────────
   let tableSessionId = null;
   let tableVerified  = false;
   let tableArea      = ""; // the table's configured area (Table Management)
   let tableDisplay   = null; // its number within that area ("Indoor-AC 1" → 1)
+  let ac             = {};   // KH-11: Indoor-AC guest charge fields
 
   if (normalizedType === "DINE_IN" && tableNo) {
     const tableDoc = await Table.findOne({ tableNo: Number(tableNo) });
@@ -254,6 +258,19 @@ export const placeOrderTx = async ({ req, body }) => {
     // else: guest didn't send a token (today's customer app doesn't yet) —
     // order still proceeds, just tableVerified stays false for audit/reporting.
 
+    // KH-11: Indoor-AC → the guest count entered on the order form is
+    // required and priced into the subtotal (guests × rate) — once per table
+    // visit: not on a follow-up, nor while the table's open session already
+    // has a counted order. Checked BEFORE the session opens, so a missing
+    // count never leaves the table marked occupied.
+    const isAcRoom = normalizeDiningArea(tableArea, normalizedType) === DINING_AREA_AC_ROOM;
+    let alreadyCounted = false;
+    if (isAcRoom && isStaffOrder && !followUp) {
+      const open = await TableSession.findOne({ tableNo: tableDoc.tableNo, status: "OPEN" });
+      alreadyCounted = !!open && !!(await Order.findOne({ tableSession: open._id, status: { $ne: "CANCELLED" }, guests: { $gt: 0 } }));
+    }
+    ac = acChargeForNewOrder({ isAcRoom, isStaffOrder, isFollowUp: !!followUp, alreadyCounted, guests, profile: restaurant });
+
     // A pay-first order must not occupy the table until it's paid — it joins
     // the table session in promotePaidOrder instead.
     if (!payFirst) {
@@ -270,6 +287,9 @@ export const placeOrderTx = async ({ req, body }) => {
   // autoPrepareAt (RestaurantProfile.editWindowMinutes, default 3), then
   // sendToKitchenTx moves it to PREPARING and prints the KOT.
   const initialStatus = payFirst ? "AWAITING_PAYMENT" : isStaffOrder ? "CONFIRMED" : "PENDING_CONFIRMATION";
+  const { subtotal, tax, serviceCharge, discount, total } = ac.acServiceCharge
+    ? computeTotals(dbItems, restaurant, coupon, { acServiceCharge: ac.acServiceCharge })
+    : draft;
   const actor = buildActor(req.user, customerName);
   const now = new Date();
   const autoPrepareAt = initialStatus === "CONFIRMED" ? new Date(now.getTime() + editWindowMs(restaurant)) : null;
@@ -284,6 +304,7 @@ export const placeOrderTx = async ({ req, body }) => {
     isGuest:       !req.user,
     items:         dbItems,
     subtotal, tax, serviceCharge, discount, total,
+    ...ac, // KH-11: { guests, acServiceRate, acServiceCharge } on a counted Indoor-AC order
     coupon,
     orderType:     normalizedType,
     tableNo:       tableNo ? Number(tableNo) : null,

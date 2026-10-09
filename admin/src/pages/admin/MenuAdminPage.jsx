@@ -42,7 +42,7 @@ import {
   loadSavedViews, storeSavedViews, errMsg,
   ITEM_FLAGS, isSmartCat, manualCats, memberNames, CATEGORY_ICON_KEYS,
 } from "./menu/menuKit.js";
-import { StatusStrip, MenuTimesCard, CategoryCard, ItemsPanel } from "./menu/MenuBoard.jsx";
+import { StatusStrip, MenuTimesCard, CategoryCard, ItemsPanel, CategoryList } from "./menu/MenuBoard.jsx";
 import { MenuTimeModal, BulkEditModal, ImportModal } from "./menu/MenuModals.jsx";
 
 // Stored values; labels go through t().
@@ -319,7 +319,35 @@ function CategoryModal({ category = null, onClose, onSaved }) {
 // View / add / edit / delete. "View items" filters the menu list to that
 // category. Delete is only offered for empty categories (the server refuses
 // otherwise, so no item is ever left without a category).
-function CategoriesModal({ cats, items, onClose, onChanged, onView }) {
+// `simple` (the simple Menu page): the same list as the page's left side —
+// real categories only (no built-ins), "All items" first, each with the
+// number of items whose own category it is; rows are name · count · Edit · Delete.
+function CategoriesModal({ cats: allCats, items, onClose, onChanged, onView, simple = false }) {
+  // Simple: real categories = category records that aren't built-ins, PLUS
+  // names items use that have no record yet (an imported menu writes only the
+  // name on each item). Those get a record the first time they're edited.
+  const cats = useMemo(() => {
+    if (!simple) return allCats;
+    const manual = allCats.filter((c) => !isSmartCat(c));
+    const known = new Set(allCats.map((c) => c.name.toLowerCase()));
+    const extra = [...new Set(items.map((i) => i.category).filter(Boolean))]
+      .filter((n) => !known.has(n.toLowerCase())).sort()
+      .map((name) => ({ name, nameBn: "", noRecord: true }));
+    return [...manual, ...extra];
+  }, [allCats, items, simple]);
+  const [opening, setOpening] = useState(null); // name whose record is being created
+  const openEdit = async (c, n) => {
+    if (!c.noRecord) return setForm({ ...c, itemCount: n });
+    setOpening(c.name);
+    try {
+      const { data } = await createCategory({ name: c.name });
+      const doc = data?.category || data;
+      onChanged({});
+      setForm({ ...doc, itemCount: n });
+    } catch (e) {
+      toast.error(e?.response?.data?.message || t("Couldn't open this category"));
+    } finally { setOpening(null); }
+  };
   const [q, setQ] = useState("");
   const [form, setForm] = useState(null);         // null | "create" | category
   const [confirmDel, setConfirmDel] = useState(null);
@@ -334,8 +362,15 @@ function CategoriesModal({ cats, items, onClose, onChanged, onView }) {
   // Live counts from the loaded items (they include hidden ones); falls back
   // to the server's itemCount before the items list has loaded.
   const counts = useMemo(() => countMembers(items, cats), [items, cats]);
+  const ownCounts = useMemo(() => {
+    const m = new Map();
+    for (const i of items) if (i.category) m.set(i.category, (m.get(i.category) || 0) + 1);
+    return m;
+  }, [items]);
   // Data-driven built-ins: the server's count (it knows the real orders).
-  const countOf = (c) => (items.length && !(isSmartCat(c) && !c.smartFlag) ? counts.get(c.name) || 0 : c.itemCount || 0);
+  const countOf = (c) => (simple
+    ? ownCounts.get(c.name) || 0
+    : items.length && !(isSmartCat(c) && !c.smartFlag) ? counts.get(c.name) || 0 : c.itemCount || 0);
 
   const shown = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -358,8 +393,23 @@ function CategoriesModal({ cats, items, onClose, onChanged, onView }) {
 
   return (
     <>
+      {simple && (
+        <style>{`
+          .mc-row { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+          .mc-row:last-child { border-bottom: 0; }
+          .mc-all { background: var(--violet-faint); }
+          .mc-name { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 4px 0; cursor: pointer;
+            font: inherit; font-size: 13.5px; font-weight: 600; color: var(--text-1);
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+          .mc-name:hover:not(:disabled) { color: var(--accent-ink); text-decoration: underline; }
+          .mc-name:disabled { cursor: default; color: var(--text-2); }
+          .mc-all .mc-name { color: var(--accent-ink); }
+          .mc-ct { min-width: 34px; text-align: right; font-size: 13px; font-weight: 700; color: var(--text-2); margin-right: 6px; }
+          @media (max-width: 520px) { .mc-row { flex-wrap: wrap; } .mc-name { flex-basis: calc(100% - 50px); } }
+        `}</style>
+      )}
       <div className="zc-scrim" onClick={() => !form && !confirmDel && onClose()}>
-        <div className="zc-modal" style={{ width: 680 }} role="dialog" aria-modal="true" aria-labelledby="cats-title"
+        <div className="zc-modal" style={{ width: simple ? 520 : 680 }} role="dialog" aria-modal="true" aria-labelledby="cats-title"
           onClick={(e) => e.stopPropagation()}>
           <div className="mh">
             <div style={{ flex: 1 }}>
@@ -384,8 +434,27 @@ function CategoriesModal({ cats, items, onClose, onChanged, onView }) {
               <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: "var(--text-3)" }}>{t("No categories match.")}</div>
             ) : (
               <div style={{ border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+                {simple && !q.trim() && (
+                  <div className="mc-row mc-all">
+                    <button type="button" className="mc-name" onClick={() => onView("All")}>{t("All items")}</button>
+                    <span className="mc-ct tnum">{fmtNum(items.length)}</span>
+                  </div>
+                )}
                 {shown.map((c) => {
                   const n = countOf(c);
+                  if (simple) return (
+                    <div key={c._id || c.name} className="mc-row">
+                      <button type="button" className="mc-name" disabled={n === 0} title={n === 0 ? t("No items in this category") : t("Show only {name} items", { name: localName(c) })}
+                        onClick={() => onView(c.name)}>{localName(c)}</button>
+                      <span className="mc-ct tnum">{fmtNum(n)}</span>
+                      <button type="button" className="zc-btn sm" disabled={opening === c.name} onClick={() => openEdit(c, n)}>
+                        {opening === c.name ? t("Opening…") : `✎ ${t("Edit")}`}
+                      </button>
+                      <button type="button" className="zc-btn danger sm" disabled={n > 0 || c.noRecord}
+                        title={n > 0 ? tn(n, "Move or delete its {n} item first", "Move or delete its {n} items first") : t("Delete {name}", { name: localName(c) })}
+                        onClick={() => setConfirmDel(c)}>{t("Delete")}</button>
+                    </div>
+                  );
                   return (
                     <div key={c._id} style={{
                       display: "flex", alignItems: "center", gap: 12, padding: "10px 12px",
@@ -417,7 +486,9 @@ function CategoriesModal({ cats, items, onClose, onChanged, onView }) {
               </div>
             )}
             <div style={{ fontSize: 11, color: "var(--text-3)" }}>
-              {t("Renaming moves the category’s items with it. A category can only be deleted once it has no items. Time windows come from its Menu time.")}
+              {simple
+                ? t("Renaming moves the category’s items with it. A category can only be deleted once it has no items.")
+                : t("Renaming moves the category’s items with it. A category can only be deleted once it has no items. Time windows come from its Menu time.")}
             </div>
           </div>
         </div>
@@ -738,10 +809,16 @@ const toggleIn = (set, id) => {
   return n;
 };
 
+// Every login gets the simple page: categories on the left, items on the
+// right, search only (no views / saved views / filters / bulk tick boxes, no
+// Menu-times column). The fuller board is still built when this is false.
+const SIMPLE_MENU_PAGE = true;
+
 export default function MenuAdminPage() {
-  // A manager gets the simple page: just the items, full width — no Menu
-  // times / "All day · categories" column (that setup stays with the admin).
-  const simple = isManager(useAuth().user);
+  const simple = SIMPLE_MENU_PAGE;
+  // Menu times stay with the admin (header button); categories: admin + manager.
+  const canSetUp = !isManager(useAuth().user);
+  const [showMenuTimes, setShowMenuTimes] = useState(false);
   const [items, setItems] = useState([]);
   const [cats, setCats] = useState([]);
   const [menuTimes, setMenuTimes] = useState([]);
@@ -856,14 +933,28 @@ export default function MenuAdminPage() {
     return [...m.values()].sort((a, b) => a.localeCompare(b));
   }, [items]);
 
+  // Left list on the simple page: the categories the items are really in
+  // (each item's own category) — not built-in automatic ones or empty ones.
+  // Saved category order first, then any name with no category record.
+  const itemCats = useMemo(() => {
+    const n = new Map();
+    for (const i of items) if (i.category) n.set(i.category, (n.get(i.category) || 0) + 1);
+    const order = [...cats.map((c) => c.name).filter((x) => n.has(x)), ...[...n.keys()].filter((x) => !catByName.has(x)).sort()];
+    return order.map((name) => ({ name, count: n.get(name), label: catByName.has(name) ? localName(catByName.get(name)) : name }));
+  }, [items, cats, catByName]);
+
   const q = search.trim().toLowerCase();
+  // Manager's page: search + category only — a view or saved filter left in
+  // this browser (e.g. "Over ₹200") must never hide items there.
+  const effView = simple ? "all" : view;
+  const effFilters = simple ? EMPTY_FILTERS : filters;
   const groups = useMemo(() => {
-    const test = VIEWS[view]?.test || VIEWS.all.test;
+    const test = VIEWS[effView]?.test || VIEWS.all.test;
     const byCat = new Map();
     for (const i of items) {
-      if (selCat !== "All" && !memberNames(i, cats).has(selCat)) continue;
+      if (selCat !== "All" && (simple ? i.category !== selCat : !memberNames(i, cats).has(selCat))) continue;
       if (!test(i, viewCtx)) continue;
-      if (!matchesFilters(i, filters)) continue;
+      if (!matchesFilters(i, effFilters)) continue;
       const cat = catByName.get(i.category);
       if (!matchesSearch(i, q, cat?.nameBn)) continue;
       // One category picked → its items under it (extra / built-in members too).
@@ -882,7 +973,7 @@ export default function MenuAdminPage() {
         live: isScheduleActive(cat?.schedule, clock),
       };
     });
-  }, [items, cats, catByName, selCat, view, viewCtx, filters, q, clock, groupOfCat]);
+  }, [items, cats, catByName, selCat, simple, effView, viewCtx, effFilters, q, clock, groupOfCat]);
 
   const savedWithCounts = useMemo(() => saved.map((sv) => {
     const test = VIEWS[sv.view]?.test || VIEWS.all.test;
@@ -890,7 +981,7 @@ export default function MenuAdminPage() {
     return { ...sv, count: items.filter((i) => test(i, viewCtx) && matchesFilters(i, f)).length };
   }), [saved, items, viewCtx]);
 
-  const hasFilters = !!q || view !== "all" || hasExtraFilters(filters);
+  const hasFilters = !!q || effView !== "all" || hasExtraFilters(effFilters);
   const setFilters = (f) => { setFiltersRaw(f || EMPTY_FILTERS); setActiveSaved(null); };
   const pickView = (v) => { setView(v); setActiveSaved(null); };
   const clearFilters = () => { setSearch(""); setView("all"); setSelCat("All"); setFiltersRaw(EMPTY_FILTERS); setActiveSaved(null); };
@@ -1076,7 +1167,14 @@ export default function MenuAdminPage() {
         sub={`${tn(items.length, "{n} item", "{n} items")} · ${tn(cats.length, "{n} category", "{n} categories")}${simple ? "" : ` · ${tn(menuTimes.length, "{n} menu time", "{n} menu times")}`}`}
         right={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {simple && canSetUp && (
+              <button type="button" className="zc-btn" disabled={!ready} onClick={() => setShowMenuTimes(true)}>🕒 {t("Menu times")}</button>
+            )}
             <button type="button" className="zc-btn" disabled={!ready} onClick={() => setShowImport(true)}>⇪ {t("Import menu")}</button>
+            {/* Admin and manager: add / edit / delete categories in one window. */}
+            {simple && (
+              <button type="button" className="zc-btn" disabled={!ready} onClick={() => setShowCats(true)}>🗂 {t("Category")}</button>
+            )}
             {!simple && (
               <button type="button" className="zc-btn" disabled={!ready} onClick={openBulk}>
                 ✎ {t("Bulk edit")}{selItems.size ? ` (${fmtNum(selItems.size)})` : ""}
@@ -1087,9 +1185,14 @@ export default function MenuAdminPage() {
         }
       />
 
-      <StatusStrip tiles={tiles} view={activeSaved || hasExtraFilters(filters) ? null : view} onView={onTile} />
+      <StatusStrip tiles={tiles} view={activeSaved || hasExtraFilters(filters) ? null : view} onView={simple ? null : onTile} />
 
       <div className={`mb-body${simple ? " mb-simple" : ""}`}>
+        {simple && (loading ? (
+          <div className="zc-card"><div className="zc-card-b"><Loader rows={5} /></div></div>
+        ) : !error && (
+          <CategoryList list={itemCats} totalItems={items.length} selCat={selCat} onPick={setSelCat} />
+        ))}
         {!simple && <div className="mb-left">
           {loading ? (
             <div className="zc-card"><div className="zc-card-b"><Loader rows={5} /></div></div>
@@ -1186,6 +1289,25 @@ export default function MenuAdminPage() {
         </div>
       )}
 
+      {/* Simple page: Menu times live behind a header button (admin only). */}
+      {showMenuTimes && (
+        <div className="zc-scrim" onClick={() => setShowMenuTimes(false)} style={{ zIndex: 1100 }}>
+          <div className="zc-modal" style={{ width: 460 }} role="dialog" aria-modal="true" aria-label={t("Menu times")} onClick={(e) => e.stopPropagation()}>
+            <div className="mh">
+              <div className="t" style={{ flex: 1 }}>{t("Menu times")}</div>
+              <button type="button" className="zc-x" onClick={() => setShowMenuTimes(false)} aria-label={t("Close")}>✕</button>
+            </div>
+            <div className="mb">
+              <MenuTimesCard groups={timeGroups} selected={activeGroup?.key} onSelect={setSelGroup}
+                preview={preview} setPreview={setPreview} clock={clock}
+                // the form opens on its own layer — close this window first
+                onAdd={() => { setShowMenuTimes(false); setMtForm("create"); }}
+                onEdit={(mt) => { setShowMenuTimes(false); setMtForm(mt); }} disabled={!ready} />
+            </div>
+          </div>
+        </div>
+      )}
+
       {showCats && (
         <CategoriesModal
           cats={cats}
@@ -1193,6 +1315,7 @@ export default function MenuAdminPage() {
           onClose={() => setShowCats(false)}
           onChanged={handleCategoriesChanged}
           onView={(name) => { setSelCat(name); pickView("all"); setShowCats(false); }}
+          simple={simple}
         />
       )}
 

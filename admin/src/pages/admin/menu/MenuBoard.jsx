@@ -24,17 +24,55 @@ import {
 const PREVIEW_PRESETS = [9 * 60, 13 * 60, 20 * 60]; // 9 AM, 1 PM, 8 PM
 
 // ── status strip ────────────────────────────────────────────────────────────
+// No `onView` → counts only (the simple page has no filters).
 export function StatusStrip({ tiles, view, onView }) {
   return (
-    <div className="zc-card mb-strip" role="group" aria-label={t("Menu status")}>
-      {tiles.map((x) => (
-        <button key={x.key} type="button" className={view === x.key ? "on" : ""} aria-pressed={view === x.key}
-          onClick={() => onView(view === x.key ? "all" : x.key)}>
-          <span className="k">{x.label}</span>
-          <span className="v" style={x.color ? { color: x.color } : undefined}>{fmtNum(x.value)}</span>
-          <span className="d" title={x.sub}>{x.sub}</span>
-        </button>
-      ))}
+    <div className={`zc-card mb-strip${onView ? "" : " cols4"}`} role="group" aria-label={t("Menu status")}>
+      {tiles.map((x) => {
+        const body = (
+          <>
+            <span className="k">{x.label}</span>
+            <span className="v" style={x.color ? { color: x.color } : undefined}>{fmtNum(x.value)}</span>
+            <span className="d" title={x.sub}>{x.sub}</span>
+          </>
+        );
+        return onView ? (
+          <button key={x.key} type="button" className={view === x.key ? "on" : ""} aria-pressed={view === x.key}
+            onClick={() => onView(view === x.key ? "all" : x.key)}>{body}</button>
+        ) : (
+          <div key={x.key} style={{ cursor: "default" }}>{body}</div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Category list (left rail; a chip row on phones): tap one → only its
+// items on the right. `list`: [{ name, label, count }] — the categories the
+// items really are in. `actions`: admin-only setup buttons under the title.
+export function CategoryList({ list, totalItems, selCat, onPick, actions = null }) {
+  return (
+    <div className="zc-card mb-catcol">
+      <div className="zc-card-h" style={{ flexWrap: "wrap", gap: 8 }}>
+        <span className="t">{t("Categories")}</span>
+        {actions && <div className="mb-catacts" style={{ marginLeft: "auto" }}>{actions}</div>}
+      </div>
+      <div className="zc-card-b">
+        <div className="mb-catgrid" role="list">
+          <button type="button" role="listitem" className={`mb-catbtn all${selCat === "All" ? " on" : ""}`}
+            aria-pressed={selCat === "All"} onClick={() => onPick("All")}>
+            <span className="nm">{t("All items")}</span>
+            <span className="ct">{fmtNum(totalItems)}</span>
+          </button>
+          {list.map((c) => (
+            <button key={c.name} type="button" role="listitem" className={`mb-catbtn${selCat === c.name ? " on" : ""}`}
+              aria-pressed={selCat === c.name} title={c.label} onClick={() => onPick(c.name)}>
+              <span className="nm">{c.label}</span>
+              <span className="ct">{fmtNum(c.count)}</span>
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -402,12 +440,17 @@ export function ItemsPanel({
       : null;
 
   return (
-    <div className="zc-card" style={{ minWidth: 0 }}>
+    <div className="zc-card mb-items" style={{ minWidth: 0 }}>
       <div className="zc-card-b">
-        <ViewsRow counts={counts} view={view} setView={setView} saved={saved} activeSaved={activeSaved}
-          onApplySaved={onApplySaved} onRemoveSaved={onRemoveSaved} onSaveView={onSaveView}
-          filters={filters} setFilters={setFilters} allTags={allTags}
-          search={search} setSearch={setSearch} totalItems={totalItems} />
+        {simple ? (
+          <input className="zc-input" type="search" value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder={t("Search {n} items…", { n: totalItems })} aria-label={t("Search menu items")} />
+        ) : (
+          <ViewsRow counts={counts} view={view} setView={setView} saved={saved} activeSaved={activeSaved}
+            onApplySaved={onApplySaved} onRemoveSaved={onRemoveSaved} onSaveView={onSaveView}
+            filters={filters} setFilters={setFilters} allTags={allTags}
+            search={search} setSearch={setSearch} totalItems={totalItems} />
+        )}
 
         {(selCat !== "All" || hasFilters) && (
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10, fontSize: 12 }}>
@@ -421,7 +464,7 @@ export function ItemsPanel({
             <span style={{ color: "var(--text-2)" }}>
               <b style={{ color: "var(--accent-ink)" }}>{fmtNum(shownCount)}</b> {t("of {n}", { n: totalItems })}
             </span>
-            <button type="button" className="zc-btn ghost sm" onClick={clearFilters}>{t("Clear filters")}</button>
+            <button type="button" className="zc-btn ghost sm" onClick={clearFilters}>{simple ? t("Show all") : t("Clear filters")}</button>
           </div>
         )}
 

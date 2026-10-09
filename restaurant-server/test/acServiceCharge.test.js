@@ -2,7 +2,7 @@
 // No DB — fakes.  node test/acServiceCharge.test.js
 import assert from "node:assert/strict";
 import {
-  parseGuests, guestChargeUpdate, applyGuestsToOrder, applyGuestsToSelection, acRateFor, isChargeLocked,
+  parseGuests, guestChargeUpdate, applyGuestsToOrder, applyGuestsToSelection, acRateFor, isChargeLocked, acChargeForNewOrder,
 } from "../services/acServiceCharge.js";
 import { computeTotals } from "../utils/pricing.js";
 import { combinedPrintPayload, combineTotals } from "../services/combinedBillService.js";
@@ -131,6 +131,25 @@ await test("combined payload shows the charge with guests × rate", () => {
   assert.equal(p.guests, 5);
   assert.equal(p.acServiceRate, 20);
   assert.equal(p.total, 1100);
+});
+
+await test("acChargeForNewOrder: guests required on a new staff Indoor-AC order, charged once per visit", () => {
+  const base = { isAcRoom: true, isStaffOrder: true, isFollowUp: false, alreadyCounted: false, profile: PROFILE };
+  assert.throws(() => acChargeForNewOrder({ ...base, guests: null }), (e) => e.statusCode === 400);
+  assert.deepEqual(acChargeForNewOrder({ ...base, guests: 4 }), { guests: 4, acServiceRate: 20, acServiceCharge: 80 });
+  assert.equal(acChargeForNewOrder({ ...base, guests: 3, profile: { acServiceChargePerGuest: 25 } }).acServiceCharge, 75);
+  assert.deepEqual(acChargeForNewOrder({ ...base, isAcRoom: false, guests: null }), {}, "Garden / Gazebo / Indoor: never asked");
+  assert.deepEqual(acChargeForNewOrder({ ...base, isFollowUp: true, guests: null }), {}, "follow-up: not charged again");
+  assert.deepEqual(acChargeForNewOrder({ ...base, alreadyCounted: true, guests: 5 }), {}, "table already counted: no second charge");
+  assert.deepEqual(acChargeForNewOrder({ ...base, isStaffOrder: false, guests: null }), {}, "customer QR order: not asked");
+});
+
+await test("computeTotals: AC charge is inside the subtotal; coupon + GST on items only", () => {
+  const r = computeTotals([{ price: 100, qty: 2 }], { gstRate: 5 }, { discountType: "PERCENT", discountValue: 10 }, { acServiceCharge: 80 });
+  assert.equal(r.subtotal, 280);
+  assert.equal(r.discount, 20); // 10% of 200, not of 280
+  assert.equal(r.tax, 9);       // 5% of 180
+  assert.equal(r.total, 280 - 20 + 9);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

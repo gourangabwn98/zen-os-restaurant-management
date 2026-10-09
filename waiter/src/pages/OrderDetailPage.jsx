@@ -7,7 +7,6 @@ import {
   placeOrder, getOrderGroup, newIdempotencyKey,
 } from "../services/orderService.js";
 import CombinedBillPanel from "../components/CombinedBillPanel.jsx";
-import { askGuests, needsGuests } from "../utils/askGuests.js";
 import { getMenu, getMenuCategories } from "../services/menuService.js";
 import StatusBadge, { statusColor } from "../components/StatusBadge.jsx";
 import GlassCard from "../components/ui/GlassCard.jsx";
@@ -266,10 +265,8 @@ export default function OrderDetailPage() {
   };
 
   const handlePrint = async () => {
-    // KH-11: dine-in bills ask how many guests are seated (AC Room charge).
-    let guests;
-    if (needsGuests(order.orderType)) { guests = askGuests(order.guests); if (guests === null) return; }
-    try { await printBill(id, guests); toast.success(t("Sent to printer")); load(); }
+    // KH-11: Indoor-AC guests are entered on the order itself — not asked here.
+    try { await printBill(id); toast.success(t("Sent to printer")); load(); }
     catch (err) { toast.error(err.response?.data?.message || t("Couldn't reach the printer")); }
   };
 
@@ -351,7 +348,7 @@ export default function OrderDetailPage() {
           )}
           {order.acServiceCharge > 0 && (
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: TEXT_MUTED, marginTop: 6 }}>
-              <span>{t("Service Charge")} · {t("{n} guests × ₹{rate}", { n: order.guests, rate: order.acServiceRate })}</span><span>₹{order.acServiceCharge}</span>
+              <span>{t("AC charge")} · {t("{n} guests × ₹{rate}", { n: order.guests, rate: order.acServiceRate })}</span><span>₹{order.acServiceCharge}</span>
             </div>
           )}
           <div style={{ borderTop: `1px dashed ${GLASS_BORDER}`, marginTop: 8, paddingTop: 8, display: "flex", justifyContent: "space-between", alignItems: "baseline", fontWeight: 800, color: "#fff" }}>
@@ -465,11 +462,12 @@ export default function OrderDetailPage() {
               </div>
             ))}
             <div style={{ borderTop: `1px dashed ${GLASS_BORDER}`, marginTop: 8, paddingTop: 8 }}>
+              {/* KH-11: Indoor-AC guests × rate — part of the subtotal, so listed above it */}
+              {bill.acServiceCharge > 0 && <Row label={t("AC charge")} value={`₹${bill.acServiceCharge}`} />}
               <Row label={t("Subtotal")} value={`₹${bill.subtotal}`} />
               {bill.discount > 0 && <Row label={t("Coupon discount")} value={`−₹${bill.discount}`} />}
               {bill.tax > 0 && <Row label={t("GST")} value={`₹${bill.tax}`} />}
               {bill.serviceCharge > 0 && <Row label={t("Service charge")} value={`₹${bill.serviceCharge}`} />}
-              {bill.acServiceCharge > 0 && <Row label={t("Service Charge")} value={`₹${bill.acServiceCharge}`} />}
               <Row label={t("Grand total")} value={`₹${bill.grandTotal}`} bold />
             </div>
             {bill.paymentQr && (

@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { getMenu, getMenuCategories } from "../services/menuService.js";
 import { getAllTables } from "../services/tableService.js";
-import { placeOrder, newIdempotencyKey } from "../services/orderService.js";
+import { placeOrder, newIdempotencyKey, getRestaurantProfile } from "../services/orderService.js";
 import { getSocket } from "../services/socketService.js";
 import { Loader, EmptyState } from "../components/StateViews.jsx";
 import GlassCard from "../components/ui/GlassCard.jsx";
@@ -17,7 +17,7 @@ import { t as tr, tn, localName } from "../i18n/index.jsx";
 import NotShareableNote from "../components/NotShareableNote.jsx";
 import AddonPicker, { AddonHint } from "../components/AddonPicker.jsx";
 import { hasAddons, lineKey, unitPrice, addonNames } from "../utils/addons.js";
-import { TABLE_AREA_LABEL, groupTablesByArea, tableLabel } from "../utils/diningArea.js";
+import { TABLE_AREA_LABEL, groupTablesByArea, tableLabel, isAcRoom } from "../utils/diningArea.js";
 
 export default function NewOrderPage() {
   const nav = useNavigate();
@@ -55,6 +55,8 @@ export default function NewOrderPage() {
   const [cart, setCart]           = useState([]); // [{key, item, qty, notes, addonIds}] — KH-12: one line per item + add-ons
   const [picker, setPicker]       = useState(null); // KH-12: item whose add-ons are being asked about
   const [customerName, setCustomerName] = useState("");
+  const [guests, setGuests]       = useState(""); // KH-11: Indoor-AC only
+  const [acRate, setAcRate]       = useState(20); // ₹ per guest (profile) — preview; the server prices it
   const [placing, setPlacing]     = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [idemKey]                 = useState(newIdempotencyKey);
@@ -67,6 +69,7 @@ export default function NewOrderPage() {
     // The table list is only shown when no table was picked on the map.
     getAllTables().then(({ data }) => setTables((data.tables || []).filter((t) => t.status !== "Inactive"))).catch(() => {});
     getMenuCategories().then(({ data }) => setCategories(data || [])).catch(() => {});
+    getRestaurantProfile().then(({ data }) => { const r = (data?.data || data)?.acServiceChargePerGuest; if (r != null) setAcRate(Number(r)); }).catch(() => {});
     loadFullMenu();
   }, [locked, loadFullMenu]);
 
@@ -148,7 +151,16 @@ export default function NewOrderPage() {
     return [...map.entries()];
   }, [items]);
 
-  const canPlace = itemCount > 0 && (orderType !== "DINE_IN" || tableNo);
+  // KH-11: Indoor-AC table → number of guests (required unless the table's
+  // guests were already entered on its first order) × rate, in the subtotal.
+  const acTable   = orderType === "DINE_IN" && isAcRoom(pickedTable);
+  const guestsReq = acTable && pickedTable?.occupancyStatus !== "OCCUPIED";
+  const guestsN   = /^\d+$/.test(guests) ? Number(guests) : 0;
+  const guestsOk  = !acTable || (guests === "" ? !guestsReq : guestsN >= 1 && guestsN <= 100);
+  const acCharge  = acTable && guestsN > 0 ? guestsN * acRate : 0;
+  const grand     = subtotal + acCharge; // preview; server re-prices
+
+  const canPlace = itemCount > 0 && (orderType !== "DINE_IN" || tableNo) && guestsOk;
 
   const handlePlace = async () => {
     if (!canPlace || placing) return;
@@ -159,6 +171,7 @@ export default function NewOrderPage() {
         orderType,
         tableNo: orderType === "DINE_IN" ? Number(tableNo) : undefined,
         customerName: customerName.trim(),
+        ...(acTable && guestsN > 0 && { guests: guestsN }),
         notes: "",
         idempotencyKey: idemKey,
       };
@@ -221,9 +234,15 @@ export default function NewOrderPage() {
               />
             </GlassCard>
           ))}
+          {acCharge > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: TEXT_MUTED, padding: "8px 4px 0" }}>
+              <span>{tr("AC charge")} · {tr("{n} guests × ₹{rate}", { n: guestsN, rate: acRate })}</span>
+              <span style={{ fontVariantNumeric: "tabular-nums" }}>₹{acCharge}</span>
+            </div>
+          )}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "10px 4px 0", fontWeight: 800, color: "#fff" }}>
             <span style={{ fontSize: 14 }}>{tr("Total")}</span>
-            <span style={{ fontSize: 22, fontVariantNumeric: "tabular-nums", letterSpacing: -0.4 }}>₹{subtotal}</span>
+            <span style={{ fontSize: 22, fontVariantNumeric: "tabular-nums", letterSpacing: -0.4 }}>₹{grand}</span>
           </div>
         </div>
 
@@ -237,6 +256,27 @@ export default function NewOrderPage() {
               fontSize: 14, boxSizing: "border-box", background: GLASS_BG, color: "#fff",
             }}
           />
+          {acTable && (
+            <>
+              <label style={{ fontSize: 11.5, fontWeight: 700, color: TEXT_FAINT, display: "block", margin: "12px 0 6px" }}>
+                {guestsReq ? tr("Number of guests *") : tr("Number of guests")}
+              </label>
+              <input
+                value={guests} onChange={(e) => setGuests(e.target.value.replace(/\D/g, "").slice(0, 3))}
+                inputMode="numeric" placeholder={tr("e.g. 4")}
+                style={{
+                  width: "100%", padding: "12px 14px", borderRadius: 12,
+                  border: `1px solid ${guestsOk ? GLASS_BORDER : ACCENT}`,
+                  fontSize: 14, boxSizing: "border-box", background: GLASS_BG, color: "#fff",
+                }}
+              />
+              <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 6 }}>
+                {guestsReq
+                  ? tr("Required for Indoor-AC · ₹{rate} per guest", { rate: acRate })
+                  : tr("Table in use — only if guests weren't entered on its first order")}
+              </div>
+            </>
+          )}
           <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 10 }}>
             {orderType === "DINE_IN" ? pickedName : tr("Takeaway")} · {tr("the order is Placed right away; you can change it for a few minutes, then it goes to the kitchen and the KOT prints.")}
           </div>
@@ -248,7 +288,7 @@ export default function NewOrderPage() {
           borderRadius: 18, boxShadow: "0 12px 32px rgba(0,0,0,0.45)",
         }}>
           <PrimaryButton onClick={handlePlace} disabled={!canPlace || placing} style={{ width: "100%" }}>
-            {placing ? tr("Placing…") : `${tr("Place order")} · ₹${subtotal}`}
+            {placing ? tr("Placing…") : `${tr("Place order")} · ₹${grand}`}
           </PrimaryButton>
         </div>
       </div>

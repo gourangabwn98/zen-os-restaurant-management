@@ -1,8 +1,9 @@
 // src/pages/admin/shared/CombineBillPanel.jsx
 // ─────────────────────────────────────────────────────────────────────────────
-// Orders → a table → "Generate Combine Bill": tick SOME of the table's orders,
-// then preview / print ONE combined bill, mark the ticked ones paid, or
-// complete them. Nothing is decided here — every action sends only the order
+// Orders → a table → "🧾 Bill" — two plain steps:
+//   1. Choose orders: tick the table's orders (all ticked to start) → Next.
+//   2. Bill: the bill for them, then Print bill · Mark all paid · Complete all.
+// The only bill flow on the table view. Nothing is decided here — every action sends only the order
 // ids; the server re-checks each one and uses only stored amounts
 // (restaurant-server/services/combinedBillService.js). The summary shown is
 // the server's preview, never a sum made in the browser.
@@ -10,8 +11,6 @@
 // whenever an order stops being eligible.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useEffect, useMemo, useRef, useState } from "react";
-import { askGuests } from "./askGuests.js";
-import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 import {
   previewCombinedBill, printCombinedBill, paySelectedOrders, completeSelectedOrders,
@@ -42,13 +41,18 @@ const report = (lines, failures) => {
 export default function CombineBillPanel({ tableNo, tableName, orders, onExit, onRefresh }) {
   const name = tableName || t("Table {n}", { n: tableNo });
   const [selected, setSelected] = useState(() => {
-    try { return new Set(JSON.parse(sessionStorage.getItem(storeKey(tableNo)) || "[]")); } catch { return new Set(); }
+    try {
+      const kept = sessionStorage.getItem(storeKey(tableNo));
+      if (kept) return new Set(JSON.parse(kept));
+    } catch { /* storage off */ }
+    // Nothing kept → every order that can go on the bill starts ticked.
+    return new Set(orders.filter((o) => COMBINABLE.includes(o.status)).map((o) => String(o._id)));
   });
+  const [step, setStep] = useState(1); // 1 = choose orders · 2 = bill + actions
   const [preview, setPreview] = useState(null);       // server figures for the selection
   const [previewErr, setPreviewErr] = useState("");
   const [busy, setBusy] = useState(null);             // "print" | "pay" | "complete"
   const [payOpen, setPayOpen] = useState(false);
-  const [billOpen, setBillOpen] = useState(false);
   const printKey = useRef(newIdempotencyKey());       // one per print intent (double-click safe)
 
   const eligible = useMemo(() => new Set(orders.filter((o) => COMBINABLE.includes(o.status)).map((o) => String(o._id))), [orders]);
@@ -80,7 +84,6 @@ export default function CombineBillPanel({ tableNo, tableName, orders, onExit, o
   const allEligible = [...eligible];
   const allOn = allEligible.length > 0 && allEligible.every((id) => selected.has(id));
   const selectAll = () => setSelected(allOn ? new Set() : new Set(allEligible));
-  const clear = () => { setSelected(new Set()); setPayOpen(false); };
   const exit = () => { try { sessionStorage.removeItem(storeKey(tableNo)); } catch { /* storage off */ } onExit(); };
 
   const totals = preview?.totals;
@@ -97,11 +100,8 @@ export default function CombineBillPanel({ tableNo, tableName, orders, onExit, o
   };
 
   const print = () => {
-    // KH-11: asked ONCE for the whole table bill — the AC Room charge goes on one order.
-    const guests = askGuests(Math.max(0, ...orders.map((o) => Number(o.guests) || 0)) || undefined);
-    if (guests === null) return;
     return run("print", async () => {
-    const { data } = await printCombinedBill(tableNo, ids, printKey.current, guests);
+    const { data } = await printCombinedBill(tableNo, ids, printKey.current);
     printKey.current = newIdempotencyKey(); // the next click is a new, intended print
     report([data.duplicate ? t("Already sent to the printer") : t("Combined bill sent to the printer — {n} orders", { n: ids.length - (data.rejected?.length || 0) })], data.rejected || []);
   });
@@ -120,7 +120,7 @@ export default function CombineBillPanel({ tableNo, tableName, orders, onExit, o
   // BIL-01/02 — settle the selected PAID bills. A served order completes as a
   // result (and leaves the table); one still cooking completes when served.
   const settle = () => {
-    if (!window.confirm(t("Settle the bills of {n} selected orders? Served orders complete and leave the table.", { n: ids.length }))) return;
+    if (!window.confirm(t("Complete {n} orders? Their bills are closed; served orders leave the table.", { n: ids.length }))) return;
     run("complete", async () => {
       const { data } = await completeSelectedOrders(tableNo, ids);
       report([
@@ -132,103 +132,83 @@ export default function CombineBillPanel({ tableNo, tableName, orders, onExit, o
     });
   };
 
+  const bill = preview && !previewErr ? preview : null;
+  const allPaid = ready && unpaidCount === 0;
+
   return (
     <div className="cb">
       <div className="cb-head">
         <div>
-          <b>{t("Combine Bill · {table}", { table: name })}</b>
-          <span>{t("Tick the orders to put on one bill.")}</span>
+          <b>{t("Bill · {table}", { table: name })}</b>
+          <span>{step === 1 ? t("Tick the orders to put on the bill, then Next.") : t("Print the bill, take payment, then complete.")}</span>
         </div>
-        <button type="button" className="zc-btn sm ghost" onClick={exit}>✕ {t("Exit")}</button>
+        <button type="button" className="zc-btn sm ghost" onClick={exit}>✕ {t("Close")}</button>
       </div>
 
-      {allEligible.length > 1 && (
-        <label className="cb-all">
-          <input type="checkbox" checked={allOn} onChange={selectAll} /> {t("Select all {n} orders", { n: allEligible.length })}
-        </label>
-      )}
+      {/* 1 Choose orders → 2 Bill */}
+      <ol className="cb-steps" aria-label={t("Steps")}>
+        <li className={step === 1 ? "now" : "done"} aria-current={step === 1 ? "step" : undefined}><i>{step === 1 ? "1" : "✓"}</i>{t("Choose orders")}</li>
+        <li className={step === 2 ? "now" : ""} aria-current={step === 2 ? "step" : undefined}><i>2</i>{t("Bill")}</li>
+      </ol>
 
-      <div className="cb-list" role="group" aria-label={t("Orders of table {n}", { n: tableNo })}>
-        {orders.map((o) => {
-          const id = String(o._id);
-          const can = eligible.has(id);
-          const on = can && selected.has(id);
-          return (
-            <label key={id} className={`cb-row${on ? " on" : ""}${can ? "" : " off"}`}>
-              <input type="checkbox" checked={on} disabled={!can || !!busy} onChange={() => toggle(id)}
-                aria-label={t("Select order {id}", { id: o.orderId })} />
-              <div className="cb-main">
-                <div className="cb-top">
-                  <b className="cb-no">#{o.orderId}</b>
-                  <span className="cb-who">{customerName(o) || t("Walk-in")}</span>
-                </div>
-                <div className="cb-tags">
-                  <span className={`zc-tag ${statusKind(o.status)}`}><i />{t(STATUS_TEXT[o.status] || o.status)}</span>
-                  <span className={`zc-tag ${o.paymentStatus === "PAID" ? "ready" : "wait"}`}>{o.paymentStatus === "PAID" ? t("Paid") : t("Unpaid")}</span>
-                  <span className="cb-items">{tn(o.items?.length || 0, "{n} item", "{n} items")}</span>
-                  {!can && <span className="cb-why">{t(reasonFor(o))}</span>}
-                </div>
-              </div>
-              <b className="cb-amt">{money(o.total)}</b>
+      {step === 1 ? (
+        <>
+          {allEligible.length > 1 && (
+            <label className="cb-all">
+              <input type="checkbox" checked={allOn} onChange={selectAll} /> {t("Select all {n} orders", { n: allEligible.length })}
             </label>
-          );
-        })}
-      </div>
-
-      <div className="cb-bar" aria-live="polite">
-        <div className="cb-sum">
-          <div className="cb-sel">{t("Selected: {n}", { n: ids.length })}</div>
-          {ids.length === 0 ? <div className="cb-hint">{t("Tick one or more orders.")}</div>
-            : previewErr ? <div className="cb-err">{previewErr}</div>
-            : !totals ? <div className="cb-hint">{t("Working out the bill…")}</div>
-            : (
-              <div className="cb-figs">
-                <span>{t("Subtotal")} <b>{money(totals.subtotal)}</b></span>
-                {totals.discount > 0 && <span>{t("Discount")} <b>−{money(totals.discount)}</b></span>}
-                <span>{t("GST + service")} <b>{money(totals.tax + totals.serviceCharge)}</b></span>
-                <span className="gt">{t("Grand Total")} <b>{money(totals.total)}</b></span>
-                {totals.paidTotal > 0 && <span>{t("Due")} <b>{money(totals.dueTotal)}</b></span>}
-              </div>
-            )}
-        </div>
-        <div className="cb-acts">
-          <button type="button" className="zc-btn sm" disabled={!ready || !!busy} onClick={() => setBillOpen(true)}>🧾 {t("Generate Combined Bill")}</button>
-          <button type="button" className="zc-btn sm" disabled={!ready || !!busy} onClick={print}>{busy === "print" ? t("Sending…") : `🖨️ ${t("Print Combined Bill")}`}</button>
-          {payOpen ? (
-            <span className="cb-pay">
-              <button type="button" className="zc-btn sm pri" disabled={!!busy} onClick={() => pay("Cash")}>{busy === "pay" ? t("Saving…") : t("Paid in cash")}</button>
-              <button type="button" className="zc-btn sm pri" disabled={!!busy} onClick={() => pay("Online")}>{busy === "pay" ? t("Saving…") : t("Paid by UPI")}</button>
-              <button type="button" className="zc-btn sm ghost" disabled={!!busy} onClick={() => setPayOpen(false)}>{t("Cancel")}</button>
-            </span>
-          ) : (
-            <button type="button" className="zc-btn sm pri" disabled={!ready || !!busy || unpaidCount === 0} onClick={() => setPayOpen(true)}
-              title={ready && unpaidCount === 0 ? t("Every selected order is already paid") : undefined}>
-              ✓ {t("Mark Selected as Paid")}
-            </button>
           )}
-          <button type="button" className="zc-btn sm" disabled={!ready || !!busy || settleable === 0} onClick={settle}
-            title={ready && settleable === 0 ? t("Mark the selected orders paid first, then settle their bills") : undefined}>
-            {busy === "complete" ? t("Saving…") : t("Settle Selected Bills")}
-          </button>
-          <button type="button" className="zc-btn sm ghost" disabled={!ids.length || !!busy} onClick={clear}>{t("Clear Selection")}</button>
-        </div>
-      </div>
 
-      {billOpen && preview && createPortal(
-        <div className="zc-scrim" onClick={() => setBillOpen(false)}>
-          <div className="zc-modal cb-modal" role="dialog" aria-label={t("Combined bill")} onClick={(e) => e.stopPropagation()}>
-            <div className="mh">
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="t">{t("Combined bill · {table}", { table: name })}</div>
-                <div className="s">{tn(preview.orders.length, "{n} order", "{n} orders")} · {preview.orders.map((o) => `#${o.orderId}`).join(", ")}</div>
-              </div>
-              <button type="button" className="zc-x" onClick={() => setBillOpen(false)} aria-label={t("Close")}>✕</button>
+          <div className="cb-list" role="group" aria-label={t("Orders of table {n}", { n: tableNo })}>
+            {orders.map((o) => {
+              const id = String(o._id);
+              const can = eligible.has(id);
+              const on = can && selected.has(id);
+              return (
+                <label key={id} className={`cb-row${on ? " on" : ""}${can ? "" : " off"}`}>
+                  <input type="checkbox" checked={on} disabled={!can || !!busy} onChange={() => toggle(id)}
+                    aria-label={t("Select order {id}", { id: o.orderId })} />
+                  <div className="cb-main">
+                    <div className="cb-top">
+                      <b className="cb-no">#{o.orderId}</b>
+                      <span className="cb-who">{customerName(o) || t("Walk-in")}</span>
+                    </div>
+                    <div className="cb-tags">
+                      <span className={`zc-tag ${statusKind(o.status)}`}><i />{t(STATUS_TEXT[o.status] || o.status)}</span>
+                      <span className={`zc-tag ${o.paymentStatus === "PAID" ? "ready" : "wait"}`}>{o.paymentStatus === "PAID" ? t("Paid") : t("Unpaid")}</span>
+                      <span className="cb-items">{tn(o.items?.length || 0, "{n} item", "{n} items")}</span>
+                      {!can && <span className="cb-why">{t(reasonFor(o))}</span>}
+                    </div>
+                  </div>
+                  <b className="cb-amt">{money(o.total)}</b>
+                </label>
+              );
+            })}
+          </div>
+
+          <div className="cb-bar" aria-live="polite">
+            <div className="cb-sum">
+              <div className="cb-sel">{tn(ids.length, "{n} order selected", "{n} orders selected")}</div>
+              {ids.length === 0 ? <div className="cb-hint">{t("Tick one or more orders.")}</div>
+                : previewErr ? <div className="cb-err">{previewErr}</div>
+                : !totals ? <div className="cb-hint">{t("Working out the bill…")}</div>
+                : <div className="cb-figs"><span className="gt">{t("Grand Total")} <b>{money(totals.total)}</b></span></div>}
             </div>
-            <div className="mb">
-              {preview.orders.map((o) => (
+            <button type="button" className="zc-btn pri cb-next" disabled={!ready} onClick={() => setStep(2)}>
+              {t("Next")} →
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          {!bill ? (
+            <div className={previewErr ? "cb-err" : "cb-hint"}>{previewErr || t("Working out the bill…")}</div>
+          ) : (
+            <div className="cb-billcard">
+              {bill.orders.map((o) => (
                 <div key={o._id} className="cb-bill-order">
                   <div className="cb-bill-oh">
-                    <b>{t("Order #{id}", { id: o.orderId })}</b>
+                    <b>{t("Order #{id}", { id: o.orderId })}{customerName(o) ? ` · ${customerName(o)}` : ""}</b>
                     <span className={`zc-tag ${o.paymentStatus === "PAID" ? "ready" : "wait"}`}>{o.paymentStatus === "PAID" ? t("Paid") : t("Unpaid")}</span>
                   </div>
                   {o.items.map((it, i) => (
@@ -237,25 +217,56 @@ export default function CombineBillPanel({ tableNo, tableName, orders, onExit, o
                 </div>
               ))}
               <div className="cb-bill-tot">
-                <div><span>{t("Subtotal")}</span><span>{money(preview.totals.subtotal)}</span></div>
-                {preview.totals.discount > 0 && <div><span>{t("Discount")}</span><span>−{money(preview.totals.discount)}</span></div>}
-                <div><span>{t("GST")}</span><span>{money(preview.totals.tax)}</span></div>
-                <div><span>{t("Service Charge")}</span><span>{money(preview.totals.serviceCharge)}</span></div>
-                <div className="gt"><span>{t("Grand Total")}</span><span>{money(preview.totals.total)}</span></div>
-                {preview.totals.paidTotal > 0 && <div><span>{t("Already paid")}</span><span>{money(preview.totals.paidTotal)}</span></div>}
-                {preview.totals.paidTotal > 0 && <div className="due"><span>{t("Due")}</span><span>{money(preview.totals.dueTotal)}</span></div>}
+                <div><span>{t("Subtotal")}</span><span>{money(bill.totals.subtotal)}</span></div>
+                {bill.totals.discount > 0 && <div><span>{t("Discount")}</span><span>−{money(bill.totals.discount)}</span></div>}
+                <div><span>{t("GST")}</span><span>{money(bill.totals.tax)}</span></div>
+                <div><span>{t("Service Charge")}</span><span>{money(bill.totals.serviceCharge)}</span></div>
+                <div className="gt"><span>{t("Grand Total")}</span><span>{money(bill.totals.total)}</span></div>
+                {bill.totals.paidTotal > 0 && <div><span>{t("Already paid")}</span><span>{money(bill.totals.paidTotal)}</span></div>}
+                {bill.totals.paidTotal > 0 && <div className="due"><span>{t("Due")}</span><span>{money(bill.totals.dueTotal)}</span></div>}
               </div>
-              {preview.rejected?.length > 0 && (
-                <div className="cb-err" style={{ marginTop: 10 }}>{t("Left out:")} {preview.rejected.map((r) => `${r.orderId || r.id} (${t(r.reason)})`).join(", ")}</div>
+              {bill.rejected?.length > 0 && (
+                <div className="cb-err" style={{ marginTop: 10 }}>{t("Left out:")} {bill.rejected.map((r) => `${r.orderId || r.id} (${t(r.reason)})`).join(", ")}</div>
               )}
             </div>
-            <div className="mf">
-              <button type="button" className="zc-btn ghost" onClick={() => setBillOpen(false)}>{t("Close")}</button>
-              <button type="button" className="zc-btn pri" disabled={!!busy} onClick={print}>{busy === "print" ? t("Sending…") : `🖨️ ${t("Print Combined Bill")}`}</button>
+          )}
+
+          {/* The three things to do, in order */}
+          <div className="cb-bar" aria-live="polite">
+            <div className="cb-act-row">
+              <span className="cb-act-n">1</span>
+              <button type="button" className="zc-btn pri" disabled={!ready || !!busy} onClick={print}>
+                {busy === "print" ? t("Sending…") : `🖨️ ${t("Print bill")}`}
+              </button>
             </div>
+            <div className="cb-act-row">
+              <span className="cb-act-n">2</span>
+              {allPaid ? (
+                <span className="cb-done">✓ {t("All paid")}</span>
+              ) : payOpen ? (
+                <span className="cb-pay">
+                  <button type="button" className="zc-btn pri" disabled={!!busy} onClick={() => pay("Cash")}>{busy === "pay" ? t("Saving…") : `💵 ${t("Paid in cash")}`}</button>
+                  <button type="button" className="zc-btn pri" disabled={!!busy} onClick={() => pay("Online")}>{busy === "pay" ? t("Saving…") : `📱 ${t("Paid online")}`}</button>
+                  <button type="button" className="zc-btn ghost" disabled={!!busy} onClick={() => setPayOpen(false)}>{t("Cancel")}</button>
+                </span>
+              ) : (
+                <button type="button" className="zc-btn" disabled={!ready || !!busy} onClick={() => setPayOpen(true)}>
+                  ✓ {t("Mark all paid")}
+                </button>
+              )}
+            </div>
+            <div className="cb-act-row">
+              <span className="cb-act-n">3</span>
+              <button type="button" className="zc-btn good" disabled={!ready || !!busy || settleable === 0} onClick={settle}
+                title={ready && settleable === 0 ? t("Mark them paid first") : undefined}>
+                {busy === "complete" ? t("Saving…") : `✔ ${t("Complete all")}`}
+              </button>
+              {ready && !allPaid && settleable === 0 && <span className="cb-hint">{t("Mark them paid first")}</span>}
+            </div>
+            <button type="button" className="zc-btn ghost sm" style={{ alignSelf: "flex-start" }} disabled={!!busy}
+              onClick={() => { setPayOpen(false); setStep(1); }}>← {t("Back to orders")}</button>
           </div>
-        </div>,
-        document.body,
+        </>
       )}
     </div>
   );

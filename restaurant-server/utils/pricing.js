@@ -99,18 +99,21 @@ export const computeCouponDiscount = (coupon, subtotal) => {
  * dbItems. The only discount is a customer's coupon (`coupon`, validated
  * server-side by couponService — never an amount sent by a client); GST is
  * charged on the discounted item value. */
-// `acServiceCharge` (KH-11): an AC Room order's guest service charge, already
-// fixed at bill print — carried through a re-price so an edit never drops it.
+// `acServiceCharge` (KH-11): an Indoor-AC order's guests × rate, fixed when the
+// order is placed — carried through a re-price so an edit never drops it.
+// It is PART OF `subtotal` (the bill shows it above the Subtotal line); the
+// coupon and GST still apply to the item value only.
 export const computeTotals = (dbItems, restaurantProfile, coupon = null, { acServiceCharge = 0 } = {}) => {
   const gstRate           = (restaurantProfile?.gstRate || 0) / 100;
   const serviceChargeRate = restaurantProfile?.serviceCharge || 0;
-  const subtotal          = dbItems.reduce((s, i) => s + i.price * i.qty, 0);
+  const itemSubtotal      = dbItems.reduce((s, i) => s + i.price * i.qty, 0);
   const totalQty          = dbItems.reduce((s, i) => s + i.qty, 0);
-  const discount           = computeCouponDiscount(coupon, subtotal);
-  const tax                = Math.round((subtotal - discount) * gstRate);
+  const discount           = computeCouponDiscount(coupon, itemSubtotal);
+  const tax                = Math.round((itemSubtotal - discount) * gstRate);
   const serviceCharge      = Math.round(serviceChargeRate * totalQty);
   const ac                  = Math.max(0, Number(acServiceCharge) || 0);
-  const total               = subtotal - discount + tax + serviceCharge + ac;
+  const subtotal            = itemSubtotal + ac;
+  const total               = subtotal - discount + tax + serviceCharge;
   return { subtotal, tax, serviceCharge, discount, total, totalQty };
 };
 

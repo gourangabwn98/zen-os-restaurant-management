@@ -4,6 +4,8 @@ import api from "./api.js";
 // derived server-side from the authenticated waiter identity, so this order
 // is auto-CONFIRMED (with KOT job created) the instant it's placed. ────────
 export const placeOrder = (body) => api.post("/orders", body);
+// Restaurant settings (e.g. the Indoor-AC ₹/guest rate for the order preview).
+export const getRestaurantProfile = () => api.get("/profile");
 
 export const getOrder = (id) => api.get(`/orders/${id}`);
 export const confirmOrder = (id) => api.patch(`/orders/${id}/confirm`);
@@ -25,7 +27,7 @@ export const settleOrders = (orderIds, paymentMethod) => api.post("/admin/orders
 // ── Billing ────────────────────────────────────────────────────────────────
 export const getCombinedBill = (params) => api.get("/admin/orders/combined-bill", { params });
 // KH-11: guests seated (dine-in) → AC Room service charge on the server.
-export const printBill       = (id, guests) => api.post(`/admin/orders/${id}/print-bill`, guests ? { guests } : {});
+export const printBill       = (id) => api.post(`/admin/orders/${id}/print-bill`, {});
 
 // ── KH-07 / KH-03 — follow-up orders + combined bill ─────────────────────
 // An order with its follow-ups ("add items" after the KOT).

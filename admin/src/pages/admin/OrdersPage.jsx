@@ -32,8 +32,7 @@ import { isManager } from "../../utils/access.js";
 import { t, tn, N_, fmtNum, fmtDate, fmtDateTime, fmtTime, localName } from "../../i18n/core.js";
 import { customerName } from "./shared/customerName.js";
 import { takenByName, takenByIsAcceptor } from "./shared/takenBy.js";
-import { DINING_AREA_LABEL, TABLE_AREAS, TABLE_AREA_LABEL, groupTablesByArea, tableLabel } from "./shared/diningArea.js";
-import { askGuests, needsGuests } from "./shared/askGuests.js";
+import { DINING_AREA_LABEL, TABLE_AREAS, TABLE_AREA_LABEL, groupTablesByArea, tableLabel, isAcRoom } from "./shared/diningArea.js";
 import { hasAddons, cartLineKey, unitPrice, addonIdsOf, addonLabel } from "./shared/addons.js";
 import { AddonLines, AddonHint, AddonPicker } from "./shared/AddonUI.jsx";
 
@@ -410,9 +409,10 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
     [t("Waiter"), takenByName(order) ? `${takenByName(order)}${takenByIsAcceptor(order) ? ` (${t("accepted")})` : ""}` : "—"],
   ];
   const summary = [
+    // KH-11: Indoor-AC guests × rate — part of the subtotal, so listed above it.
+    ...(order.acServiceCharge > 0 ? [[`${t("AC charge")} (${t("{n} guests × ₹{rate}", { n: order.guests, rate: order.acServiceRate })})`, order.acServiceCharge]] : []),
     [t("Subtotal"), subtotal],
     ...(order.serviceCharge > 0 ? [[t("Service charge"), order.serviceCharge]] : []),
-    ...(order.acServiceCharge > 0 ? [[`${t("Service Charge")} (${t("{n} guests × ₹{rate}", { n: order.guests, rate: order.acServiceRate })})`, order.acServiceCharge]] : []), // KH-11
     ...(order.tax > 0 ? [[t("GST"), order.tax]] : []),
     ...(order.discount > 0 ? [[`${t("Discount")}${order.coupon?.code ? ` (${order.coupon.code})` : ""}`, -order.discount]] : []),
   ];
@@ -699,6 +699,8 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
   const [tableNo,     setTableNo]     = useState(initialTableNo ? String(initialTableNo) : "");
   const [customerName,setCustomerName]= useState("");
   const [customerPhone,setCustomerPhone]=useState("");
+  const [guests,      setGuests]      = useState(""); // KH-11: Indoor-AC only
+  const [acRate,      setAcRate]      = useState(20); // ₹ per guest (profile) — preview; the server prices it
   const [paymentMethod,setPaymentMethod]=useState("Cash");
   const [paymentStatus,setPaymentStatus]=useState("PENDING_VERIFICATION");
   const [loading,     setLoading]     = useState(false);
@@ -710,10 +712,11 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
   const [idemKey] = useState(newIdempotencyKey);
   const [cartOpen, setCartOpen] = useState(false); // phone: cart sheet over the menu
   const tableRef = useRef(null);
+  const guestsRef = useRef(null);
 
   useEffect(()=>{
     menuCached().then(r=>{ setMi(r.data||[]); setMenuLoading(false); }).catch(()=>setMenuLoading(false));
-    profileCached().then(r=>{ const p=r.data?.data||r.data; setScpi(p?.serviceCharge||0); setGstRate(p?.gstRate||0); }).catch(()=>{});
+    profileCached().then(r=>{ const p=r.data?.data||r.data; setScpi(p?.serviceCharge||0); setGstRate(p?.gstRate||0); if(p?.acServiceChargePerGuest!=null) setAcRate(Number(p.acServiceChargePerGuest)); }).catch(()=>{});
     categoriesCached().then(r=>{
       const list = r.data?.data || r.data || [];
       const map = {};
@@ -769,7 +772,14 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
   const subtotal  = cart.reduce((s,c)=>s+unitPrice(c.item,c.addonIds)*c.qty,0);
   const tax       = Math.round(subtotal*(gstRate/100));
   const scAmt     = scpi * totalQty;
-  const total     = subtotal + tax + scAmt;
+  // KH-11: Indoor-AC table → guests (required unless the table's guests were
+  // already entered on its first order) × rate, shown inside the subtotal.
+  const pickedTable = orderType==="DINE_IN" ? tables.find(tb=>String(tb.tableNo)===String(tableNo)) : null;
+  const acTable   = isAcRoom(pickedTable);
+  const guestsReq = acTable && pickedTable?.occupancyStatus!=="OCCUPIED";
+  const guestsN   = /^\d+$/.test(guests) ? Number(guests) : 0;
+  const acCharge  = acTable && guestsN>0 ? guestsN*acRate : 0;
+  const total     = subtotal + acCharge + tax + scAmt;
 
   const handleSubmit = async () => {
     if(!cart.length) return toast.error(t("Add at least one item"));
@@ -779,6 +789,11 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
       tableRef.current?.focus({ preventScroll:true });
       return toast.error(t("Enter table number"));
     }
+    if(acTable && (guestsReq || guests!=="") && !(guestsN>=1 && guestsN<=100)) {
+      guestsRef.current?.scrollIntoView({ behavior:"smooth", block:"center" });
+      guestsRef.current?.focus({ preventScroll:true });
+      return toast.error(t("Please enter a number of guests from 1 to 100"));
+    }
     try{
       setLoading(true);
       const { data } = await placeOrder({
@@ -787,7 +802,7 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
         isGuest: true,
         customerName:  customerName.trim()||undefined,
         customerPhone: customerPhone.trim()||undefined,
-        paymentMethod, paymentStatus,
+        ...(acTable && guestsN>0 && { guests: guestsN }),
         idempotencyKey: idemKey,
       });
       // Only a real persisted order comes back with a Mongo _id + orderId.
@@ -1119,31 +1134,25 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
                 onChange={e=>setCustomerPhone(e.target.value.replace(/\D/g,""))}
                 maxLength={10} placeholder={t("Phone number")} className="zc-input" />
 
-              {/* Payment Method */}
-              <div className="zc-seg" style={{ width:"100%" }}>
-                {["Cash","Online"].map(m=>(
-                  <button key={m} onClick={()=>setPaymentMethod(m)}
-                    className={paymentMethod===m ? "on" : ""} style={{ flex:1, justifyContent:"center" }}>
-                    {m==="Cash"?`💵 ${t("Cash")}`:`📱 ${t("Online")}`}
-                  </button>
-                ))}
-              </div>
+              {/* KH-11: Indoor-AC — number of guests (₹/guest, in the subtotal) */}
+              {acTable && (
+                <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                  <input ref={guestsRef} value={guests}
+                    onChange={e=>setGuests(e.target.value.replace(/\D/g,"").slice(0,3))}
+                    inputMode="numeric" className="zc-input"
+                    placeholder={guestsReq ? t("Number of guests *") : t("Number of guests")}
+                    style={guestsReq && !guestsN ? { borderColor:"var(--violet-line)" } : undefined} />
+                  <span style={{ fontSize:11, color:"var(--text-3)" }}>
+                    {guestsReq
+                      ? t("Required for Indoor-AC · ₹{rate} per guest", { rate: fmtNum(acRate) })
+                      : t("Table in use — only if guests weren't entered on its first order")}
+                  </span>
+                </div>
+              )}
 
-              {/* Payment Status */}
-              <div className="zc-seg" style={{ width:"100%" }}>
-                {PAYMENT_STATUS_OPTIONS.map(({value,label,icon})=>{
-                  const st = PAY_STYLE[value] || DEFAULT_STATUS_STYLE;
-                  const active = paymentStatus===value;
-                  return (
-                    <button key={value} onClick={()=>setPaymentStatus(value)} style={{
-                      flex:1, justifyContent:"center",
-                      background:active?st.bg:"transparent",
-                      color:active?st.color:"var(--text-2)",
-                      fontWeight:active?600:500,
-                    }}>{icon} {t(label)}</button>
-                  );
-                })}
-              </div>
+              {/* No payment choice here: a new order is always unpaid (the
+                  server sets it) — payment is taken later from the order or
+                  the table's 🧾 Bill. */}
 
               {/* WhatsApp notice */}
               {customerPhone?.length===10 && (
@@ -1163,8 +1172,12 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
                   marginBottom:12 }}>
                   <div className="tnum" style={{ display:"flex", justifyContent:"space-between",
                     fontSize:12, color:"var(--text-2)" }}>
-                    <span>{t("Subtotal")}</span><span>₹{fmtNum(subtotal)}</span>
+                    <span>{t("Subtotal")}</span><span>₹{fmtNum(subtotal + acCharge)}</span>
                   </div>
+                  {acCharge>0 && <div className="tnum" style={{ display:"flex",
+                    justifyContent:"space-between", fontSize:11.5, color:"var(--text-3)" }}>
+                    <span>{t("incl. AC charge")} ({t("{n} guests × ₹{rate}", { n: guestsN, rate: fmtNum(acRate) })})</span><span>₹{fmtNum(acCharge)}</span>
+                  </div>}
                   {tax>0 && <div className="tnum" style={{ display:"flex",
                     justifyContent:"space-between", fontSize:12, color:"var(--text-2)" }}>
                     <span>{t("GST")} ({fmtNum(gstRate)}%)</span><span>₹{fmtNum(tax)}</span>
@@ -1826,11 +1839,11 @@ const MultiOrderTableView = ({ orders, tableNo, tableName, nowTick, onStatusChan
     return <CombineBillPanel tableNo={tableNo} tableName={name} orders={orders} onExit={() => setCombineMode(false)} onRefresh={onRefresh} />;
   }
 
-  const grandTotal  = orders.reduce((s,o) => s + Number(o.total||0), 0);
   const paidOrders  = orders.filter(o=>o.paymentStatus==="PAID");
   const unpaidOrders= orders.filter(o=>o.paymentStatus!=="PAID");
-  const paidTotal   = paidOrders.reduce((s,o) => s + Number(o.total||0), 0);
-  const dueTotal    = grandTotal - paidTotal;
+  // A table already has its "+" on the table map — no second one here.
+  // Takeaway orders (label set) have no other "+", so they keep it.
+  const addHere = label ? onAddItems : null;
 
   // Time since the order was placed — the earliest still-active order at
   // this table, not a table-session concept.
@@ -1858,9 +1871,9 @@ const MultiOrderTableView = ({ orders, tableNo, tableName, nowTick, onStatusChan
           {(() => {
             const target = [...orders].sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt))
               .find((o) => !o.parentOrder && (canFollowUp(o) || (o.status==="CONFIRMED" && !o.stockDeducted)));
-            return target && onAddItems ? (
+            return target && addHere ? (
               <button type="button" className="zc-btn sm pri" title={t("Add items to {where}", { where: heading })}
-                onClick={() => onAddItems(target)} style={{ padding:"4px 10px", fontWeight:800 }}>＋</button>
+                onClick={() => addHere(target)} style={{ padding:"4px 10px", fontWeight:800 }}>＋</button>
             ) : null;
           })()}
         </div>
@@ -1880,8 +1893,7 @@ const MultiOrderTableView = ({ orders, tableNo, tableName, nowTick, onStatusChan
               idx={idx}
               onStatusChange={onStatusChange}
               onPaymentChange={onPaymentChange}
-              onCombinedBill={onCombinedBill}
-              onAddItems={onAddItems}
+              onAddItems={addHere}
               onEditItems={onEditItems}
               onOpenDetail={onOpenDetail}
               nowTick={nowTick}
@@ -1904,8 +1916,7 @@ const MultiOrderTableView = ({ orders, tableNo, tableName, nowTick, onStatusChan
               idx={idx}
               onStatusChange={onStatusChange}
               onPaymentChange={onPaymentChange}
-              onCombinedBill={onCombinedBill}
-              onAddItems={onAddItems}
+              onAddItems={addHere}
               onEditItems={onEditItems}
               onOpenDetail={onOpenDetail}
               nowTick={nowTick}
@@ -1914,63 +1925,12 @@ const MultiOrderTableView = ({ orders, tableNo, tableName, nowTick, onStatusChan
         </div>
       )}
 
-      <div style={{ padding:14, background:`var(--violet-faint)`, borderRadius:RADIUS,
-        border:`1px solid var(--violet-mid)`, marginTop:8 }}>
-        <div style={{ fontSize:11, fontWeight:600, color:T2, textTransform:"uppercase",
-          letterSpacing:1, marginBottom:10 }}>{label ? t("Bill Summary") : t("Table Bill Summary")}</div>
-
-        {orders.map((o,i) => {
-          const paid = o.paymentStatus==="PAID";
-          return (
-            <div key={o._id} style={{ display:"flex", justifyContent:"space-between",
-              alignItems:"center", padding:"5px 0",
-              borderBottom:`1px solid var(--edge)`, fontSize:12 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                <div style={{ width:6, height:6, borderRadius:"50%",
-                  background:paid?"var(--ready-ink)":"var(--stop-ink)", flexShrink:0 }}/>
-                <span style={{ color:T2 }}>
-                  {customerName(o)||t("Order {n}", { n: i+1 })}
-                </span>
-                <span style={{ fontSize:10, color:T3 }}>({tn(o.items?.length||0, "{n} item", "{n} items")})</span>
-              </div>
-              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                <span style={{ fontSize:11,
-                  color:paid?"var(--ready-ink)":"var(--wait-ink)",
-                  fontWeight:600 }}>
-                  {paid?`✓ ${t("Paid")}`:`⏳ ${t("Due")}`}
-                </span>
-                <span style={{ fontWeight:700, color:T1 }}>₹{fmtNum(Math.round(o.total))}</span>
-              </div>
-            </div>
-          );
-        })}
-
-        <div style={{ marginTop:10, paddingTop:10, borderTop:`1px solid ${BDR}` }}>
-          {paidTotal > 0 && (
-            <div style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:"var(--ready-ink)", marginBottom:4 }}>
-              <span>✓ {t("Paid")}</span><span>₹{fmtNum(Math.round(paidTotal))}</span>
-            </div>
-          )}
-          {dueTotal > 0 && (
-            <div style={{ display:"flex", justifyContent:"space-between", fontSize:13,
-              fontWeight:700, color:"var(--stop-ink)", marginBottom:4 }}>
-              <span>⏳ {t("Due")}</span><span>₹{fmtNum(Math.round(dueTotal))}</span>
-            </div>
-          )}
-          <div style={{ display:"flex", justifyContent:"space-between",
-            fontSize:15, fontWeight:700, marginTop:6, paddingTop:6, borderTop:`1px solid ${BDR}` }}>
-            <span style={{ color:T1 }}>{t("Grand Total")}</span>
-            <span style={{ color:PINK }}>₹{fmtNum(Math.round(grandTotal))}</span>
-          </div>
-        </div>
-      </div>
-
       {onCombinedBill && (
         <button className="op-btn" onClick={()=>(label ? onCombinedBill(bill.mode, bill.value) : setCombineMode(true))}
           style={{ width:"100%", marginTop:10, padding:"10px", borderRadius:10,
             border:`1px solid var(--violet-mid)`, background:`var(--violet-faint)`,
             color:PINK, cursor:"pointer", fontSize:13, fontWeight:600 }}>
-          🧾 {label ? t("Generate Bill for {name}", { name: heading }) : t("Generate Combine Bill")}
+          🧾 {t("Bill")} {/* the one bill flow: choose orders → print / paid / complete */}
         </button>
       )}
     </div>
@@ -2010,7 +1970,7 @@ const OrderTrack = ({ status }) => {
   );
 };
 
-const OrderCard = ({ order, idx, onStatusChange, onPaymentChange, onCombinedBill, onAddItems, onEditItems, onOpenDetail, nowTick }) => {
+const OrderCard = ({ order, idx, onStatusChange, onPaymentChange, onAddItems, onEditItems, onOpenDetail, nowTick }) => {
   const displayName  = customerName(order) || t("Order {n}", { n: idx+1 });
   const displayPhone = order.guestPhone||order.user?.phone ||  null;
   const av           = avc(displayName);
@@ -2030,14 +1990,6 @@ const OrderCard = ({ order, idx, onStatusChange, onPaymentChange, onCombinedBill
     if (!window.confirm(t("Cancel order {id}? This cannot be undone. The order stays in history as cancelled.", { id: order.orderId }))) return;
     run(() => onStatusChange(order._id, "CANCELLED"));
   };
-  const printBill = () => run(async () => {
-    try {
-      let guests; // KH-11: dine-in bills ask how many guests are seated
-      if (needsGuests(order.orderType)) { guests = askGuests(order.guests); if (guests === null) return; }
-      await printOrderOrGroupBill(order, guests); // KH-07
-      toast.success(t("Bill sent to printer ✓"));
-    } catch (err) { toast.error(err?.response?.data?.message || t("Printer not running")); }
-  });
 
   return (
     <div className="op-ocard2" style={{ borderColor: KIND_LINE[cardKind], background: KIND_FILL[cardKind] }}>
@@ -2124,10 +2076,6 @@ const OrderCard = ({ order, idx, onStatusChange, onPaymentChange, onCombinedBill
         )}
         {canAddItems && onAddItems && (
           <button type="button" className="zc-btn sm" disabled={busy} onClick={() => onAddItems(order)}>＋ {t("Add items")}</button>
-        )}
-        <button type="button" className="zc-btn sm" disabled={busy} onClick={printBill}>🖨️ {t("Print bill")}</button>
-        {displayPhone && onCombinedBill && (
-          <button type="button" className="zc-btn sm" disabled={busy} onClick={() => onCombinedBill("phone", displayPhone)}>🧾 {t("Customer Bill")}</button>
         )}
         {CANCELLABLE.includes(order.status) && (
           <button type="button" className="zc-btn sm danger" disabled={busy} onClick={cancel}>✕ {t("Cancel")}</button>
@@ -2695,9 +2643,7 @@ export default function OrdersPage() {
 
   const handlePrint = async (o) => {
     try {
-      let guests; // KH-11: dine-in bills ask how many guests are seated
-      if (needsGuests(o.orderType)) { guests = askGuests(o.guests); if (guests === null) return; }
-      await printOrderOrGroupBill(o, guests); // KH-07: whole group when it has follow-ups
+      await printOrderOrGroupBill(o); // KH-07: whole group when it has follow-ups (KH-11: guests are on the order)
       toast.success(t("Bill sent to printer ✓"));
       fetchOrders();
     } catch (err) {

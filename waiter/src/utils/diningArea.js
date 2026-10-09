@@ -5,8 +5,16 @@
 import { N_, t } from "../i18n/index.jsx";
 
 export const DINING_AREAS = ["AC_ROOM", "GARDEN", "GAZEBO"];
+export const DINING_AREA_AC_ROOM = DINING_AREAS[0]; // "Indoor-AC" — the only area with a per-guest charge
 export const DINING_AREA_LABEL = { AC_ROOM: N_("Indoor-AC"), GARDEN: N_("Garden"), GAZEBO: N_("Gazebo") };
 export const TABLE_AREA_LABEL = { "": N_("Indoor"), ...DINING_AREA_LABEL };
+
+/**
+ * KH-11: an Indoor-AC table — the only area with a per-guest charge. A new
+ * staff order there needs the guest count (the server enforces it and adds
+ * guests × rate to the subtotal), once per table visit.
+ */
+export const isAcRoom = (x) => (x?.diningArea || "") === DINING_AREA_AC_ROOM;
 
 /**
  * What people call a table — or a dine-in order's / waiter call's table:
