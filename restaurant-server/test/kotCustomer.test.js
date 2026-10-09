@@ -78,10 +78,21 @@ await test("kitchenSafeKot strips the name (plain object and mongoose-like doc),
 });
 
 await test("phone: typed guest phone, else the account's only on a customer order — never the waiter's", () => {
-  assert.equal(kotCustomerPhone({ source: "WAITER", guestPhone: "98765 43210" }), "9876543210");
-  assert.equal(kotCustomerPhone({ source: "CUSTOMER" }, "+919000000001"), "+919000000001");
-  assert.equal(kotCustomerPhone({ source: "WAITER" }, "9111111111"), "", "staff order: account is the waiter");
-  assert.equal(kotCustomerPhone({ source: "ADMIN" }), "");
+  const ta = { orderType: "TAKEAWAY" };
+  assert.equal(kotCustomerPhone({ ...ta, source: "WAITER", guestPhone: "98765 43210" }), "9876543210");
+  assert.equal(kotCustomerPhone({ ...ta, source: "CUSTOMER" }, "+919000000001"), "+919000000001");
+  assert.equal(kotCustomerPhone({ ...ta, source: "WAITER" }, "9111111111"), "", "staff order: account is the waiter");
+  assert.equal(kotCustomerPhone({ ...ta, source: "ADMIN" }), "");
+});
+
+await test("phone: only on a TAKEAWAY KOT — never dine-in (any area) or online, for every role", () => {
+  for (const source of ["WAITER", "ADMIN", "CUSTOMER"]) {
+    assert.equal(kotCustomerPhone({ orderType: "TAKEAWAY", source, guestPhone: "9876543210" }), "9876543210", source);
+    assert.equal(kotCustomerPhone({ orderType: "DINE_IN", source, guestPhone: "9876543210" }, "9000000001"), "", source);
+    assert.equal(kotCustomerPhone({ orderType: "DINE_IN", diningArea: "AC_ROOM", source, guestPhone: "9876543210" }), "", source);
+    assert.equal(kotCustomerPhone({ orderType: "ONLINE", source, guestPhone: "9876543210" }), "", source);
+  }
+  assert.equal(kotCustomerPhone({ source: "WAITER", guestPhone: "9876543210" }), "", "no type → no phone");
 });
 
 await test("KOT job stores the phone for paper; the Kitchen app copy never has it", async () => {

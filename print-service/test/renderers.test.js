@@ -159,7 +159,16 @@ const run = async () => {
     assert.match(text(renderKot(kotJob({ orderType: "DINE_IN", diningArea: "AC_ROOM" }))), /Type {7}: +Indoor-AC/);
     assert.match(text(renderKot(kotJob({ orderType: "DINE_IN", diningArea: "GAZEBO" }))), /Type {7}: +Gazebo/);
     assert.match(text(renderKot(kotJob({ orderType: "DINE_IN", diningArea: "GARDEN" }))), /Type {7}: +Garden/);
-    assert.match(text(renderKot(kotJob({ orderType: "DINE_IN" }))), /Type {7}: +Dine In/);
+    assert.match(text(renderKot(kotJob({ orderType: "DINE_IN" }))), /Type {7}: +Indoor$/m, "normal hall prints its area on the KOT");
+    assert.match(text(renderKot(kotJob({ orderType: "DINE_IN", diningArea: "" }))), /Type {7}: +Indoor$/m);
+    assert.match(text(renderKot(kotJob({ orderType: "ONLINE" }))), /Type {7}: +Online/);
+    // Every area: the per-area table number, never the internal one.
+    for (const [area, label] of [["", "Indoor"], ["AC_ROOM", "Indoor-AC"], ["GARDEN", "Garden"], ["GAZEBO", "Gazebo"]]) {
+      const k = text(renderKot(kotJob({ orderType: "DINE_IN", diningArea: area, tableNo: 25, tableDisplayNo: 2 })));
+      assert.match(k, new RegExp(`Type {7}: +${label}$`, "m"), label);
+      assert.match(k, /Table {6}: +2$/m, label);
+    }
+    assert.doesNotMatch(text(renderKot(kotJob({ orderType: "TAKEAWAY", tableNo: null }))), /Table {6}:/, "takeaway: no table line");
     assert.match(text(renderKot(kotJob({ orderType: "TAKEAWAY", diningArea: "AC_ROOM" }))), /Type {7}: +Takeaway/, "area ignored unless dine-in");
     assert.match(text(renderBill(billJob({ orderType: "DINE_IN", diningArea: "AC_ROOM" }))), /Type {7}: +Indoor-AC/);
     assert.match(text(renderBill(billJob({ orderType: "DINE_IN", diningArea: "GARDEN" }))), /Type {7}: +Garden/);

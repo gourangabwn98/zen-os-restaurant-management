@@ -14,6 +14,12 @@ import {
   orderTypeLabel, restaurantHeader, toPrintable, wrapText,
 } from "./layout.js";
 
+// The kitchen reads the table's AREA: a dine-in order in the normal hall
+// (no area) prints "Indoor" — like "Indoor-AC" / "Garden" / "Gazebo" — not
+// "Dine In". Takeaway / Online and the bill keep orderTypeLabel as is.
+const kotTypeLabel = (type, area = "") =>
+  (type === "DINE_IN" && !area ? "Indoor" : orderTypeLabel(type, area));
+
 export const renderKot = (job, { header = null, width = DEFAULT_WIDTH } = {}) => {
   const d = { ...(job.data || {}), ...job };
   const W = width;
@@ -34,7 +40,7 @@ export const renderKot = (job, { header = null, width = DEFAULT_WIDTH } = {}) =>
   if (toPrintable(customer)) kv("Customer", customer);
   if (toPrintable(d.customerPhone)) kv("Phone", d.customerPhone); // printed only when the order has one
   kv("Order ID", d.orderId || "-");
-  kv("Type", orderTypeLabel(d.orderType, d.diningArea));
+  kv("Type", kotTypeLabel(d.orderType, d.diningArea));
   // Table numbers are per area ("Indoor-AC 1" → Type: Indoor-AC, Table: 1);
   // older jobs without one print the table number as before.
   const tableShown = d.tableDisplayNo ?? d.tableNo;
