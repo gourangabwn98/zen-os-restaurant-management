@@ -48,6 +48,7 @@ export default {
   "Customer bill": "গ্রাহকের বিল",
   "Bill + Payment QR": "বিল + পেমেন্ট QR",
   "Print bill": "বিল প্রিন্ট",
+  "Printing…": "প্রিন্ট হচ্ছে…",
   "Add at least one item": "অন্তত একটি আইটেম যোগ করুন",
   "Enter table number": "টেবিল নম্বর দিন",
   "Order was not created — please retry": "অর্ডার তৈরি হয়নি — আবার চেষ্টা করুন",

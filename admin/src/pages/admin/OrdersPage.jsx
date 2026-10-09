@@ -1807,7 +1807,7 @@ const AddTableModal = ({ area, tables, onClose, onCreated }) => {
   );
 };
 
-const MultiOrderTableView = ({ orders, tableNo, tableName, nowTick, onStatusChange, onPaymentChange, onCombinedBill, onAddItems, onEditItems, onOpenDetail, onNewOrder, label, billTarget, onRefresh }) => {
+const MultiOrderTableView = ({ orders, tableNo, tableName, nowTick, onStatusChange, onPaymentChange, onCombinedBill, onAddItems, onEditItems, onOpenDetail, onNewOrder, label, billTarget, onRefresh, onPrintBill }) => {
   // Combine Bill selection mode (tables only). Restored after a refresh while
   // the panel keeps its ticks in sessionStorage.
   const [combineMode, setCombineMode] = useState(() => {
@@ -1820,6 +1820,16 @@ const MultiOrderTableView = ({ orders, tableNo, tableName, nowTick, onStatusChan
   const name = tableName || t("Table {n}", { n: tableNo }); // "Indoor-AC 1", never the internal tableNo
   const heading = label || name;
   const bill = billTarget || { mode: "table", value: tableNo };
+  // Takeaway: "Bill" prints straight away (no bill modal). Tables keep the
+  // choose-orders bill flow.
+  const [printing, setPrinting] = useState(false);
+  const printDirect = label && onPrintBill;
+  const onBill = async () => {
+    if (!printDirect) return label ? onCombinedBill(bill.mode, bill.value) : setCombineMode(true);
+    if (printing) return;
+    setPrinting(true);
+    try { await onPrintBill(orders[0]); } finally { setPrinting(false); }
+  };
 
   if (orders.length === 0) {
     return (
@@ -1936,11 +1946,13 @@ const MultiOrderTableView = ({ orders, tableNo, tableName, nowTick, onStatusChan
       })()}
 
       {onCombinedBill && (
-        <button className="op-btn" onClick={()=>(label ? onCombinedBill(bill.mode, bill.value) : setCombineMode(true))}
+        <button className="op-btn" onClick={onBill} disabled={printing}
           style={{ width:"100%", marginTop:10, padding:"10px", borderRadius:10,
             border:`1px solid var(--violet-mid)`, background:`var(--violet-faint)`,
             color:PINK, cursor:"pointer", fontSize:13, fontWeight:600 }}>
-          🧾 {t("Bill")} {/* the one bill flow: choose orders → print / paid / complete */}
+          {printDirect
+            ? <>🖨️ {printing ? t("Printing…") : t("Print bill")}</>
+            : <>🧾 {t("Bill")}</>} {/* tables: the one bill flow — choose orders → print / paid / complete */}
         </button>
       )}
     </div>
@@ -3032,6 +3044,7 @@ export default function OrdersPage() {
                   onEditItems={(order) => setShowEditItems(order._id)}
                   onOpenDetail={(order) => setExpanded(order._id)}
                   onNewOrder={openNewTakeaway}
+                  onPrintBill={handlePrint}
                 />
               ) : (
                 <div className="zc-empty" style={{ padding: "44px 16px" }}>
