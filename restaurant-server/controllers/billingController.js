@@ -20,13 +20,14 @@ export const emitSettlement = (tenantKey, { changed = [], completions = [] }) =>
   }
 };
 
-// POST /api/admin/orders/settle   { orderIds: [id], paymentMethod?: "Cash"|"Online" }
+// POST /api/admin/orders/settle   { orderIds: [id], paymentMethod?: "Cash"|"Online"|"Both", paymentSplit?: { cash, online } }
 export const settleOrders = async (req, res) => {
   try {
     const result = await settleBills({
       models: req.models,
       orderIds: req.body?.orderIds,
       paymentMethod: req.body?.paymentMethod,
+      paymentSplit: req.body?.paymentSplit, // { cash, online } with "Both"
       actor: buildActor(req.user),
       role: getRoleFromUser(req.user),
     });

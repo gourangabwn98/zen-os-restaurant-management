@@ -46,7 +46,7 @@ import { StatusStrip, MenuTimesCard, CategoryCard, ItemsPanel, CategoryList } fr
 import { MenuTimeModal, BulkEditModal, ImportModal } from "./menu/MenuModals.jsx";
 
 // Stored values; labels go through t().
-const TAGS = ["Veg", "Non Veg"];
+const TAGS = ["Veg", "Non Veg", "Others"]; // Others: cigarettes, cold drinks, misc.
 const EMPTY_FORM = {
   name: "", nameBn: "", price: "", originalPrice: "", description: "",
   category: "", tag: "Veg", isAvailable: true, rating: 4.0, tags: [], addons: [],
@@ -677,9 +677,9 @@ function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategor
                   <div style={{ display: "flex", gap: 8 }}>
                     {TAGS.map((tg) => (
                       <button key={tg} type="button" onClick={() => set("tag", tg)}
-                        className={`zc-btn${form.tag === tg ? (tg === "Veg" ? " good" : " danger") : ""}`}
+                        className={`zc-btn${form.tag === tg ? (tg === "Veg" ? " good" : tg === "Others" ? " pri" : " danger") : ""}`}
                         style={{ flex: 1, justifyContent: "center" }}>
-                        <VegDot tag={tg} />{tg === "Veg" ? t("Veg") : t("Non-veg")}
+                        <VegDot tag={tg} />{tg === "Veg" ? t("Veg") : tg === "Others" ? t("Others") : t("Non-veg")}
                       </button>
                     ))}
                   </div>

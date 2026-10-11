@@ -5,6 +5,7 @@
 // bill. Canonical enums: restaurant-server/utils/orderStateMachine.js.
 import { t, N_, fmtNum, fmtDate, fmtTime, localName } from "../../../i18n/core.js";
 import { tableLabel as areaTableLabel } from "../shared/diningArea.js";
+import { cashPart, onlinePart, paymentLabel } from "../../../utils/payment.js";
 
 /** BIL-02: is the bill settled? (Orders from before billStatus: COMPLETED ⇒ settled.) */
 export const isSettled = (o) => (o.billStatus ? o.billStatus === "SETTLED" : o.status === "COMPLETED");
@@ -63,7 +64,7 @@ export const totalsOf = (list) => {
     o.count += 1;
     o.billed += total;
     if (b.discount > 0) { o.discount += Number(b.discount); o.discountN += 1; }
-    if (st === "paid") { o.paidN += 1; if (b.paymentMethod === "Online") o.online += total; else o.cash += total; }
+    if (st === "paid") { o.paidN += 1; o.cash += cashPart(b); o.online += onlinePart(b); } // split bill: both parts
     else if (st === "checkUpi") { o.checkUpi += total; o.checkUpiN += 1; }
     else { o.toCollect += total; o.toCollectN += 1; }
   }
@@ -120,7 +121,7 @@ export const billText = (o, restaurantName) => {
   if (o.serviceCharge > 0) lines.push(`${t("Service charge")}: ${money(o.serviceCharge)}`);
   if (o.tax > 0) lines.push(`${t("GST")}: ${money(o.tax)}`);
   lines.push(`*${t("Total")}: ${money(o.total)}*`);
-  lines.push(o.paymentStatus === "PAID" ? `${t("Paid")} · ${t(o.paymentMethod === "Online" ? "Online" : "Cash")}` : t("Payment pending"));
+  lines.push(o.paymentStatus === "PAID" ? `${t("Paid")} · ${paymentLabel(o)}` : t("Payment pending"));
   return lines.join("\n");
 };
 
@@ -140,7 +141,7 @@ export const toCsv = (rows) => {
       custName(o), custPhone(o), o.orderType, o.tableNo ?? "",
       (o.items || []).map((i) => `${i.qty}x ${i.name}`).join("; "),
       o.subtotal ?? 0, o.discount ?? 0, o.coupon?.code || "", o.serviceCharge ?? 0, o.tax ?? 0, o.total ?? 0,
-      o.paymentStatus, o.paymentMethod, o.status,
+      o.paymentStatus, o.paymentMethod === "Both" ? `Cash ${o.paymentSplit?.cash ?? 0} + Online ${o.paymentSplit?.online ?? 0}` : o.paymentMethod, o.status,
     ].map(esc).join(","));
   }
   return out.join("\r\n");

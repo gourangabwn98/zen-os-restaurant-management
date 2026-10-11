@@ -4,6 +4,8 @@
 // fetches. No numbers are invented. Status / type / payment values are the
 // canonical enums from restaurant-server/utils/orderStateMachine.js.
 
+import { cashPart, onlinePart } from "../../../utils/payment.js";
+
 export const ALL_STATUSES = [
   "AWAITING_PAYMENT", "PENDING_CONFIRMATION", "CONFIRMED", "PREPARING", "READY",
   "DELIVERED", "COMPLETED", "CANCELLED",
@@ -56,6 +58,7 @@ export const isSameDay = (d, ref = new Date()) => {
 export const isToday = (d) => isSameDay(d, new Date());
 const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 const sum = (list) => list.reduce((acc, o) => acc + Number(o.total || 0), 0);
+const sumBy = (list, part) => list.reduce((acc, o) => acc + part(o), 0);
 const isActive = (o) => !ACTIVE_EXCLUDE.includes(o.status);
 // Payment still to be collected on an order the restaurant has ACCEPTED.
 // Not yet accepted (PENDING_CONFIRMATION) is not money owed — it may still be
@@ -70,8 +73,9 @@ const isRevenue = (o) => o.paymentStatus === "PAID" && o.status !== "CANCELLED";
 // ── "Three answers" + today's detail ──────────────────────────────────────
 export function todaySummary(todayOrders) {
   const paid = todayOrders.filter(isRevenue);
-  const cash = paid.filter((o) => o.paymentMethod === "Cash");
-  const online = paid.filter((o) => o.paymentMethod === "Online");
+  // A split bill ("Both") counts in both, each with its own part.
+  const cash = paid.filter((o) => cashPart(o) > 0);
+  const online = paid.filter((o) => onlinePart(o) > 0);
   const open = todayOrders.filter(isUnpaid);
   const openTables = new Set(open.filter((o) => o.orderType === "DINE_IN" && o.tableNo).map((o) => Number(o.tableNo)));
   const byStatus = Object.fromEntries(ALL_STATUSES.map((st) => [st, todayOrders.filter((o) => o.status === st)]));
@@ -80,8 +84,8 @@ export function todaySummary(todayOrders) {
   return {
     count: todayOrders.length,
     collected,
-    cash: sum(cash),
-    online: sum(online),
+    cash: sumBy(cash, cashPart),
+    online: sumBy(online, onlinePart),
     paidCount: paid.length,
     avgBill: paid.length ? Math.round(collected / paid.length) : 0,
     openAmount: sum(open),
@@ -100,15 +104,15 @@ export function todaySummary(todayOrders) {
 export function overallTotals(allOrders) {
   const paid = allOrders.filter(isRevenue);
   const due = allOrders.filter(isUnpaid);
-  const cash = paid.filter((o) => o.paymentMethod === "Cash");
-  const online = paid.filter((o) => o.paymentMethod === "Online");
+  const cash = paid.filter((o) => cashPart(o) > 0);
+  const online = paid.filter((o) => onlinePart(o) > 0);
   const totalRev = sum(paid);
   return {
     orders: allOrders.length,
     totalRev, paidCount: paid.length,
     due: sum(due), dueCount: due.length,
-    cash: sum(cash), cashCount: cash.length,
-    online: sum(online), onlineCount: online.length,
+    cash: sumBy(cash, cashPart), cashCount: cash.length,
+    online: sumBy(online, onlinePart), onlineCount: online.length,
     avg: paid.length ? Math.round(totalRev / paid.length) : 0,
   };
 }

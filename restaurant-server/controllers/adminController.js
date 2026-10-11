@@ -15,6 +15,7 @@ import {
 import { computeSalesBreakdown, computeInsightsOverview, revenueOrderMatch } from "../services/insightsService.js";
 import { zonedInstant } from "../services/offerStatsService.js";
 import { resolveTimezone } from "../utils/menuSchedule.js";
+import { COLLECT_METHODS, SPLIT_METHOD, parsePaymentSplit, paymentMethodLabel } from "../utils/paymentMode.js";
 
 const STATUS_CANCELLED = "CANCELLED";
 if (!ORDER_STATUSES.includes(STATUS_CANCELLED)) throw new Error("adminController: CANCELLED is not an order status");
@@ -334,9 +335,7 @@ export const updateInvoiceStatus = async (req, res) => {
 export const updateOrderPayment = async (req, res) => {
   try {
     const { Order } = req.models;
-    const { paymentStatus, paymentMethod } = req.body;
-
-    const VALID_PAYMENT_METHOD = ["Cash","Online"];
+    const { paymentStatus, paymentMethod, paymentSplit } = req.body;
 
     const update = {};
     if (paymentStatus !== undefined) {
@@ -351,13 +350,25 @@ export const updateOrderPayment = async (req, res) => {
       update.paymentStatus = paymentStatus;
     }
     if (paymentMethod !== undefined) {
-      if (!VALID_PAYMENT_METHOD.includes(paymentMethod)) {
-        return res.status(400).json({ message: `paymentMethod must be one of: ${VALID_PAYMENT_METHOD.join(", ")}` });
+      if (!COLLECT_METHODS.includes(paymentMethod)) {
+        return res.status(400).json({ message: `paymentMethod must be one of: ${COLLECT_METHODS.join(", ")}` });
       }
       update.paymentMethod = paymentMethod;
+      if (paymentMethod !== SPLIT_METHOD) update.paymentSplit = null;
     }
     if (Object.keys(update).length === 0) {
       return res.status(400).json({ message: "Nothing to update" });
+    }
+
+    // Split payment ("Both"): the cash + online amounts must equal this
+    // order's total. The total is re-checked in the write itself, so an item
+    // edit racing this can't leave a split that no longer adds up.
+    let totalGuard = {};
+    if (update.paymentMethod === SPLIT_METHOD) {
+      const current = await Order.findById(req.params.id).select("total").lean();
+      if (!current) return res.status(404).json({ message: "Order not found" });
+      update.paymentSplit = parsePaymentSplit(paymentSplit, current.total);
+      totalGuard = { total: current.total };
     }
 
     // A cancelled order can't take money: marking it PAID created
@@ -370,11 +381,15 @@ export const updateOrderPayment = async (req, res) => {
       _id: req.params.id,
       ...(update.paymentStatus === "PAID" && { status: { $ne: STATUS_CANCELLED } }),
       ...((update.paymentStatus === "PENDING_VERIFICATION" || update.paymentMethod) && unsettled),
+      ...totalGuard,
     };
     const order = await Order.findOneAndUpdate(filter, { $set: update }, { returnDocument: "after", runValidators: true });
     if (!order) {
-      const existing = await Order.findById(req.params.id).select("status billStatus").lean();
+      const existing = await Order.findById(req.params.id).select("status billStatus total").lean();
       if (!existing) return res.status(404).json({ message: "Order not found" });
+      if (totalGuard.total !== undefined && existing.total !== totalGuard.total) {
+        return res.status(409).json({ message: "The bill total just changed — check the amounts and try again" });
+      }
       return existing.status === STATUS_CANCELLED
         ? res.status(409).json({ message: "This order was cancelled — it can't be marked paid" })
         : res.status(409).json({ message: "This bill is settled — reopen the bill before changing its payment" });
@@ -570,7 +585,8 @@ export const printBill = async (req, res) => {
       discount:      order.discount || 0,
       couponCode:    order.coupon?.code || "",
       total:         order.total,
-      paymentMethod: order.paymentMethod || "Cash",
+      // "Cash" | "Online" | "Cash 300 + Online 200" (split) — printed as is.
+      paymentMethod: paymentMethodLabel(order, ""),
       paymentStatus: order.paymentStatus,
       // The customer — on a staff-placed order `user` is the waiter/admin.
       guestName:     order.guestName  || (byCustomer ? order.user?.name  : "") || "",

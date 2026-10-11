@@ -25,6 +25,7 @@ import {
   ORDER_STATUSES, PAYMENT_STATUSES, BILL_STATUSES, canSetPaymentStatus, effectiveBillStatus,
 } from "../utils/orderStateMachine.js";
 import { completeServedSettledOrder } from "./orderService.js";
+import { COLLECT_METHODS, SPLIT_METHOD, parsePaymentSplit } from "../utils/paymentMode.js";
 
 const pick = (list, v) => { if (!list.includes(v)) throw new Error(`billingService: unknown enum ${v}`); return v; };
 const PAID = pick(PAYMENT_STATUSES, "PAID");
@@ -35,7 +36,7 @@ const COMPLETED = pick(ORDER_STATUSES, "COMPLETED");
 // A bill can be settled once the restaurant has accepted the order — not
 // while it is still awaiting payment/acceptance (it may yet be rejected).
 export const SETTLEABLE = ["CONFIRMED", "PREPARING", "READY", "DELIVERED"].map((s) => pick(ORDER_STATUSES, s));
-export const PAY_METHODS = ["Cash", "Online"];
+export const PAY_METHODS = COLLECT_METHODS; // Cash | Online | Both (split, one bill at a time)
 export const MAX_SETTLE = 50;
 
 const httpError = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
@@ -61,19 +62,23 @@ export const settleBlocker = (order) => {
 
 /**
  * Settle the bills of these orders.
- * @param paymentMethod "Cash" | "Online" — required for any order not yet PAID
- *                      (that order's payment is recorded with this method).
+ * @param paymentMethod "Cash" | "Online" | "Both" — required for any order not
+ *                      yet PAID (that order's payment is recorded with this method).
+ * @param paymentSplit  { cash, online } — with "Both" only; must add up to the
+ *                      order total. "Both" settles exactly one order.
  * @param role          the caller's role — must be allowed to record PAID.
  * @returns {{ settled, alreadySettled, rejected, changed, completions }}
  *   changed      orders whose bill was settled now (for payment emits)
  *   completions  results of completeServedSettledOrder that completed one
  */
-export const settleBills = async ({ models, orderIds, paymentMethod, actor, role, now = new Date() }) => {
+export const settleBills = async ({ models, orderIds, paymentMethod, paymentSplit, actor, role, now = new Date() }) => {
   const { Order } = models;
   const ids = parseOrderIds(orderIds);
   if (paymentMethod !== undefined && paymentMethod !== null && !PAY_METHODS.includes(paymentMethod)) {
     throw httpError(`paymentMethod must be one of: ${PAY_METHODS.join(", ")}`);
   }
+  const split = paymentMethod === SPLIT_METHOD;
+  if (split && ids.length !== 1) throw httpError("Cash + Online split works for one bill at a time — settle these one by one");
   if (!canSetPaymentStatus(PAID, role)) throw httpError("You are not allowed to settle bills", 403);
 
   const found = await Order.find({ _id: { $in: ids } }).lean();
@@ -92,18 +97,23 @@ export const settleBills = async ({ models, orderIds, paymentMethod, actor, role
       continue;
     }
 
-    const note = needsPayment ? `Bill settled · ${paymentMethod}` : "Bill settled";
+    // Split: the amounts must add up to THIS order's total (re-checked below).
+    const splitAmounts = needsPayment && split ? parsePaymentSplit(paymentSplit, o.total) : null;
+    const note = !needsPayment ? "Bill settled"
+      : splitAmounts ? `Bill settled · Cash ₹${splitAmounts.cash} + Online ₹${splitAmounts.online}`
+      : `Bill settled · ${paymentMethod}`;
     const updated = await Order.findOneAndUpdate(
       // Re-checked at write time: same operational status, still open, and
       // the payment state we decided on (a payment racing this stays honest).
       {
         _id: o._id, status: o.status, billStatus: { $ne: SETTLED },
         paymentStatus: needsPayment ? { $ne: PAID } : PAID,
+        ...(splitAmounts && { total: o.total }),
       },
       {
         $set: {
           billStatus: SETTLED, billSettledAt: now, billSettledBy: actor,
-          ...(needsPayment && { paymentStatus: PAID, paymentMethod }),
+          ...(needsPayment && { paymentStatus: PAID, paymentMethod, paymentSplit: splitAmounts }),
         },
         $push: { statusHistory: { status: o.status, changedBy: actor, changedAt: now, note } },
       },

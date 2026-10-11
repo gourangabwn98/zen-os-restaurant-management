@@ -169,6 +169,7 @@ export const matchColumns = (header) => {
 const parseType = (v, name) => {
   const s = norm(v);
   if (!s) return guessFoodType(name).tag;
+  if (/other|misc|drink|cigar/.test(s)) return "Others";
   if (/non|nv|egg|meat|chicken|fish/.test(s)) return "Non Veg";
   if (/veg|^v$|yes/.test(s)) return "Veg";
   return guessFoodType(name).tag;

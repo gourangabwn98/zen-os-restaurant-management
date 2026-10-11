@@ -533,7 +533,7 @@ export function ImportModal({ cats, items, onClose, onImported }) {
                                 <td>
                                   <select className="zc-select" value={r.tag} aria-label={t("Type")} onChange={(e) => setRow(r.key, { tag: e.target.value })}>
                                     <option value="Veg">{t("Veg")}</option>
-                                    <option value="Non Veg">{t("Non-veg")}</option>
+                                    <option value="Non Veg">{t("Non-veg")}</option><option value="Others">{t("Others")}</option>
                                   </select>
                                 </td>
                                 <td><input className="zc-input" list="mi-cats" value={r.category} aria-label={t("Category")} onChange={(e) => setRow(r.key, { category: e.target.value })} /></td>

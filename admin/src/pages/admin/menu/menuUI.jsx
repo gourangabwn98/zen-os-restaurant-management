@@ -283,6 +283,11 @@ if (typeof document !== "undefined" && !document.getElementById("menu-styles")) 
 }
 
 export const VegDot = ({ tag }) => {
+  if (tag === "Others") return ( // cigarettes, cold drinks… — neither veg nor non-veg
+    <span className="menu-veg" style={{ border: "1.5px solid var(--text-3)" }} role="img" aria-label={t("Others")}>
+      <i style={{ background: "var(--text-3)" }} />
+    </span>
+  );
   const veg = tag === "Veg";
   return (
     <span className="menu-veg" style={{ border: `1.5px solid ${veg ? "var(--ready)" : "var(--stop)"}` }}

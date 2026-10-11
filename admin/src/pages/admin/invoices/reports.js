@@ -24,7 +24,9 @@ const esc = (s) => String(s ?? "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">"
 export const periodLabel = (range) => (ymd(range.from) === ymd(range.to) ? dmy(range.from) : `${dmy(range.from)} – ${dmy(range.to)}`);
 
 const STATUS_TEXT = { paid: "Paid", unpaid: "Unpaid", checkUpi: "UPI to check", cancelled: "Cancelled" };
-const METHOD_TEXT = (o) => (o.paymentStatus === "PAID" ? (o.paymentMethod === "Online" ? "UPI / Online" : "Cash") : "");
+const METHOD_TEXT = (o) => (o.paymentStatus !== "PAID" ? ""
+  : o.paymentMethod === "Both" ? `Cash ${o.paymentSplit?.cash ?? 0} + UPI / Online ${o.paymentSplit?.online ?? 0}`
+  : o.paymentMethod === "Online" ? "UPI / Online" : "Cash");
 const TYPE_TEXT = { DINE_IN: "Dine-in", TAKEAWAY: "Takeaway", ONLINE: "Online" };
 
 /** Bills of the period, oldest first (cancelled included, flagged). */

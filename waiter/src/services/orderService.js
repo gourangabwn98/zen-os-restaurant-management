@@ -22,7 +22,8 @@ export const modifyOrderItems  = (id, items, revision) => api.patch(`/orders/${i
 export const updateOrderPayment = (id, body) => api.patch(`/admin/orders/${id}/payment`, body);
 // BIL-01/BIL-02 — settle bills (records the payment when not yet paid);
 // a served order is completed by the server as a result, never by hand.
-export const settleOrders = (orderIds, paymentMethod) => api.post("/admin/orders/settle", { orderIds, paymentMethod });
+// paymentSplit { cash, online } only with paymentMethod "Both" (one order).
+export const settleOrders = (orderIds, paymentMethod, paymentSplit) => api.post("/admin/orders/settle", { orderIds, paymentMethod, ...(paymentSplit && { paymentSplit }) });
 
 // ── Billing ────────────────────────────────────────────────────────────────
 export const getCombinedBill = (params) => api.get("/admin/orders/combined-bill", { params });

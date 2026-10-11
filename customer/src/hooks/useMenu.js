@@ -80,7 +80,7 @@ export function useMenu({ search = "", diet = "all" } = {}) {
 
   const visible = useMemo(() => {
     if (!items) return null;
-    return diet === "nonveg" ? items.filter((it) => it.tag !== "Veg") : items;
+    return diet === "nonveg" ? items.filter((it) => it.tag === "Non Veg") : items;
   }, [items, diet]);
 
   // MNU-01: one item, every category it belongs to (`categoryList`, worked

@@ -114,7 +114,14 @@ for the real values:
 - Order status: `AWAITING_PAYMENT | PENDING_CONFIRMATION | CONFIRMED | PREPARING | READY | DELIVERED | COMPLETED | CANCELLED`
 - Order type: `DINE_IN | TAKEAWAY | ONLINE`
 - Payment status: `PENDING_VERIFICATION | PAID | FAILED`
-- Payment method: `Cash | Online` (this one genuinely is mixed-case — don't "fix" it)
+- Payment method: `Cash | Online | Both` (this one genuinely is mixed-case — don't "fix" it).
+  `Both` = staff collected part cash, part online: only staff may record it,
+  one bill at a time, with `Order.paymentSplit { cash, online }` validated by
+  `utils/paymentMode.js parsePaymentSplit` to add up to `total` exactly.
+  Customers still choose only `PAYMENT_METHODS` (Cash/Online). Any report that
+  splits money by method must add a `Both` order's two parts to Cash and Online.
+- Food type (`MenuItem.tag`): `Veg | Non Veg | Others` (`utils/foodTypes.js`);
+  `Others` (cigarettes, cold drinks, misc.) shows no veg/non-veg mark.
 
 ## Socket.IO room architecture
 

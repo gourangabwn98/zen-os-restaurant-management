@@ -55,7 +55,7 @@ export default function OrdersPage() {
               {o.items?.length > 3 ? ` +${o.items.length - 3} more` : ""}
             </div>
             <div className="muted small" style={{ marginTop: 8 }}>
-              {o.paymentMethod === "Online" ? "Online" : "Cash"} · {PAYMENT_LABEL[o.paymentStatus] || o.paymentStatus}
+              {o.paymentMethod === "Both" ? "Cash + Online" : o.paymentMethod === "Online" ? "Online" : "Cash"} · {PAYMENT_LABEL[o.paymentStatus] || o.paymentStatus}
             </div>
           </button>
         ))

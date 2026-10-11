@@ -61,7 +61,7 @@ export default function OrderEditReview() {
               {c.item.image ? <img src={c.item.image} alt="" loading="lazy" /> : <span aria-hidden="true">🍽️</span>}
             </div>
             <div className="nm">
-              <b>{c.item.tag && <VegDot veg={c.item.tag === "Veg"} />}{c.item.name}</b>
+              <b>{c.item.tag && <VegDot tag={c.item.tag} />}{c.item.name}</b>
               <span className="muted small">₹{c.item.price} each{c.notes ? ` · “${c.notes}”` : ""}</span>
             </div>
             <QtyStepper qty={c.qty} label={`${c.item.name} quantity`} onDec={() => cart.removeItem(c.item._id)} onInc={() => cart.addItem(c.item, 1)} />

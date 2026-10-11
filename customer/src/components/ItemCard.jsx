@@ -23,7 +23,7 @@ export default function ItemCard({ item, qty, onOpen, onAdd, onInc, onDec, conte
 
       <div className="bd">
         <button type="button" className="nm" onClick={() => onOpen(item)}>
-          <VegDot veg={item.tag === "Veg"} />{item.name}
+          <VegDot tag={item.tag} />{item.name}
         </button>
         <div className="ds">{item.description || item.category}</div>
         {item.notShareableCategory && (
@@ -74,7 +74,11 @@ export function Stars({ rating }) {
 }
 
 /** Veg / non-veg mark (green square-dot / red square-triangle, the Indian
- * food-labelling convention) with an accessible name. */
-export function VegDot({ veg }) {
+ * food-labelling convention) with an accessible name. Pass the item's `tag`
+ * ("Veg" | "Non Veg" | "Others") or `veg` directly; "Others" (cold drinks,
+ * cigarettes…) gets no mark. */
+export function VegDot({ veg, tag }) {
+  if (tag === "Others") return null;
+  if (tag !== undefined) veg = tag === "Veg";
   return <span className={`vdot${veg ? "" : " nv"}`} role="img" aria-label={veg ? "Veg" : "Non-veg"} />;
 }

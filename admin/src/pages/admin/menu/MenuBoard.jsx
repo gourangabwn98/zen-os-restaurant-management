@@ -388,6 +388,7 @@ function ViewsRow({ counts, view, setView, saved, activeSaved, onApplySaved, onR
               <option value="">{t("Any")}</option>
               <option value="Veg">{t("Veg")}</option>
               <option value="Non Veg">{t("Non-veg")}</option>
+              <option value="Others">{t("Others")}</option>
             </select>
           </label>
           <label>{t("Diner tag")}

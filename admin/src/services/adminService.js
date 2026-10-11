@@ -113,7 +113,8 @@ export const modifyOrderItems = (id, items, revision) => api.patch(`/orders/${id
 export const updateOrderPayment = (id, body) => api.patch(`/admin/orders/${id}/payment`, body);
 // BIL-01/BIL-02 — the billing workflow: settle bills (records the payment when
 // it isn't yet; a served order completes as a result) / reopen a settled bill.
-export const settleOrders = (orderIds, paymentMethod) => api.post("/admin/orders/settle", { orderIds, paymentMethod });
+// paymentSplit { cash, online } only with paymentMethod "Both" (one order).
+export const settleOrders = (orderIds, paymentMethod, paymentSplit) => api.post("/admin/orders/settle", { orderIds, paymentMethod, ...(paymentSplit && { paymentSplit }) });
 export const reopenOrderBill = (id) => api.post(`/admin/orders/${id}/reopen-bill`);
 
 // ── Table sessions / clearing (Phase 4) ───────────────────────────────────

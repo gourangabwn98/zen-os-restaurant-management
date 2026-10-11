@@ -33,7 +33,7 @@ export default function ItemDetailSheet({ item, onClose, onAdd }) {
       </div>
 
       <div className="muted small" style={{ display: "flex", alignItems: "center" }}>
-        <VegDot veg={item.tag === "Veg"} />{item.tag === "Veg" ? "Veg" : "Non-veg"} · {item.category}
+        <VegDot tag={item.tag} />{item.tag === "Veg" ? "Veg" : item.tag === "Others" ? "Others" : "Non-veg"} · {item.category}
       </div>
       <h3 style={{ marginTop: 6, marginBottom: 0 }}>{item.name}</h3>
       {item.notShareableCategory && (

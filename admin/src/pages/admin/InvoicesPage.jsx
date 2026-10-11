@@ -147,21 +147,21 @@ export default function InvoicesPage() {
     } finally { setBusyId(null); }
   };
   // BIL-01/02: collect (if unpaid) and settle in one server call.
-  const settle = async (o, method) => {
+  const settle = async (o, method, split) => {
     setBusyId(o._id);
     try {
-      const { data } = await settleOrders([o._id], method);
+      const { data } = await settleOrders([o._id], method, split);
       const why = data?.rejected?.[0]?.reason;
       if (why) { toast.error(t(why)); throw new Error(why); }
       const u = data?.orders?.[0];
-      if (u) patchEverywhere(o._id, { status: u.status, paymentStatus: u.paymentStatus, paymentMethod: u.paymentMethod, billStatus: u.billStatus, billSettledAt: u.billSettledAt, billSettledBy: u.billSettledBy, statusHistory: u.statusHistory });
+      if (u) patchEverywhere(o._id, { status: u.status, paymentStatus: u.paymentStatus, paymentMethod: u.paymentMethod, paymentSplit: u.paymentSplit, billStatus: u.billStatus, billSettledAt: u.billSettledAt, billSettledBy: u.billSettledBy, statusHistory: u.statusHistory });
       toast.success(data?.completed?.length ? t("Bill settled — order completed") : t("Bill settled"));
     } catch (e) {
       if (e?.response) toast.error(e.response.data?.message || t("Couldn't settle the bill"));
       throw e;
     } finally { setBusyId(null); }
   };
-  const recordPayment = (o, method) => settle(o, method);
+  const recordPayment = (o, method, split) => settle(o, method, split); // split { cash, online } with "Both"
   const handleReopen = async (o) => {
     if (!window.confirm(t("Reopen the bill of {id}? The order itself stays as it is.", { id: o.orderId }))) return;
     setBusyId(o._id);
@@ -448,7 +448,7 @@ export default function InvoicesPage() {
           onClose={() => setOpenId(null)}
           onCollect={(o) => setCollect({ o, mode: billState(o) === "checkUpi" ? "Online" : undefined })}
           onPrint={handlePrint}
-          onPaymentChange={(id, data) => handlePaymentChange(id, data).catch(() => {})}
+          onPaymentChange={(id, data) => handlePaymentChange(id, data).catch(() => false)}
           onSettle={(o) => settle(o).catch(() => {})}
           onReopenBill={handleReopen}
         />

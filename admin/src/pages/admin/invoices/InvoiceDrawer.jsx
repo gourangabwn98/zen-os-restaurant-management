@@ -7,6 +7,8 @@ import { createPortal } from "react-dom";
 import Badge from "../shared/Badge.jsx";
 import { t, tn, N_, fmtNum, fmtDate, fmtTime, localName } from "../../../i18n/core.js";
 import { ORDER_STATUS_LABEL } from "../shared/statusLabels.js";
+import SplitPayButton from "../shared/SplitPay.jsx";
+import { SPLIT, paymentLabel } from "../../../utils/payment.js";
 import { billState, isSettled, needsSettle, custName, custPhone, money, lineTotal, daysOld, billText, waLink, tableLabel, printPdf } from "./model.js";
 
 const STATUS_LABEL = ORDER_STATUS_LABEL; // shared floor words (DSH-04)
@@ -15,7 +17,7 @@ const STATE_DOT = { COMPLETED: "var(--ready)", CANCELLED: "var(--stop)", DELIVER
 export function StateBadge({ o }) {
   const st = billState(o);
   if (st === "paid" && !isSettled(o)) return <Badge label={N_("Paid · bill open")} kind="live" />;
-  if (st === "paid") return <Badge label={o.paymentMethod === "Online" ? N_("Settled · Online") : N_("Settled · Cash")} kind="ready" />;
+  if (st === "paid") return <Badge label={o.paymentMethod === SPLIT ? N_("Settled · Cash + Online") : o.paymentMethod === "Online" ? N_("Settled · Online") : N_("Settled · Cash")} kind="ready" />;
   if (st === "checkUpi") return <Badge label={N_("Check UPI")} kind="vio" dot={false} />;
   if (st === "cancelled") return <Badge label={o.paymentStatus === "PAID" ? N_("Cancelled · was paid") : N_("Cancelled")} kind="done" />;
   return <Badge label={N_("Unpaid")} kind="wait" />;
@@ -46,7 +48,7 @@ function PrintableBill({ o, restaurantName }) {
           <tr><th>{t("Total")}</th><th className="r">{money(o.total)}</th></tr>
         </tbody>
       </table>
-      <div className="muted">{o.paymentStatus === "PAID" ? `${t("Paid")} · ${t(o.paymentMethod === "Online" ? "Online" : "Cash")}` : t("Payment pending")}</div>
+      <div className="muted">{o.paymentStatus === "PAID" ? `${t("Paid")} · ${paymentLabel(o)}` : t("Payment pending")}</div>
     </div>,
     document.body,
   );
@@ -114,7 +116,7 @@ export default function InvoiceDrawer({ o, restaurantName, busy, onClose, onColl
           <div className="inv-sec-k">{t("Payment")}</div>
           <div className="inv-tot">
             <div><span>{t("Status")}</span><b><StateBadge o={o} /></b></div>
-            <div><span>{t("Method")}</span><b>{t(o.paymentMethod === "Online" ? "Online" : "Cash")}</b></div>
+            <div><span>{t("Method")}</span><b>{paymentLabel(o)}</b></div>
             {o.payment?.provider === "PHONEPE" && o.payment.phonepeTransactionId && (
               <div><span>{t("PhonePe transaction")}</span><b>{o.payment.phonepeTransactionId}</b></div>
             )}
@@ -134,6 +136,11 @@ export default function InvoiceDrawer({ o, restaurantName, busy, onClose, onColl
                   {t(m)}
                 </button>
               ))}
+              <SplitPayButton total={o.total} title={o.orderId} disabled={busy}
+                className={`zc-btn sm${o.paymentMethod === SPLIT ? " pri" : " ghost"}`}
+                onConfirm={(split) => onPaymentChange(o._id, { paymentMethod: SPLIT, paymentSplit: split }).catch(() => false)}>
+                {t("Cash + Online")}
+              </SplitPayButton>
               {o.paymentStatus === "PAID" && (
                 <button type="button" className="zc-btn sm ghost" disabled={busy} onClick={() => onPaymentChange(o._id, { paymentStatus: "PENDING_VERIFICATION" })}>
                   {t("Mark unpaid")}

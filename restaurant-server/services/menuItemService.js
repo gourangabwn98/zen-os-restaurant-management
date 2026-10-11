@@ -20,12 +20,12 @@
 import mongoose from "mongoose";
 import { nextBusinessDayEnd, resolveTimezone } from "../utils/menuSchedule.js";
 import { normalizeCategoryName } from "./categoryService.js";
+import { FOOD_TYPES } from "../utils/foodTypes.js";
 
 const MAX_BULK_IDS = 1000;
 const MAX_TAGS = 10;
 const MAX_TAG_LEN = 24;
 const MAX_IMPORT_ROWS = 500;
-const FOOD_TYPES = ["Veg", "Non Veg"];
 
 const httpError = (msg, statusCode = 400) => {
   const e = new Error(msg);

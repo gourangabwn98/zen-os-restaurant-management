@@ -6,6 +6,8 @@
 
 import mongoose from "mongoose";
 import { ORDER_STATUSES, ORDER_SOURCES, ORDER_TYPES, BILL_STATUSES } from "../utils/orderStateMachine.js";
+import { FOOD_TYPES } from "../utils/foodTypes.js";
+import { COLLECT_METHODS } from "../utils/paymentMode.js";
 import {
   STOCK_UNITS, LEDGER_TYPES, WASTAGE_REASONS, AUTO_ORDER_PREFERENCES, CREDIT_PREFERENCES, BILL_NUMBER_SOURCES,
   PURCHASE_PAYMENT_TYPES, PAYMENT_SOURCES, PAYABLE_PARTIES, SETTLE_SOURCES,
@@ -241,7 +243,7 @@ const menuItemSchema = new mongoose.Schema({
   isChefsPick:     { type: Boolean, default: false },
   isTodaysSpecial: { type: Boolean, default: false },
   categoryImage: { type: String, default: "" },
-  tag:           { type: String, enum: ["Veg","Non Veg"], required: true },
+  tag:           { type: String, enum: FOOD_TYPES, required: true }, // Veg | Non Veg | Others
   image:         { type: String, default: "" },
   isAvailable:   { type: Boolean, default: true },
   rating:        { type: Number, default: 4.0 },
@@ -385,7 +387,10 @@ const orderSchema = new mongoose.Schema({
   statusHistory: { type: [statusHistoryEntrySchema], default: [] },
 
   paymentStatus:  { type: String, enum: ["PENDING_VERIFICATION","PAID","FAILED"], default: "PENDING_VERIFICATION" },
-  paymentMethod:  { type: String, enum: ["Cash","Online"], default: "Cash" },
+  paymentMethod:  { type: String, enum: COLLECT_METHODS, default: "Cash" }, // Cash | Online | Both
+  // Only when paymentMethod is "Both": how much came in cash and how much
+  // online (utils/paymentMode.js parsePaymentSplit — adds up to `total`).
+  paymentSplit:   { type: new mongoose.Schema({ cash: Number, online: Number }, { _id: false }), default: null },
 
   // ── Bill lifecycle (BIL-02) ───────────────────────────────────────────────
   // Financial state of this order's bill, independent of the operational

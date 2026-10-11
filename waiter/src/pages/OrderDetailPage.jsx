@@ -17,6 +17,7 @@ import { Loader, ErrorState, EmptyState } from "../components/StateViews.jsx";
 import { ACCENT, GREEN, AMBER, RED, TEXT_MUTED, TEXT_FAINT, GLASS_BORDER, GLASS_BG } from "../theme.js";
 import { t, N_, tn, localName } from "../i18n/index.jsx";
 import NotShareableNote from "../components/NotShareableNote.jsx";
+import SplitPayFields from "../components/SplitPayFields.jsx";
 import AddonPicker, { AddonHint } from "../components/AddonPicker.jsx";
 import { hasAddons, lineKey, addonIdsOf, addonLabel } from "../utils/addons.js";
 import { tableLabel } from "../utils/diningArea.js";
@@ -72,6 +73,7 @@ export default function OrderDetailPage() {
   const [order, setOrder] = useState(() => (placed && placed._id === id ? placed : null));
   const [error, setError] = useState(null);
   const [busy, setBusy]   = useState(false);
+  const [splitOpen, setSplitOpen] = useState(false); // "Cash + Online" amounts
   // Inline quantity edit while the order is still editable (null = not editing).
   const [editLines, setEditLines] = useState(null);
   const [bill, setBill]   = useState(null);
@@ -136,13 +138,14 @@ export default function OrderDetailPage() {
 
   // BIL-01/02: settle the bill — collects the payment if it isn't recorded
   // yet. The server completes the order if it has been served.
-  const handleSettle = async (paymentMethod) => {
+  // paymentSplit { cash, online } only with "Both" (part cash, part online).
+  const handleSettle = async (paymentMethod, paymentSplit) => {
     setBusy(true);
     try {
-      const { data } = await settleOrders([id], paymentMethod);
+      const { data } = await settleOrders([id], paymentMethod, paymentSplit);
       const why = data?.rejected?.[0]?.reason;
       if (why) toast.error(why);
-      else toast.success(data?.completed?.length ? t("Bill settled — order completed") : t("Bill settled"));
+      else { setSplitOpen(false); toast.success(data?.completed?.length ? t("Bill settled — order completed") : t("Bill settled")); }
       load();
     } catch (err) { toast.error(err.response?.data?.message || t("Couldn't settle the bill")); }
     finally { setBusy(false); }
@@ -391,7 +394,9 @@ export default function OrderDetailPage() {
       <div style={{ margin: "0 16px 14px" }}>
         <GlassCard style={{ padding: "14px 16px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ fontSize: 12, color: TEXT_MUTED }}>{t("Payment")} · {t(order.paymentMethod)}</div>
+            <div style={{ fontSize: 12, color: TEXT_MUTED }}>{t("Payment")} · {order.paymentMethod === "Both"
+              ? `${t("Cash")} ₹${order.paymentSplit?.cash ?? 0} + ${t("Online")} ₹${order.paymentSplit?.online ?? 0}`
+              : t(order.paymentMethod)}</div>
             <span style={{ fontSize: 12, fontWeight: 800, color: paymentColor(order.paymentStatus) }}>
               {t(PAYMENT_LABEL[order.paymentStatus] || order.paymentStatus)}
             </span>
@@ -405,10 +410,18 @@ export default function OrderDetailPage() {
               {order.paymentStatus === "PAID" ? (
                 <PrimaryButton disabled={busy} onClick={() => handleSettle()} variant="success" style={{ width: "100%", padding: "10px", fontSize: 12.5 }}>{t("Settle bill")} · ₹{order.total}</PrimaryButton>
               ) : (
-                <div style={{ display: "flex", gap: 8 }}>
-                  <PrimaryButton disabled={busy} onClick={() => handleSettle("Cash")} variant="success" style={{ flex: 1, padding: "10px", fontSize: 12.5 }}>{t("Cash · settle")}</PrimaryButton>
-                  <PrimaryButton disabled={busy} onClick={() => handleSettle("Online")} variant="success" style={{ flex: 1, padding: "10px", fontSize: 12.5 }}>{t("Online · settle")}</PrimaryButton>
-                </div>
+                <>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <PrimaryButton disabled={busy} onClick={() => handleSettle("Cash")} variant="success" style={{ flex: 1, padding: "10px", fontSize: 12.5 }}>{t("Cash · settle")}</PrimaryButton>
+                    <PrimaryButton disabled={busy} onClick={() => handleSettle("Online")} variant="success" style={{ flex: 1, padding: "10px", fontSize: 12.5 }}>{t("Online · settle")}</PrimaryButton>
+                  </div>
+                  {splitOpen ? (
+                    <SplitPayFields total={order.total} busy={busy} onCancel={() => setSplitOpen(false)}
+                      onConfirm={(split) => handleSettle("Both", split)} />
+                  ) : (
+                    <button type="button" disabled={busy} onClick={() => setSplitOpen(true)} style={{ ...outlineBtn, padding: 9 }}>{t("Cash + Online · settle")}</button>
+                  )}
+                </>
               )}
               {order.paymentStatus !== "PAID" && (
                 <button type="button" disabled={busy} onClick={() => handlePayment("PAID")} style={{ ...outlineBtn, padding: 9 }}>{t("Mark paid only (settle later)")}</button>

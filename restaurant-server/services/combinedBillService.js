@@ -21,6 +21,7 @@ import { ORDER_STATUSES, PAYMENT_STATUSES, ORDER_TYPES, ADMIN_COMPLETE_FROM } fr
 import { isManagementRole } from "../utils/roles.js";
 import { roundMoney } from "../utils/recipeCost.js";
 import { addonsForPrint } from "../utils/menuAddons.js";
+import { SPLIT_METHOD } from "../utils/paymentMode.js";
 import { parseGuests, applyGuestsToSelection } from "./acServiceCharge.js";
 
 const pick = (list, v) => { if (!list.includes(v)) throw new Error(`combinedBillService: unknown enum ${v}`); return v; };
@@ -30,6 +31,8 @@ const PAID = pick(PAYMENT_STATUSES, "PAID");
 const DINE_IN = pick(ORDER_TYPES, "DINE_IN");
 export const COMBINABLE = ["CONFIRMED", "PREPARING", "READY", "DELIVERED"].map((s) => pick(ORDER_STATUSES, s));
 export const MAX_SELECTION = 50;
+// Marking several orders paid at once takes one method; a cash + online split
+// ("Both") is recorded per bill (billingService.settleBills, one order).
 const PAY_METHODS = ["Cash", "Online"];
 
 const OBJECT_ID = /^[a-f0-9]{24}$/i;
@@ -140,7 +143,9 @@ export const previewCombinedBill = async ({ models, body }) => {
 export const combinedPrintPayload = ({ tableNo, orders, restaurant }) => {
   const orderType = orders[0]?.orderType || DINE_IN; // KH-07: a takeaway group too
   const t = combineTotals(orders);
-  const methods = [...new Set(orders.filter((o) => o.paymentStatus === PAID).map((o) => o.paymentMethod || "Cash"))];
+  // A split ("Both") bill counts as both Cash and Online here.
+  const methods = [...new Set(orders.filter((o) => o.paymentStatus === PAID)
+    .flatMap((o) => (o.paymentMethod === SPLIT_METHOD ? ["Cash", "Online"] : [o.paymentMethod || "Cash"])))];
   return {
     combined: true,
     restaurantName: restaurant?.restaurantName || "",
@@ -214,6 +219,7 @@ export const printCombinedBill = async ({ models, body, actor }) => {
  * reported, never re-written (its method stays as recorded). */
 export const markSelectedPaid = async ({ models, body, canPay }) => {
   const method = body.paymentMethod;
+  if (method === SPLIT_METHOD) throw httpError("Cash + Online split is recorded one bill at a time — open the order to collect it");
   if (!PAY_METHODS.includes(method)) throw httpError(`paymentMethod must be one of: ${PAY_METHODS.join(", ")}`);
   if (!canPay) throw httpError("You are not allowed to mark payments", 403);
   const { tableNo, rootId, orders, rejected } = await resolveSelection({ models, body });
@@ -257,7 +263,7 @@ export const completeSelected = async ({ req, body, settle, completeByAdmin = nu
     return { settled: [], alreadySettled: done.map((r) => r.orderId), completed: [], rejected: rejected.filter((r) => r.reason !== "Already completed"), changed: [], completions: [] };
   }
   const r = await settle({
-    models: req.models, orderIds: orders.map((o) => String(o._id)), paymentMethod: body.paymentMethod || undefined, actor, role,
+    models: req.models, orderIds: orders.map((o) => String(o._id)), paymentMethod: body.paymentMethod || undefined, paymentSplit: body.paymentSplit, actor, role,
   });
   // Ids that were already COMPLETED at selection time come back as rejected
   // "Already completed" from resolveSelection — their bills are settled.

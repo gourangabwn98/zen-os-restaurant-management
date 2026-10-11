@@ -358,7 +358,16 @@ export const computeInsightsOverview = async ({ models, from, to, prevFrom, prev
       { $match: match },
       { $facet: {
         type:   [{ $group: { _id: "$orderType",     orders: { $sum: 1 }, revenue: { $sum: "$total" } } }],
-        method: [{ $group: { _id: "$paymentMethod", orders: { $sum: 1 }, revenue: { $sum: "$total" } } }],
+        // A split bill ("Both") adds its cash part to Cash and its online part to Online.
+        method: [
+          { $project: { parts: { $cond: [
+            { $eq: ["$paymentMethod", "Both"] },
+            [{ m: "Cash", v: "$paymentSplit.cash" }, { m: "Online", v: "$paymentSplit.online" }],
+            [{ m: "$paymentMethod", v: "$total" }],
+          ] } } },
+          { $unwind: "$parts" },
+          { $group: { _id: "$parts.m", orders: { $sum: 1 }, revenue: { $sum: "$parts.v" } } },
+        ],
       } },
     ]),
     Order.aggregate([

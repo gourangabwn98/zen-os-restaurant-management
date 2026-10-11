@@ -35,6 +35,8 @@ import { takenByName, takenByIsAcceptor } from "./shared/takenBy.js";
 import { DINING_AREA_LABEL, TABLE_AREAS, TABLE_AREA_LABEL, groupTablesByArea, tableLabel, isAcRoom } from "./shared/diningArea.js";
 import { hasAddons, cartLineKey, unitPrice, addonIdsOf, addonLabel } from "./shared/addons.js";
 import { AddonLines, AddonHint, AddonPicker } from "./shared/AddonUI.jsx";
+import SplitPayButton from "./shared/SplitPay.jsx";
+import { SPLIT, paymentLabel } from "../../utils/payment.js";
 
 // ── add this to adminService.js if not already there ─────────────────────────
 // export const updateOrderPayment = (id, data) => api.patch(`/admin/orders/${id}/payment`, data);
@@ -415,7 +417,7 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
     [t("Customer"), displayName],
     [t("Phone"), displayPhone ? `+91 ${displayPhone}` : "—"],
     [t("Type"), `${formatOrderType(order.orderType)}${order.orderType==="DINE_IN" && order.diningArea ? ` · ${t(DINING_AREA_LABEL[order.diningArea] || order.diningArea)}` : ""}`], // KH-10
-    [t("Payment"), `${t(order.paymentMethod || "Cash")} · ${formatPayment(order.paymentStatus)}`],
+    [t("Payment"), `${paymentLabel(order)} · ${formatPayment(order.paymentStatus)}`],
     // KH-09 — old orders without a name show "—".
     [t("Waiter"), takenByName(order) ? `${takenByName(order)}${takenByIsAcceptor(order) ? ` (${t("accepted")})` : ""}` : "—"],
   ];
@@ -567,6 +569,8 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
                 <>
                   <button type="button" className="zc-btn pri" disabled={actionBusy} onClick={()=>onSettle(order, "Cash")}>💵 {t("Cash · settle")}</button>
                   <button type="button" className="zc-btn pri" disabled={actionBusy} onClick={()=>onSettle(order, "Online")}>📱 {t("Online · settle")}</button>
+                  <SplitPayButton total={order.total} title={order.orderId} disabled={actionBusy}
+                    onConfirm={(split)=>onSettle(order, SPLIT, split)}>💵+📱 {t("Cash + Online · settle")}</SplitPayButton>
                 </>
               ))}
               {settled && onReopenBill && (
@@ -622,6 +626,15 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
                 </button>
               );
             })}
+            {/* Split bill: part cash, part online — amounts must add up to the total */}
+            <SplitPayButton total={order.total} title={order.orderId} className="op-chip"
+              onConfirm={(split)=>onPaymentChange(order._id, { paymentMethod:SPLIT, paymentSplit:split })}
+              style={{ padding:"6px 16px", borderRadius:20, fontSize:12, fontWeight:600, font:"inherit", cursor:"pointer",
+                border:`2px solid ${order.paymentMethod === SPLIT ? "var(--violet)" : "var(--edge)"}`,
+                background:order.paymentMethod === SPLIT ? "var(--violet-weak)" : "var(--card-2)",
+                color:order.paymentMethod === SPLIT ? "var(--accent-ink)" : T2 }}>
+              💵+📱 {order.paymentMethod === SPLIT ? paymentLabel(order) : t("Cash + Online")}
+            </SplitPayButton>
           </div>
 
           {/* timeline — real transitions from order.statusHistory */}
@@ -905,7 +918,7 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
 
             <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap", alignItems:"center" }}>
               <div className="zc-seg">
-                {[["All",`🍽️ ${t("All")}`],["Veg",`🟢 ${t("Veg")}`],["Non Veg",`🔴 ${t("Non Veg")}`]].map(([v,label])=>(
+                {[["All",`🍽️ ${t("All")}`],["Veg",`🟢 ${t("Veg")}`],["Non Veg",`🔴 ${t("Non Veg")}`],["Others",`⚪ ${t("Others")}`]].map(([v,label])=>(
                   <button key={v} onClick={()=>setVegFilter(v)} style={vegFilter===v ? {
                     background: v==="Veg" ? "var(--ready-fill)" : v==="Non Veg" ? "var(--stop-fill)" : "var(--grad-btn)",
                     color: v==="Veg" ? "var(--ready-ink)" : v==="Non Veg" ? "var(--stop-ink)" : "#fff",
@@ -1508,7 +1521,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }
             <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap", alignItems:"center" }}>
               <div style={{ display:"flex", gap:3, background:CARD2, padding:3,
                 borderRadius:20, border:`1px solid ${BDR}` }}>
-                {[["All",`🍽️ ${t("All")}`],["Veg",`🟢 ${t("Veg")}`],["Non Veg",`🔴 ${t("Non Veg")}`]].map(([v,label])=>(
+                {[["All",`🍽️ ${t("All")}`],["Veg",`🟢 ${t("Veg")}`],["Non Veg",`🔴 ${t("Non Veg")}`],["Others",`⚪ ${t("Others")}`]].map(([v,label])=>(
                   <button key={v} onClick={()=>setVegFilter(v)} style={{
                     padding:"5px 12px", borderRadius:16, border:"none",
                     cursor:"pointer", fontSize:12, fontWeight:600,
@@ -2058,7 +2071,7 @@ const OrderCard = ({ order, idx, onStatusChange, onPaymentChange, onAddItems, on
         <div style={{ textAlign:"right", flexShrink:0 }}>
           <div className="tnum" style={{ fontSize:16, fontWeight:800, color:PINK }}>₹{fmtNum(Math.round(order.total))}</div>
           <div style={{ fontSize:11, fontWeight:700, marginTop:2, color: paid ? "var(--ready-ink)" : "var(--stop-ink)" }}>
-            {paid ? `✓ ${t("Paid")} · ${t(order.paymentMethod || "Cash")}` : `⏳ ${t("Not paid")}`}
+            {paid ? `✓ ${t("Paid")} · ${paymentLabel(order)}` : `⏳ ${t("Not paid")}`}
           </div>
         </div>
       </div>
@@ -2100,10 +2113,12 @@ const OrderCard = ({ order, idx, onStatusChange, onPaymentChange, onAddItems, on
             onClick={() => run(() => onPaymentChange(order._id, { paymentStatus: "PAID", paymentMethod: "Cash" }))}>💵 {t("Paid by cash")}</button>
           <button type="button" className="zc-btn sm" disabled={busy}
             onClick={() => run(() => onPaymentChange(order._id, { paymentStatus: "PAID", paymentMethod: "Online" }))}>📱 {t("Paid online")}</button>
+          <SplitPayButton className="zc-btn sm" total={order.total} title={order.orderId} disabled={busy}
+            onConfirm={(split) => onPaymentChange(order._id, { paymentStatus: "PAID", paymentMethod: SPLIT, paymentSplit: split })} />
         </div>
       ) : !isBillSettled(order) && (
         <div className="op-pay">
-          <span className="lb">{t("Paid by {method}", { method: t(order.paymentMethod || "Cash") })}</span>
+          <span className="lb">{t("Paid by {method}", { method: paymentLabel(order) })}</span>
           <button type="button" className="zc-btn sm ghost" disabled={busy}
             onClick={() => run(() => onPaymentChange(order._id, { paymentMethod: (order.paymentMethod || "Cash") === "Cash" ? "Online" : "Cash" }))}>
             {(order.paymentMethod || "Cash") === "Cash" ? t("Change to online") : t("Change to cash")}
@@ -2464,16 +2479,18 @@ export default function OrdersPage() {
   };
 
   // BIL-01/02: settle a bill from the order (the same billing workflow as Invoices).
-  const handleSettle=async(order, paymentMethod)=>{
+  // paymentSplit { cash, online } only with "Both". Returns false when it
+  // didn't settle (keeps the split dialog open).
+  const handleSettle=async(order, paymentMethod, paymentSplit)=>{
     setActionBusy(true);
     try{
-      const { data } = await settleOrders([order._id], paymentMethod);
+      const { data } = await settleOrders([order._id], paymentMethod, paymentSplit);
       const why = data?.rejected?.[0]?.reason;
-      if (why) { toast.error(why); return; }
+      if (why) { toast.error(why); return false; }
       const updated = data?.orders?.[0];
-      if (updated) patchOrder(order._id, { status: updated.status, paymentStatus: updated.paymentStatus, paymentMethod: updated.paymentMethod, billStatus: updated.billStatus });
+      if (updated) patchOrder(order._id, { status: updated.status, paymentStatus: updated.paymentStatus, paymentMethod: updated.paymentMethod, paymentSplit: updated.paymentSplit, billStatus: updated.billStatus });
       toast.success(data?.completed?.length ? t("Bill settled — order completed") : t("Bill settled"));
-    } catch(e){ toast.error(e?.response?.data?.message || t("Couldn't settle the bill")); }
+    } catch(e){ toast.error(e?.response?.data?.message || t("Couldn't settle the bill")); return false; }
     finally{ setActionBusy(false); }
   };
   const handleReopenBill=async(order)=>{
@@ -2531,11 +2548,11 @@ export default function OrdersPage() {
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         toast.error(body?.message || t("Payment update failed"));
-        return;
+        return false;
       }
       patchOrder(id, data);
       toast.success(t("Payment updated ✓"));
-    }catch{ toast.error(t("Payment update failed")); }
+    }catch{ toast.error(t("Payment update failed")); return false; }
   };
 
   const tableOrderMap = {};
@@ -3190,7 +3207,7 @@ export default function OrdersPage() {
                         <td><span className={`zc-tag ${statusKind(o.status)}`}><i />{formatStatus(o.status)}</span></td>
                         <td>
                           <span className={`zc-tag ${statusKind(o.paymentStatus)}`}><i />{formatPayment(o.paymentStatus)}</span>
-                          <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 3 }}>{t(o.paymentMethod || "Cash")}</div>
+                          <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 3 }}>{paymentLabel(o)}</div>
                         </td>
                         <td className="money">₹{fmtNum(Math.round(o.total))}</td>
                         <td className="num" style={{ color: "var(--text-3)" }}>

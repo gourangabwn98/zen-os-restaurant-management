@@ -203,7 +203,7 @@ export default function OrderDetailPage() {
           <div style={{ minWidth: 0 }}>
             <div className="card-title">Payment</div>
             <span className={`status-pill ${paymentPillClass(order.paymentStatus)}`} style={{ whiteSpace: "normal" }}>
-              {PAYMENT_LABEL[order.paymentStatus] || order.paymentStatus} · {order.paymentMethod}
+              {PAYMENT_LABEL[order.paymentStatus] || order.paymentStatus} · {order.paymentMethod === "Both" ? "Cash + Online" : order.paymentMethod}
             </span>
           </div>
           <div className="price" style={{ fontSize: 22 }}>₹{order.total}</div>

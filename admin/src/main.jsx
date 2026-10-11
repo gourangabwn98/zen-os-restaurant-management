@@ -10,6 +10,15 @@ import { Toaster } from "react-hot-toast";
 import "./theme/tokens.css";
 import "./theme/surfaces.css";
 
+// A focused number box (menu price, inventory qty…) changes its value when
+// the mouse wheel turns over it — scrolling the form silently edited prices.
+// Dropping focus before the browser applies the wheel stops that; the page
+// still scrolls normally and typing in the box is unaffected.
+document.addEventListener("wheel", (e) => {
+  const el = document.activeElement;
+  if (el?.tagName === "INPUT" && el.type === "number" && el === e.target) el.blur();
+}, { passive: true });
+
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <AuthProvider>

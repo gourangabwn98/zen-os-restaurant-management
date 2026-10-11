@@ -1,5 +1,6 @@
 // utils/sendWhatsAppBill.js
 import twilio from "twilio";
+import { paymentMethodLabel } from "./paymentMode.js";
 
 export const sendWhatsAppBill = async (phone, order, restaurantName) => {
   const sid   = process.env.TWILIO_ACCOUNT_SID;
@@ -32,7 +33,7 @@ export const sendWhatsAppBill = async (phone, order, restaurantName) => {
     order.discount > 0      ? `Discount:       -₹${order.discount}`       : null,
     ``,
     `*Total: ₹${Math.round(order.total)}*`,
-    `Payment: ${order.paymentMethod || "Cash"} — ${order.paymentStatus || "Pending"}`,
+    `Payment: ${paymentMethodLabel(order)} — ${order.paymentStatus || "Pending"}`,
     ``,
     `Thank you for visiting ${restaurantName}! 🙏`,
   ].filter(l => l !== null).join("\n");

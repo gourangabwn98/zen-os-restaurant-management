@@ -250,7 +250,7 @@ function ShoppingCart() {
               {c.item.image ? <img src={c.item.image} alt="" loading="lazy" /> : <span aria-hidden="true">🍽️</span>}
             </div>
             <div className="nm">
-              <b><VegDot veg={c.item.tag === "Veg"} />{c.item.name}</b>
+              <b><VegDot tag={c.item.tag} />{c.item.name}</b>
               <span className="muted small">₹{c.item.price} each{c.notes ? ` · “${c.notes}”` : ""}</span>
             </div>
             <QtyStepper
