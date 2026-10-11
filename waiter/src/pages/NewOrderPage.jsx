@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import { getMenu, getMenuCategories } from "../services/menuService.js";
+import { peekOrderData, fetchOrderData } from "../services/orderDataCache.js";
 import { getAllTables } from "../services/tableService.js";
-import { placeOrder, newIdempotencyKey, getRestaurantProfile } from "../services/orderService.js";
+import { placeOrder, newIdempotencyKey } from "../services/orderService.js";
 import { getSocket } from "../services/socketService.js";
 import { Loader, EmptyState } from "../components/StateViews.jsx";
 import GlassCard from "../components/ui/GlassCard.jsx";
@@ -62,15 +62,28 @@ export default function NewOrderPage() {
   const [reviewing, setReviewing] = useState(false);
   const [idemKey]                 = useState(newIdempotencyKey);
 
+  // Menu / categories / AC rate: a young kept copy shows at once
+  // (services/orderDataCache.js), and a fresh one is always fetched and
+  // replaces it — so the screen opens instantly but never stays stale.
   const loadFullMenu = useCallback(() => {
-    getMenu().then(({ data }) => setFullMenu(Array.isArray(data) ? data : [])).catch(() => setFullMenu((m) => m || []));
+    const showMenu = (data) => setFullMenu(Array.isArray(data) ? data : []);
+    const kept = peekOrderData("menu");
+    if (kept) showMenu(kept);
+    fetchOrderData("menu").then(showMenu).catch(() => setFullMenu((m) => m || []));
   }, []);
 
   useEffect(() => {
     // The table list is only shown when no table was picked on the map.
+    // Always fresh — occupancy decides the Indoor-AC guests rule.
     getAllTables().then(({ data }) => setTables((data.tables || []).filter((t) => t.status !== "Inactive"))).catch(() => {});
-    getMenuCategories().then(({ data }) => setCategories(data || [])).catch(() => {});
-    getRestaurantProfile().then(({ data }) => { const r = (data?.data || data)?.acServiceChargePerGuest; if (r != null) setAcRate(Number(r)); }).catch(() => {});
+    const showCats = (data) => setCategories(data || []);
+    const showRate = (data) => { const r = (data?.data || data)?.acServiceChargePerGuest; if (r != null) setAcRate(Number(r)); };
+    const keptCats = peekOrderData("categories");
+    if (keptCats) showCats(keptCats);
+    fetchOrderData("categories").then(showCats).catch(() => {});
+    const keptProfile = peekOrderData("profile");
+    if (keptProfile) showRate(keptProfile);
+    fetchOrderData("profile").then(showRate).catch(() => {});
     loadFullMenu();
   }, [locked, loadFullMenu]);
 
@@ -181,7 +194,7 @@ export default function NewOrderPage() {
       toast.success(order.status === "CONFIRMED"
         ? tr("Order {id} placed — it goes to the kitchen in a few minutes", { id: order.orderId })
         : tr("Order {id} placed — cooking now", { id: order.orderId }));
-      nav(`/order/${order._id}`, { replace: true });
+      nav(`/order/${order._id}`, { replace: true, state: { order } }); // shown at once, then refreshed
     } catch (err) {
       toast.error(err.response?.data?.message || tr("Couldn't place order"));
     } finally { setPlacing(false); }

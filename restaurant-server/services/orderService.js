@@ -183,23 +183,27 @@ export const placeOrderTx = async ({ req, body }) => {
   } = effBody;
   const guests = parseGuests(body.guests); // KH-11: Indoor-AC only (see below)
 
-  // ── Idempotency: replay-safe "place order" ────────────────────────────────
-  if (idempotencyKey) {
-    const existing = await Order.findOne({ idempotencyKey });
-    if (existing) return { order: existing, alreadyExisted: true };
-  }
-
   const source       = getSourceFromUser(req.user);
   const isStaffOrder = source === "ADMIN" || source === "WAITER";
   const normalizedType = normalizeOrderType(orderType);
+
+  // Performance: three independent READS in one round trip instead of three
+  // in a row — the idempotency replay check, the restaurant settings and the
+  // table. Nothing is written yet; the replay is still answered first.
+  const [existing, restaurant, tableDoc] = await Promise.all([
+    idempotencyKey ? Order.findOne({ idempotencyKey }) : null,
+    RestaurantProfile.findOne(),
+    normalizedType === "DINE_IN" && tableNo ? Table.findOne({ tableNo: Number(tableNo) }) : null,
+  ]);
+
+  // ── Idempotency: replay-safe "place order" ────────────────────────────────
+  if (existing) return { order: existing, alreadyExisted: true };
 
   if (normalizedType === "DINE_IN" && !tableNo) {
     const err = new Error("Table number is required for dine-in orders");
     err.statusCode = 400;
     throw err;
   }
-
-  const restaurant = await RestaurantProfile.findOne();
 
   // SET-01: a customer can't order a service the restaurant switched off.
   if (!isStaffOrder) assertServiceEnabled(restaurant, normalizedType);
@@ -223,20 +227,15 @@ export const placeOrderTx = async ({ req, body }) => {
   }
   const payFirst = !isStaffOrder && isPayFirst(method, phonePeEnabled);
 
-  const draft = await priceOrderDraft({
-    req, items, couponCode, isStaffOrder, restaurant,
-  });
-  const { dbItems, coupon } = draft;
-
   // ── Table / QR verification (soft — see schema comment) + session ─────────
   let tableSessionId = null;
   let tableVerified  = false;
   let tableArea      = ""; // the table's configured area (Table Management)
   let tableDisplay   = null; // its number within that area ("Indoor-AC 1" → 1)
   let ac             = {};   // KH-11: Indoor-AC guest charge fields
+  const dineInTable  = normalizedType === "DINE_IN" && tableNo;
 
-  if (normalizedType === "DINE_IN" && tableNo) {
-    const tableDoc = await Table.findOne({ tableNo: Number(tableNo) });
+  if (dineInTable) {
     if (!tableDoc || tableDoc.status !== "Active") {
       const err = new Error(`Table ${tableNo} is not available`);
       err.statusCode = 400;
@@ -257,18 +256,38 @@ export const placeOrderTx = async ({ req, body }) => {
     }
     // else: guest didn't send a token (today's customer app doesn't yet) —
     // order still proceeds, just tableVerified stays false for audit/reporting.
+  }
 
-    // KH-11: Indoor-AC → the guest count entered on the order form is
-    // required and priced into the subtotal (guests × rate) — once per table
-    // visit: not on a follow-up, nor while the table's open session already
-    // has a counted order. Checked BEFORE the session opens, so a missing
-    // count never leaves the table marked occupied.
-    const isAcRoom = normalizeDiningArea(tableArea, normalizedType) === DINING_AREA_AC_ROOM;
-    let alreadyCounted = false;
-    if (isAcRoom && isStaffOrder && !followUp) {
-      const open = await TableSession.findOne({ tableNo: tableDoc.tableNo, status: "OPEN" });
-      alreadyCounted = !!open && !!(await Order.findOne({ tableSession: open._id, status: { $ne: "CANCELLED" }, guests: { $gt: 0 } }));
-    }
+  // KH-11: Indoor-AC → the guest count entered on the order form is required
+  // and priced into the subtotal (guests × rate) — once per table visit: not
+  // on a follow-up, nor while the table's open session already has a counted
+  // order. Checked BEFORE the session opens, so a missing count never leaves
+  // the table marked occupied.
+  const isAcRoom = !!dineInTable && normalizeDiningArea(tableArea, normalizedType) === DINING_AREA_AC_ROOM;
+  const countedAlready = async () => {
+    if (!(isAcRoom && isStaffOrder && !followUp)) return false;
+    const open = await TableSession.findOne({ tableNo: tableDoc.tableNo, status: "OPEN" });
+    return !!open && !!(await Order.findOne({ tableSession: open._id, status: { $ne: "CANCELLED" }, guests: { $gt: 0 } }));
+  };
+
+  // Performance: pricing (+ the stock check that needs its result) and the
+  // Indoor-AC lookups are all READS and don't depend on each other — run them
+  // together. Every check still passes BEFORE anything is written: the table
+  // session only opens below. (Stock is now also checked before the session
+  // opens — a stock failure no longer leaves the table marked occupied.)
+  const [draft, alreadyCounted] = await Promise.all([
+    priceOrderDraft({ req, items, couponCode, isStaffOrder, restaurant }).then(async (d) => {
+      // Fail now — not minutes later at the kitchen — if stock clearly can't
+      // cover it. (Deduction itself still happens exactly once, at
+      // sendToKitchenTx, guarded atomically.)
+      await assertStockForItems({ models: req.models, items: d.dbItems });
+      return d;
+    }),
+    countedAlready(),
+  ]);
+  const { dbItems, coupon } = draft;
+
+  if (dineInTable) {
     ac = acChargeForNewOrder({ isAcRoom, isStaffOrder, isFollowUp: !!followUp, alreadyCounted, guests, profile: restaurant });
 
     // A pay-first order must not occupy the table until it's paid — it joins
@@ -293,11 +312,6 @@ export const placeOrderTx = async ({ req, body }) => {
   const actor = buildActor(req.user, customerName);
   const now = new Date();
   const autoPrepareAt = initialStatus === "CONFIRMED" ? new Date(now.getTime() + editWindowMs(restaurant)) : null;
-
-  // Fail now — not minutes later at the kitchen — if stock clearly can't
-  // cover it. (Deduction itself still happens exactly once, at
-  // sendToKitchenTx, guarded atomically.)
-  await assertStockForItems({ models: req.models, items: dbItems });
 
   const orderPayload = {
     user:          req.user ? req.user._id : null,

@@ -685,11 +685,22 @@ const stockIngredients = (recipe) =>
  * get hidden or flagged by this.
  */
 export const computeStockStatusForMenuItems = async ({ models, menuItemIds }) => {
+  if (!menuItemIds?.length) return new Map();
+  return stockStatusFor(models, { menuItem: { $in: menuItemIds }, status: "Active" });
+};
+
+/**
+ * Same as computeStockStatusForMenuItems, for EVERY active recipe — so the
+ * menu read (GET /api/menu) can start it before it knows which items it will
+ * list, in parallel with them, instead of after (two DB round trips saved).
+ * Look up by String(menuItemId); same entries, same rule.
+ */
+export const computeStockStatusForActiveRecipes = ({ models }) => stockStatusFor(models, { status: "Active" });
+
+const stockStatusFor = async (models, recipeFilter) => {
   const { Recipe, InventoryItem } = models;
   const result = new Map();
-  if (!menuItemIds?.length) return result;
-
-  const recipes = (await Recipe.find({ menuItem: { $in: menuItemIds }, status: "Active" }).lean())
+  const recipes = (await Recipe.find(recipeFilter).lean())
     .filter((r) => stockIngredients(r).length);
   if (!recipes.length) return result; // nobody tracked → caller treats all as inStock
 

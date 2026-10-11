@@ -2,7 +2,7 @@
 // ADD at the top of menuController.js
 import { isManagementRole } from "../utils/roles.js";
 import { v2 as cloudinary } from "cloudinary";
-import { computeStockStatusForMenuItems } from "../services/inventoryService.js";
+import { computeStockStatusForActiveRecipes } from "../services/inventoryService.js";
 import { getScheduleContext, isItemScheduledNow, applyBulkSchedule } from "../services/menuScheduleService.js";
 import { emitMenuUpdated } from "../sockets/socket.js";
 import { setAvailability, bulkEditItems, normalizeTags, commitImport } from "../services/menuItemService.js";
@@ -66,49 +66,63 @@ export const getMenu = async (req, res) => {
     // windows (which may cross midnight) are checked on the lean results.
     // An item whose PRIMARY category is scheduled out is hidden everywhere.
     const skipSchedule = manageView || (ignoreSchedule === "true" && isAdmin);
-    // Schedule context and the smart-category context don't depend on each
-    // other — read them together (getMenuContext only carries `hidden` through).
-    const [scheduleCtx, baseMenuCtx] = await Promise.all([
-      getScheduleContext({ models: req.models }),
-      readyMenuContext(req.models),
-    ]);
-    const hidden = skipSchedule ? new Set() : scheduleCtx.hiddenCategories;
-    if (category && hidden.has(category)) return res.json([]);
-    if (hidden.size) and.push({ category: { $nin: [...hidden] } });
 
-    // ── One category's items (MNU-01/03–07) ────────────────────────────────
-    // An item is listed under its primary category, its extra `categories`,
-    // and any smart category it qualifies for — always the same document.
-    const menuCtx = { ...baseMenuCtx, hidden };
-    if (category) {
-      const smart = menuCtx.smartCats.find((c) => c.name === category);
-      const def = smart && smartByKey(smart.smartKey);
-      if (def?.source === "flag") filter[def.flag] = true;
-      else if (def) filter._id = { $in: [...(menuCtx.dataSets.get(def.key) || [])] };
-      else and.push({ $or: [{ category }, { categories: category }] });
-    }
-    if (and.length) filter.$and = and;
-    let items = await MenuItem.find(filter).sort({ category: 1, name: 1 }).lean();
-    items = items.map((i) => ({ ...i, categoryList: itemCategoryList(i, menuCtx) }));
-    if (skipSchedule) {
-      // Annotate so the admin can see what customers currently can't (its
-      // category is scheduled out). Items have no time schedule of their own.
-      items = items.map((i) => ({ ...i, scheduledNow: isItemScheduledNow(i, scheduleCtx) }));
-    }
+    // The items this request lists (null = the asked category is scheduled out).
+    const listMenuItems = async () => {
+      // Schedule context and the smart-category context don't depend on each
+      // other — read them together (getMenuContext only carries `hidden` through).
+      const [scheduleCtx, baseMenuCtx] = await Promise.all([
+        getScheduleContext({ models: req.models }),
+        readyMenuContext(req.models),
+      ]);
+      const hidden = skipSchedule ? new Set() : scheduleCtx.hiddenCategories;
+      if (category && hidden.has(category)) return null;
+      if (hidden.size) and.push({ category: { $nin: [...hidden] } });
+
+      // ── One category's items (MNU-01/03–07) ──────────────────────────────
+      // An item is listed under its primary category, its extra `categories`,
+      // and any smart category it qualifies for — always the same document.
+      const menuCtx = { ...baseMenuCtx, hidden };
+      if (category) {
+        const smart = menuCtx.smartCats.find((c) => c.name === category);
+        const def = smart && smartByKey(smart.smartKey);
+        if (def?.source === "flag") filter[def.flag] = true;
+        else if (def) filter._id = { $in: [...(menuCtx.dataSets.get(def.key) || [])] };
+        else and.push({ $or: [{ category }, { categories: category }] });
+      }
+      if (and.length) filter.$and = and;
+      let items = await MenuItem.find(filter).sort({ category: 1, name: 1 }).lean();
+      items = items.map((i) => ({ ...i, categoryList: itemCategoryList(i, menuCtx) }));
+      if (skipSchedule) {
+        // Annotate so the admin can see what customers currently can't (its
+        // category is scheduled out). Items have no time schedule of their own.
+        items = items.map((i) => ({ ...i, scheduledNow: isItemScheduledNow(i, scheduleCtx) }));
+      }
+      return items;
+    };
+
+    // Performance: the reads that don't depend on which items are listed
+    // start NOW, together with the item list — stock status (recipes → stock
+    // items) and the "not shareable" categories used to wait for the item
+    // query, one after another (≈5 DB round trips in a row → ≈2). Same
+    // results: stock status is computed for every active recipe and looked up
+    // per listed item. One Promise.all, so any failure is still caught below.
+    const [items, stockStatus, flaggedCats] = await Promise.all([
+      listMenuItems(),
+      computeStockStatusForActiveRecipes({ models: req.models }),
+      Category.find({ notShareable: true }).select("name").lean(),
+    ]);
+    if (!items) return res.json([]); // the asked category is scheduled out
 
     // ── Connect inventory availability with menu availability (Phase 2) ──────
     // Purely additive: `isAvailable` (the manual staff toggle) is untouched
     // and menu items are never removed/hidden here — we only attach a
     // read-time `stockAvailable` flag so a future frontend can show
     // "out of stock" without the item disappearing from the menu.
-    const stockStatus = await computeStockStatusForMenuItems({
-      models: req.models,
-      menuItemIds: items.map((i) => i._id),
-    });
     // KH-05: "<category> not shareable" note (e.g. Thali) — display only.
-    // Added after every visibility rule above, so it never changes which
-    // items are listed. Field present only on flagged items.
-    const flagged = new Set((await Category.find({ notShareable: true }).select("name").lean()).map((c) => c.name));
+    // Added after every visibility rule, so it never changes which items are
+    // listed. Field present only on flagged items.
+    const flagged = new Set(flaggedCats.map((c) => c.name));
     const withStock = items.map((i) => {
       const s = stockStatus.get(String(i._id));
       const notShareableCategory = notShareableCategoryOf(i, flagged);

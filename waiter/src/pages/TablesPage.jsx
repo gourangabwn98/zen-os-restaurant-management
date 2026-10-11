@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { getAllTables, getOpenTableSessions } from "../services/tableService.js";
 import { getAllOrders, confirmOrder, rejectOrder } from "../services/orderService.js";
+import { prefetchOrderData } from "../services/orderDataCache.js";
 import { OccupiedTableCard, FreeTableCard } from "../components/TableCard.jsx";
 import DutyPanel from "../components/DutyPanel.jsx";
 import OrderCard from "../components/OrderCard.jsx";
@@ -88,6 +89,9 @@ export default function TablesPage() {
   // Live: a customer's new order (and every status / table change) shows up
   // at once — it used to wait for the 15s poll, which stays as a fallback.
   useLiveOrders(load);
+  // Warm the New order screen's menu while the waiter looks at the tables,
+  // so tapping a table opens it instantly (services/orderDataCache.js).
+  useEffect(() => { prefetchOrderData(); }, []);
   useEffect(() => {
     load();
     const iv = setInterval(load, 15000);

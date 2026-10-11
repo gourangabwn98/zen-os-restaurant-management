@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   getOrder, confirmOrder, rejectOrder, updateOrderStatus,
@@ -7,7 +7,7 @@ import {
   placeOrder, getOrderGroup, newIdempotencyKey,
 } from "../services/orderService.js";
 import CombinedBillPanel from "../components/CombinedBillPanel.jsx";
-import { getMenu, getMenuCategories } from "../services/menuService.js";
+import { peekOrderData, fetchOrderData } from "../services/orderDataCache.js";
 import StatusBadge, { statusColor } from "../components/StatusBadge.jsx";
 import GlassCard from "../components/ui/GlassCard.jsx";
 import PrimaryButton from "../components/ui/PrimaryButton.jsx";
@@ -65,8 +65,11 @@ function SendCountdown({ order }) {
 
 export default function OrderDetailPage() {
   const { id } = useParams();
+  // Just placed: the saved order came back with the "place order" reply —
+  // show it at once; load() below still fetches the fresh copy.
+  const placed = useLocation().state?.order;
 
-  const [order, setOrder] = useState(null);
+  const [order, setOrder] = useState(() => (placed && placed._id === id ? placed : null));
   const [error, setError] = useState(null);
   const [busy, setBusy]   = useState(false);
   // Inline quantity edit while the order is still editable (null = not editing).
@@ -74,7 +77,7 @@ export default function OrderDetailPage() {
   const [bill, setBill]   = useState(null);
   const [showQr, setShowQr] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
-  const [menuItems, setMenuItems] = useState(null); // null = loading
+  const [fullMenu, setFullMenu] = useState(null); // whole live menu, filtered below; null = loading
   const [menuCategories, setMenuCategories] = useState([]);
   const [menuSearch, setMenuSearch] = useState("");
   const [menuCategory, setMenuCategory] = useState("");
@@ -152,24 +155,31 @@ export default function OrderDetailPage() {
     finally { setBusy(false); }
   };
 
+  // The whole live menu once per opening (a young kept copy shows at once,
+  // a fresh one always replaces it — services/orderDataCache.js), then the
+  // category / search filter runs here, like NewOrderPage.jsx — it used to
+  // ask the server again (~3 s) for every category tap and keystroke.
   const openAddItems = () => {
     setShowAdd(true);
     setMenuSearch(""); setMenuCategory(""); setAddQtys({});
-    if (menuCategories.length === 0) getMenuCategories().then((r) => setMenuCategories(r.data || [])).catch(() => {});
+    const showMenu = (data) => setFullMenu(Array.isArray(data) ? data : []);
+    const keptMenu = peekOrderData("menu");
+    if (keptMenu) showMenu(keptMenu);
+    fetchOrderData("menu").then(showMenu).catch(() => setFullMenu((m) => m || []));
+    const keptCats = peekOrderData("categories");
+    if (keptCats) setMenuCategories(keptCats);
+    fetchOrderData("categories").then((d) => setMenuCategories(d || [])).catch(() => {});
   };
 
-  // Re-queried whenever the search/category filter changes, same debounced
-  // pattern as NewOrderPage.jsx's menu browser — this modal is the same
-  // "pick from the live menu" job, just against an existing order.
-  useEffect(() => {
-    if (!showAdd) return;
-    const t = setTimeout(() => {
-      getMenu({ category: menuCategory || undefined, search: menuSearch || undefined })
-        .then((r) => setMenuItems(Array.isArray(r.data) ? r.data : []))
-        .catch(() => setMenuItems([]));
-    }, 250);
-    return () => clearTimeout(t);
-  }, [showAdd, menuCategory, menuSearch]);
+  // Same result as the server's GET /menu?category=&search= (categoryList =
+  // primary + extra + smart categories; name contains the search, any case).
+  const menuItems = useMemo(() => {
+    if (!fullMenu) return null;
+    const q = menuSearch.trim().toLowerCase();
+    return fullMenu.filter((it) =>
+      (!menuCategory || (it.categoryList || [it.category]).includes(menuCategory))
+      && (!q || String(it.name || "").toLowerCase().includes(q)));
+  }, [fullMenu, menuCategory, menuSearch]);
 
   const groupedAddItems = useMemo(() => {
     if (!menuItems) return [];
