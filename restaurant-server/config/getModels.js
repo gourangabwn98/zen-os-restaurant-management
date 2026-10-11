@@ -601,6 +601,8 @@ const kotChangeJobSchema = new mongoose.Schema({
   diningArea:     { type: String, default: "" },
   tableName:      { type: String, default: "" },
   tableDisplayNo: { type: Number, default: null },
+  customerName:   { type: String, default: "" }, // paper slip only, like KOTJob — never the kitchen room
+  customerPhone:  { type: String, default: "" },
   status:      { type: String, enum: ["PENDING","PRINTING","PRINTED","FAILED","SKIPPED"], default: "PENDING" },
   printerId:   { type: mongoose.Schema.Types.ObjectId, ref: "PrinterDevice", default: null },
   attempts:    { type: Number, default: 0 },

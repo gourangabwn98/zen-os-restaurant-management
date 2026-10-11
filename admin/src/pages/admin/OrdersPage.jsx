@@ -327,15 +327,17 @@ const EditOrderItemsModal = ({ order, onClose, onSaved, onAddMore }) => {
         <div className="mh">
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="t" id="edit-items-title">{t("Edit order {id}", { id: order.orderId })}</div>
-            <div className="s">{isInKitchen(order) ? t("Already in the kitchen") : <SendCountdown order={order} />}</div>
+            <div className="s">{order.status === "DELIVERED" ? t("Already served") : isInKitchen(order) ? t("Already in the kitchen") : <SendCountdown order={order} />}</div>
           </div>
           <button type="button" className="zc-x" onClick={onClose} disabled={saving} aria-label={t("Close")}>✕</button>
         </div>
         <div className="mb" style={{ display: "grid", gap: 8 }}>
-          {isInKitchen(order) && (
+          {isSentEditable(order) && (
             <div role="note" style={{ padding: "10px 12px", borderRadius: 10, fontSize: 12.5, lineHeight: 1.45,
               border: "1px solid var(--wait-line)", background: "var(--wait-fill)", color: "var(--wait-ink)" }}>
-              {t("The kitchen is already making this order. When you save, a change slip prints in the kitchen with only what you changed, and stock is updated.")}
+              {order.status === "DELIVERED"
+                ? t("This order has been served. When you save, a change slip prints in the kitchen with only what you changed, and stock is updated. If you add items, the order goes back to Cooking for them.")
+                : t("The kitchen is already making this order. When you save, a change slip prints in the kitchen with only what you changed, and stock is updated.")}
             </div>
           )}
           {lines.map((l) => (
@@ -377,12 +379,21 @@ const canFollowUp = (o) => FOLLOW_UP_STATUSES.includes(o?.status)
   && !(o.status === "CONFIRMED" && !o.stockDeducted) && !isBillSettled(o);
 
 // Items can be edited while Placed (before the KOT) — and, in this admin app
-// (admin / manager), still while the kitchen is cooking it or it's ready, up
-// to Served. Then the server re-counts stock and prints a change slip that
-// lists only what changed (orderService.modifySentOrderTx).
-const SENT_EDITABLE_STATUSES = ["PREPARING", "READY"];
-const isInKitchen = (o) => SENT_EDITABLE_STATUSES.includes(o?.status) && !!o.stockDeducted;
-const canEditItems = (o) => (o?.status === "CONFIRMED" && !o.stockDeducted) || isInKitchen(o);
+// (admin / manager), still once the kitchen has it: Cooking, Ready or Served,
+// while the bill is open. Then the server re-counts stock and prints a change
+// slip that lists only what changed (orderService.modifySentOrderTx); items
+// added to a Ready / Served order send it back to Cooking (REOPEN_ON_ADD_FROM),
+// so it shows on the kitchen board again.
+const isInKitchen = (o) => ["PREPARING", "READY"].includes(o?.status) && !!o.stockDeducted;
+const SENT_EDITABLE_STATUSES = ["PREPARING", "READY", "DELIVERED"];
+const isSentEditable = (o) => SENT_EDITABLE_STATUSES.includes(o?.status) && !!o.stockDeducted && !isBillSettled(o);
+// Never once it's paid — the paid amount would no longer match ("Add items"
+// still works there, with a confirm that the difference is due).
+const canEditItems = (o) => o?.paymentStatus !== "PAID" && ((o?.status === "CONFIRMED" && !o.stockDeducted) || isSentEditable(o));
+// "Add items" on such an order — any type (Indoor / AC / Garden / Gazebo /
+// Takeaway / Online) — adds to the SAME order (same order no., one bill).
+const REOPENS_ON_ADD = ["READY", "DELIVERED"];
+const addsIntoSameOrder = isSentEditable;
 
 // ── OrderDetailModal — full history of one order (reference "Order detail") ───
 const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onCombinedBill, onPrint, onAddItems, onEditItems, onConfirm, onReject, onSettle, onReopenBill, actionBusy }) => {
@@ -475,7 +486,7 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
                 <div style={{ fontSize:12.5, fontWeight:700, color:"var(--live-ink)" }}>{t("Placed")}</div>
                 <div style={{ fontSize:11.5, color:T2, marginTop:2 }}><SendCountdown order={order} /></div>
               </div>
-              {onEditItems && (
+              {onEditItems && canEditItems(order) && (
                 <button type="button" className="zc-btn" disabled={actionBusy} onClick={()=>onEditItems(order)}>✎ {t("Edit items")}</button>
               )}
               <button type="button" className="zc-btn pri" disabled={actionBusy} onClick={()=>onStatusChange?.(order._id, "PREPARING")}>
@@ -484,16 +495,16 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
             </div>
           )}
 
-          {/* ── Cooking / Ready → still editable here until served ── */}
-          {isInKitchen(order) && onEditItems && (
+          {/* ── Cooking / Ready / Served → still editable here while the bill is open ── */}
+          {isSentEditable(order) && canEditItems(order) && onEditItems && (
             <div style={{
               display:"flex", gap:10, alignItems:"center", flexWrap:"wrap",
               padding:"12px 14px", marginBottom:18, borderRadius:12,
               border:"1px solid var(--wait-line)", background:"var(--wait-fill)",
             }}>
               <div style={{ flex:1, minWidth:160 }}>
-                <div style={{ fontSize:12.5, fontWeight:700, color:"var(--wait-ink)" }}>{t("In the kitchen — you can still change it")}</div>
-                <div style={{ fontSize:11.5, color:T2, marginTop:2 }}>{t("Until it's served. A change slip prints for the kitchen.")}</div>
+                <div style={{ fontSize:12.5, fontWeight:700, color:"var(--wait-ink)" }}>{order.status === "DELIVERED" ? t("Served — you can still change it") : t("In the kitchen — you can still change it")}</div>
+                <div style={{ fontSize:11.5, color:T2, marginTop:2 }}>{t("Until the bill is settled. A change slip prints for the kitchen.")}</div>
               </div>
               <button type="button" className="zc-btn" disabled={actionBusy} onClick={()=>onEditItems(order)}>✎ {t("Edit items")}</button>
             </div>
@@ -1311,9 +1322,13 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }
     if(!cart.length) return toast.error(t("Add at least one item"));
     try{
       setLoading(true);
-      if (order.status === "CONFIRMED") {
+      if (order.status === "CONFIRMED" || addsIntoSameOrder(order)) {
         // Placed → merge into its lines and save through the edit endpoint
         // (re-priced server-side; the KOT prints when it starts preparing).
+        // Cooking / Ready / Served → the same edit (orderService.modifySentOrderTx:
+        // stock re-counted, change slip with only the new items; Ready/Served
+        // go back to Cooking). `revision` makes a double click / retry fail
+        // instead of adding the items twice.
         // KH-12: merge only into a line with the same item AND add-ons.
         const merged = new Map((order.items || []).map((i) => {
           const ids = addonIdsOf(i);
@@ -1323,6 +1338,8 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }
           const ex = merged.get(c.key);
           merged.set(c.key, ex ? { ...ex, qty: ex.qty + c.qty } : { menuItemId: c.item._id, qty: c.qty, notes: "", ...(c.addonIds?.length && { addonIds: c.addonIds }) });
         }
+        // Already paid: say so — the total goes up and the difference is due.
+        if (isPaid && !window.confirm(t("{id} is already paid (₹{amount}). Adding items raises the total — collect the difference. Add them?", { id: order.orderId, amount: fmtNum(Math.round(order.total)) }))) return;
         const { data } = await modifyOrderItems(order._id, [...merged.values()], order.revision ?? 0);
         toast.success(`✓ ${tn(totalQty, "Added {n} item to order", "Added {n} items to order")}`);
         onItemsAdded(data);
@@ -1386,6 +1403,14 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }
               · <span style={{ color:isPaid?"var(--ready-ink)":"var(--wait-ink)", fontWeight:600 }}>
                   {isPaid?`✓ ${t("PAID")}`:`⏳ ${t("DUE")}`} ₹{fmtNum(Math.round(order.total))}
                 </span>
+            </span>
+            {/* Where the new items go — so nobody is surprised by a second order number. */}
+            <span style={{ fontSize:11.5, color:T3, marginTop:2 }}>
+              {REOPENS_ON_ADD.includes(order.status) && addsIntoSameOrder(order)
+                ? t("Adds to this order ({id}) · it goes back to Cooking for the new items · the kitchen gets only the new items", { id: order.orderId })
+                : order.status === "CONFIRMED" || addsIntoSameOrder(order)
+                ? t("Adds to this order ({id}) · the kitchen gets only the new items", { id: order.orderId })
+                : t("This order is {status} — new items go on a linked add-on order with its own KOT, same bill", { status: formatStatus(order.status) })}
             </span>
           </div>
 
@@ -2094,7 +2119,7 @@ const OrderCard = ({ order, idx, onStatusChange, onPaymentChange, onAddItems, on
       <div className="op-more">
         {canEditItems(order) && onEditItems && (
           <button type="button" className="zc-btn sm" disabled={busy} onClick={() => onEditItems(order)}
-            title={isInKitchen(order) ? t("Until it's served. A change slip prints for the kitchen.") : undefined}>✎ {t("Edit items")}</button>
+            title={isSentEditable(order) ? t("Until the bill is settled. A change slip prints for the kitchen.") : undefined}>✎ {t("Edit items")}</button>
         )}
         {canAddItems && onAddItems && (
           <button type="button" className="zc-btn sm" disabled={busy} onClick={() => onAddItems(order)}>＋ {t("Add items")}</button>
@@ -3275,7 +3300,8 @@ export default function OrdersPage() {
         />
       )}
 
-      {showEditItems && findOrder(showEditItems) && (
+      {/* closes by itself if the order gets paid meanwhile (canEditItems) */}
+      {showEditItems && findOrder(showEditItems) && canEditItems(findOrder(showEditItems)) && (
         <EditOrderItemsModal
           order={findOrder(showEditItems)}
           onClose={() => setShowEditItems(null)}

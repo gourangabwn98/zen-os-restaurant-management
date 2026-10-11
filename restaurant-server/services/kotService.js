@@ -156,6 +156,8 @@ export const createKotChangeJob = async ({ KOTChangeJob, before, after, actor, s
         notes: `${CHANGE_NOTE} Changed by ${actor?.name || "admin"}.`,
         diningArea: after.diningArea || "",
         tableName: after.tableName || "", tableDisplayNo: after.tableDisplayNo ?? null,
+        // Same rule as the first KOT (typed guest name/phone; no account lookup here).
+        customerName: kotCustomerName(after), customerPhone: kotCustomerPhone(after),
         createdBy: actor,
       }],
       { session },

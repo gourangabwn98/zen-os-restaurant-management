@@ -430,7 +430,8 @@ export const kotChangePrintPayload = (job) => ({
   jobId: String(job._id), jobType: "KOT", changed: true,
   orderId: job.orderId, tableNo: job.tableNo, orderType: job.orderType,
   items: job.items, notes: job.notes || "", attempts: job.attempts || 0, priority: "URGENT",
-  customerName: "", diningArea: job.diningArea || "",
+  customerName: job.customerName || "", customerPhone: job.customerPhone || "", // paper slip only
+  diningArea: job.diningArea || "",
   tableName: job.tableName || "", tableDisplayNo: job.tableDisplayNo ?? null,
   createdAt: job.createdAt,
 });

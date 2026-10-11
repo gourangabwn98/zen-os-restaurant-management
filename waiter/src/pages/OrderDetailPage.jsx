@@ -39,6 +39,13 @@ const STAGES = ["CONFIRMED", "PREPARING", "READY", "DELIVERED", "COMPLETED"];
 // Bill can be settled once the order is accepted (server: billingService.SETTLEABLE).
 const SETTLEABLE = ["CONFIRMED", "PREPARING", "READY", "DELIVERED"];
 const billSettled = (o) => (o.billStatus ? o.billStatus === "SETTLED" : o.status === "COMPLETED");
+// The kitchen already has it (Cooking / Ready / Served) and the bill is open:
+// items are still added to / edited on THIS order (server:
+// orderService.modifySentOrderTx — change slip; items added to a Ready /
+// Served order send it back to Cooking, REOPEN_ON_ADD_FROM).
+const SENT_EDITABLE = ["PREPARING", "READY", "DELIVERED"];
+const REOPENS_ON_ADD = ["READY", "DELIVERED"];
+const sentEditable = (o) => !!o && SENT_EDITABLE.includes(o.status) && !!o.stockDeducted && !billSettled(o);
 
 const PAYMENT_LABEL = { PENDING_VERIFICATION: N_("Pending verification"), PAID: N_("Paid"), FAILED: N_("Failed") };
 const paymentColor = (s) => (s === "PAID" ? GREEN : s === "FAILED" ? RED : AMBER);
@@ -97,6 +104,8 @@ export default function OrderDetailPage() {
   }, [id, loadBillGroup]);
 
   useEffect(() => { load(); const iv = setInterval(load, 10000); return () => clearInterval(iv); }, [load]);
+  // Paid meanwhile → stop the item edit (it would no longer match the payment).
+  useEffect(() => { if (order?.paymentStatus === "PAID") setEditLines(null); }, [order?.paymentStatus]);
 
   const handleConfirm = async () => {
     setBusy(true);
@@ -197,7 +206,12 @@ export default function OrderDetailPage() {
     if (items.length === 0) return toast.error(t("Pick at least one item"));
     setBusy(true);
     try {
-      if ((order.status === "CONFIRMED" || order.status === "PENDING_CONFIRMATION") && !order.stockDeducted) {
+      if (((order.status === "CONFIRMED" || order.status === "PENDING_CONFIRMATION") && !order.stockDeducted) || sentEditable(order)) {
+        // Held → plain edit. Cooking / Ready / Served → the same edit, SAME
+        // order no.: the server re-counts stock and prints a slip with only the
+        // new items; Ready / Served go back to Cooking (orderService.modifySentOrderTx).
+        // `revision` makes a double tap / retry fail instead of adding twice.
+        if (order.paymentStatus === "PAID" && !window.confirm(t("{id} is already paid (₹{amount}). Adding items raises the total — collect the difference. Add them?", { id: order.orderId, amount: order.total }))) return;
         // KH-12: merge only into a line with the same item AND add-ons.
         const merged = new Map((order.items || []).map((it) => {
           const ids = addonIdsOf(it);
@@ -209,7 +223,7 @@ export default function OrderDetailPage() {
           merged.set(k, ex ? { ...ex, qty: ex.qty + it.qty } : { ...it, notes: "" });
         }
         await modifyOrderItems(id, [...merged.values()], order.revision ?? 0);
-        toast.success(t("Items added"));
+        toast.success(sentEditable(order) ? t("Items added to {id} — the kitchen gets only the new items", { id: order.orderId }) : t("Items added"));
       } else {
         // KH-07: after the KOT → a follow-up order on a NEW KOT, billed
         // together with this one. Table / type / customer come from this order.
@@ -281,9 +295,14 @@ export default function OrderDetailPage() {
   // or Placed — i.e. before its KOT prints.
   const isPlaced = order.status === "CONFIRMED" && !order.stockDeducted;
   const isHeld = (isPending || order.status === "CONFIRMED") && !order.stockDeducted;
-  // KH-07: after the KOT, "Add items" places a follow-up order (new KOT).
-  const canFollowUp = !isHeld && SETTLEABLE.includes(order.status) && !settled;
-  const canAddItems = isHeld || canFollowUp;
+  // After the KOT (Cooking / Ready / Served, bill open): items are added to /
+  // edited on THIS order (same order no.). Anything else running → the
+  // KH-07 follow-up order as before.
+  const inKitchenEditable = sentEditable(order);
+  const canFollowUp = !isHeld && !inKitchenEditable && SETTLEABLE.includes(order.status) && !settled;
+  const canAddItems = isHeld || inKitchenEditable || canFollowUp;
+  // Never once paid — the paid amount would no longer match.
+  const canEditItems = (isHeld || inKitchenEditable) && order.paymentStatus !== "PAID";
   const combined = !!billGroup && billGroup.orders.length > 1;
   const stageIdx = STAGES.indexOf(order.status);
 
@@ -412,17 +431,18 @@ export default function OrderDetailPage() {
           </div>
         )}
 
-        {isHeld && (
-          <>
-            {isPlaced && (
-              <div style={{ fontSize: 12.5, color: order.sendError ? RED : AMBER, textAlign: "center" }}>
-                <SendCountdown order={order} />
-              </div>
-            )}
-            {!editLines && (
-              <PrimaryButton disabled={busy} variant="outline" onClick={startEdit}>✎ {t("Change quantities")}</PrimaryButton>
-            )}
-          </>
+        {isPlaced && (
+          <div style={{ fontSize: 12.5, color: order.sendError ? RED : AMBER, textAlign: "center" }}>
+            <SendCountdown order={order} />
+          </div>
+        )}
+        {canEditItems && !editLines && (
+          <PrimaryButton disabled={busy} variant="outline" onClick={startEdit}>✎ {t("Edit items")}</PrimaryButton>
+        )}
+        {editLines && inKitchenEditable && (
+          <div style={{ fontSize: 11.5, color: AMBER, textAlign: "center" }}>
+            {t("The kitchen already has this order — saving prints a slip with only what you changed.")}
+          </div>
         )}
 
         {canAdvance && (
@@ -433,6 +453,13 @@ export default function OrderDetailPage() {
 
         {canAddItems && (
           <PrimaryButton disabled={busy} onClick={openAddItems} variant="outline">+ {t("Add items")}</PrimaryButton>
+        )}
+        {inKitchenEditable && (
+          <div style={{ fontSize: 11.5, color: TEXT_FAINT, textAlign: "center", marginTop: -4 }}>
+            {REOPENS_ON_ADD.includes(order.status)
+              ? t("Added items go to this order ({id}) — it goes back to Cooking for them.", { id: order.orderId })
+              : t("Added items go to this order ({id}) — the kitchen gets only the new items.", { id: order.orderId })}
+          </div>
         )}
         {canFollowUp && (
           <div style={{ fontSize: 11.5, color: TEXT_FAINT, textAlign: "center", marginTop: -4 }}>

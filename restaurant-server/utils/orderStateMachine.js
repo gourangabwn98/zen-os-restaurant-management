@@ -79,6 +79,16 @@ export const effectiveBillStatus = (order) =>
 // Waiters/chefs/customers never complete by hand — a waiter settles the bill.
 export const ADMIN_COMPLETE_FROM = ["PREPARING", "READY", "DELIVERED"];
 
+// Admin / manager ADDS items to an order the kitchen has already finished
+// (Ready or Served) — same order number, one bill (orderService.modifySentOrderTx).
+// Status is per order, so the order goes back to PREPARING for the new items:
+// the Kitchen app lists only PREPARING/READY (a Served order is off its
+// board), and the cook marks it Ready again → Served. Not a manual
+// transition (not in TRANSITIONS) — only that item edit may do it, in the
+// same atomic write as the items, stock and change slip.
+export const REOPEN_ON_ADD_FROM = ["READY", "DELIVERED"];
+if (!REOPEN_ON_ADD_FROM.every((s) => ORDER_STATUSES.includes(s))) throw new Error("orderStateMachine: unknown REOPEN_ON_ADD_FROM status");
+
 export const ORDER_SOURCES = ["CUSTOMER", "WAITER", "ADMIN"];
 export const ORDER_TYPES   = ["DINE_IN", "TAKEAWAY", "ONLINE"];
 

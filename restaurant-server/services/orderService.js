@@ -10,8 +10,8 @@
 import { priceOrder, priceItems, computeTotals } from "../utils/pricing.js";
 import { resolveCouponForOrder } from "./couponService.js";
 import { getScheduleContext } from "./menuScheduleService.js";
-import { normalizeOrderType, assertValidTransition, effectiveBillStatus, requiresPaidForTransition, ORDER_STATUSES } from "../utils/orderStateMachine.js";
-import { createKotJobForOrder, createKotChangeJob, kotCustomerName, kotCustomerPhone } from "./kotService.js";
+import { normalizeOrderType, assertValidTransition, effectiveBillStatus, requiresPaidForTransition, ORDER_STATUSES, REOPEN_ON_ADD_FROM } from "../utils/orderStateMachine.js";
+import { createKotJobForOrder, createKotChangeJob, diffOrderLines, kotCustomerName, kotCustomerPhone } from "./kotService.js";
 import { normalizeDiningArea, tableDisplayNo, tableDisplayName, DINING_AREA_AC_ROOM } from "../utils/diningArea.js";
 import { parseGuests, acChargeForNewOrder } from "./acServiceCharge.js";
 import { findOrOpenTableSession, closeTableSession } from "./tableSessionService.js";
@@ -544,10 +544,22 @@ export const autoSendDueOrders = async ({ models, db, now = new Date(), onSent, 
 // ── Edit an order while it is still editable ───────────────────────────────
 // ORD-01 — held orders: awaiting acceptance, or Placed before its KOT fires.
 export const EDITABLE_STATUSES = ["PENDING_CONFIRMATION", "CONFIRMED"];
-// Admin / manager only: the kitchen already has it, but it isn't served yet.
-export const SENT_EDITABLE_STATUSES = ["PREPARING", "READY"];
+// Staff (admin / manager / waiter): the kitchen already has it — cooking,
+// ready or served — and the bill is still open. Items added to a Ready / Served order
+// send it back to Cooking for them (REOPEN_ON_ADD_FROM).
+export const SENT_EDITABLE_STATUSES = ["PREPARING", "READY", "DELIVERED"];
 
 const editError = (message, statusCode) => Object.assign(new Error(message), { statusCode });
+
+// paymentService sets payment.state PENDING + lastCheckedAt when a PhonePe
+// attempt starts, and re-stamps lastCheckedAt on every status check.
+const PAYMENT_IN_PROGRESS_MS = 15 * 60 * 1000;
+export const isOnlinePaymentInProgress = (order, now = Date.now()) => {
+  const p = order?.payment;
+  if (order?.paymentStatus === "PAID" || p?.provider !== "PHONEPE" || p?.state !== "PENDING") return false;
+  const last = p.lastCheckedAt ? new Date(p.lastCheckedAt).getTime() : 0;
+  return now - last < PAYMENT_IN_PROGRESS_MS;
+};
 
 const validateEditPayload = ({ items, revision }) => {
   if (!Number.isInteger(revision)) throw editError("revision is required", 400);
@@ -571,8 +583,9 @@ const couponDroppedNote = (order, discount) => (order.coupon && order.discount >
   : "");
 
 /**
- * An admin / manager changes an order the kitchen already has (PREPARING or
- * READY — never once served). ONE transaction, like sendToKitchenTx:
+ * Staff (admin / manager / waiter) change an order the kitchen already has
+ * (PREPARING, READY or DELIVERED, bill open; added items send a Ready/Served
+ * order back to PREPARING). ONE transaction, like sendToKitchenTx:
  *   1. the item/total write — conditional on status, stock state and the
  *      optimistic `revision`, so two editors can't both win;
  *   2. stock: what the old items took goes back, the new items are deducted
@@ -592,12 +605,18 @@ const modifySentOrderTx = async ({ req, order, items, revision }) => {
   const want = qtyBy(items, (i) => i.menuItemId);
   const keepIds = new Set([...want].filter(([id, q]) => q <= (had.get(id) || 0)).map(([id]) => id));
 
+  if (effectiveBillStatus(order) === "SETTLED") throw editError("This bill is already settled — place a new order instead", 409);
+
   const { dbItems, subtotal, tax, serviceCharge, discount, total } = await priceOrder({
     items, MenuItem, restaurantProfile: restaurant, scheduleCtx, coupon: order.coupon, acServiceCharge: order.acServiceCharge, keepIds,
   });
 
   const actor = buildActor(req.user);
-  const note = `${changeNote(order, actor, total)} (kitchen already had it — change slip sent)${couponDroppedNote(order, discount)}`;
+  // Ready / Served and something was added → back to Cooking for the new
+  // items (same order no.); the cook marks it Ready again, then Served.
+  const reopen = REOPEN_ON_ADD_FROM.includes(order.status) && diffOrderLines(order.items, dbItems).added.length > 0;
+  const nextStatus = reopen ? "PREPARING" : order.status;
+  const note = `${changeNote(order, actor, total)} (kitchen already had it — change slip sent)${reopen ? " — back to Cooking for the added items" : ""}${couponDroppedNote(order, discount)}`;
 
   const session = await req.db.startSession();
   let updated, kotChange, inventoryAlerts = [];
@@ -609,16 +628,19 @@ const modifySentOrderTx = async ({ req, order, items, revision }) => {
           revision: revision === 0 ? { $in: [0, null] } : revision,
         },
         {
-          $set: { items: dbItems, subtotal, tax, serviceCharge, discount, total },
+          $set: {
+            items: dbItems, subtotal, tax, serviceCharge, discount, total,
+            ...(reopen && { status: nextStatus, preparingAt: new Date() }), // kitchen timer counts the new items
+          },
           $inc: { revision: 1 },
-          $push: { statusHistory: { status: order.status, changedBy: actor, changedAt: new Date(), note } },
+          $push: { statusHistory: { status: nextStatus, changedBy: actor, changedAt: new Date(), note } },
         },
         { returnDocument: "after", session },
       );
       if (!updated) {
         const fresh = await Order.findById(order._id).select("status revision").session(session);
         throw editError(!SENT_EDITABLE_STATUSES.includes(fresh?.status)
-          ? "This order has just been served or cancelled and can't be changed"
+          ? "This order has just been completed or cancelled and can't be changed"
           : "Someone else changed this order a moment ago — please review it and try again", 409);
       }
       const stock = await restockEditedOrder({ models: req.models, before: order, after: updated, actor, session });
@@ -679,9 +701,18 @@ export const modifyOrderItemsTx = async ({ req, orderId, items, revision }) => {
 
   validateEditPayload({ items, revision });
 
-  // Admin / manager: also while the kitchen has it (cooking or ready, until
-  // served) — stock is re-counted and the kitchen gets a change slip.
-  if (SENT_EDITABLE_STATUSES.includes(order.status) && order.stockDeducted && isManagementRole(role)) {
+  // A PhonePe payment started for the current total and still running
+  // (PENDING, checked in the last few minutes): changing the items now would
+  // make the paid amount not match the order. An abandoned attempt stops
+  // blocking once nobody has checked it for PAYMENT_IN_PROGRESS_MS.
+  if (isOnlinePaymentInProgress(order)) {
+    throw editError("An online payment for this order is in progress — wait for it to finish, then add items", 409);
+  }
+
+  // Staff (admin / manager / waiter): also once the kitchen has it (cooking,
+  // ready or served, bill open) — stock is re-counted and the kitchen gets a
+  // change slip. A chef was refused above; customers never get here.
+  if (SENT_EDITABLE_STATUSES.includes(order.status) && order.stockDeducted && isStaff) {
     return modifySentOrderTx({ req, order, items, revision });
   }
 

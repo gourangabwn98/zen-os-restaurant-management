@@ -68,11 +68,15 @@ system for any role.** Every app above authenticates against the same
    until a waiter/admin accepts them (`confirmOrderTx` → `CONFIRMED`). A
    Placed order is editable by anyone allowed (`orderService.modifyOrderItemsTx`
    — server re-prices, optimistic `revision`). Once `stockDeducted`, only an
-   admin/manager may still edit, and only while `PREPARING`/`READY` (never
-   once served): `modifySentOrderTx` re-prices, gives back the old
+   staff (admin/manager/waiter — never a chef or customer) may still edit, and
+   only while `PREPARING`/`READY`/`DELIVERED` and the bill is open:
+   `modifySentOrderTx` re-prices, gives back the old
    `stockDeductions` and deducts the new items (`inventoryService.restockEditedOrder`),
    and creates a `KOTChangeJob` change slip listing only the differences —
-   all in one transaction.
+   all in one transaction. Items added to a `READY`/`DELIVERED` order move it
+   back to `PREPARING` in that same write (`REOPEN_ON_ADD_FROM`; status is
+   per order and the Kitchen app only lists PREPARING/READY) — same order
+   number, not a new order. This is not a manual transition.
    At `autoPrepareAt` (`RestaurantProfile.editWindowMinutes`, default 3) the
    timer (role `system`) — or "Start preparing" by staff/chef — runs
    `orderService.sendToKitchenTx`: `CONFIRMED → PREPARING` with the stock

@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret";
 delete process.env.PHONEPE_MERCHANT_ID;
 
-const { modifyOrderItemsTx } = await import("../services/orderService.js");
+const { modifyOrderItemsTx, isOnlinePaymentInProgress } = await import("../services/orderService.js");
 const { diffOrderLines, createKotChangeJob, CANCEL_PREFIX } = await import("../services/kotService.js");
 const { kotChangePrintPayload } = await import("../sockets/socket.js");
 
@@ -47,14 +47,15 @@ const matches = (doc, f) => Object.entries(f).every(([k, c]) => {
   return String(v) === String(c);
 });
 
-const makeWorld = ({ status = "PREPARING", items = [line("biryani", 2), line("tea", 2)], stock = { rice: 10, milk: 10 }, paid = false } = {}) => {
+const makeWorld = ({ status = "PREPARING", items = [line("biryani", 2), line("tea", 2)], stock = { rice: 10, milk: 10 }, paid = false, orderType = "DINE_IN", extra = {} } = {}) => {
   let state = {
     orders: [{
-      _id: "o1", orderId: "ORD1", status, tableNo: 4, orderType: "DINE_IN", items, revision: 3,
+      _id: "o1", orderId: "ORD1", status, tableNo: orderType === "DINE_IN" ? 4 : null, orderType, items, revision: 3,
       subtotal: 0, total: items.reduce((s, i) => s + i.price * i.qty, 0), paymentStatus: paid ? "PAID" : "PENDING_VERIFICATION",
       stockDeducted: true, stockReversed: false,
       stockDeductions: [{ inventoryItem: "rice", qty: 2 }, { inventoryItem: "milk", qty: 2 }],
       statusHistory: [],
+      ...extra,
     }],
     stock: { ...stock },
     ledger: [],
@@ -152,20 +153,172 @@ await test("admin edits a cooking order: new totals, stock follows the final ord
   assert.match(w.order().statusHistory.at(-1).note, /change slip sent/);
 });
 
-await test("a manager can do it too (READY); a waiter still can't once the kitchen has it", async () => {
+await test("a manager can do it too (READY); so can a waiter (same order, change slip); a chef can't", async () => {
   const w = makeWorld({ status: "READY" });
   await w.edit(MANAGER, items(["biryani", 2]));
   assert.deepEqual(w.state.stock, { rice: 10, milk: 12 }, "tea's milk given back");
   const w2 = makeWorld();
-  await assert.rejects(w2.edit(WAITER, items(["biryani", 1])), (e) => e.statusCode === 409);
-  assert.equal(w2.state.slips.length, 0);
+  const { order } = await w2.edit(WAITER, items(["biryani", 1], ["tea", 2]));
+  assert.equal(order.orderId, "ORD1");
+  assert.equal(order.total, 240);
+  assert.equal(w2.state.slips.length, 1);
+  assert.equal(w2.state.slips[0].notes.includes("Sam"), true, "slip says which waiter changed it");
+  const w3 = makeWorld();
+  await assert.rejects(w3.edit({ _id: "c1", name: "Cook", role: "chef" }, items(["biryani", 1])), (e) => e.statusCode === 403);
+  assert.equal(w3.state.slips.length, 0);
 });
 
-await test("served / completed orders can't be edited by anyone", async () => {
-  for (const status of ["DELIVERED", "COMPLETED", "CANCELLED"]) {
+await test("takeaway: an admin/manager edit while cooking or ready keeps the same order, re-priced, only the new items on the slip, no double-add", async () => {
+  for (const [user, status] of [[ADMIN, "PREPARING"], [MANAGER, "READY"]]) {
+    const w = makeWorld({ status, orderType: "TAKEAWAY", paid: true });
+    // What the admin app sends: the order's lines with the new ones merged in.
+    const merged = items(["biryani", 2], ["tea", 3], ["raita", 1]);
+    const { order, kotChange } = await w.edit(user, merged);
+    assert.equal(w.state.orders.length, 1, "no new order");
+    assert.equal(order._id, "o1");
+    assert.equal(order.orderId, "ORD1", "same order number");
+    assert.equal(order.orderType, "TAKEAWAY");
+    assert.equal(order.total, 490, "2×200 + 3×20 + 1×30");
+    assert.equal(order.status, "PREPARING", "cooking (again, if it was Ready) — the new items need making");
+    assert.equal(order.paymentStatus, "PAID", "payment untouched");
+    assert.match(w.order().statusHistory.at(-1).note, /after payment — paid ₹440, new total ₹490/, "a paid order notes the new total");
+    assert.deepEqual(order.items.map((l) => [l.name, l.qty]), [["Biryani", 2], ["Tea", 3], ["Raita", 1]]);
+    assert.equal(kotChange.created, true);
+    assert.deepEqual(w.state.slips[0].items.map((l) => [l.name, l.qty]), [["Tea", 1], ["Raita", 1]], "kitchen sees only what was added");
+    // A double click / retry sends the same revision again → refused, nothing added twice.
+    await assert.rejects(w.edit(user, merged), (e) => e.statusCode === 409);
+    assert.equal(w.order().total, 490);
+    assert.equal(w.state.slips.length, 1);
+    assert.equal(w.state.orders.length, 1);
+  }
+});
+
+await test("adding to a cooking order in every area: same order, only the new items on the slip, with type/area/table/customer", async () => {
+  const cases = [
+    { orderType: "DINE_IN", extra: { diningArea: "", tableName: "Indoor 2", tableDisplayNo: 2, tableNo: 20 } },
+    { orderType: "DINE_IN", extra: { diningArea: "AC_ROOM", tableName: "Indoor-AC 2", tableDisplayNo: 2, tableNo: 23, guests: 4, acServiceCharge: 80 } },
+    { orderType: "DINE_IN", extra: { diningArea: "GARDEN", tableName: "Garden 1", tableDisplayNo: 1, tableNo: 30 } },
+    { orderType: "DINE_IN", extra: { diningArea: "GAZEBO", tableName: "Gazebo 3", tableDisplayNo: 3, tableNo: 33 } },
+    { orderType: "TAKEAWAY", extra: {} },
+    { orderType: "ONLINE", extra: {} },
+  ];
+  for (const c of cases) {
+    const label = `${c.orderType} ${c.extra.diningArea ?? ""}`;
+    const w = makeWorld({ orderType: c.orderType, extra: { ...c.extra, guestName: "Rahul", guestPhone: "9876543210", createdAt: "2026-10-11T10:00:00Z" } });
+    const { order, kotChange } = await w.edit(MANAGER, items(["biryani", 2], ["tea", 2], ["raita", 2]));
+    assert.equal(w.state.orders.length, 1, label);
+    assert.equal(order.orderId, "ORD1", label);
+    assert.equal(order.status, "PREPARING", `${label}: not reset`);
+    assert.equal(order.paymentStatus, "PENDING_VERIFICATION", `${label}: still unpaid`);
+    assert.equal(order.createdAt, "2026-10-11T10:00:00Z", label);
+    assert.equal(order.guestPhone, "9876543210", label);
+    const ac = c.extra.acServiceCharge || 0;
+    assert.equal(order.total, 440 + 60 + ac, `${label}: items + AC charge kept`);
+    const slip = w.state.slips[0];
+    assert.equal(kotChange.created, true, label);
+    assert.deepEqual(slip.items.map((l) => [l.name, l.qty]), [["Raita", 2]], `${label}: only the new items`);
+    assert.equal(slip.orderId, "ORD1");
+    assert.equal(slip.orderType, c.orderType);
+    assert.equal(slip.diningArea, c.extra.diningArea || "");
+    assert.equal(slip.tableDisplayNo, c.extra.tableDisplayNo ?? null);
+    const paper = kotChangePrintPayload(slip);
+    assert.equal(paper.customerName, "Rahul", label);
+    assert.equal(paper.customerPhone, "9876543210", label);
+    assert.equal(paper.changed, true);
+    assert.equal(paper.jobType, "KOT", "existing print contract — a KOT job");
+  }
+});
+
+await test("two add-item saves at once (same revision): one wins, the other is refused — nothing lost or doubled", async () => {
+  const w = makeWorld();
+  const results = await Promise.allSettled([
+    w.edit(ADMIN, items(["biryani", 2], ["tea", 2], ["raita", 1])),
+    w.edit(MANAGER, items(["biryani", 3], ["tea", 2])),
+  ]);
+  assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+  assert.equal(results.filter((r) => r.status === "rejected" && r.reason.statusCode === 409).length, 1);
+  assert.equal(w.order().revision, 4);
+  assert.equal(w.state.slips.length, 1, "one slip");
+  assert.equal(w.state.orders.length, 1);
+});
+
+await test("online payment in progress → no item change; an abandoned attempt stops blocking", async () => {
+  const fresh = { provider: "PHONEPE", merchantTransactionId: "T1", state: "PENDING", lastCheckedAt: new Date().toISOString() };
+  const w = makeWorld({ extra: { payment: fresh } });
+  await assert.rejects(w.edit(ADMIN, items(["biryani", 2], ["tea", 2], ["raita", 1])), (e) => e.statusCode === 409 && /payment .* in progress/.test(e.message));
+  assert.equal(w.order().revision, 3);
+  assert.equal(w.state.slips.length, 0);
+  const old = { ...fresh, lastCheckedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString() };
+  const w2 = makeWorld({ extra: { payment: old } });
+  await w2.edit(ADMIN, items(["biryani", 2], ["tea", 2], ["raita", 1]));
+  assert.equal(w2.order().revision, 4);
+  assert.equal(isOnlinePaymentInProgress({ paymentStatus: "PAID", payment: fresh }), false, "paid → not in progress");
+  assert.equal(isOnlinePaymentInProgress({ payment: { ...fresh, state: "FAILED" } }), false);
+  assert.equal(isOnlinePaymentInProgress({ payment: { provider: "NONE", state: "CREATED" } }), false, "default record → not in progress");
+});
+
+await test("completed / cancelled orders can't be edited by anyone", async () => {
+  for (const status of ["COMPLETED", "CANCELLED"]) {
     const w = makeWorld({ status });
     await assert.rejects(w.edit(ADMIN, items(["biryani", 1])), (e) => e.statusCode === 409, status);
   }
+});
+
+await test("Edit items on a served order (admin/manager): reduce / remove → stays Served, stock back, CANCEL slip; add → back to Cooking", async () => {
+  const w = makeWorld({ status: "DELIVERED" });
+  const { order } = await w.edit(MANAGER, items(["biryani", 1]));
+  assert.equal(order.orderId, "ORD1");
+  assert.equal(order.status, "DELIVERED", "nothing new to cook → stays Served");
+  assert.equal(order.total, 200);
+  assert.deepEqual(w.state.stock, { rice: 11, milk: 12 }, "1 biryani + 2 tea given back");
+  assert.deepEqual(w.state.slips[0].items.map((l) => [l.name, l.qty]), [[`${CANCEL_PREFIX}Biryani`, 1], [`${CANCEL_PREFIX}Tea`, 2]]);
+  const w2 = makeWorld({ status: "DELIVERED" });
+  const r2 = await w2.edit(ADMIN, items(["biryani", 1], ["raita", 2]));
+  assert.equal(r2.order.status, "PREPARING", "something added → cooking again");
+  assert.deepEqual(w2.state.slips[0].items.map((l) => [l.name, l.qty]), [["Raita", 2], [`${CANCEL_PREFIX}Biryani`, 1], [`${CANCEL_PREFIX}Tea`, 2]]);
+});
+
+await test("Placed / Cooking / Ready / Served: adding items always keeps the same order number", async () => {
+  // Placed (not yet in the kitchen): the ordinary edit — no slip, the KOT prints later with everything.
+  const placed = makeWorld({ status: "CONFIRMED", extra: { stockDeducted: false, stockDeductions: [] } });
+  const p = await placed.edit(WAITER, items(["biryani", 2], ["tea", 2], ["raita", 1]));
+  assert.equal(p.order.orderId, "ORD1");
+  assert.equal(p.order.status, "CONFIRMED", "Placed stays Placed");
+  assert.equal(placed.state.slips.length, 0);
+
+  for (const [status, after] of [["PREPARING", "PREPARING"], ["READY", "PREPARING"], ["DELIVERED", "PREPARING"]]) {
+    const w = makeWorld({ status, extra: { preparingAt: "2026-10-11T10:00:00Z" } });
+    const { order } = await w.edit(ADMIN, items(["biryani", 2], ["tea", 2], ["raita", 1]));
+    assert.equal(w.state.orders.length, 1, status);
+    assert.equal(order.orderId, "ORD1", status);
+    assert.equal(order.status, after, `${status} → ${after}`);
+    assert.equal(order.total, 470, status);
+    assert.equal(order.paymentStatus, "PENDING_VERIFICATION", `${status}: still unpaid`);
+    assert.deepEqual(w.state.slips[0].items.map((l) => [l.name, l.qty]), [["Raita", 1]], `${status}: slip has only the new item`);
+    const last = w.order().statusHistory.at(-1);
+    assert.equal(last.status, after);
+    if (status !== "PREPARING") {
+      assert.match(last.note, /back to Cooking for the added items/, status);
+      assert.notEqual(order.preparingAt, "2026-10-11T10:00:00Z", "kitchen timer restarts for the new items");
+    } else {
+      assert.equal(order.preparingAt, "2026-10-11T10:00:00Z", "already cooking — timer untouched");
+    }
+  }
+});
+
+await test("Ready order edited without adding anything stays Ready; a settled bill can't be changed; a waiter adds to a served order → same order, back to Cooking", async () => {
+  const w = makeWorld({ status: "READY" });
+  const { order } = await w.edit(MANAGER, items(["biryani", 2]));
+  assert.equal(order.status, "READY", "only removed → nothing new to cook");
+  const settled = makeWorld({ status: "DELIVERED", extra: { billStatus: "SETTLED" } });
+  await assert.rejects(settled.edit(ADMIN, items(["biryani", 2], ["tea", 2], ["raita", 1])), (e) => e.statusCode === 409 && /settled/.test(e.message));
+  const served = makeWorld({ status: "DELIVERED" });
+  const r = await served.edit(WAITER, items(["biryani", 2], ["tea", 2], ["raita", 1]));
+  assert.equal(r.order.orderId, "ORD1");
+  assert.equal(r.order.status, "PREPARING");
+  assert.deepEqual(served.state.slips[0].items.map((l) => [l.name, l.qty]), [["Raita", 1]]);
+  const settledW = makeWorld({ status: "READY", extra: { billStatus: "SETTLED" } });
+  await assert.rejects(settledW.edit(WAITER, items(["biryani", 2], ["tea", 2], ["raita", 1])), (e) => e.statusCode === 409 && /settled/.test(e.message));
 });
 
 await test("not enough stock for an added item → nothing changes (rolled back)", async () => {
