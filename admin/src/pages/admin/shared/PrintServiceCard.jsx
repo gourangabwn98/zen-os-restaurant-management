@@ -6,7 +6,7 @@
 // status is shown, and stale waiting jobs can be dropped before a printer
 // connects (otherwise it would print hours-old tickets all at once).
 //   GET  /admin/printer/status · GET/POST/DELETE /admin/printer/devices
-//   POST /admin/printer/skip-stale
+//   POST /admin/printer/skip-stale  (also { all: true } — "Clear print queue")
 import { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import api from "../../../services/api.js";
@@ -75,6 +75,16 @@ export default function PrintServiceCard({ backendUrl }) {
     } catch (e) { toast.error(e?.response?.data?.message || t("Failed")); }
     finally { setBusy(false); }
   };
+  const clearQueue = async () => {
+    if (!window.confirm(t("Remove every waiting KOT and bill from the print queue? They will not print."))) return;
+    setBusy(true);
+    try {
+      const { data } = await api.post("/admin/printer/skip-stale", { all: true });
+      toast.success(t("Dropped {k} KOTs and {b} bills", { k: fmtNum(data.kot), b: fmtNum(data.bill) }));
+      load();
+    } catch (e) { toast.error(e?.response?.data?.message || t("Failed")); }
+    finally { setBusy(false); }
+  };
   const copy = (text) => { navigator.clipboard?.writeText(text); toast.success(t("Copied")); };
   const envText = newKey ? `BACKEND_URL=${backendUrl}\nPRINTER_KEY=${newKey.key}` : "";
 
@@ -102,6 +112,7 @@ export default function PrintServiceCard({ backendUrl }) {
             <span>{t("Waiting")}: <b style={{ color: waiting ? "var(--wait-ink)" : "var(--text-1)" }}>{t("{k} KOT · {b} bill", { k: fmtNum(status.kot.pending + status.kot.failed), b: fmtNum(status.bill.pending + status.bill.failed) })}</b></span>
             <span>{t("Printed today")}: <b style={{ color: "var(--text-1)" }}>{t("{k} KOT · {b} bill", { k: fmtNum(status.kot.printedToday), b: fmtNum(status.bill.printedToday) })}</b></span>
             {waiting > 0 && status.oldestWaitingAt && <span>{t("Oldest waiting: {when}", { when: ago(status.oldestWaitingAt) })}</span>}
+            {waiting > 0 && <button type="button" className="zc-btn sm danger" disabled={busy} onClick={clearQueue}>{t("Clear print queue")}</button>}
           </div>
         )}
         {waiting > 0 && oldMin >= 60 && (

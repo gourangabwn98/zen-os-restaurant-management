@@ -49,6 +49,7 @@ async function main() {
     (jobId, jobType, status, error) => socketClient.reportStatus(jobId, jobType, status, error),
     {
       maxAttempts: config.maxAttempts,
+      maxJobAgeMinutes: config.maxJobAgeMinutes,
       retryBaseDelayMs: config.retryBaseDelayMs,
       profileProvider,
       // Bengali / Hindi / any non-Latin text: printed as images (Windows font).

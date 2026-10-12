@@ -48,6 +48,19 @@ const setup = ({ kotOnline = true, billOnline = true } = {}) => {
 const run = async () => {
   console.log("── End-to-end print flow simulation ───────────────────────");
 
+  await test("a job older than maxJobAgeMinutes is dropped, not printed; a recent one prints", async () => {
+    const { manager, queue, backend, kotDriver } = setup();
+    const processor = new Processor(queue, manager, backend.reportStatus, { maxAttempts: 3, maxJobAgeMinutes: 30 });
+    const old = new Date(Date.now() - 31 * 60000).toISOString();
+    await processor.ingest({ jobId: "kot-old", jobType: "KOT", orderId: "ORD1", items: [], createdAt: old });
+    await processor.ingest({ jobId: "kot-new", jobType: "KOT", orderId: "ORD2", items: [], createdAt: new Date().toISOString() });
+    assert.equal(queue.get("kot-old").status, "SKIPPED");
+    assert.equal(queue.get("kot-new").status, "PRINTED");
+    assert.equal(kotDriver.printedJobs.length, 1);
+    await processor.retrySweep();
+    assert.equal(kotDriver.printedJobs.length, 1); // never picked up again
+  });
+
   await test("LAN printer: a KOT job prints successfully", async () => {
     const { processor, queue, kotDriver } = setup();
     await processor.ingest({ jobId: "kot-1", jobType: "KOT", orderId: "ORD00001", tableNo: 4, items: [{ name: "Dosa", qty: 2 }] });

@@ -25,6 +25,8 @@ export default {
   "Oldest waiting: {when}": "সবচেয়ে পুরোনো অপেক্ষমাণ: {when}",
   "Old tickets would all print at once when a printer connects. Drop the ones older than 1 hour first.": "প্রিন্টার সংযুক্ত হলে পুরোনো সব টিকিট একসঙ্গে ছাপা হবে। আগে ১ ঘণ্টার বেশি পুরোনোগুলো বাদ দিন।",
   "Drop old waiting jobs": "পুরোনো অপেক্ষমাণ কাজ বাদ দিন",
+  "Clear print queue": "প্রিন্ট কিউ খালি করুন",
+  "Remove every waiting KOT and bill from the print queue? They will not print.": "প্রিন্ট কিউ থেকে সব অপেক্ষমাণ KOT ও বিল সরাবেন? এগুলো আর প্রিন্ট হবে না।",
   "Key for “{name}” — copy it now, it is shown only once": "“{name}”-এর কী — এখনই কপি করুন, এটি একবারই দেখানো হয়",
   "Paste these two lines into the .env file next to the print service (SohojPrintService.exe), set your printers in printers.config.json, then restart it.": "এই দুটি লাইন প্রিন্ট সার্ভিসের (SohojPrintService.exe) পাশের .env ফাইলে বসান, printers.config.json-এ প্রিন্টার ঠিক করুন, তারপর আবার চালু করুন।",
   "last seen {when}": "শেষ দেখা {when}",

@@ -50,7 +50,7 @@ import { getDB } from "../config/db.js";
 import { getModels } from "../config/getModels.js";
 import { tenantKeyFromUri, rooms } from "../utils/tenantKey.js";
 import { verifyGuestOrderToken } from "../utils/guestOrderToken.js";
-import { verifyPrinterKey, markPrinterSeen } from "../services/printerDeviceService.js";
+import { verifyPrinterKey, markPrinterSeen, expireOldPrintJobs } from "../services/printerDeviceService.js";
 import { recordHeartbeat } from "../services/attendanceService.js";
 import { kitchenSafeKot } from "../services/kotService.js";
 
@@ -207,6 +207,9 @@ export const initSocket = (httpServer) => {
         const conn = await getDB(process.env.MONGO_URI);
         const { KOTJob, KOTChangeJob, BillPrintJob } = getModels(conn);
         const NOT_DONE = { $in: ["PENDING","PRINTING","FAILED"] };
+        // Too-old jobs are dropped first — a PC switched on after a break
+        // must not print the whole backlog at once.
+        await expireOldPrintJobs({ KOTJob, BillPrintJob, KOTChangeJob });
 
         const [kot, bill, changes] = await Promise.all([
           KOTJob.find({ status: NOT_DONE }).sort({ createdAt: 1 }).lean(),

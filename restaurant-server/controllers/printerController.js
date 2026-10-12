@@ -2,7 +2,7 @@
 import { getRoomConnectionCount, kotChangePrintPayload } from "../sockets/socket.js";
 import { rooms } from "../utils/tenantKey.js";
 import {
-  createPrinterDevice, listPrinterDevices, revokePrinterDevice, skipStalePrintJobs, WAITING_STATUSES,
+  createPrinterDevice, listPrinterDevices, revokePrinterDevice, skipStalePrintJobs, expireOldPrintJobs, WAITING_STATUSES,
 } from "../services/printerDeviceService.js";
 import { buildActor } from "../services/orderService.js";
 
@@ -72,6 +72,7 @@ export const getPrintQueue = async (req, res) => {
   try {
     const { KOTJob, KOTChangeJob, BillPrintJob } = req.models;
     const NOT_DONE = { $in: ["PENDING","PRINTING","FAILED"] };
+    await expireOldPrintJobs({ KOTJob, BillPrintJob, KOTChangeJob }); // never hand out a stale backlog
 
     const [kot, bill, changes] = await Promise.all([
       KOTJob.find({ status: NOT_DONE }).sort({ createdAt: 1 }).lean(),
@@ -163,12 +164,13 @@ export const deletePrinterDevice = async (req, res) => {
   }
 };
 
-// ── POST /api/admin/printer/skip-stale  { olderThanMinutes } (admin) ─────────
-// Drops waiting jobs that are too old to print (see printerDeviceService).
+// ── POST /api/admin/printer/skip-stale  { olderThanMinutes, all } (admin) ────
+// Drops waiting jobs that are too old to print (see printerDeviceService);
+// `all: true` drops every waiting job ("Clear print queue").
 export const skipStaleJobs = async (req, res) => {
   try {
     const { KOTJob, BillPrintJob, KOTChangeJob } = req.models;
-    const r = await skipStalePrintJobs({ KOTJob, BillPrintJob, KOTChangeJob, olderThanMinutes: req.body?.olderThanMinutes, actor: buildActor(req.user) });
+    const r = await skipStalePrintJobs({ KOTJob, BillPrintJob, KOTChangeJob, olderThanMinutes: req.body?.olderThanMinutes, all: req.body?.all === true, actor: buildActor(req.user) });
     res.json(r);
   } catch (err) {
     res.status(err.statusCode || 500).json({ message: err.message });

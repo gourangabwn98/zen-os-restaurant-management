@@ -25,6 +25,9 @@ export class Processor {
     this.printerManager = printerManager;
     this.reportStatus = reportStatus;
     this.maxAttempts = opts.maxAttempts ?? 5;
+    // Jobs older than this are dropped, not printed (0 = no limit) — a backlog
+    // left from before a restart/reconnect must not all print at once.
+    this.maxJobAgeMs = (opts.maxJobAgeMinutes ?? 0) * 60 * 1000;
     // FAILED-job backoff (queue.getRetryable); 0 = retry on every sweep.
     this.retryBaseDelayMs = opts.retryBaseDelayMs ?? 0;
     this.logoProvider = opts.logoProvider || null; // restaurant logo on bills (src/logo.js)
@@ -98,6 +101,13 @@ export class Processor {
     const job = this.queue.get(jobId);
     if (!job) return "skipped";
     if (job.status === "PRINTED" || job.status === "SKIPPED") return "skipped"; // never re-print
+
+    const age = Date.now() - Date.parse(job.createdAt || "");
+    if (this.maxJobAgeMs && age > this.maxJobAgeMs) {
+      this.queue.markSkipped(jobId, `Too old to print (over ${Math.round(this.maxJobAgeMs / 60000)} min) — dropped`);
+      logger.info(`Not printing ${job.jobType} job ${jobId} — older than ${Math.round(this.maxJobAgeMs / 60000)} min`);
+      return "skipped";
+    }
 
     if ((job.attempts || 0) >= this.maxAttempts) {
       logger.warn(`Job ${jobId} has exhausted ${this.maxAttempts} attempts — needs manual attention`);

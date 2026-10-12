@@ -68,14 +68,38 @@ export const staleCutoff = (olderThanMinutes, now = new Date()) => {
   return { minutes, cutoff: new Date(now.getTime() - minutes * 60 * 1000) };
 };
 
-/** Marks waiting KOT/bill jobs older than the cutoff SKIPPED. → { kot, bill, minutes } */
-export const skipStalePrintJobs = async ({ KOTJob, BillPrintJob, KOTChangeJob = null, olderThanMinutes, actor, now = new Date() }) => {
-  const { minutes, cutoff } = staleCutoff(olderThanMinutes, now);
+/** Marks waiting KOT/bill jobs older than the cutoff SKIPPED (`all`: every
+ * waiting job, whatever its age — "Clear print queue"). → { kot, bill, minutes } */
+export const skipStalePrintJobs = async ({ KOTJob, BillPrintJob, KOTChangeJob = null, olderThanMinutes, actor, all = false, now = new Date() }) => {
+  const { minutes, cutoff } = all ? { minutes: 0, cutoff: now } : staleCutoff(olderThanMinutes, now);
   const filter = { status: { $in: WAITING_STATUSES }, createdAt: { $lt: cutoff } };
-  const update = { $set: { status: "SKIPPED", lastError: `Skipped by ${actor?.name || "admin"} — older than ${minutes} min` } };
+  const why = all ? "queue cleared" : `older than ${minutes} min`;
+  const update = { $set: { status: "SKIPPED", lastError: `Skipped by ${actor?.name || "admin"} — ${why}` } };
   const [k, b, c] = await Promise.all([
     KOTJob.updateMany(filter, update), BillPrintJob.updateMany(filter, update),
     KOTChangeJob ? KOTChangeJob.updateMany(filter, update) : { modifiedCount: 0 }, // order-change slips
   ]);
   return { kot: (k.modifiedCount || 0) + (c.modifiedCount || 0), bill: b.modifiedCount || 0, minutes };
+};
+
+// ── Auto-expiry ─────────────────────────────────────────────────────────────
+// A KOT or bill that couldn't print within this long is no use any more (the
+// food has gone out, the guest has paid). Without this, switching the print PC
+// on after a break printed the whole backlog at once. Run before every queue
+// read the print-service makes, so an old job is never handed to it. PRINTING
+// is included: one stuck there that long never finished, and a print-service
+// that really did print it still reports PRINTED (report-job-status lets
+// PRINTED override SKIPPED).
+export const AUTO_EXPIRE_MINUTES = 30;
+const EXPIRE_STATUSES = ["PENDING", "PRINTING", "FAILED"];
+
+export const expireOldPrintJobs = async ({ KOTJob, BillPrintJob, KOTChangeJob = null, now = new Date() }) => {
+  const cutoff = new Date(now.getTime() - AUTO_EXPIRE_MINUTES * 60 * 1000);
+  const filter = { status: { $in: EXPIRE_STATUSES }, createdAt: { $lt: cutoff } };
+  const update = { $set: { status: "SKIPPED", lastError: `Not printed within ${AUTO_EXPIRE_MINUTES} min — dropped automatically` } };
+  const [k, b, c] = await Promise.all([
+    KOTJob.updateMany(filter, update), BillPrintJob.updateMany(filter, update),
+    KOTChangeJob ? KOTChangeJob.updateMany(filter, update) : { modifiedCount: 0 },
+  ]);
+  return { kot: (k.modifiedCount || 0) + (c.modifiedCount || 0), bill: b.modifiedCount || 0 };
 };

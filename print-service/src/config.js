@@ -43,6 +43,9 @@ export const config = {
   printerKey:  required("PRINTER_KEY"),
   queueFile:   path.resolve(ROOT, process.env.QUEUE_FILE || "./data/queue.json"),
   maxAttempts: Number(process.env.MAX_ATTEMPTS || 10),
+  // A KOT/bill older than this is never printed (dropped instead), so turning
+  // the PC on after a break doesn't print the whole backlog. 0 = no limit.
+  maxJobAgeMinutes: Number(process.env.MAX_JOB_AGE_MINUTES ?? 30),
   retryBaseDelayMs: Number(process.env.RETRY_BASE_DELAY_MS || 3000),
   // How often waiting/failed jobs are looked at. Fast on purpose: a waiting
   // job prints within seconds of its printer coming back; FAILED jobs still
