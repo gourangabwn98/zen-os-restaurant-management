@@ -12,6 +12,7 @@ import { canEditOrder } from "../hooks/useOrderEdit.js";
 import { Loader, ErrorState } from "../components/StateViews.jsx";
 import Button from "../components/ui/Button.jsx";
 import Icon from "../components/ui/Icon.jsx";
+import { nameWithSize } from "../utils/menuDisplay.js";
 import {
   STATUS_LABEL, statusPillClass, PAYMENT_LABEL, paymentPillClass, formatOrderTime, isActiveOrder,
 } from "../utils/orderStatus.js";
@@ -261,8 +262,15 @@ export default function OrderDetailPage() {
         {showBill && (
           <div style={{ marginTop: 10 }}>
             {(order.items || []).map((it, i) => (
-              <div key={i} className="row">
-                <span className="muted">{it.name} ×{it.qty}</span><span>₹{it.price * it.qty}</span>
+              <div key={i}>
+                <div className="row">
+                  <span className="muted">{nameWithSize(it.name, it.size)} ×{it.qty}</span><span>₹{it.price * it.qty}</span>
+                </div>
+                {(it.addons || []).map((a) => (
+                  <div key={String(a.addonId)} className="muted small" style={{ paddingLeft: 12 }}>
+                    + {a.qty > 1 ? `${a.qty} x ` : ""}{a.name} ₹{a.price}
+                  </div>
+                ))}
               </div>
             ))}
             <div className="sep" />

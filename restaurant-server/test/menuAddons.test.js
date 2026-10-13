@@ -1,7 +1,7 @@
 // test/menuAddons.test.js — KH-12: per-item add-ons, priced server-side.
 // No DB — fakes.  node test/menuAddons.test.js
 import assert from "node:assert/strict";
-import { normalizeAddons, resolveLineAddons, lineAddonKey } from "../utils/menuAddons.js";
+import { normalizeAddons, resolveLineAddons, lineAddonKey, nameWithSize, ADDONS_MAX } from "../utils/menuAddons.js";
 import { priceItems, computeTotals } from "../utils/pricing.js";
 import { createKotJobForOrder } from "../services/kotService.js";
 import { combinedPrintPayload } from "../services/combinedBillService.js";
@@ -57,17 +57,66 @@ await test("an add-on that isn't this item's (or was deleted) is refused — no 
   assert.equal(line.price, 140, "a price sent by the client is ignored");
 });
 
-await test("normalizeAddons: admin input validated; JSON string ok; ids of existing add-ons kept", () => {
+await test("normalizeAddons: admin input validated; JSON string ok; id of an existing add-on kept", () => {
   assert.equal(normalizeAddons(undefined), undefined);
   assert.deepEqual(normalizeAddons(""), []);
-  const out = normalizeAddons(JSON.stringify([{ _id: "a1", name: " 1 pc  Chicken ", price: "45" }, { name: "Raita", price: 20 }, { _id: "forged", name: "X", price: 1 }]), [CHICKEN]);
-  assert.deepEqual(out, [{ name: "1 pc Chicken", price: 45, _id: "a1" }, { name: "Raita", price: 20 }, { name: "X", price: 1 }]);
+  assert.deepEqual(normalizeAddons(JSON.stringify([{ _id: "a1", name: " 1 pc  Chicken ", price: "45" }]), [CHICKEN]), [{ name: "1 pc Chicken", price: 45, _id: "a1" }]);
+  assert.deepEqual(normalizeAddons([{ _id: "forged", name: "X", price: 1 }], [CHICKEN]), [{ name: "X", price: 1 }], "an unknown id is dropped");
   assert.throws(() => normalizeAddons([{ name: "", price: 10 }]), /name/);
   assert.throws(() => normalizeAddons([{ name: "A", price: -1 }]), /Price/);
   assert.throws(() => normalizeAddons([{ name: "A", price: "x" }]), /Price/);
-  assert.throws(() => normalizeAddons([{ name: "Egg", price: 1 }, { name: "egg", price: 2 }]), /twice/);
-  assert.throws(() => normalizeAddons(Array.from({ length: 11 }, (_, i) => ({ name: `a${i}`, price: 1 }))), /At most/);
   assert.throws(() => normalizeAddons("{bad"), /list/);
+});
+
+await test("add-on validation: at most ONE add-on per item; price >= 0; free (₹0) is allowed", () => {
+  assert.equal(ADDONS_MAX, 1);
+  assert.throws(() => normalizeAddons([{ name: "Egg", price: 25 }, { name: "Butter", price: 10 }]), (e) => e.statusCode === 400 && /At most 1/.test(e.message));
+  assert.deepEqual(normalizeAddons([{ name: "Onion", price: 0 }]), [{ name: "Onion", price: 0 }]);
+  assert.throws(() => normalizeAddons([{ name: "Egg", price: -0.5 }]), (e) => e.statusCode === 400);
+});
+
+await test("add-on validation: type is optional, but only Extra egg / Extra piece / Butter", () => {
+  assert.deepEqual(normalizeAddons([{ name: "Extra Egg", price: 25, type: "Extra egg" }]), [{ name: "Extra Egg", price: 25, type: "Extra egg" }]);
+  assert.deepEqual(normalizeAddons([{ name: "Add Butter", price: 10, type: "" }]), [{ name: "Add Butter", price: 10 }]);
+  assert.throws(() => normalizeAddons([{ name: "Cheese", price: 30, type: "Cheese" }]), (e) => e.statusCode === 400 && /type/.test(e.message));
+});
+
+await test("schema: the MenuItem model refuses a second add-on even if a caller skips normalizeAddons", async () => {
+  const { default: mongoose } = await import("mongoose");
+  const { getModels } = await import("../config/getModels.js");
+  const { MenuItem } = getModels(mongoose.createConnection());
+  const doc = new MenuItem({ name: "Egg Curry", price: 90, category: "Main Course", tag: "Non Veg",
+    addons: [{ name: "Extra Egg", price: 25, type: "Extra egg" }, { name: "Butter", price: 10, type: "Butter" }] });
+  const check = (d) => d.validate().then(() => undefined, (e) => e);
+  const err = await check(doc);
+  assert.ok(err?.errors?.addons, "two add-ons fail validation");
+  const one = new MenuItem({ name: "Egg Curry", price: 90, category: "Main Course", tag: "Non Veg", foodType: "Egg", subcategory: "Egg", size: "2 pcs",
+    addons: [{ name: "Extra Egg", price: 25, type: "Extra egg" }] });
+  assert.equal(await check(one), undefined);
+  const bad = new MenuItem({ name: "X", price: 1, category: "Counter", tag: "Others", foodType: "Vegan", addons: [{ name: "a", price: 1, type: "Nope" }] });
+  const e2 = await check(bad);
+  assert.ok(e2.errors.foodType && e2.errors["addons.0.type"]);
+});
+
+await test("line total = (item price + add-on price) × qty, computed by the server; type snapshotted", async () => {
+  const KOSHA = { _id: "m3", name: "Chicken Kosha (3 pcs)", size: "3 pcs", price: 180, isAvailable: true,
+    addons: [{ _id: "x1", name: "Extra piece", price: 70, type: "Extra piece" }] };
+  const M = { findById: async (id) => (id === "m3" ? KOSHA : null) };
+  const [line] = await priceItems([{ menuItemId: "m3", qty: 3, addonIds: ["x1"], price: 1, lineTotal: 1 }], M);
+  assert.equal(line.price, 250);
+  assert.equal(line.price * line.qty, 750);
+  assert.deepEqual(line.addons, [{ addonId: "x1", name: "Extra piece", price: 70, type: "Extra piece" }]);
+  assert.equal(line.size, "3 pcs", "portion snapshotted for tickets");
+  const [plain] = await priceItems([{ menuItemId: "m3", qty: 2 }], M);
+  assert.equal(plain.price * plain.qty, 360, "the add-on is optional");
+  assert.equal(computeTotals([line, plain], { gstRate: 5 }).subtotal, 1110);
+});
+
+await test("nameWithSize: adds the portion unless the name already says it", () => {
+  assert.equal(nameWithSize("Chicken Kosha (3 pcs)", "3 pcs"), "Chicken Kosha (3 pcs)");
+  assert.equal(nameWithSize("Boiled Egg", "2 pcs"), "Boiled Egg (2 pcs)");
+  assert.equal(nameWithSize("Tea", ""), "Tea");
+  assert.equal(nameWithSize("Afgani Chicken (Full)", "full"), "Afgani Chicken (Full)");
 });
 
 await test("lineAddonKey: same add-ons in any order → same line; different → different line", () => {
@@ -89,10 +138,28 @@ await test("KOT job lists add-on names under the item; plain items unchanged", a
     { name: "Biryani", qty: 2, price: 140, addons: [{ addonId: "a1", name: "1 pc Chicken", price: 40 }] },
     { name: "Tea", qty: 1, price: 20 },
     { name: "Biryani", qty: 1, price: 180, addons: [{ addonId: "a1", name: "1 pc Chicken", price: 40, qty: 2 }] },
+    { name: "Boiled Egg", size: "2 pcs", qty: 1, price: 75, addons: [{ addonId: "e1", name: "Extra Egg", price: 25, type: "Extra egg" }] },
   ] } });
   assert.deepEqual(rows[0].items[0].addons, ["1 pc Chicken"]);
+  assert.equal(rows[0].items[3].name, "Boiled Egg (2 pcs)", "size printed with the name");
+  assert.deepEqual(rows[0].items[3].addons, ["Extra Egg"], "the KOT is the kitchen copy — add-on names, no prices");
   assert.deepEqual(rows[0].items[2].addons, ["2 x 1 pc Chicken"]);
   assert.equal("addons" in rows[0].items[1], false);
+});
+
+await test("kitchen feed (GET /kitchen/orders): name with size + add-on names, never a price", async () => {
+  const { getKitchenOrders } = await import("../controllers/kitchenController.js");
+  const order = { _id: "o1", orderId: "ORD1", status: "PREPARING", total: 250, paymentStatus: "PAID", items: [
+    { name: "Boiled Egg", size: "2 pcs", qty: 1, price: 75, basePrice: 50, addons: [{ addonId: "e1", name: "Extra Egg", price: 25 }] },
+    { name: "Tea", qty: 2, price: 20 },
+  ] };
+  const Order = { find: () => ({ sort: () => ({ select: async () => [order] }) }) };
+  let body;
+  await getKitchenOrders({ models: { Order } }, { json: (b) => { body = b; }, status: () => ({ json: () => {} }) });
+  const [ticket] = body.orders;
+  assert.deepEqual(ticket.items[0], { name: "Boiled Egg (2 pcs)", qty: 1, notes: "", addons: ["Extra Egg"] });
+  assert.deepEqual(ticket.items[1], { name: "Tea", qty: 2, notes: "" });
+  assert.ok(!JSON.stringify(ticket).includes("price") && ticket.total === undefined);
 });
 
 await test("combined bill payload carries each line's add-ons", () => {

@@ -18,16 +18,59 @@ export const isSoldOut = (item, now = Date.now()) =>
   !item?.isAvailable && !!item?.soldOutUntil && new Date(item.soldOutUntil).getTime() > now;
 export const availState = (item) => (item?.isAvailable ? "on" : isSoldOut(item) ? "soldout" : "off");
 
-// ── categories an item is listed under (MNU-01, 03–07) ──────────────────────
-// Mirrors restaurant-server/utils/menuCategories.js: primary `category`, extra
-// `categories`, the three flag-driven built-ins, and the data-driven built-ins
-// the server computed into `categoryList` (Most Ordered / Highest Rated /
-// Sales-Based Choice — never guessed here).
+// ── categories an item is listed under (MNU-03–07) ──────────────────────────
+// Mirrors restaurant-server/utils/menuCategories.js: its section (`category`),
+// the flag-driven built-ins, and the data-driven built-ins the server computed
+// into `categoryList` (Most Ordered / Highest Rated / Sales-Based Choice —
+// never guessed here). Most Popular is a badge only, not a category.
 export const ITEM_FLAGS = [
   { flag: "isTodaysSpecial", label: N_("Today's Special"), hint: N_("Featured on the customer home screen today") },
-  { flag: "isChefsPick", label: N_("Chef's Pick"), hint: N_("The kitchen recommends it") },
+  { flag: "isChefsPick", label: N_("Khoai Signature"), hint: N_("Our signature dish — shown with a badge") },
+  { flag: "isMostPopular", label: N_("Most Popular"), hint: N_("Shown with a “Most Popular” badge") },
   { flag: "isFastAvailable", label: N_("Fast Available"), hint: N_("Ready quickly — for guests in a hurry") },
 ];
+
+// Mirrors restaurant-server/utils/menuSections.js (the server validates).
+export const FOOD_TYPE_LABELS = ["Veg", "Egg", "Non-veg"]; // display only; Veg / Non Veg `tag` stays authoritative
+export const ADDON_TYPES = ["Extra egg", "Extra piece", "Butter"];
+export const ADDONS_MAX = 1; // per item
+
+/** "Boiled Egg (2 pcs)" — name + portion, unless the name already says it. */
+export const nameWithSize = (name, size) => {
+  const n = String(name || "").trim();
+  const sz = String(size || "").trim();
+  if (!sz || n.toLowerCase().includes(sz.toLowerCase())) return n;
+  return `${n} (${sz})`;
+};
+
+/** Subcategory chips for one category's items: [{ name, count }], menu order. */
+export const subcategoryChips = (items) => {
+  const m = new Map();
+  for (const i of items || []) {
+    const name = String(i.subcategory || "").trim();
+    if (!name) continue;
+    const id = String(i.itemId || "zzzz");
+    const e = m.get(name) || { name, count: 0, first: id };
+    e.count += 1;
+    if (id < e.first) e.first = id;
+    m.set(name, e);
+  }
+  return [...m.values()].sort((a, b) => a.first.localeCompare(b.first) || a.name.localeCompare(b.name)).map(({ name, count }) => ({ name, count }));
+};
+
+/** Map<section, subcategory[]> from the items — menu order (lowest itemId first). */
+export const subcategoriesBySection = (items) => {
+  const first = new Map();
+  for (const i of items || []) {
+    const sub = String(i.subcategory || "").trim();
+    if (!i.category || !sub) continue;
+    if (!first.has(i.category)) first.set(i.category, new Map());
+    const m = first.get(i.category);
+    const id = String(i.itemId || "zzzz"); // no code → after the coded ones
+    if (!m.has(sub) || id < m.get(sub)) m.set(sub, id);
+  }
+  return new Map([...first].map(([cat, m]) => [cat, [...m].sort((a, b) => a[1].localeCompare(b[1]) || a[0].localeCompare(b[0])).map(([s]) => s)]));
+};
 // MNU-06 — the icon keys the server accepts (utils/menuCategories.js CATEGORY_ICONS).
 export const CATEGORY_ICON_KEYS = [
   "plate", "star", "chef", "bolt", "flame", "thumbs", "trend", "tea", "coffee", "drink", "breakfast",
@@ -38,7 +81,7 @@ export const isSmartCat = (c) => c?.kind === "SMART";
 export const manualCats = (cats) => cats.filter((c) => !isSmartCat(c));
 /** Every category name this item is listed under (primary first). */
 export const memberNames = (item, cats) => {
-  const out = new Set([item.category, ...(item.categories || [])]);
+  const out = new Set([item.category]);
   for (const c of cats) {
     if (!isSmartCat(c)) continue;
     if (c.smartFlag ? item[c.smartFlag] === true : (item.categoryList || []).includes(c.name)) out.add(c.name);
@@ -309,7 +352,7 @@ export const matchesFilters = (i, f) => {
 
 export const matchesSearch = (item, q, catName) => {
   if (!q) return true;
-  return [item.name, item.nameBn, item.description, item.category, catName, ...(item.tags || [])]
+  return [item.name, item.nameBn, item.description, item.category, item.subcategory, item.itemId, catName, ...(item.tags || [])]
     .some((v) => typeof v === "string" && v.toLowerCase().includes(q));
 };
 

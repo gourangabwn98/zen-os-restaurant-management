@@ -230,6 +230,10 @@ export const applyPhonePeResult = async ({ models, orderId, merchantTransactionI
         $set: {
           paymentStatus: "PAID",
           paymentMethod: "Online",
+          // The customer paid the gateway — no employee collected it
+          // (staffReportService lists it as "Online gateway").
+          paidBy: null,
+          paidAt: now,
           "payment.state": SUCCESS,
           "payment.phonepeTransactionId": result.phonepeTransactionId || "",
           "payment.lastCheckedAt": now,

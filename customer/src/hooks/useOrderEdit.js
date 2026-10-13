@@ -36,15 +36,18 @@ export function useOrderEdit() {
     const lines = (order.items || []).map((it) => {
       const id = String(it.menuItem?._id ?? it.menuItem);
       const live = byId.get(id);
-      // KH-12: a line a waiter gave an add-on keeps it through the customer's
-      // edit (customers can't pick add-ons themselves; the server re-prices).
+      // KH-12: a line's add-on is kept through the customer's edit (the
+      // server re-prices it from the menu).
       // KH-12: a repeated id = more of that add-on (2 × chicken → two ids).
       const addonIds = (it.addons || []).flatMap((a) => Array(Math.max(1, Math.floor(Number(a.qty) || 1))).fill(String(a.addonId)));
       return {
-        // With add-ons the line's own price (item + add-ons) keeps the preview right.
-        item: live && !addonIds.length ? live : { ...(live || {}), _id: id, name: it.name, nameBn: it.nameBn || "", price: it.price },
+        item: live || { _id: id, name: it.name, nameBn: it.nameBn || "", size: it.size || "", price: it.basePrice ?? it.price },
         qty: it.qty, notes: it.notes || "",
-        ...(addonIds.length && { addonIds }),
+        // With add-ons the line's own price (item + add-ons) keeps the preview right.
+        ...(addonIds.length && {
+          addonIds, unitPrice: it.price,
+          addons: (it.addons || []).map((a) => ({ addonId: String(a.addonId), name: a.qty > 1 ? `${a.qty} x ${a.name}` : a.name, price: a.price })),
+        }),
       };
     });
     draft.replaceAll(lines);

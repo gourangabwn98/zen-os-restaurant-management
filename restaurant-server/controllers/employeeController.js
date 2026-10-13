@@ -2,7 +2,9 @@
 import {
   createEmployee, updateEmployee, setEmployeeStatus, listEmployees,
   getEmployeeTodayStats, getEmployeePerformance, getWaiterOrderActivity, employeeRolesFor, listCustomRoles,
+  resolveRange,
 } from "../services/employeeService.js";
+import { getStaffReport, getMyStaffStats } from "../services/staffReportService.js";
 import { getMySummaryForRange, setEmployeeShift, shiftStateOf } from "../services/attendanceService.js";
 import { buildActor } from "../services/orderService.js";
 import { emitAttendanceUpdated } from "../sockets/socket.js";
@@ -104,6 +106,20 @@ export const getPerformanceReport = async (req, res) => {
   }
 };
 
+// GET /api/admin/employees/staff-report?from=YYYY-MM-DD&to=YYYY-MM-DD
+// Admin / manager: per-employee orders taken / served / completed and the
+// money each person recorded as paid (cash / online), plus every payment.
+// Days are the restaurant's calendar days; no dates = today.
+export const getStaffReportCtl = async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const range = resolveRange(from, to, await restaurantTz(req.models));
+    res.json(await getStaffReport({ models: req.models, ...range }));
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message });
+  }
+};
+
 // GET /api/employees/me/activity?from=&to= — waiter's own Activity tab.
 // Own data only: employeeId is always req.user._id, never taken from the
 // query string, same rule as getMyDashboard below.
@@ -113,14 +129,18 @@ export const getMyActivity = async (req, res) => {
     const { from, to } = req.query;
     const employeeId = req.user._id;
 
-    const [orders, duty] = await Promise.all([
-      getWaiterOrderActivity({ Order, employeeId, from, to, tz: await restaurantTz(req.models) }),
+    const tz = await restaurantTz(req.models);
+    const [orders, duty, performance] = await Promise.all([
+      getWaiterOrderActivity({ Order, employeeId, from, to, tz }),
       getMySummaryForRange({ AttendanceSession, employeeId, from, to }),
+      // Taken / served / completed / collected (cash, online) — own actions only.
+      getMyStaffStats({ models: req.models, employeeId, ...resolveRange(from, to, tz) }),
     ]);
 
     res.json({
       orders,
       duty: { workingSeconds: duty.totalWorkingSeconds, breakSeconds: duty.totalBreakSeconds },
+      performance,
     });
   } catch (err) {
     res.status(err.statusCode || 500).json({ message: err.message });

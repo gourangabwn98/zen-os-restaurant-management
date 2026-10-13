@@ -165,6 +165,10 @@ function KitchenTicket({ order, now, busy, onStartPreparing, onAdvance, action, 
             }}>{it.qty}</span>
             <span style={{ flex: 1, fontWeight: 500, lineHeight: 1.35, color: T1 }}>
               {localName(it)}
+              {/* Add-ons ("+ Extra Egg") — names only; the kitchen feed carries no prices. */}
+              {(it.addons || []).map((a, j) => (
+                <span key={j} style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#93C5FD" }}>+ {typeof a === "string" ? a : a?.name}</span>
+              ))}
               {it.notes && <em style={{ display: "block", fontStyle: "normal", fontSize: 11, color: WAIT, fontWeight: 600 }}>{it.notes}</em>}
             </span>
           </div>

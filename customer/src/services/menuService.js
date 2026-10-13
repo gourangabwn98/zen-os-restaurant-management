@@ -10,6 +10,10 @@ export const getMenu = (params) => api.get("/menu", { params });
 // GET /api/menu/categories — only categories that currently have items.
 export const getMenuCategories = () => api.get("/menu/categories");
 
+// GET /api/menu/structure — { sections: [{ name, count, subcategories: [{ name, count }] }] }
+// in the configured section order; the subcategory chips inside a section.
+export const getMenuStructure = () => api.get("/menu/structure");
+
 // GET /api/menu/best-sellers — the items sold most in the last 30 days (paid,
 // not cancelled orders) that can be ordered right now. [] when no sales yet.
 export const getBestSellers = () => api.get("/menu/best-sellers");

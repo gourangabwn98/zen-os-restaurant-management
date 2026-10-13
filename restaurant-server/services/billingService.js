@@ -113,7 +113,8 @@ export const settleBills = async ({ models, orderIds, paymentMethod, paymentSpli
       {
         $set: {
           billStatus: SETTLED, billSettledAt: now, billSettledBy: actor,
-          ...(needsPayment && { paymentStatus: PAID, paymentMethod, paymentSplit: splitAmounts }),
+          // Collected now → credited to the person settling (staffReportService).
+          ...(needsPayment && { paymentStatus: PAID, paymentMethod, paymentSplit: splitAmounts, paidBy: actor || null, paidAt: now }),
         },
         $push: { statusHistory: { status: o.status, changedBy: actor, changedAt: now, note } },
       },

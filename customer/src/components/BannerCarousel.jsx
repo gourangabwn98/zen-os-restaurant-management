@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import Icon from "./ui/Icon.jsx";
+import { SIGNATURE_LABEL } from "../utils/menuDisplay.js";
 
 /** CUS-02 — the large auto-scrolling Home hero (reference ".hero"). Every
  * slide comes from real data; nothing is hard-coded:
  *   1. configured promotions — every active admin banner (its link kept),
- *   2. Today's Special / Chef's Picks / Fast Available — items the admin
+ *   2. Today's Special / Khoai Signature / Fast Available — items the admin
  *      flagged in Menu items (MNU-05/04/03), up to 3 each,
  *   3. Best Seller — real top sellers (GET /api/menu/best-sellers),
  *   4. only when none of the above exist: an intro slide (CTA → menu).
@@ -17,7 +18,7 @@ export default function BannerCarousel({ banners, specials = [], chefsPicks = []
   const slides = [
     ...active.map((b) => ({ kind: "banner", ...b })),
     ...itemSlides(specials, "Today's Special", "special"),
-    ...itemSlides(chefsPicks, "Chef's Pick", "chef"),
+    ...itemSlides(chefsPicks, SIGNATURE_LABEL, "chef"),
     ...itemSlides(fastItems, "Fast Available", "fast"),
     ...itemSlides(bestSellers, "Best Seller", "best"),
   ];

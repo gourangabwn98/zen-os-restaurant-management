@@ -9,6 +9,7 @@ import { Loader, EmptyState } from "../components/StateViews.jsx";
 import GlassCard from "../components/ui/GlassCard.jsx";
 import PrimaryButton from "../components/ui/PrimaryButton.jsx";
 import Chip from "../components/ui/Chip.jsx";
+
 import VoiceOrder from "../components/VoiceOrder.jsx";
 import QtyStepper, { AddButton } from "../components/ui/QtyStepper.jsx";
 import { useAppState } from "../context/AppState.jsx";
@@ -16,8 +17,11 @@ import { ACCENT, ACCENT_SOFT, ACCENT_GRADIENT, TEXT_MUTED, TEXT_FAINT, GLASS_BG,
 import { t as tr, tn, localName } from "../i18n/index.jsx";
 import NotShareableNote from "../components/NotShareableNote.jsx";
 import AddonPicker, { AddonHint } from "../components/AddonPicker.jsx";
-import { hasAddons, lineKey, unitPrice, addonNames } from "../utils/addons.js";
+import { hasAddons, lineKey, unitPrice, addonNames, nameWithSize, subcategoryChips } from "../utils/addons.js";
 import { TABLE_AREA_LABEL, groupTablesByArea, tableLabel, isAcRoom } from "../utils/diningArea.js";
+
+// Subcategory chips: a touch smaller than the category row above them.
+const SUB_CHIP = { padding: "6px 13px", fontSize: 12 };
 
 export default function NewOrderPage() {
   const nav = useNavigate();
@@ -50,7 +54,9 @@ export default function NewOrderPage() {
   const [fullMenu, setFullMenu]   = useState(null);
   const [categories, setCategories] = useState([]);
   const [search, setSearch]       = useState("");
-  const [category, setCategory]   = useState("");
+  const [category, setCategoryRaw] = useState("");
+  const [subs, setSubs]           = useState([]); // picked subcategory chips ([] = All)
+  const setCategory = (c) => { setCategoryRaw(c); setSubs([]); }; // a new category starts at "All"
 
   const [cart, setCart]           = useState([]); // [{key, item, qty, notes, addonIds}] — KH-12: one line per item + add-ons
   const [picker, setPicker]       = useState(null); // KH-12: item whose add-ons are being asked about
@@ -99,13 +105,36 @@ export default function NewOrderPage() {
   // Category / search filter the menu already loaded — same result as the
   // server's GET /menu?category=&search= (categoryList = primary + extra +
   // smart categories, name contains the search, case-insensitive; order kept).
+  // Category chips = the server's list (configured section order), but only
+  // those with something on the loaded menu — an old / empty category would
+  // only lead to "No items found". A section the list lacks still shows.
+  // Real menu sections only — the built-in automatic lists (Khoai Signature,
+  // Most Ordered, Sales-Based Choice, Today's Special…) are not offered here.
+  const catChips = useMemo(() => {
+    const sections = categories.filter((c) => c.kind !== "SMART").map((c) => c.category);
+    if (!fullMenu) return sections;
+    const has = new Set(fullMenu.map((it) => it.category));
+    const listed = sections.filter((n) => has.has(n));
+    const extra = [...new Set(fullMenu.map((it) => it.category))].filter((n) => n && !listed.includes(n));
+    return [...listed, ...extra];
+  }, [categories, fullMenu]);
+  // The picked category vanished (menu changed) → back to All.
+  useEffect(() => { if (category && fullMenu && !catChips.includes(category)) setCategory(""); }, [catChips]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const inCategory = useMemo(() => (fullMenu && category
+    ? fullMenu.filter((it) => (it.categoryList || [it.category]).includes(category)) : []), [fullMenu, category]);
+  // The picked category's subcategories, as filter chips (one at a time).
+  const subOptions = useMemo(() => subcategoryChips(inCategory), [inCategory]);
   const items = useMemo(() => {
     if (!fullMenu) return null;
     const q = search.trim().toLowerCase();
     return fullMenu.filter((it) =>
       (!category || (it.categoryList || [it.category]).includes(category))
+      && (!subs.length || subs.includes(String(it.subcategory || "").trim()))
       && (!q || String(it.name || "").toLowerCase().includes(q)));
-  }, [fullMenu, category, search]);
+  }, [fullMenu, category, subs, search]);
+  // Single select: tapping the active chip again goes back to "All".
+  const toggleSub = (name) => setSubs((p) => (p.includes(name) ? [] : [name]));
 
   // Total of this item across its lines (with / without add-ons).
   const getQty = (id) => cart.filter((c) => c.item._id === id).reduce((s, c) => s + c.qty, 0);
@@ -155,15 +184,20 @@ export default function NewOrderPage() {
   const itemCount = cart.reduce((s, c) => s + c.qty, 0);
   const subtotal  = cart.reduce((s, c) => s + unitPrice(c.item, c.addonIds) * c.qty, 0); // preview; server re-prices
 
+  // One category picked → its items under their subcategory headings (chip
+  // order); otherwise under their category, in the category-chip order.
   const grouped = useMemo(() => {
     if (!items) return [];
     const map = new Map();
+    const order = category ? subOptions.map((s) => s.name) : catChips;
+    for (const n of order) map.set(n, []);
     for (const it of items) {
-      if (!map.has(it.category)) map.set(it.category, []);
-      map.get(it.category).push(it);
+      const key = category ? (String(it.subcategory || "").trim() || category) : it.category;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(it);
     }
-    return [...map.entries()];
-  }, [items]);
+    return [...map.entries()].filter(([, list]) => list.length);
+  }, [items, category, subOptions, catChips]);
 
   // KH-11: Indoor-AC table → number of guests (required unless the table's
   // guests were already entered on its first order) × rate, in the subtotal.
@@ -231,7 +265,7 @@ export default function NewOrderPage() {
           {cart.map((c) => (
             <GlassCard key={c.key} style={{ padding: "12px 14px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff", flex: 1, minWidth: 0 }}>{localName(c.item)}</div>
+                <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff", flex: 1, minWidth: 0 }}>{nameWithSize(localName(c.item), c.item.size)}</div>
                 <QtyStepper qty={c.qty} size="sm" onDec={() => changeLine(c.key, -1)} onInc={() => changeLine(c.key, 1)} />
                 <div style={{ fontWeight: 800, fontSize: 13.5, color: ACCENT, minWidth: 56, textAlign: "right" }}>₹{unitPrice(c.item, c.addonIds) * c.qty}</div>
               </div>
@@ -393,11 +427,23 @@ export default function NewOrderPage() {
         <VoiceOrder menu={voiceMenu} onAdd={addVoiceItems} onSearch={(q) => { setCategory(""); setSearch(q); }} />
       </div>
 
-      {categories.length > 0 && (
+      {catChips.length > 0 && (
         <div className="hide-scrollbar" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "10px 16px" }}>
           <Chip active={!category} onClick={() => setCategory("")}>{tr("All")}</Chip>
-          {categories.map((c) => (
-            <Chip key={c.category} active={category === c.category} onClick={() => setCategory(c.category)}>{c.category}</Chip>
+          {catChips.map((name) => (
+            <Chip key={name} active={category === name} onClick={() => setCategory(name)}>{name}</Chip>
+          ))}
+        </div>
+      )}
+
+      {category && subOptions.length > 0 && (
+        <div className="hide-scrollbar" role="toolbar" aria-label={`${category} ${tr("filters")}`}
+          style={{ display: "flex", gap: 6, overflowX: "auto", padding: "0 16px 8px" }}>
+          <Chip active={!subs.length} onClick={() => setSubs([])} style={SUB_CHIP}>{tr("All")}</Chip>
+          {subOptions.map((s) => (
+            <Chip key={s.name} active={subs.includes(s.name)} onClick={() => toggleSub(s.name)} style={SUB_CHIP}>
+              {s.name} <span style={{ opacity: 0.6, fontWeight: 600 }}>{s.count}</span>
+            </Chip>
           ))}
         </div>
       )}
@@ -418,7 +464,7 @@ export default function NewOrderPage() {
                     style={{ "--i": i, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", opacity: outOfStock ? 0.5 : 1 }}
                   >
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff" }}>{localName(it)}</div>
+                      <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff" }}>{nameWithSize(localName(it), it.size)}</div>
                       <NotShareableNote item={it} />
                       <div style={{ fontSize: 12, color: TEXT_FAINT, marginTop: 2 }}>₹{it.price}{outOfStock ? ` · ${tr("Out of stock")}` : ""}</div>
                       <AddonHint item={it} />

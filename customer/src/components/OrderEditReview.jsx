@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
+import CartLine, { toOrderLine } from "./CartLine.jsx";
+import { keyOf } from "../utils/menuDisplay.js";
 import { useAppState } from "../context/AppState.jsx";
 import { modifyOrder } from "../services/orderService.js";
-import QtyStepper from "./ui/QtyStepper.jsx";
 import Button from "./ui/Button.jsx";
 import Icon from "./ui/Icon.jsx";
-import { VegDot } from "./ItemCard.jsx";
 
 /** ORD-01/02 — the cart screen while an order is being changed: the draft's
  * lines, "+ Add more items" back into the real menu, and Save. The server
@@ -27,7 +27,7 @@ export default function OrderEditReview() {
     if (!cart.itemCount) return toast.error("Your order needs at least one item — cancel the order instead");
     setSaving(true);
     try {
-      await modifyOrder(meta.orderId, cart.cart.map((c) => ({ menuItemId: c.item._id, qty: c.qty, notes: c.notes || "", ...(c.addonIds?.length && { addonIds: c.addonIds }) })), meta.revision);
+      await modifyOrder(meta.orderId, cart.cart.map((c) => ({ ...toOrderLine(c), notes: c.notes || "" })), meta.revision);
       toast.success(`Order #${meta.orderNo} updated`);
       const id = meta.orderId;
       orderEdit.stop();
@@ -55,19 +55,7 @@ export default function OrderEditReview() {
 
       <div className="card" style={{ padding: "4px 16px" }}>
         {cart.cart.length === 0 && <p className="muted small" style={{ margin: "14px 0" }}>No items — add something, or cancel the order from its page.</p>}
-        {cart.cart.map((c) => (
-          <div key={c.item._id} className="cart-line">
-            <div className="thumb">
-              {c.item.image ? <img src={c.item.image} alt="" loading="lazy" /> : <span aria-hidden="true">🍽️</span>}
-            </div>
-            <div className="nm">
-              <b>{c.item.tag && <VegDot tag={c.item.tag} />}{c.item.name}</b>
-              <span className="muted small">₹{c.item.price} each{c.notes ? ` · “${c.notes}”` : ""}</span>
-            </div>
-            <QtyStepper qty={c.qty} label={`${c.item.name} quantity`} onDec={() => cart.removeItem(c.item._id)} onInc={() => cart.addItem(c.item, 1)} />
-            <span className="amt">₹{c.item.price * c.qty}</span>
-          </div>
-        ))}
+        {cart.cart.map((c) => <CartLine key={keyOf(c)} line={c} cart={cart} />)}
         <Link to="/menu" className="btn btn-ghost" style={{ margin: "12px 0", minHeight: 46 }}>+ Add more items</Link>
       </div>
 

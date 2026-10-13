@@ -6,8 +6,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import assert from "node:assert/strict";
 import {
-  itemCategoryList, cleanExtraCategories, categoryIcon, notShareableCategoryOf, topIds, highestRatedIds, parseFlag,
-  SMART_CATEGORIES, SMART_DATA_RULES,
+  itemCategoryList, categoryIcon, notShareableCategoryOf, topIds, highestRatedIds, parseFlag,
+  SMART_CATEGORIES, SMART_DATA_RULES, ITEM_FLAGS,
 } from "../utils/menuCategories.js";
 
 let passed = 0, failed = 0;
@@ -19,14 +19,20 @@ const test = (name, fn) => {
 const smartCats = SMART_CATEGORIES.map((c) => ({ name: c.name, smartKey: c.key }));
 const tea = { _id: "t1", name: "Tea", price: 15, category: "Chai", categories: ["Breakfast"], isFastAvailable: true, isChefsPick: true, isTodaysSpecial: true };
 
-test("MNU-01: one Tea document is listed under Chai + its extra + every flag category — once each", () => {
+test("one Tea document is listed under its section + every flag category — the old extra list is ignored", () => {
   const list = itemCategoryList({ ...tea, categories: ["Breakfast", "Chai", "Breakfast"] }, { smartCats });
-  assert.deepEqual(list, ["Chai", "Breakfast", "Today's Special", "Chef's Picks", "Fast Available"]);
+  assert.deepEqual(list, ["Chai", "Today's Special", "Khoai Signature", "Fast Available"]);
+});
+
+test("Chef's Pick is shown as \"Khoai Signature\"; Most Popular is an item flag admins can set", () => {
+  assert.equal(SMART_CATEGORIES.find((c) => c.flag === "isChefsPick").name, "Khoai Signature");
+  assert.ok(ITEM_FLAGS.includes("isMostPopular"));
+  assert.ok(ITEM_FLAGS.includes("isChefsPick") && ITEM_FLAGS.includes("isTodaysSpecial"));
 });
 
 test("MNU-03/04/05: flags off → not in the flag categories", () => {
   const list = itemCategoryList({ ...tea, isFastAvailable: false, isChefsPick: false, isTodaysSpecial: false }, { smartCats });
-  assert.deepEqual(list, ["Chai", "Breakfast"]);
+  assert.deepEqual(list, ["Chai"]);
 });
 
 test("MNU-07: data categories only from the computed sets", () => {
@@ -35,16 +41,9 @@ test("MNU-07: data categories only from the computed sets", () => {
   assert.deepEqual(list, ["Chai", "Most Ordered"]);
 });
 
-test("a scheduled-out extra category is not listed (the item still shows elsewhere)", () => {
-  const list = itemCategoryList({ _id: "t1", category: "Chai", categories: ["Breakfast"] }, { smartCats, hidden: new Set(["Breakfast"]) });
-  assert.deepEqual(list, ["Chai"]);
-});
-
-test("extra categories: existing manual names only, primary dropped, deduped; JSON string accepted", () => {
-  const manualNames = new Set(["Chai", "Breakfast", "Snacks"]);
-  assert.deepEqual(cleanExtraCategories('["Breakfast","Chai"," Breakfast ","Snacks"]', { primary: "Chai", manualNames }), ["Breakfast", "Snacks"]);
-  assert.deepEqual(cleanExtraCategories("", { primary: "Chai", manualNames }), []);
-  assert.throws(() => cleanExtraCategories(["Chef's Picks"], { primary: "Chai", manualNames }), (e) => e.statusCode === 400);
+test("a scheduled-out section is not listed", () => {
+  const list = itemCategoryList({ _id: "t1", category: "Breakfast" }, { smartCats, hidden: new Set(["Breakfast"]) });
+  assert.deepEqual(list, []);
 });
 
 test("flags parse from multipart strings; absent stays undefined (not changed)", () => {
@@ -72,7 +71,7 @@ test("MNU-07: Highest Rated needs enough real ratings and a high average", () =>
 
 test("MNU-06: icon = own pick → smart default → guessed from the name → plate; never an emoji", () => {
   assert.equal(categoryIcon({ name: "Anything", icon: "fish" }), "fish");
-  assert.equal(categoryIcon({ name: "Chef's Picks", smartKey: "CHEFS_PICKS" }), "chef");
+  assert.equal(categoryIcon({ name: "Khoai Signature", smartKey: "CHEFS_PICKS" }), "chef");
   assert.equal(categoryIcon({ name: "Masala Chai" }), "tea");
   assert.equal(categoryIcon({ name: "Fish Curry" }), "fish");
   assert.equal(categoryIcon({ name: "Zzz" }), "plate");
@@ -82,7 +81,7 @@ test("MNU-06: icon = own pick → smart default → guessed from the name → pl
 test("KH-05: notShareableCategoryOf — only the item's own flagged categories count", () => {
   const flagged = new Set(["Thali"]);
   assert.equal(notShareableCategoryOf({ category: "Thali" }, flagged), "Thali");
-  assert.equal(notShareableCategoryOf({ category: "Specials", categories: ["Thali"] }, flagged), "Thali");
+  assert.equal(notShareableCategoryOf({ category: "Specials", categories: ["Thali"] }, flagged), "", "the old extra list no longer counts");
   assert.equal(notShareableCategoryOf({ category: "Biryani", categories: ["Rice"] }, flagged), "");
   assert.equal(notShareableCategoryOf({ category: "Thali" }, new Set()), "", "no flagged category → no note anywhere");
   assert.equal(notShareableCategoryOf({ category: "Thali" }, undefined), "");

@@ -2,6 +2,7 @@ import express from "express";
 import {
   addEmployee, getEmployees, getEmployeeById, editEmployee,
   toggleEmployeeStatus, getEmployeeStatsById, getPerformanceReport, getMyDashboard, getMyActivity, setShift,
+  getStaffReportCtl,
 } from "../controllers/employeeController.js";
 import { protect } from "../middleware/authMiddleware.js";
 import { requireAdmin, requireManagement, requireEmployee } from "../middleware/rbac.js";
@@ -41,6 +42,8 @@ router.param("reviewId", guardManagerReview);
 router.post("/",                addEmployee);
 router.get("/",                 getEmployees);
 router.get("/performance",      getPerformanceReport);
+// Staff performance & collections — who took / served / completed / collected.
+router.get("/staff-report",     getStaffReportCtl);
 // HR (Employees page tabs). Literal paths are mounted before "/:id".
 router.get("/hr/summary",       hrSummary);
 router.patch("/hr/policy",      requireAdmin, updatePolicy);

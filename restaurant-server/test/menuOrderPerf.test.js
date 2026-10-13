@@ -54,7 +54,10 @@ const menuModels = ({ thaliFlagged = true, failRecipes = false } = {}) => ({
   ...(failRecipes && { Recipe: { find: () => ({ lean: () => Promise.reject(new Error("db down")) }) } }),
   MenuItem: { updateMany: () => later({ modifiedCount: 0 }), find: () => q(MENU) },
   RestaurantProfile: { findOne: () => q({ timezone: "Asia/Kolkata" }) },
-  Category: { find: (f = {}) => q(f.notShareable ? (thaliFlagged ? [{ name: "Thali" }] : []) : []), findOne: () => q({ _id: "c" }) },
+  Category: {
+    find: (f = {}) => q(f.notShareable ? (thaliFlagged ? [{ name: "Thali" }] : []) : []), findOne: () => q({ _id: "c" }),
+    create: () => later({}), updateOne: () => later({}), // one-time section setup (warm-up call)
+  },
   Order: { aggregate: () => later([]), find: () => q([]) },
   StaffReview: { find: () => q([]) },
 });

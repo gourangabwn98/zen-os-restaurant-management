@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import toast from "react-hot-toast";
+import CartLine, { toOrderLine } from "../components/CartLine.jsx";
+import { keyOf } from "../utils/menuDisplay.js";
 import { useAppState } from "../context/AppState.jsx";
 import { placeOrder, quoteOrder, saveGuestOrderToken, newIdempotencyKey } from "../services/orderService.js";
 import { checkCoupon } from "../services/couponService.js";
@@ -8,10 +10,8 @@ import { getRestaurantProfile } from "../services/restaurantService.js";
 import { initiatePhonePePayment } from "../services/paymentService.js";
 import { EmptyState } from "../components/StateViews.jsx";
 import TableBadge from "../components/TableBadge.jsx";
-import QtyStepper from "../components/ui/QtyStepper.jsx";
 import Button from "../components/ui/Button.jsx";
 import Icon from "../components/ui/Icon.jsx";
-import { VegDot } from "../components/ItemCard.jsx";
 import CouponSheet from "../components/CouponSheet.jsx";
 import OrderEditReview from "../components/OrderEditReview.jsx";
 import { describeCoupon } from "../utils/coupon.js";
@@ -82,13 +82,13 @@ function ShoppingCart() {
   // the items, the coupon or the login change; nothing is computed here.
   const [quote, setQuote] = useState(null);
   const [quoteState, setQuoteState] = useState("loading"); // loading | ok | error
-  const quoteKey = JSON.stringify([cart.cart.map((c) => [c.item._id, c.qty]), coupon?.code || "", auth.isLoggedIn]);
+  const quoteKey = JSON.stringify([cart.cart.map((c) => [c.item._id, c.qty, c.addonIds || []]), coupon?.code || "", auth.isLoggedIn]);
   useEffect(() => {
     if (cart.itemCount === 0) return undefined;
     let live = true;
     setQuoteState("loading");
     const h = setTimeout(() => {
-      quoteOrder({ items: cart.cart.map((c) => ({ menuItemId: c.item._id, qty: c.qty })), couponCode: coupon?.code || undefined })
+      quoteOrder({ items: cart.cart.map(toOrderLine), couponCode: coupon?.code || undefined })
         .then(({ data }) => { if (live) { setQuote(data); setQuoteState("ok"); } })
         .catch(() => { if (live) setQuoteState("error"); });
     }, 250);
@@ -146,7 +146,7 @@ function ShoppingCart() {
     setPlacing(true);
     try {
       const body = {
-        items: cart.cart.map((c) => ({ menuItemId: c.item._id, qty: c.qty, notes: c.notes })),
+        items: cart.cart.map((c) => ({ ...toOrderLine(c), notes: c.notes })),
         orderType,
         tableNo: orderType === "DINE_IN" ? table.tableNo : undefined,
         tableToken: orderType === "DINE_IN" ? table.tableToken : undefined,
@@ -244,22 +244,7 @@ function ShoppingCart() {
 
       {/* ── Items ── */}
       <div className="card" style={{ padding: "4px 16px" }}>
-        {cart.cart.map((c) => (
-          <div key={c.item._id} className="cart-line">
-            <div className="thumb">
-              {c.item.image ? <img src={c.item.image} alt="" loading="lazy" /> : <span aria-hidden="true">🍽️</span>}
-            </div>
-            <div className="nm">
-              <b><VegDot tag={c.item.tag} />{c.item.name}</b>
-              <span className="muted small">₹{c.item.price} each{c.notes ? ` · “${c.notes}”` : ""}</span>
-            </div>
-            <QtyStepper
-              qty={c.qty} label={`${c.item.name} quantity`}
-              onDec={() => cart.removeItem(c.item._id)} onInc={() => cart.addItem(c.item, 1)}
-            />
-            <span className="amt">₹{c.item.price * c.qty}</span>
-          </div>
-        ))}
+        {cart.cart.map((c) => <CartLine key={keyOf(c)} line={c} cart={cart} />)}
         <Link to="/menu" className="btn btn-ghost" style={{ margin: "12px 0", minHeight: 46 }}>+ Add more items</Link>
       </div>
 

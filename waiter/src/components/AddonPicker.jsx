@@ -7,7 +7,7 @@ import { useState } from "react";
 import PrimaryButton from "./ui/PrimaryButton.jsx";
 import { ACCENT, TEXT_MUTED, TEXT_FAINT, GLASS_BORDER, GLASS_BG } from "../theme.js";
 import { t, localName } from "../i18n/index.jsx";
-import { unitPrice, countIds, ADDON_QTY_MAX } from "../utils/addons.js";
+import { unitPrice, countIds, ADDON_QTY_MAX, nameWithSize } from "../utils/addons.js";
 
 export default function AddonPicker({ item, onCancel, onConfirm }) {
   const [picked, setPicked] = useState([]);
@@ -29,7 +29,7 @@ export default function AddonPicker({ item, onCancel, onConfirm }) {
         width: "100%", maxWidth: 560, margin: "0 auto", background: "#0C0A14", border: `1px solid ${GLASS_BORDER}`,
         borderBottom: "none", borderRadius: "20px 20px 0 0", padding: "16px 16px calc(16px + env(safe-area-inset-bottom))",
       }}>
-        <div style={{ fontWeight: 800, fontSize: 16, color: "#fff" }}>{localName(item)} · ₹{item.price}</div>
+        <div style={{ fontWeight: 800, fontSize: 16, color: "#fff" }}>{nameWithSize(localName(item), item.size)} · ₹{item.price}</div>
         <div style={{ fontSize: 12.5, color: TEXT_MUTED, marginTop: 4 }}>{t("Does the customer want an extra?")}</div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 14 }}>

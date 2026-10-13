@@ -53,6 +53,7 @@ import { verifyGuestOrderToken } from "../utils/guestOrderToken.js";
 import { verifyPrinterKey, markPrinterSeen, expireOldPrintJobs } from "../services/printerDeviceService.js";
 import { recordHeartbeat } from "../services/attendanceService.js";
 import { kitchenSafeKot } from "../services/kotService.js";
+import { addonLabel, nameWithSize } from "../utils/menuAddons.js";
 
 let ioInstance = null;
 
@@ -349,7 +350,10 @@ const toKitchenSafeOrder = (order) => ({
   tableName: order.tableName || "", diningArea: order.diningArea || "", // "Indoor-AC 1" — not PII
   orderType: order.orderType, status: order.status, priority: order.priority,
   waiterName: order.waiterName || "",
-  items: (order.items || []).map((i) => ({ name: i.name, qty: i.qty, notes: i.notes || "" })),
+  items: (order.items || []).map((i) => ({
+    name: nameWithSize(i.name, i.size), qty: i.qty, notes: i.notes || "",
+    ...(i.addons?.length && { addons: i.addons.map(addonLabel) }), // names only — no prices in the kitchen
+  })),
   notes: order.notes || "",
   createdAt: order.createdAt, preparingAt: order.preparingAt, // timing only — no PII
 });

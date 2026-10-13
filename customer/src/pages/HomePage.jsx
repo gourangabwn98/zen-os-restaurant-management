@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAppState } from "../context/AppState.jsx";
-import { useMenu, isOutOfStock, discountPct, rankItems } from "../hooks/useMenu.js";
+import { useMenu, isOutOfStock, discountPct, rankItems, isSpecialTab } from "../hooks/useMenu.js";
 import { useMyOrders } from "../hooks/useMyOrders.js";
 import { useRestaurantProfile } from "../hooks/useRestaurantProfile.js";
 import { isActiveOrder, STATUS_LABEL } from "../utils/orderStatus.js";
@@ -36,13 +36,13 @@ export default function HomePage() {
     return () => { alive = false; };
   }, []);
 
-  const handleAdd = (item, qty = 1, notes = "") => {
-    cart.addItem(item, qty, notes);
+  const handleAdd = (item, qty = 1, notes = "", addonIds = []) => {
+    cart.addItem(item, qty, notes, addonIds);
     toast.success(`${item.name} added to cart`);
   };
   const cardProps = (item) => ({
     item, qty: cart.getQty(item._id), onOpen: setOpenItem,
-    onAdd: (i) => handleAdd(i, 1), onInc: (i) => cart.addItem(i, 1), onDec: (i) => cart.removeItem(i._id),
+    onAdd: (i) => handleAdd(i, 1), onInc: (i) => cart.incLine(i._id), onDec: (i) => cart.removeItem(i._id),
   });
 
   // Typing on Home jumps to the full menu with the query (reference behaviour).
@@ -92,7 +92,7 @@ export default function HomePage() {
           {grouped.length > 0 && (
             <CategoryTiles
               names={grouped.map(([c]) => c)} active="All"
-              onPick={pickCategory} imageFor={categoryImage} iconFor={categoryIcon}
+              onPick={pickCategory} imageFor={categoryImage} iconFor={categoryIcon} isSpecial={isSpecialTab}
             />
           )}
 

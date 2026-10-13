@@ -19,7 +19,7 @@ import { t, N_, tn, localName } from "../i18n/index.jsx";
 import NotShareableNote from "../components/NotShareableNote.jsx";
 import SplitPayFields from "../components/SplitPayFields.jsx";
 import AddonPicker, { AddonHint } from "../components/AddonPicker.jsx";
-import { hasAddons, lineKey, addonIdsOf, addonLabel } from "../utils/addons.js";
+import { hasAddons, lineKey, addonIdsOf, addonLabel, nameWithSize } from "../utils/addons.js";
 import { tableLabel } from "../utils/diningArea.js";
 import { STATUS_LABEL } from "../components/StatusBadge.jsx";
 
@@ -358,7 +358,7 @@ export default function OrderDetailPage() {
           {(editLines || order.items || []).map((it, i) => (
             <div key={editLines ? it.key : i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "5px 0", fontSize: 13.5, color: "#fff" }}>
               <span style={{ flex: 1, minWidth: 0 }}>
-                {localName(it)}{editLines ? "" : ` × ${it.qty}`}{it.notes ? <span style={{ color: TEXT_FAINT }}> · "{it.notes}"</span> : ""}
+                {nameWithSize(localName(it), it.size)}{editLines ? "" : ` × ${it.qty}`}{it.notes ? <span style={{ color: TEXT_FAINT }}> · "{it.notes}"</span> : ""}
                 {(it.addons || []).map((a) => <span key={a.name} style={{ display: "block", fontSize: 12, color: "#93C5FD" }}>+ {addonLabel(a)}</span>)}
               </span>
               {editLines ? (
@@ -506,9 +506,9 @@ export default function OrderDetailPage() {
             {(bill.mergedItems || []).map((it, i) => (
               <div key={i} style={{ fontSize: 12.5, padding: "3px 0", color: "#fff" }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span>{localName(it)} × {it.qty}</span><span>₹{it.price * it.qty}</span>
+                  <span>{nameWithSize(localName(it), it.size)} × {it.qty}</span><span>₹{it.price * it.qty}</span>
                 </div>
-                {(it.addons || []).map((a) => <div key={a.name} style={{ fontSize: 11.5, color: "#93C5FD" }}>+ {addonLabel(a)}</div>)}
+                {(it.addons || []).map((a) => <div key={a.name} style={{ fontSize: 11.5, color: "#93C5FD" }}>+ {addonLabel(a)} ₹{a.price}</div>)}
               </div>
             ))}
             <div style={{ borderTop: `1px dashed ${GLASS_BORDER}`, marginTop: 8, paddingTop: 8 }}>
@@ -601,7 +601,7 @@ export default function OrderDetailPage() {
                       return (
                         <GlassCard key={it._id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", opacity: outOfStock ? 0.5 : 1 }}>
                           <div style={{ minWidth: 0 }}>
-                            <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff" }}>{localName(it)}</div>
+                            <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff" }}>{nameWithSize(localName(it), it.size)}</div>
                             <NotShareableNote item={it} />
                             <div style={{ fontSize: 12, color: TEXT_FAINT, marginTop: 2 }}>₹{it.price}{outOfStock ? ` · ${t("Out of stock")}` : ""}</div>
                             <AddonHint item={it} />

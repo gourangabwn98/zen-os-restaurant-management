@@ -235,6 +235,18 @@ day it starts. Always pass `ctx.clock` (not bare minutes) to `isScheduleActive`.
 - **Bulk edit** computes prices server-side (`pricePercent`); never accept a
   price from the client for many items.
 - Diner `tags` are display/filter only; `tag` (Veg / Non Veg) stays authoritative.
+  So is `foodType` (Veg / Egg / Non-veg) — display only.
+- **Sections** (`MenuItem.category`) and their order live ONLY in
+  `utils/menuSections.js`; subcategories are derived from items
+  (`GET /menu/structure`, `services/menuStructureService.js`). The old extra
+  `categories` list was removed — an item is in one section. "Chef's Pick" is
+  shown as "Khoai Signature" (flag/key `isChefsPick`/`CHEFS_PICKS` unchanged).
+- **Add-ons**: at most `ADDONS_MAX` (1) per item, `type` from `ADDON_TYPES`.
+  Lines carry only `addonIds`; `utils/pricing.js` prices and snapshots them.
+  Show `name` + `size` through `nameWithSize` (most names already contain the
+  size). The kitchen feed/KOT shows add-on names, never prices.
+- Bulk menu load: `scripts/importMenu.js` (dry run first; switches old items
+  off, never deletes unless `--remove-old`).
 
 ## OTP / SMS provider selection
 
