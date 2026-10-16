@@ -1,6 +1,6 @@
 import QtyStepper from "./ui/QtyStepper.jsx";
 import { VegDot } from "./ItemCard.jsx";
-import { keyOf, lineUnitPrice, nameWithSize } from "../utils/menuDisplay.js";
+import { keyOf, lineUnitPrice, nameWithSize, addonLabel, addonQty } from "../utils/menuDisplay.js";
 
 /** One cart / order-edit line: item (with size), its add-on on its own row,
  * ₹ each and the line amount. Prices are a preview; the server re-prices. */
@@ -16,7 +16,12 @@ export default function CartLine({ line: c, cart }) {
       <div className="nm">
         <b>{c.item.tag && <VegDot tag={c.item.tag} />}{name}</b>
         {(c.addons || []).map((a) => (
-          <span key={a.addonId} className="small addon-line">+ {a.name} ₹{a.price}</span>
+          <div key={a.addonId} className="small addon-line" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+            <span>+ {addonLabel(a)} · ₹{a.price} each</span>
+            <QtyStepper qty={addonQty(a)} label={`${a.name} quantity`}
+              onDec={() => cart.changeAddonQty(key, a.addonId, -1)}
+              onInc={() => cart.changeAddonQty(key, a.addonId, 1)} />
+          </div>
         ))}
         <span className="muted small">₹{unit} each{c.notes ? ` · “${c.notes}”` : ""}</span>
       </div>
