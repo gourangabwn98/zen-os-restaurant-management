@@ -12,6 +12,7 @@ export default function ItemCard({ item, qty, onOpen, onAdd, onInc, onDec, conte
   const isFav = favorites.isFavorite(item._id);
   const off = discountPct(item);
   const hasOriginal = Number(item.originalPrice) > Number(item.price);
+  const hasAddons = itemAddons(item).length > 0;
 
   return (
     <article className={`pcard${outOfStock ? " off" : ""}`}>
@@ -42,8 +43,8 @@ export default function ItemCard({ item, qty, onOpen, onAdd, onInc, onDec, conte
           {outOfStock
             ? <span className="na">Sold out</span>
             : qty > 0
-              ? <QtyStepper qty={qty} onInc={() => onInc(item)} onDec={() => onDec(item)} label={`${item.name} quantity`} />
-              : <AddButton onClick={() => onAdd(item)} label={`Add ${item.name}`} />}
+              ? <QtyStepper qty={qty} onInc={() => hasAddons ? onOpen(item) : onInc(item)} onDec={() => onDec(item)} label={`${item.name} quantity`} />
+              : <AddButton onClick={() => hasAddons ? onOpen(item) : onAdd(item)} label={`Add ${item.name}`} />}
         </div>
       </div>
     </article>

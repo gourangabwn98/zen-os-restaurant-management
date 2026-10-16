@@ -37,9 +37,9 @@ const imports = (id) => {
   if (id.endsWith("menuDisplay.js")) return display;
   if (id.endsWith("useCart.js")) return cartModule;
   if (id.endsWith("AppState.jsx")) return { useAppState: () => ({ cart, orderEdit: editing, favorites: { isFavorite: () => false, toggle: stub } }) };
-  if (id.endsWith("useMenu.js")) return { isOutOfStock: () => false };
+  if (id.endsWith("useMenu.js")) return { isOutOfStock: (item) => item.isAvailable === false, discountPct: () => 0 };
   if (id.endsWith("menuService.js")) return { getMenu: async () => ({ data: [item] }) };
-  if (id.endsWith("QtyStepper.jsx")) return { default: QtyStepper, __esModule: true };
+  if (id.endsWith("QtyStepper.jsx")) return { default: QtyStepper, AddButton: Button, __esModule: true };
   if (id.endsWith("Button.jsx")) return { default: Button, __esModule: true };
   if (id.endsWith("Sheet.jsx")) return { default: Sheet, __esModule: true };
   if (id.endsWith("ItemCard.jsx")) return { VegDot: stub, Stars: stub, HeartButton: stub };
@@ -59,11 +59,30 @@ const load = (path) => {
 const cartModule = load("../src/hooks/useCart.js");
 const lineModule = load("../src/components/CartLine.jsx");
 const sheetModule = load("../src/components/ItemDetailSheet.jsx");
+const cardModule = load("../src/components/ItemCard.jsx");
 const editModule = load("../src/hooks/useOrderEdit.js");
 const reviewModule = load("../src/components/OrderEditReview.jsx");
 const nodes = (root) => Array.isArray(root) ? root.flatMap(nodes) : root && typeof root === "object"
   ? [root, ...nodes(root.props?.children)] : [];
 const rerenderCart = () => { cart = render(() => cartModule.useCart({ storage })); };
+
+// Menu-card add/+ must let customers choose extras before adding a variant.
+for (const qty of [0, 2]) {
+  let opened = 0, added = 0, increased = 0;
+  const props = { item, qty, onOpen: () => opened++, onAdd: () => added++, onInc: () => increased++, onDec: stub };
+  let card = cardModule.default(props);
+  let control = nodes(card).find((n) => n.type === (qty ? QtyStepper : Button));
+  (qty ? control.props.onInc : control.props.onClick)();
+  assert.equal(opened, 1, "available extras open the picker");
+  assert.equal(added + increased, 0, "no unconfigured item is added");
+  for (const addons of [[], [item.addons[2]]]) {
+    card = cardModule.default({ ...props, item: { ...item, addons } });
+    control = nodes(card).find((n) => n.type === (qty ? QtyStepper : Button));
+    (qty ? control.props.onInc : control.props.onClick)();
+  }
+  assert.equal(opened, 1);
+  assert.equal(added + increased, 2, "items without available extras still add directly");
+}
 
 // Item-sheet controls generate repeated IDs and a price multiplied by both
 // the number of extras and the parent quantity, including batched clicks.
