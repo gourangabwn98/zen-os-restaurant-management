@@ -46,7 +46,7 @@ export function useOrderEdit() {
         // With add-ons the line's own price (item + add-ons) keeps the preview right.
         ...(addonIds.length && {
           addonIds, unitPrice: it.price,
-          addons: (it.addons || []).map((a) => ({ addonId: String(a.addonId), name: a.qty > 1 ? `${a.qty} x ${a.name}` : a.name, price: a.price })),
+          addons: (it.addons || []).map((a) => ({ addonId: String(a.addonId), name: a.name, qty: Math.max(1, Math.floor(Number(a.qty) || 1)), price: a.price })),
         }),
       };
     });

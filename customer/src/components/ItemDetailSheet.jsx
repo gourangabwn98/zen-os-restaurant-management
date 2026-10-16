@@ -5,7 +5,7 @@ import { VegDot, Stars, HeartButton } from "./ItemCard.jsx";
 import QtyStepper from "./ui/QtyStepper.jsx";
 import Button from "./ui/Button.jsx";
 import Sheet from "./ui/Sheet.jsx";
-import { nameWithSize, itemAddons, isNotSharable, SIGNATURE_LABEL } from "../utils/menuDisplay.js";
+import { nameWithSize, itemAddons, isNotSharable, SIGNATURE_LABEL, countAddonIds, stepAddonIds } from "../utils/menuDisplay.js";
 
 /** Item details bottom sheet — pick quantity, the optional add-on and
  * special instructions, then add to cart: `onAdd(item, qty, notes, addonIds)`.
@@ -18,8 +18,9 @@ export default function ItemDetailSheet({ item, onClose, onAdd }) {
   const outOfStock = isOutOfStock(item);
   const hasOriginal = Number(item.originalPrice) > Number(item.price);
   const addons = itemAddons(item);
-  const toggleAddon = (id) => setAddonIds((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
-  const extra = addons.filter((a) => addonIds.includes(String(a._id))).reduce((s, a) => s + (Number(a.price) || 0), 0);
+  const counts = countAddonIds(addonIds);
+  const changeAddonQty = (id, delta) => setAddonIds((p) => stepAddonIds(p, id, delta));
+  const extra = addons.reduce((s, a) => s + (counts.get(String(a._id)) || 0) * (Number(a.price) || 0), 0);
   const unit = (Number(item.price) || 0) + extra;
   const title = nameWithSize(item.name, item.size);
   const typeLabel = item.tag === "Others" ? "Others" : item.foodType || (item.tag === "Veg" ? "Veg" : "Non-veg");
@@ -65,11 +66,12 @@ export default function ItemDetailSheet({ item, onClose, onAdd }) {
       </div>
 
       {!outOfStock && addons.map((a) => (
-        <label key={a._id} className="addon-opt">
-          <input type="checkbox" checked={addonIds.includes(String(a._id))} onChange={() => toggleAddon(String(a._id))} />
+        <div key={a._id} className="addon-opt" style={{ flexWrap: "wrap" }}>
           <span className="grow">+ {a.name} <span className="muted small">(optional)</span></span>
           <span>₹{a.price}</span>
-        </label>
+          <QtyStepper qty={counts.get(String(a._id)) || 0} label={`${a.name} quantity`}
+            onDec={() => changeAddonQty(String(a._id), -1)} onInc={() => changeAddonQty(String(a._id), 1)} />
+        </div>
       ))}
 
       {!outOfStock && (
