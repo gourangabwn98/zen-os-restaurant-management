@@ -3,6 +3,8 @@
 // Staff vocabulary that is used on the floor as-is (KOT, OTP, GST, UPI, QR)
 // is kept in Latin letters on purpose.
 export default {
+  "Final total is recalculated when saved": "সংরক্ষণ করলে চূড়ান্ত মোট আবার হিসাব করা হবে",
+  "Item not found. Please refresh menu.": "আইটেম পাওয়া যায়নি। মেনু রিফ্রেশ করুন।",
   "+{n} more": "+আরও {n}টি",
   "Accept": "গ্রহণ করুন",
   "Accept order": "অর্ডার গ্রহণ করুন",

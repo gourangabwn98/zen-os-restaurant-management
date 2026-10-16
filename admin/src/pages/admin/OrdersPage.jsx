@@ -22,22 +22,46 @@ import { OrderScreen, OrderPanel, PanelSection, OrderLine, EmptyLines, Totals, S
 import { nameWithSize } from "./menu/menuKit.js";
 import { cached, invalidate } from "../../services/cache.js";
 
-// Menu / categories / pricing settings for the order modals — cached so
-// "New order" and "Add items" open instantly (prefetched with the page,
-// refreshed on the server's "menu:updated" event, max 60s old otherwise).
+// Categories / pricing settings are cached across order modals. Selectable
+// menu options are fetched fresh and synchronized by useOrderMenu below.
 const ORDER_DATA_TTL = 60 * 1000;
-const menuCached       = () => cached("order:menu", ORDER_DATA_TTL, () => getMenu({}));
 const profileCached    = () => cached("order:profile", 5 * ORDER_DATA_TTL, () => getRestaurantProfile());
 const categoriesCached = () => cached("order:categories", ORDER_DATA_TTL, () => getCategories());
 const structureCached  = () => cached("order:structure", ORDER_DATA_TTL, () => getMenuStructure());
-const prefetchOrderData = () => { menuCached().catch(() => {}); profileCached().catch(() => {}); categoriesCached().catch(() => {}); structureCached().catch(() => {}); };
+const prefetchOrderData = () => { profileCached().catch(() => {}); categoriesCached().catch(() => {}); structureCached().catch(() => {}); };
+
+// Keep open POS selections by ID while refreshing live options and prices.
+function useOrderMenu(setMi, setMenuLoading, setCart, setPicker) {
+  useEffect(() => {
+    let active = true, request = 0;
+    const reload = async () => {
+      const version = ++request;
+      setMenuLoading(true);
+      try {
+        const { data } = await getMenu({});
+        if (!active || version !== request) return;
+        const items = data || [];
+        setMi(items);
+        setCart((cart) => cart.map((line) => ({ ...line, item: items.find((m) => String(m._id) === String(line.item._id)) || line.item })));
+        setPicker((picker) => picker ? { ...picker, item: items.find((m) => String(m._id) === String(picker.item._id)) || { ...picker.item, addons: [], isAvailable: false } } : null);
+      } catch {
+        if (active) toast.error(t("Could not load menu. Close and reopen to retry."));
+      } finally { if (active && version === request) setMenuLoading(false); }
+    };
+    reload();
+    const socket = getSocket();
+    socket?.on("menu:updated", reload);
+    socket?.on("connect", reload);
+    return () => { active = false; socket?.off("menu:updated", reload); socket?.off("connect", reload); };
+  }, [setMi, setMenuLoading, setCart, setPicker]);
+}
 import { useAuth } from "../../hooks/useAuth.js";
 import { isManager } from "../../utils/access.js";
 import { t, tn, N_, fmtNum, fmtDate, fmtDateTime, fmtTime, localName } from "../../i18n/core.js";
 import { customerName } from "./shared/customerName.js";
 import { takenByName, takenByIsAcceptor } from "./shared/takenBy.js";
 import { DINING_AREA_LABEL, TABLE_AREAS, TABLE_AREA_LABEL, groupTablesByArea, tableLabel, isAcRoom } from "./shared/diningArea.js";
-import { hasAddons, cartLineKey, unitPrice, addonIdsOf, addonLabel } from "./shared/addons.js";
+import { hasAddons, cartLineKey, unitPrice, addonIdsOf, addonLabel, stepLineAddon, replaceLineAddons } from "./shared/addons.js";
 import { AddonLines, AddonHint, AddonPicker } from "./shared/AddonUI.jsx";
 import SplitPayButton from "./shared/SplitPay.jsx";
 import { SPLIT, paymentLabel } from "../../utils/payment.js";
@@ -161,13 +185,14 @@ const GlobalOrdersStyle = () => (
     }
     /* ── New order (NewOrderModal): cart always visible ──
        Wide: category rail | dishes (shared/OrderMenuPicker.jsx) | cart column (items first, details below,
-       totals pinned). Narrow (≤780px): category strip on top, full-width
-       menu, and the cart as a bottom bar that opens a full sheet. */
+       totals pinned). Narrow (≤900px — phones and tablets held upright, where
+       rail + dishes + cart left only 2 thin columns of dishes): category strip
+       on top, full-width menu, and the cart as a bottom bar that opens a full sheet. */
     .op-no-modal { position: relative; }
     .op-no-main { display: flex; flex: 1; overflow: hidden; min-height: 0; }
     .op-no-cartbar { display: none; }
     .op-no-back { display: none; }
-    @media (max-width: 780px) {
+    @media (max-width: 900px) {
       .op-no-main { flex-direction: column; }
       .op-no-cart { display: none; position: absolute; inset: 0; z-index: 20; width: auto; border-left: 0 !important; border-radius: inherit; }
       .op-no-cart.open { display: flex; }
@@ -278,10 +303,21 @@ const lineKey = (i) => String(i.menuItem?._id ?? i.menuItem ?? i.menuItemId);
 const EditOrderItemsModal = ({ order, onClose, onSaved, onAddMore }) => {
   // KH-12: a line keeps its add-ons; keyed by item + add-ons (two Biryani lines may differ).
   const [lines, setLines] = useState(() => (order.items || []).map((i) => ({
-    key: cartLineKey(lineKey(i), addonIdsOf(i)), menuItemId: lineKey(i), name: i.name, nameBn: i.nameBn || "", price: i.price, qty: i.qty,
-    notes: i.notes || "", addonIds: addonIdsOf(i), addons: i.addons || [],
+    key: cartLineKey(lineKey(i), addonIdsOf(i), i.notes), menuItemId: lineKey(i), name: i.name, nameBn: i.nameBn || "", price: i.price, qty: i.qty,
+    notes: i.notes || "", basePrice: i.basePrice, addonIds: addonIdsOf(i), addons: i.addons || [],
   })));
   const [saving, setSaving] = useState(false);
+  const [editMenu, setEditMenu] = useState([]);
+  const [menuLoading, setMenuLoading] = useState(true);
+  const [menuError, setMenuError] = useState(false);
+  const [picker, setPicker] = useState(null);
+  const loadEditMenu = () => {
+    setMenuLoading(true); setMenuError(false);
+    getMenu({ includeUnavailable: true, ignoreSchedule: true })
+      .then(({ data }) => setEditMenu(data || []))
+      .catch(() => setMenuError(true)).finally(() => setMenuLoading(false));
+  };
+  useEffect(() => { loadEditMenu(); }, []);
 
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && !saving && onClose();
@@ -304,6 +340,7 @@ const EditOrderItemsModal = ({ order, onClose, onSaved, onAddMore }) => {
       onClose();
     } catch (e) {
       toast.error(e?.response?.data?.message || t("Couldn't update the order"));
+      loadEditMenu();
     } finally { setSaving(false); }
   };
 
@@ -331,7 +368,14 @@ const EditOrderItemsModal = ({ order, onClose, onSaved, onAddMore }) => {
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-1)" }}>{localName(l)}</div>
-                  <AddonLines line={l} />
+                  <AddonLines line={l} item={editMenu.find((m) => String(m._id) === l.menuItemId)} disabled={saving || menuLoading} onStep={(id, delta) => setLines((p) => stepLineAddon(p, l.key, id, delta))} />
+                  <button type="button" className="zc-btn sm" disabled={saving || menuLoading}
+                    onClick={() => {
+                      const item = editMenu.find((m) => String(m._id) === l.menuItemId);
+                      if (menuError) { loadEditMenu(); return; }
+                      if (!item || !hasAddons(item)) return toast.error(t("No extras available for this item"));
+                      setPicker({ item, lineKey: l.key, initialIds: l.addonIds });
+                    }}>{menuLoading ? t("Loading…") : menuError ? t("Retry") : t("Extras")}</button>
                   <div className="tnum" style={{ fontSize: 11.5, color: "var(--text-3)" }}>{t("₹{price} each", { price: fmtNum(l.price) })}</div>
                 </div>
                 <button type="button" className="zc-btn sm" aria-label={t("Less {name}", { name: localName(l) })} disabled={l.qty <= 1} onClick={() => setQty(l.key, -1)}>−</button>
@@ -354,6 +398,8 @@ const EditOrderItemsModal = ({ order, onClose, onSaved, onAddMore }) => {
           <button type="button" className="zc-btn pri" disabled={saving || !lines.length} onClick={save}>{saving ? t("Saving…") : t("Save changes")}</button>
         </div>
       </div>
+      {picker && <AddonPicker item={picker.item} initialIds={picker.initialIds} onCancel={() => setPicker(null)}
+        onConfirm={(ids) => { setLines((p) => replaceLineAddons(p, picker.lineKey, ids, picker.item)); setPicker(null); }} />}
     </div>
   );
 };
@@ -712,9 +758,9 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
   const [cartOpen, setCartOpen] = useState(false); // phone: cart sheet over the menu
   const tableRef = useRef(null);
   const guestsRef = useRef(null);
+  useOrderMenu(setMi, setMenuLoading, setCart, setPicker);
 
   useEffect(()=>{
-    menuCached().then(r=>{ setMi(r.data||[]); setMenuLoading(false); }).catch(()=>setMenuLoading(false));
     profileCached().then(r=>{ const p=r.data?.data||r.data; setScpi(p?.serviceCharge||0); setGstRate(p?.gstRate||0); if(p?.acServiceChargePerGuest!=null) setAcRate(Number(p.acServiceChargePerGuest)); }).catch(()=>{});
     categoriesCached().then(r=>setOrderCats(r.data?.data || r.data || [])).catch(()=>{});
     structureCached().then(r=>setSectionOrder((r.data?.sections || []).map(x=>x.name))).catch(()=>{});
@@ -726,7 +772,7 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
   // KH-12: a line = item + add-ons. Menu-card "+" asks about extras first.
   const getQty    = (id) => cart.filter(c=>c.item._id===id).reduce((s,c)=>s+c.qty,0);
   const addLine   = (item, addonIds=[]) => setCart(p=>{ const key=cartLineKey(item._id, addonIds); const ex=p.find(c=>c.key===key); return ex?p.map(c=>c.key===key?{...c,qty:Math.min(99,c.qty+1)}:c):[...p,{key,item,qty:1,addonIds:[...addonIds]}]; });
-  const addItem   = (item) => (hasAddons(item) ? setPicker(item) : addLine(item, []));
+  const addItem   = (item) => (hasAddons(item) ? setPicker({ item }) : addLine(item, []));
   const incLine   = (key) => setCart(p=>p.map(c=>c.key===key?{...c,qty:Math.min(99,c.qty+1)}:c));
   const decLine   = (key) => setCart(p=>p.map(c=>c.key===key?{...c,qty:c.qty-1}:c).filter(c=>c.qty>0));
   // Lines confirmed in the 🎤 voice-order panel (shared/VoiceOrder.jsx).
@@ -801,7 +847,11 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
       search={search} onSearch={setSearch}
       voice={<VoiceOrder menu={mi} onAdd={addVoiceItems} onSearch={(q)=>setSearch(q)} />}
       canEscape={!cart.length} onClose={onClose}
-      overlay={picker && <AddonPicker item={picker} onCancel={()=>setPicker(null)} onConfirm={(ids)=>{ addLine(picker, ids); setPicker(null); }} />}
+      overlay={picker && <AddonPicker item={picker.item} initialIds={picker.initialIds} onCancel={()=>setPicker(null)} onConfirm={(ids)=>{
+        if (picker.lineKey) setCart(p=>replaceLineAddons(p, picker.lineKey, ids, picker.item));
+        else addLine(picker.item, ids);
+        setPicker(null);
+      }} />}
       bar={<PanelBar count={totalQty} total={total} onOpen={()=>setCartOpen(true)} />}
     >
       {/* Categories (photo) → subcategory chips → dishes */}
@@ -868,19 +918,24 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
                 {cart.map(c=>(
                   <OrderLine key={c.key}
                     name={nameWithSize(localName(c.item), c.item.size)}
-                    addons={<AddonLines item={c.item} line={c} />}
+                    addons={<><AddonLines item={c.item} line={c} disabled={loading} onStep={(id, delta)=>setCart(p=>stepLineAddon(p,c.key,id,delta))} />
+                      {hasAddons(c.item) && <button type="button" className="zc-btn sm" disabled={loading}
+                        onClick={()=>setPicker({item:c.item,lineKey:c.key,initialIds:c.addonIds})}>{t("Extras")}</button>}</>}
                     unit={unitPrice(c.item,c.addonIds)} qty={c.qty}
                     onDec={()=>decLine(c.key)} onInc={()=>incLine(c.key)} />
                 ))}
               </div>
             )}
           {/* Prices aren't editable here — the server prices every order from the menu. */}
-          <div className="os-info warn">{t("To change a dish's price or details, go to Menu Items, search for the dish and edit it there.")}</div>
+          <div className="os-info warn">
+            <b>{t("Price looks wrong on an item? No need to panic.")}</b>
+            {t("Go to Menu > search for the item > tap Edit and correct the price > Come back here and you will see the change saved.")}
+          </div>
         </PanelSection>
 
         {/* 3 · Customer — optional, out of the way until needed */}
         <PanelSection>
-          <Collapsible label={t("Customer details (optional)")} summary={customerSummary}>
+          <Collapsible label={t("Customer details ")} summary={customerSummary}>
             <label className="os-field"><span>{t("Customer name")}</span>
               <input value={customerName} onChange={e=>setCustomerName(e.target.value)} />
             </label>
@@ -918,9 +973,9 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }
   const [gstRate,     setGstRate]     = useState(0);
   const [paymentMethod,setPaymentMethod] = useState(order.paymentMethod||"Cash");
   const [paymentStatus,setPaymentStatus] = useState(order.paymentStatus||"PENDING_VERIFICATION");
+  useOrderMenu(setMi, setMenuLoading, setCart, setPicker);
 
   useEffect(()=>{
-    menuCached().then(r=>{ setMi(r.data||[]); setMenuLoading(false); }).catch(()=>setMenuLoading(false));
     profileCached().then(r=>{ const p=r.data?.data||r.data; setScpi(p?.serviceCharge||0); setGstRate(p?.gstRate||0); }).catch(()=>{});
     categoriesCached().then(r=>setOrderCats(r.data?.data || r.data || [])).catch(()=>{});
     structureCached().then(r=>setSectionOrder((r.data?.sections || []).map(x=>x.name))).catch(()=>{});
@@ -932,7 +987,7 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }
   // KH-12: a line = item + add-ons. Menu-card "+" asks about extras first.
   const getQty    = (id) => cart.filter(c=>c.item._id===id).reduce((s,c)=>s+c.qty,0);
   const addLine   = (item, addonIds=[]) => setCart(p=>{ const key=cartLineKey(item._id, addonIds); const ex=p.find(c=>c.key===key); return ex?p.map(c=>c.key===key?{...c,qty:Math.min(99,c.qty+1)}:c):[...p,{key,item,qty:1,addonIds:[...addonIds]}]; });
-  const addItem   = (item) => (hasAddons(item) ? setPicker(item) : addLine(item, []));
+  const addItem   = (item) => (hasAddons(item) ? setPicker({ item }) : addLine(item, []));
   const incLine   = (key) => setCart(p=>p.map(c=>c.key===key?{...c,qty:Math.min(99,c.qty+1)}:c));
   const decLine   = (key) => setCart(p=>p.map(c=>c.key===key?{...c,qty:c.qty-1}:c).filter(c=>c.qty>0));
   // Lines confirmed in the 🎤 voice-order panel (shared/VoiceOrder.jsx).
@@ -1031,7 +1086,11 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }
       search={search} onSearch={setSearch}
       voice={<VoiceOrder menu={mi} onAdd={addVoiceItems} onSearch={(q)=>setSearch(q)} />}
       canEscape={!cart.length} onClose={onClose}
-      overlay={picker && <AddonPicker item={picker} onCancel={()=>setPicker(null)} onConfirm={(ids)=>{ addLine(picker, ids); setPicker(null); }} />}
+      overlay={picker && <AddonPicker item={picker.item} initialIds={picker.initialIds} onCancel={()=>setPicker(null)} onConfirm={(ids)=>{
+        if (picker.lineKey) setCart(p=>replaceLineAddons(p, picker.lineKey, ids, picker.item));
+        else addLine(picker.item, ids);
+        setPicker(null);
+      }} />}
       bar={<PanelBar count={totalQty} total={total} onOpen={()=>setCartOpen(true)} />}
     >
       {/* Categories (photo) → subcategory chips → dishes */}
@@ -1079,7 +1138,9 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }
                 {cart.map(c=>(
                   <OrderLine key={c.key}
                     name={nameWithSize(localName(c.item), c.item.size)}
-                    addons={<AddonLines item={c.item} line={c} />}
+                    addons={<><AddonLines item={c.item} line={c} disabled={loading} onStep={(id, delta)=>setCart(p=>stepLineAddon(p,c.key,id,delta))} />
+                      {hasAddons(c.item) && <button type="button" className="zc-btn sm" disabled={loading}
+                        onClick={()=>setPicker({item:c.item,lineKey:c.key,initialIds:c.addonIds})}>{t("Extras")}</button>}</>}
                     unit={unitPrice(c.item,c.addonIds)} qty={c.qty}
                     onDec={()=>decLine(c.key)} onInc={()=>incLine(c.key)} />
                 ))}

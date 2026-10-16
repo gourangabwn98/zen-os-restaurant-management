@@ -68,9 +68,10 @@ await test("normalizeAddons: admin input validated; JSON string ok; id of an exi
   assert.throws(() => normalizeAddons("{bad"), /list/);
 });
 
-await test("add-on validation: at most ONE add-on per item; price >= 0; free (₹0) is allowed", () => {
-  assert.equal(ADDONS_MAX, 1);
-  assert.throws(() => normalizeAddons([{ name: "Egg", price: 25 }, { name: "Butter", price: 10 }]), (e) => e.statusCode === 400 && /At most 1/.test(e.message));
+await test("add-on validation: multiple options allowed within the cap; price >= 0; free allowed", () => {
+  assert.equal(ADDONS_MAX, 10);
+  assert.equal(normalizeAddons([{ name: "Egg", price: 25 }, { name: "Butter", price: 10 }]).length, 2);
+  assert.throws(() => normalizeAddons(Array.from({ length: 11 }, (_, i) => ({ name: `Extra ${i}`, price: 1 }))), (e) => e.statusCode === 400);
   assert.deepEqual(normalizeAddons([{ name: "Onion", price: 0 }]), [{ name: "Onion", price: 0 }]);
   assert.throws(() => normalizeAddons([{ name: "Egg", price: -0.5 }]), (e) => e.statusCode === 400);
 });
@@ -81,7 +82,7 @@ await test("add-on validation: type is optional, but only Extra egg / Extra piec
   assert.throws(() => normalizeAddons([{ name: "Cheese", price: 30, type: "Cheese" }]), (e) => e.statusCode === 400 && /type/.test(e.message));
 });
 
-await test("schema: the MenuItem model refuses a second add-on even if a caller skips normalizeAddons", async () => {
+await test("schema: multiple extras allowed, over-limit options rejected even without normalizeAddons", async () => {
   const { default: mongoose } = await import("mongoose");
   const { getModels } = await import("../config/getModels.js");
   const { MenuItem } = getModels(mongoose.createConnection());
@@ -89,7 +90,9 @@ await test("schema: the MenuItem model refuses a second add-on even if a caller 
     addons: [{ name: "Extra Egg", price: 25, type: "Extra egg" }, { name: "Butter", price: 10, type: "Butter" }] });
   const check = (d) => d.validate().then(() => undefined, (e) => e);
   const err = await check(doc);
-  assert.ok(err?.errors?.addons, "two add-ons fail validation");
+  assert.equal(err, undefined, "two different extras are valid");
+  doc.addons = Array.from({ length: 11 }, (_, i) => ({ name: `Extra ${i}`, price: 1 }));
+  assert.ok((await check(doc))?.errors?.addons, "the server cap is still enforced");
   const one = new MenuItem({ name: "Egg Curry", price: 90, category: "Main Course", tag: "Non Veg", foodType: "Egg", subcategory: "Egg", size: "2 pcs",
     addons: [{ name: "Extra Egg", price: 25, type: "Extra egg" }] });
   assert.equal(await check(one), undefined);

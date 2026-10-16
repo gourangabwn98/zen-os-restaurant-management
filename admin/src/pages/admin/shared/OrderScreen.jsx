@@ -11,7 +11,7 @@
 //   └──────────────────────────────────────────────────────────────────────┘
 //
 // Only layout + presentation live here; each screen keeps its own logic.
-// Phone (≤780px): the panel becomes a sheet opened from a bottom bar
+// Phone / tablet portrait (≤900px): the panel becomes a sheet opened from a bottom bar
 // (classes op-no-cart / op-no-cartbar / op-no-back in OrdersPage).
 // ─────────────────────────────────────────────────────────────────────────────
 import { useEffect, useState } from "react";
@@ -20,6 +20,19 @@ import { t, tn, fmtNum } from "../../../i18n/core.js";
 const SearchIcon = () => (
   <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
     <circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" />
+  </svg>
+);
+
+// − / + drawn as icons, not the "−" / "+" characters: a font draws those on
+// its text baseline, so they sat off-centre inside the round buttons.
+export const MinusIcon = ({ size = 14 }) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
+    <path d="M5 12h14" />
+  </svg>
+);
+export const PlusIcon = ({ size = 14 }) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
+    <path d="M12 5v14M5 12h14" />
   </svg>
 );
 
@@ -96,21 +109,21 @@ export const PanelSection = ({ label, aside, children }) => (
   </section>
 );
 
-/** One order line: name (+ add-ons below), ₹ each × qty, − / +, line total. */
+/** One order line: full name (+ add-ons) and line total on top; ₹ each × qty and − qty + below. */
 export function OrderLine({ name, addons, unit, qty, onDec, onInc }) {
   return (
     <div className="os-line">
       <div className="os-line-main">
         <div className="os-line-nm">{name}</div>
         {addons}
-        <div className="os-line-meta tnum">₹{fmtNum(unit)} × {fmtNum(qty)}</div>
-      </div>
-      <div className="os-step">
-        <button type="button" onClick={onDec} aria-label={t("Remove one {name}", { name })}>−</button>
-        <b className="tnum">{fmtNum(qty)}</b>
-        <button type="button" className="pri" onClick={onInc} aria-label={t("Add {name}", { name })}>+</button>
       </div>
       <div className="os-line-amt tnum">₹{fmtNum(unit * qty)}</div>
+      <div className="os-line-meta tnum">₹{fmtNum(unit)} × {fmtNum(qty)}</div>
+      <div className="os-step">
+        <button type="button" onClick={onDec} aria-label={t("Remove one {name}", { name })}><MinusIcon /></button>
+        <b className="tnum">{fmtNum(qty)}</b>
+        <button type="button" className="pri" onClick={onInc} aria-label={t("Add {name}", { name })}><PlusIcon /></button>
+      </div>
     </div>
   );
 }
@@ -222,17 +235,19 @@ const OrderScreenStyles = () => (
     .os-seg button.on.warn { background: var(--wait-fill); color: var(--wait-ink); box-shadow: none; }
 
     .os-lines { display: grid; gap: 2px; }
-    .os-line { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 10px; padding: 10px 2px; border-bottom: 1px dashed var(--edge); }
+    .os-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 10px; row-gap: 6px; padding: 10px 2px; border-bottom: 1px dashed var(--edge); }
     .os-line:last-child { border-bottom: 0; }
-    .os-line-main { min-width: 0; }
-    .os-line-nm { font-size: 13.5px; font-weight: 650; line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-    .os-line-meta { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
-    .os-line-amt { min-width: 56px; text-align: right; font-weight: 750; font-size: 13.5px; }
-    .os-step { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border-radius: 999px; background: var(--card-2); border: 1px solid var(--edge); }
-    .os-step button { width: 28px; height: 28px; border-radius: 50%; border: 0; background: transparent; color: var(--text-1); font-size: 16px; font-weight: 700; cursor: pointer; }
-    .os-step button:hover { background: var(--card); }
-    .os-step button.pri { background: var(--grad-btn); color: #fff; }
-    .os-step b { min-width: 22px; text-align: center; font-size: 13px; }
+    .os-line-main { min-width: 0; align-self: start; }
+    .os-line-nm { font-size: 13.5px; font-weight: 650; line-height: 1.3; overflow-wrap: anywhere; }
+    .os-line-meta { font-size: 11.5px; color: var(--text-3); }
+    .os-line-amt { align-self: start; text-align: right; font-weight: 750; font-size: 13.5px; white-space: nowrap; }
+    .os-step { justify-self: end; display: inline-flex; align-items: center; gap: 4px; padding: 3px; border-radius: 999px; background: var(--card-2); border: 1px solid var(--edge); }
+    .os-step button { width: 30px; height: 30px; padding: 0; border-radius: 50%; border: 1px solid var(--edge-hi); background: var(--card); color: var(--text-1);
+      cursor: pointer; display: inline-grid; place-items: center; line-height: 0; transition: background .15s ease, border-color .15s ease; }
+    .os-step button:hover { border-color: var(--violet-line); }
+    .os-step button.pri { background: var(--grad-btn); color: #fff; border-color: transparent; }
+    .os-step button:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
+    .os-step b { min-width: 24px; text-align: center; font-size: 14px; }
 
     .os-empty { display: grid; justify-items: center; gap: 4px; padding: 26px 10px; text-align: center; color: var(--text-3); font-size: 12.5px; }
     .os-empty b { color: var(--text-2); font-size: 13.5px; }
@@ -267,7 +282,11 @@ const OrderScreenStyles = () => (
     .os-bar-t { flex: 1; min-width: 0; display: flex; gap: 10px; align-items: baseline; font-size: 13px; color: var(--text-2); }
     .os-bar-t b { color: var(--text-1); }
 
+    .os-info b { display: block; margin-bottom: 2px; }
+
     @media (max-width: 1100px) { .os-panel { width: 320px; } .os-title { max-width: 28%; } }
+    /* Up to 900px the order panel is a sheet (op-no-* in OrdersPage), so the dishes get the full width. */
+    @media (max-width: 900px) { .os-panel { width: auto; border-left: 0; } }
     @media (max-width: 780px) {
       .os-head { flex-wrap: wrap; gap: 10px; padding: 8px 12px; }
       .os-back-t { display: none; }

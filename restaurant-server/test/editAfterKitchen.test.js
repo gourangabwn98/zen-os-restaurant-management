@@ -136,6 +136,27 @@ await test("diff: only what changed — extra to make, and CANCEL lines", () => 
   assert.deepEqual(same, { added: [], removed: [] });
 });
 
+await test("extra quantities edit and reload on the same order; only one change slip per revision", async () => {
+  const menu = MENU[0];
+  menu.addons = [{ _id: "egg-extra", name: "Extra Egg", price: 25 }];
+  try {
+    const initial = { ...line("biryani", 1), basePrice: 200, price: 225, addons: [{ addonId: "egg-extra", name: "Extra Egg", price: 25 }] };
+    const w = makeWorld({ items: [initial] });
+    const { order } = await w.edit(ADMIN, [{ menuItemId: "biryani", qty: 1, addonIds: Array(3).fill("egg-extra") }]);
+    assert.equal(order.total, 275);
+    assert.equal(w.order().items[0].addons[0].qty, 3, "reloaded saved state retains three extras");
+    assert.equal(w.state.slips.length, 1);
+    assert.deepEqual(w.state.slips[0].items[0].addons, ["3 x Extra Egg"]);
+    await assert.rejects(w.edit(ADMIN, [{ menuItemId: "biryani", qty: 1, addonIds: ["egg-extra"] }]), (e) => e.statusCode === 409);
+    const reduced = await w.edit(ADMIN, [{ menuItemId: "biryani", qty: 1, addonIds: ["egg-extra"] }], 4);
+    assert.equal(reduced.order.total, 225);
+    const removed = await w.edit(ADMIN, [{ menuItemId: "biryani", qty: 1, addonIds: [] }], 5);
+    assert.equal(removed.order.total, 200);
+    assert.equal(removed.order.items[0].addons, undefined);
+    assert.equal(w.state.slips.length, 3);
+  } finally { delete menu.addons; }
+});
+
 await test("admin edits a cooking order: new totals, stock follows the final order, one change slip", async () => {
   const w = makeWorld();
   const { order, kotChange } = await w.edit(ADMIN, items(["biryani", 3], ["raita", 1]));
@@ -374,6 +395,73 @@ await test("change slip is idempotent per order revision; prints as a KOT job", 
   assert.equal(p.jobType, "KOT");
   assert.equal(p.changed, true);
   assert.equal(p.customerName, "");
+});
+
+await test("waiter draft extras persist and render cancel-old / replace-new revisions, with noted rows isolated", async () => {
+  const { editLinesOf, stepLineAddon, replaceLineAddons, orderItemsPayload, mergeOrderAdditions, draftSubtotal } = await import("../../waiter/src/utils/orderDraft.js");
+  // These imports are pure text layout, never the print processor or drivers.
+  const { renderKot } = await import("../../print-service/src/renderers/kotRenderer.js");
+  const menu = MENU[0];
+  menu.addons = [{ _id: "egg", name: "Boiled Egg", price: 25 }, { _id: "sauce", name: "Sauce", price: 5 }];
+  try {
+    const initial = ["less spicy", "no salt"].map((notes) => ({ ...line("biryani", 2), notes, basePrice: 200, price: 225,
+      addons: [{ addonId: "egg", name: "Boiled Egg", price: 25 }] }));
+    const w = makeWorld({ items: initial });
+    // Increase 1 -> 2 -> 3, reduce 3 -> 2 -> 1 -> 0, then add new extras.
+    for (const [index, quantity] of [2, 3, 2, 1, 0].entries()) {
+      const draft = editLinesOf(clone(w.order().items));
+      const next = stepLineAddon(draft, draft[0].key, "egg", quantity > draft[0].addonIds.length ? 1 : -1);
+      const previous = draft[0].addons[0]?.qty || (draft[0].addons.length ? 1 : 0);
+      const result = await w.edit(WAITER, orderItemsPayload(next), 3 + index);
+      assert.equal(result.order.total, draftSubtotal(next));
+      assert.equal(w.order().items[0].addons?.[0]?.qty || (w.order().items[0].addons?.length ? 1 : 0), quantity);
+      assert.deepEqual(w.order().items[1], initial[1], "other kitchen note stays intact");
+      assert.equal(result.order._id, "o1");
+      assert.equal(result.order.orderId, "ORD1");
+      const payload = kotChangePrintPayload(result.kotChange.job);
+      assert.equal(payload.changed, true);
+      assert.equal(payload.jobType, "KOT");
+      assert.deepEqual(payload.items.map((i) => [i.name, i.qty, i.notes]), [["Biryani", 2, "less spicy"], ["CANCEL - Biryani", 2, "less spicy"]]);
+      assert.deepEqual(payload.items[0].addons || [], quantity ? [quantity > 1 ? `${quantity} x Boiled Egg` : "Boiled Egg"] : []);
+      assert.deepEqual(payload.items[1].addons, [previous > 1 ? `${previous} x Boiled Egg` : "Boiled Egg"]);
+      for (const width of [32, 48]) {
+        const rows = renderKot(payload, { width });
+        const paper = rows.map((r) => r.text || "").join("\n");
+        assert.match(paper, /ORDER CHANGED/);
+        assert.match(paper, /CANCEL - Biryani/);
+        assert.match(paper, /Note: less spicy/);
+        assert.doesNotMatch(paper, /no salt/);
+        if (quantity > 1) assert.ok(paper.includes(`+ ${quantity} x Boiled Egg`));
+        for (const row of rows) if (row.text) assert.ok(row.text.length <= width);
+      }
+    }
+    const draft = editLinesOf(clone(w.order().items));
+    const next = replaceLineAddons(draft, draft[0].key, ["egg", "egg", "sauce"], menu);
+    const result = await w.edit(WAITER, orderItemsPayload(next), 8);
+    assert.equal(result.order.total, 960);
+    assert.deepEqual(result.kotChange.job.items[0].addons, ["2 x Boiled Egg", "Sauce"]);
+    assert.equal(result.kotChange.job.items[1].addons, undefined, "cancel previous plain parent");
+    const added = mergeOrderAdditions(w.order().items, [{ menuItemId: "biryani", qty: 1, addonIds: ["egg"] }]);
+    const appended = await w.edit(WAITER, added, 9);
+    assert.equal(appended.order.items.length, 3, "add-items preserves both noted rows");
+    assert.deepEqual(appended.kotChange.job.items.map((i) => [i.name, i.qty, i.notes, i.addons]), [["Biryani", 1, "", ["Boiled Egg"]]]);
+    assert.equal(w.state.orders.length, 1);
+    const slipCount = w.state.slips.length;
+    menu.addons[0].isAvailable = false;
+    await assert.rejects(w.edit(WAITER, added, 10), (e) => e.statusCode === 400 && /removed or disabled/.test(e.message));
+    assert.equal(w.state.slips.length, slipCount, "unavailable extra creates no job");
+    delete menu.addons[0].isAvailable;
+    await assert.rejects(w.edit(WAITER, added, 9), (e) => e.statusCode === 409);
+    const discounted = makeWorld({ items: initial, extra: {
+      coupon: { discountType: "PERCENT", discountValue: 10 }, acServiceCharge: 30,
+    } });
+    const discountDraft = editLinesOf(initial);
+    const discountedResult = await discounted.edit(WAITER,
+      orderItemsPayload(stepLineAddon(discountDraft, discountDraft[0].key, "egg", 1)));
+    assert.equal(discountedResult.order.subtotal, 980, "950 of items plus preserved AC charge");
+    assert.equal(discountedResult.order.discount, 95, "coupon repriced on changed items only");
+    assert.equal(discountedResult.order.total, 885);
+  } finally { delete menu.addons; }
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

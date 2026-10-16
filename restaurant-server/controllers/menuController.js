@@ -11,7 +11,7 @@ import { parseMenuText, parseMenuCsv } from "../utils/menuImportParser.js";
 import { extractDocumentText } from "../utils/purchaseImportExtract.js";
 import { sniffFileType } from "../middleware/importUploadMiddleware.js";
 import { CATEGORY_SORT, ensureMenuSections } from "../services/categoryService.js";
-import { normalizeAddons } from "../utils/menuAddons.js";
+import { normalizeAddons, menuAddonRecords } from "../utils/menuAddons.js";
 import { listBestSellers } from "../services/bestSellerService.js";
 import { getMenuContext, ensureSmartCategories } from "../services/smartCategoryService.js";
 import {
@@ -118,7 +118,7 @@ export const getMenu = async (req, res) => {
       }
       if (and.length) filter.$and = and;
       let items = await MenuItem.find(filter).sort({ category: 1, itemId: 1, name: 1 }).lean();
-      items = items.map((i) => ({ ...i, categoryList: itemCategoryList(i, menuCtx) }));
+      items = items.map((i) => ({ ...i, addons: menuAddonRecords(i), categoryList: itemCategoryList(i, menuCtx) }));
       if (skipSchedule) {
         // Annotate so the admin can see what customers currently can't (its
         // category is scheduled out). Items have no time schedule of their own.
@@ -193,7 +193,7 @@ export const addMenuItem = async (req, res) => {
     if (!name || !price || !category)
       return res.status(400).json({ message: "name, price, category required" });
 
-    let addons, fields; // KH-12 add-ons (max 1) · subcategory / size / foodType
+    let addons, fields; // KH-12 add-ons · subcategory / size / foodType
     try { addons = normalizeAddons(req.body.addons) || []; fields = readMenuItemFields(req.body); }
     catch (e) { return res.status(e.statusCode || 400).json({ message: e.message }); }
     if ((await req.models.Category.findOne({ name: category }).select("kind").lean())?.kind === "SMART")

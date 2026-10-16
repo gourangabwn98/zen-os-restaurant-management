@@ -33,7 +33,7 @@ export const ITEM_FLAGS = [
 // Mirrors restaurant-server/utils/menuSections.js (the server validates).
 export const FOOD_TYPE_LABELS = ["Veg", "Egg", "Non-veg"]; // display only; Veg / Non Veg `tag` stays authoritative
 export const ADDON_TYPES = ["Extra egg", "Extra piece", "Butter"];
-export const ADDONS_MAX = 1; // per item
+export const ADDONS_MAX = 10; // per item; matches the server's bounded selection
 
 /** "Boiled Egg (2 pcs)" — name + portion, unless the name already says it. */
 export const nameWithSize = (name, size) => {

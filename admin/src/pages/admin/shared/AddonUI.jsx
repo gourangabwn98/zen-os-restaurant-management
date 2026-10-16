@@ -1,10 +1,23 @@
 // src/pages/admin/shared/AddonUI.jsx — KH-12 add-on UI (hint, lines, "extra?" picker).
 import { useState } from "react";
 import { t, localName, fmtNum } from "../../../i18n/core.js";
-import { hasAddons, unitPrice, addonNames, countIds, ADDON_QTY_MAX } from "./addons.js";
+import { hasAddons, unitPrice, addonNames, countIds, ADDON_QTY_MAX, stepAddonIds, addonIdsOf } from "./addons.js";
 
 /** "+ 1 pc Chicken" lines under an item (order line or cart line). */
-export function AddonLines({ item, line, style }) {
+export function AddonLines({ item, line, style, onStep, disabled = false }) {
+  if (onStep) {
+    const counts = countIds(addonIdsOf(line));
+    return [...counts].map(([id, qty]) => {
+      const live = item?.addons?.find((a) => String(a._id) === id);
+      const a = live || line?.addons?.find((a) => String(a.addonId ?? a._id) === id) || { name: t("Unavailable extra"), price: 0 };
+      const unavailable = item ? !live || live.isAvailable === false : a.isAvailable === false;
+      return <div key={id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 4, fontSize: 11, ...style }}>
+        <span>+ {a.name} · ₹{fmtNum(a.price)} × {fmtNum(qty)}</span>
+        <button type="button" className="zc-btn sm" disabled={disabled} aria-label={`− ${a.name}`} onClick={() => onStep(id, -1)}>−</button>
+        <button type="button" className="zc-btn sm" disabled={disabled || qty >= ADDON_QTY_MAX || unavailable} aria-label={`+ ${a.name}`} onClick={() => onStep(id, 1)}>+</button>
+      </div>;
+    });
+  }
   const names = addonNames(item, line);
   if (!names.length) return null;
   return names.map((n) => (
@@ -17,21 +30,18 @@ export function AddonHint({ item }) {
   if (!hasAddons(item)) return null;
   return (
     <div style={{ fontSize: 10.5, color: "var(--live-ink)", marginTop: 3, lineHeight: 1.3 }}>
-      ＋ {t("Extras")}: {item.addons.map((a) => `${a.name} +₹${fmtNum(a.price)}`).join(" · ")}
+      ＋ {t("Extras")}: {item.addons.filter((a) => a.isAvailable !== false).map((a) => `${a.name} +₹${fmtNum(a.price)}`).join(" · ")}
     </div>
   );
 }
 
 /** After tapping an item with add-ons: "Does the customer want an extra?"
  *  − / + per add-on; `picked` repeats an id once per piece (2 × chicken). */
-export function AddonPicker({ item, onCancel, onConfirm }) {
-  const [picked, setPicked] = useState([]);
+export function AddonPicker({ item, onCancel, onConfirm, initialIds = [] }) {
+  const [picked, setPicked] = useState(() => initialIds.map(String));
   const counts = countIds(picked);
-  const step = (id, delta) => setPicked((p) => {
-    if (delta > 0) return (counts.get(id) || 0) >= ADDON_QTY_MAX ? p : [...p, id];
-    const i = p.lastIndexOf(id);
-    return i < 0 ? p : [...p.slice(0, i), ...p.slice(i + 1)];
-  });
+  const unavailable = picked.some((id) => !item.addons.some((a) => String(a._id) === id && a.isAvailable !== false));
+  const step = (id, delta) => setPicked((p) => stepAddonIds(p, id, delta));
   return (
     <div className="zc-scrim" onClick={onCancel} style={{ zIndex: 1200 }}>
       <div className="zc-modal" style={{ width: 420 }} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
@@ -43,7 +53,8 @@ export function AddonPicker({ item, onCancel, onConfirm }) {
           <button type="button" className="zc-x" onClick={onCancel} aria-label={t("Close")}>✕</button>
         </div>
         <div className="mb" style={{ display: "grid", gap: 8 }}>
-          {item.addons.map((a) => {
+          {unavailable && <div role="alert">{t("An extra was removed or disabled. Choose No extra, then pick again.")}</div>}
+          {item.addons.filter((a) => a.isAvailable !== false).map((a) => {
             const id = String(a._id);
             const n = counts.get(id) || 0;
             const on = n > 0;
@@ -61,7 +72,7 @@ export function AddonPicker({ item, onCancel, onConfirm }) {
         </div>
         <div className="mf">
           <button type="button" className="zc-btn" onClick={() => onConfirm([])}>{t("No extra")}</button>
-          <button type="button" className="zc-btn pri" disabled={!picked.length} onClick={() => onConfirm(picked)}>
+          <button type="button" className="zc-btn pri" disabled={!picked.length || unavailable} onClick={() => onConfirm(picked)}>
             {t("Add with extra")} · ₹{fmtNum(unitPrice(item, picked))}
           </button>
         </div>

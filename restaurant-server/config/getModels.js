@@ -8,7 +8,7 @@ import mongoose from "mongoose";
 import { ORDER_STATUSES, ORDER_SOURCES, ORDER_TYPES, BILL_STATUSES } from "../utils/orderStateMachine.js";
 import { FOOD_TYPES } from "../utils/foodTypes.js";
 import { FOOD_TYPE_LABELS, ADDON_TYPES, SUBCATEGORY_MAX, SIZE_MAX } from "../utils/menuSections.js";
-import { ADDONS_MAX } from "../utils/menuAddons.js";
+import { ADDONS_MAX, menuAddonRecords } from "../utils/menuAddons.js";
 import { COLLECT_METHODS } from "../utils/paymentMode.js";
 import {
   STOCK_UNITS, LEDGER_TYPES, WASTAGE_REASONS, AUTO_ORDER_PREFERENCES, CREDIT_PREFERENCES, BILL_NUMBER_SOURCES,
@@ -268,17 +268,21 @@ const menuItemSchema = new mongoose.Schema({
   soldOutUntil:  { type: Date, default: null },
   // KH-12 — optional extras with a price ("1 pc chicken" ₹40). Picked per
   // order line by id; priced only server-side (utils/menuAddons.js).
-  // At most ADDONS_MAX (1) per item — kept a list so it can grow later.
+  // At most ADDONS_MAX per item — validated on both menu writes and orders.
   addons: {
     type: [new mongoose.Schema({
       name:  { type: String, required: true, trim: true, maxlength: 60 },
       price: { type: Number, required: true, min: 0 },
       type:  { type: String, enum: ADDON_TYPES, default: undefined },
+      isAvailable: { type: Boolean, default: undefined },
     })],
     default: [],
     validate: { validator: (v) => !v || v.length <= ADDONS_MAX, message: `At most ${ADDONS_MAX} add-on per item` },
   },
 }, { timestamps: true });
+menuItemSchema.pre("init", function (data) {
+  if (data.addons?.some((a) => !a._id)) data.addons = menuAddonRecords(data);
+});
 menuItemSchema.index({ soldOutUntil: 1 }, { partialFilterExpression: { soldOutUntil: { $type: "date" } } });
 menuItemSchema.index({ category: 1, subcategory: 1 });
 menuItemSchema.index({ itemId: 1 }, { unique: true, sparse: true });

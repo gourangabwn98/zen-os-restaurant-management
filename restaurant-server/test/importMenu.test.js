@@ -121,7 +121,7 @@ await test("bad files are refused before anything is planned", () => {
   assert.throws(() => planMenuImport({ rows: fromExtendedJson([FILE[1], FILE[1]]), existing: [] }), /twice/);
   assert.throws(() => normalizeRow({ name: "X", price: 1, category: "Snacks" }, 0), /not a section/);
   assert.throws(() => normalizeRow({ name: "X", price: -1, category: "Counter" }, 0), /price/);
-  assert.throws(() => normalizeRow({ name: "X", price: 1, category: "Counter", addons: [{ name: "a", price: 1 }, { name: "b", price: 2 }] }, 0), /At most 1/);
+  assert.throws(() => normalizeRow({ name: "X", price: 1, category: "Counter", addons: Array.from({ length: 11 }, (_, i) => ({ name: `Extra ${i}`, price: 1 })) }, 0), /At most 10/);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -1,6 +1,10 @@
 // Bengali (bn) — Hotel KHOAI change round: billing settle flow, floor words,
 // notifications, menu categories, purchases/payables, employees, EBITDA, tables.
 export default {
+  "Could not load menu. Close and reopen to retry.": "মেনু লোড করা যায়নি। আবার চেষ্টা করতে বন্ধ করে খুলুন।",
+  "No extras available for this item": "এই আইটেমের জন্য অতিরিক্ত কিছু নেই",
+  "Unavailable extra": "অনুপলব্ধ অতিরিক্ত আইটেম",
+  "An extra was removed or disabled. Choose No extra, then pick again.": "একটি অতিরিক্ত আইটেম সরানো বা বন্ধ করা হয়েছে। অতিরিক্ত লাগবে না বেছে নিয়ে আবার নির্বাচন করুন।",
   // ── Print service card (Profile) ──
   "For reference only — which printer prints what is set in the print service's printers.config.json": "শুধু তথ্যের জন্য — কোন প্রিন্টার কী ছাপবে তা প্রিন্ট সার্ভিসের printers.config.json-এ ঠিক করা হয়",
   "KOT + bills": "KOT + বিল",
@@ -248,7 +252,10 @@ export default {
   "Dining · pick a table": "ডাইনিং · টেবিল বাছুন",
   "Customer details (optional)": "কাস্টমারের তথ্য (ঐচ্ছিক)",
   "Tap a dish on the left to add it": "যোগ করতে বাঁদিকের পদে ট্যাপ করুন",
-  "To change a dish's price or details, go to Menu Items, search for the dish and edit it there.": "কোনো পদের দাম বা তথ্য বদলাতে মেনু আইটেম পেজে গিয়ে পদটি খুঁজে সেখানে এডিট করুন।",
+  "Price looks wrong on an item? No need to panic.": "কোনো আইটেমের দাম ভুল লাগছে? চিন্তার কিছু নেই।",
+  "Go to Menu > search for the item > tap Edit and correct the price > Come back here and you will see the change saved.": "মেনু-তে যান > আইটেমটি খুঁজুন > এডিট-এ ট্যাপ করে দাম ঠিক করুন > এখানে ফিরে এলেই বদলানো দাম দেখতে পাবেন।",
+  "Hot or cold": "গরম না ঠান্ডা",
+  "Show all drinks": "সব পানীয় দেখান",
   "Add dishes to place the order": "অর্ডার দিতে পদ যোগ করুন",
   "Place order": "অর্ডার দিন",
   "Add items to order": "অর্ডারে আইটেম যোগ করুন",

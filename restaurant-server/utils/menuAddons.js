@@ -11,10 +11,19 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { ADDON_TYPES } from "./menuSections.js";
+import { createHash } from "node:crypto";
 
-// Add-ons an admin may define on ONE menu item (the menu has at most one —
-// still a list so it can grow: raise this, nothing else changes).
-export const ADDONS_MAX = 1;
+// Legacy imports may lack embedded _ids. Never let hydration invent a new
+// identity on every read. Existing IDs always win; this does not write data.
+export const menuAddonRecords = (item) => (item.addons || []).map((a, index) => ({
+  ...(a.toObject ? a.toObject() : a),
+  _id: a._id || createHash("sha256").update(JSON.stringify([
+    "menu-addon-v1", String(item._id), index, a.name, a.type || "",
+  ])).digest("hex").slice(0, 24),
+}));
+
+// Multiple distinct extras per menu item; keep the same bounded limit as a line.
+export const ADDONS_MAX = 10;
 // Distinct add-ons one order line may carry. Separate from ADDONS_MAX so an
 // item saved before the limit (with several) still prices instead of 400ing.
 export const LINE_ADDONS_MAX = 10;
@@ -41,6 +50,7 @@ export const normalizeAddons = (raw, existing = []) => {
   if (list.length > ADDONS_MAX) throw httpError(`At most ${ADDONS_MAX} add-ons per item`);
   const known = new Set((existing || []).map((a) => String(a._id)));
   const seen = new Set();
+  const seenIds = new Set();
   return list.map((a) => {
     const name = String(a?.name ?? "").replace(/\s+/g, " ").trim();
     if (!name) throw httpError("Every add-on needs a name");
@@ -54,6 +64,13 @@ export const normalizeAddons = (raw, existing = []) => {
     if (type !== undefined && !ADDON_TYPES.includes(type)) throw httpError(`Add-on type must be one of: ${ADDON_TYPES.join(", ")}`);
     const out = { name, price: Math.round(price * 100) / 100, ...(type && { type }) };
     if (a?._id && known.has(String(a._id))) out._id = a._id;
+    if (out._id) {
+      if (seenIds.has(String(out._id))) throw httpError("An add-on ID is listed twice");
+      seenIds.add(String(out._id));
+    }
+    const previous = (existing || []).find((v) => String(v._id) === String(out._id));
+    if (a?.isAvailable !== undefined && typeof a.isAvailable !== "boolean") throw httpError("Add-on availability must be true or false");
+    if (a?.isAvailable !== undefined || previous?.isAvailable !== undefined) out.isAvailable = a?.isAvailable ?? previous.isAvailable;
     return out;
   });
 };
@@ -73,10 +90,10 @@ export const resolveLineAddons = (menuItem, addonIds) => {
   const counts = new Map();
   for (const id of addonIds.map(String)) counts.set(id, (counts.get(id) || 0) + 1);
   if (counts.size > LINE_ADDONS_MAX) throw httpError("Too many add-ons on one line");
-  const byId = new Map((menuItem.addons || []).map((a) => [String(a._id), a]));
+  const byId = new Map(menuAddonRecords(menuItem).map((a) => [String(a._id), a]));
   const addons = [...counts].map(([id, qty]) => {
     const a = byId.get(id);
-    if (!a) throw httpError(`An add-on for "${menuItem.name}" is no longer available — please pick again`);
+    if (!a || a.isAvailable === false) throw httpError(`An add-on for "${menuItem.name}" was removed or disabled — refresh the menu and pick again`);
     if (qty > ADDON_QTY_MAX) throw httpError(`At most ${ADDON_QTY_MAX} × "${a.name}" on one item`);
     return { addonId: a._id, name: a.name, price: Number(a.price) || 0, ...(a.type && { type: a.type }), ...(qty > 1 && { qty }) };
   });

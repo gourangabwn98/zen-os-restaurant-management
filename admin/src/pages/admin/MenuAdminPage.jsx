@@ -525,13 +525,13 @@ function CategoriesModal({ cats: allCats, items, onClose, onChanged, onView, sim
 
 // ── add / edit menu item modal ─────────────────────────────────────────────
 // KH-12 — add-on rows (name + ₹ price + type) for one menu item; at most
-// ADDONS_MAX (1) — the server refuses more.
+// ADDONS_MAX — the server enforces the same option limit.
 function AddonsEditor({ value, onChange }) {
   const update = (i, k, v) => onChange(value.map((a, j) => (j === i ? { ...a, [k]: v } : a)));
   return (
     <div style={{ display: "grid", gap: 6 }}>
       {value.map((a, i) => (
-        <div key={a._id || i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <div key={a._id || i} style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
           <input className="zc-input" style={{ flex: 1 }} maxLength={60} value={a.name}
             placeholder={t("e.g. 1 pc Chicken")} onChange={(e) => update(i, "name", e.target.value)} aria-label={t("Add-on name")} />
           <input className="zc-input" style={{ width: 96 }} type="number" min={0} inputMode="decimal" value={a.price}
@@ -542,6 +542,10 @@ function AddonsEditor({ value, onChange }) {
           </select>
           <button type="button" className="zc-btn sm ghost" onClick={() => onChange(value.filter((_, j) => j !== i))}
             aria-label={t("Remove add-on")}>✕</button>
+          <label style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}>
+            <input type="checkbox" checked={a.isAvailable !== false} onChange={(e) => update(i, "isAvailable", e.target.checked)} />
+            {t("Available")}
+          </label>
         </div>
       ))}
       {value.length < ADDONS_MAX && (
@@ -589,7 +593,7 @@ function ItemModal({ item, categories, subcatsByCat = new Map(), allTags = [], o
     isEdit
       ? { ...EMPTY_FORM, ...item, price: item.price ?? "", originalPrice: item.originalPrice || "", tags: item.tags || [],
           subcategory: item.subcategory || "", size: item.size || "", foodType: item.foodType || "",
-          addons: (item.addons || []).map((a) => ({ _id: a._id, name: a.name, price: String(a.price), type: a.type || "" })) } // KH-12
+          addons: (item.addons || []).map((a) => ({ _id: a._id, name: a.name, price: String(a.price), type: a.type || "", ...(a.isAvailable !== undefined && { isAvailable: a.isAvailable }) })) } // KH-12
       : { ...EMPTY_FORM, category: manualCats(categories)[0]?.name || "" },
   );
   const soldOut = isEdit && isSoldOut(item);
@@ -650,8 +654,8 @@ function ItemModal({ item, categories, subcatsByCat = new Map(), allTags = [], o
       fd.append("tags", JSON.stringify(form.tags || []));
       {
         // KH-12: only sent when the list changed (ids of kept add-ons go back).
-        const toSend = addonRows.map((a) => ({ ...(a._id && { _id: a._id }), name: a.name.trim(), price: Number(a.price), ...(a.type && { type: a.type }) }));
-        const before = JSON.stringify((isEdit ? item.addons || [] : []).map((a) => ({ _id: a._id, name: a.name, price: Number(a.price), ...(a.type && { type: a.type }) })));
+        const toSend = addonRows.map((a) => ({ ...(a._id && { _id: a._id }), name: a.name.trim(), price: Number(a.price), ...(a.type && { type: a.type }), ...(a.isAvailable !== undefined && { isAvailable: a.isAvailable }) }));
+        const before = JSON.stringify((isEdit ? item.addons || [] : []).map((a) => ({ _id: a._id, name: a.name, price: Number(a.price), ...(a.type && { type: a.type }), ...(a.isAvailable !== undefined && { isAvailable: a.isAvailable }) })));
         if (JSON.stringify(toSend) !== before) fd.append("addons", JSON.stringify(toSend));
       }
       if (form.originalPrice) fd.append("originalPrice", form.originalPrice);

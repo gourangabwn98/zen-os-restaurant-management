@@ -25,11 +25,15 @@ import { t, tn, fmtNum, localName } from "../../../i18n/core.js";
 import CategoryIcon from "../../../components/CategoryIcon.jsx";
 import { AddonHint } from "./AddonUI.jsx";
 import { nameWithSize, subcategoryChips } from "../menu/menuKit.js";
+import { MinusIcon, PlusIcon } from "./OrderScreen.jsx";
+import { BEVERAGES_SECTION, drinkTemp } from "./drinkTemp.js";
 
 const isUrl = (s) => typeof s === "string" && /^https?:\/\//i.test(s);
 const clean = (s) => String(s || "").trim();
 const outOfStock = (m) => m.stockTracked === true && m.stockAvailable === false;
 const VEG_FILTERS = [["All", "All"], ["Veg", "Veg"], ["Non Veg", "Non-veg"]];
+// Beverages show Hot / Cold instead (drinks are almost all veg) — shared/drinkTemp.js.
+const TEMP_FILTERS = [["All", "All"], ["Hot", "Hot"], ["Cold", "Cold"]];
 
 /** Glide the pressed button of a sideways / vertical row into view. */
 const useKeepActiveVisible = (dep) => {
@@ -67,6 +71,7 @@ export default function OrderMenuPicker({ items = [], loading, search = "", cats
   const [picked, setCat] = useState("All");
   const [sub, setSub] = useState(null);
   const [veg, setVeg] = useState("All");
+  const [temp, setTemp] = useState("All");
   const listRef = useRef(null);
   // (railRef / cat are set up once the sections are known, below)
   const chipsRef = useKeepActiveVisible(sub);
@@ -102,6 +107,7 @@ export default function OrderMenuPicker({ items = [], loading, search = "", cats
   const iconOf = (name) => catByName.get(name)?.iconShown || catByName.get(name)?.icon || "plate";
 
   const searching = q.length > 0;
+  const drinks = cat === BEVERAGES_SECTION && !searching;
   const inCat = useMemo(() => (cat === "All" ? items : items.filter((m) => m.category === cat)), [items, cat]);
   const subs = useMemo(() => (searching || cat === "All" ? [] : subcategoryChips(inCat)), [inCat, cat, searching]);
   const activeSub = subs.some((s) => s.name === sub) ? sub : null;
@@ -109,12 +115,12 @@ export default function OrderMenuPicker({ items = [], loading, search = "", cats
   const shown = useMemo(() => {
     const base = searching ? items : inCat;
     return base.filter((m) => {
-      if (veg !== "All" && m.tag !== veg) return false;
+      if (drinks ? temp !== "All" && drinkTemp(m) !== temp : veg !== "All" && m.tag !== veg) return false;
       if (activeSub && clean(m.subcategory) !== activeSub) return false;
       if (!searching) return true;
       return [m.name, m.nameBn, m.itemId, m.subcategory].some((v) => clean(v).toLowerCase().includes(q));
     });
-  }, [items, inCat, searching, q, veg, activeSub]);
+  }, [items, inCat, searching, q, veg, temp, drinks, activeSub]);
 
   // Headings: across the menu → by category; inside one → by subcategory.
   const groups = useMemo(() => {
@@ -155,14 +161,25 @@ export default function OrderMenuPicker({ items = [], loading, search = "", cats
           <div className="omp-title">
             <b>{searching ? t("Search results") : cat === "All" ? t("All items") : label(cat)}</b>
             <span>{tn(shown.length, "{n} item", "{n} items")}</span>
-            <div className="zc-seg omp-veg-seg" role="group" aria-label={t("Food type")}>
-              {VEG_FILTERS.map(([v, l]) => (
-                <button key={v} type="button" aria-pressed={veg === v} onClick={() => setVeg(v)}
-                  className={veg === v ? "on" : ""}>
-                  {v !== "All" && <VegMark tag={v} />}{t(l)}
-                </button>
-              ))}
-            </div>
+            {drinks ? (
+              <div className="zc-seg omp-veg-seg" role="group" aria-label={t("Hot or cold")}>
+                {TEMP_FILTERS.map(([v, l]) => (
+                  <button key={v} type="button" aria-pressed={temp === v} onClick={() => setTemp(v)}
+                    className={temp === v ? `on${v === "Hot" ? " hot" : v === "Cold" ? " cold" : ""}` : ""}>
+                    {v === "Hot" ? "🔥 " : v === "Cold" ? "🧊 " : ""}{t(l)}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="zc-seg omp-veg-seg" role="group" aria-label={t("Food type")}>
+                {VEG_FILTERS.map(([v, l]) => (
+                  <button key={v} type="button" aria-pressed={veg === v} onClick={() => setVeg(v)}
+                    className={veg === v ? "on" : ""}>
+                    {v !== "All" && <VegMark tag={v} />}{t(l)}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           {subs.length > 1 && (
             <div ref={chipsRef} className="omp-chips" role="toolbar" aria-label={t("Subcategory")}>
@@ -184,7 +201,9 @@ export default function OrderMenuPicker({ items = [], loading, search = "", cats
         ) : shown.length === 0 ? (
           <div className="omp-empty">
             <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-2)", marginBottom: 4 }}>{t("No items found")}</div>
-            {veg !== "All" && <button type="button" className="zc-btn sm ghost" onClick={() => setVeg("All")}>{t("Show all food types")}</button>}
+            {drinks
+              ? temp !== "All" && <button type="button" className="zc-btn sm ghost" onClick={() => setTemp("All")}>{t("Show all drinks")}</button>
+              : veg !== "All" && <button type="button" className="zc-btn sm ghost" onClick={() => setVeg("All")}>{t("Show all food types")}</button>}
           </div>
         ) : groups.map(([heading, list]) => (
           <section key={heading || "_all"} className="omp-group">
@@ -219,12 +238,12 @@ export default function OrderMenuPicker({ items = [], loading, search = "", cats
                       <span className="omp-price tnum">₹{fmtNum(m.price)}</span>
                       {qty > 0 ? (
                         <span className="omp-step">
-                          <button type="button" onClick={() => onRemove(m._id)} aria-label={t("Remove one {name}", { name })}>−</button>
+                          <button type="button" onClick={() => onRemove(m._id)} aria-label={t("Remove one {name}", { name })}><MinusIcon /></button>
                           <b className="tnum">{fmtNum(qty)}</b>
-                          <button type="button" className="pri" disabled={off} onClick={() => onAdd(m)} aria-label={t("Add {name}", { name })}>+</button>
+                          <button type="button" className="pri" disabled={off} onClick={() => onAdd(m)} aria-label={t("Add {name}", { name })}><PlusIcon /></button>
                         </span>
                       ) : (
-                        <button type="button" className="omp-add" disabled={off} onClick={() => onAdd(m)}>+ {t("Add")}</button>
+                        <button type="button" className="omp-add" disabled={off} onClick={() => onAdd(m)}><PlusIcon size={13} />{t("Add")}</button>
                       )}
                     </div>
                   </div>
@@ -267,6 +286,8 @@ const OmpStyles = () => (
     .omp-veg-seg { margin-left: auto; }
     .omp-veg-seg button { display: inline-flex; align-items: center; gap: 6px; }
     .omp-veg-seg button.on { background: var(--grad-btn); color: #fff; font-weight: 600; }
+    .omp-veg-seg button.on.hot { background: var(--wait-fill); color: var(--wait-ink); }
+    .omp-veg-seg button.on.cold { background: var(--live-fill); color: var(--live-ink); }
     .omp-chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin-top: 10px; padding: 1px;
       -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); }
     .omp-chips::-webkit-scrollbar { display: none; }
@@ -285,7 +306,7 @@ const OmpStyles = () => (
     .omp-gh { display: flex; align-items: center; gap: 8px; margin: 4px 0 10px; font-size: 13px; font-weight: 750; color: var(--text-1); }
     .omp-gh .n { font-size: 11px; font-weight: 650; color: var(--text-3); }
     .omp-gh::after { content: ""; flex: 1; height: 1px; background: var(--edge); }
-    .omp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap: 10px; }
+    .omp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(176px, 100%), 1fr)); gap: 12px; }
     .omp-empty { text-align: center; padding: 56px 16px; color: var(--text-3); font-size: 13px; }
 
     .omp-card { display: flex; flex-direction: column; border: 1px solid var(--edge); border-radius: var(--r-card); background: var(--card-2);
@@ -297,7 +318,7 @@ const OmpStyles = () => (
     .omp-tap:disabled { cursor: not-allowed; }
     .omp-tap:active:not(:disabled) { transform: scale(.985); }
     .omp-tap:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: -2px; }
-    .omp-ph { position: relative; height: 92px; background: var(--card); display: grid; place-items: center; color: var(--text-3); overflow: hidden; }
+    .omp-ph { position: relative; height: 104px; background: var(--card); display: grid; place-items: center; color: var(--text-3); overflow: hidden; }
     .omp-ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .omp-sig { position: absolute; left: 6px; top: 6px; font-size: 9.5px; font-weight: 800; letter-spacing: .02em; text-transform: uppercase;
       padding: 3px 7px; border-radius: 999px; background: #F59E0B; color: #3B2300; }
@@ -312,20 +333,28 @@ const OmpStyles = () => (
     .omp-warn { font-size: 11px; font-weight: 700; color: var(--stop-ink); }
     .omp-ft { display: flex; align-items: center; gap: 6px; padding: 4px 10px 10px; }
     .omp-price { font-size: 15px; font-weight: 750; color: var(--text-1); margin-right: auto; }
-    .omp-add { border: 0; border-radius: 999px; padding: 6px 12px; font-size: 12.5px; font-weight: 700; cursor: pointer;
+    .omp-add { display: inline-flex; align-items: center; gap: 5px; border: 0; border-radius: 999px; padding: 0 13px; height: 30px; font-size: 12.5px; font-weight: 700; cursor: pointer; line-height: 1;
       background: var(--grad-btn); color: #fff; box-shadow: 0 4px 10px -4px var(--violet-glow); }
     .omp-add:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
     .omp-step { display: inline-flex; align-items: center; gap: 6px; }
     .omp-step b { min-width: 18px; text-align: center; font-size: 14px; color: var(--text-1); }
-    .omp-step button { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--violet-line); background: var(--violet-weak);
-      color: var(--accent-ink); font-size: 17px; font-weight: 700; cursor: pointer; display: grid; place-items: center; line-height: 1; }
+    .omp-step button { width: 30px; height: 30px; padding: 0; border-radius: 50%; border: 1px solid var(--violet-line); background: var(--violet-weak);
+      color: var(--accent-ink); cursor: pointer; display: inline-grid; place-items: center; line-height: 0; }
+    .omp-step button:disabled { opacity: .5; cursor: not-allowed; }
+    .omp-step button:focus-visible, .omp-add:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
     .omp-step button.pri { background: var(--grad-btn); color: #fff; border-color: transparent; }
     .omp-veg { width: 13px; height: 13px; border-radius: 3px; border: 1.5px solid var(--ready); display: inline-grid; place-items: center; flex: none; }
     .omp-veg i { width: 5px; height: 5px; border-radius: 50%; background: var(--ready); display: block; }
     .omp-veg.nv { border-color: var(--stop); }
     .omp-veg.nv i { background: var(--stop); }
 
-    @media (max-width: 780px) {
+    @media (min-width: 901px) and (max-width: 1200px) {
+      .omp-rail { width: 120px; }
+      .omp-cat { grid-template-columns: 1fr; justify-items: center; text-align: center; row-gap: 3px; padding: 7px 4px; }
+      .omp-cat-ph { grid-row: auto; }
+      .omp-grid { grid-template-columns: repeat(auto-fill, minmax(min(160px, 100%), 1fr)); }
+    }
+    @media (max-width: 900px) {
       .omp-rail { width: 100%; flex-direction: row; overflow-x: auto; overflow-y: hidden; border-right: 0; border-bottom: 1px solid var(--edge);
         padding: 8px 10px; gap: 6px; scrollbar-width: none; }
       .omp-rail::-webkit-scrollbar { display: none; }
@@ -335,7 +364,8 @@ const OmpStyles = () => (
       .omp-main { padding: 0 12px 12px; }
       .omp-head { margin: 0 -12px 6px; padding: 10px 12px 8px; }
       .omp-veg-seg { margin-left: 0; }
-      .omp-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+      .omp-grid { grid-template-columns: repeat(auto-fill, minmax(min(150px, 100%), 1fr)); gap: 10px; }
+      .omp-ph { height: 96px; }
     }
   `}</style>
 );

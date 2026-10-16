@@ -19,9 +19,10 @@ import { t, N_, tn, localName } from "../i18n/index.jsx";
 import NotShareableNote from "../components/NotShareableNote.jsx";
 import SplitPayFields from "../components/SplitPayFields.jsx";
 import AddonPicker, { AddonHint } from "../components/AddonPicker.jsx";
-import { hasAddons, lineKey, addonIdsOf, addonLabel, nameWithSize } from "../utils/addons.js";
+import { hasAddons, lineKey, addonLabel, nameWithSize } from "../utils/addons.js";
 import { tableLabel } from "../utils/diningArea.js";
 import { STATUS_LABEL } from "../components/StatusBadge.jsx";
+import { editLinesOf, stepLineQty, stepLineAddon, replaceLineAddons, orderItemsPayload, mergeOrderAdditions, draftSubtotal } from "../utils/orderDraft.js";
 
 // DSH-04: the floor steps a waiter drives. Kitchen marks Ready; the waiter
 // taps Served (→ Eating). Completed is NOT here — it follows from settling
@@ -51,8 +52,6 @@ const sentEditable = (o) => !!o && SENT_EDITABLE.includes(o.status) && !!o.stock
 const PAYMENT_LABEL = { PENDING_VERIFICATION: N_("Pending verification"), PAID: N_("Paid"), FAILED: N_("Failed") };
 const paymentColor = (s) => (s === "PAID" ? GREEN : s === "FAILED" ? RED : AMBER);
 
-const lineId = (it) => String(it.menuItem?._id ?? it.menuItem);
-
 /** "Starts preparing in 2:42" for a Placed order (it can still be changed). */
 function SendCountdown({ order }) {
   const [now, setNow] = useState(() => Date.now());
@@ -76,6 +75,8 @@ export default function OrderDetailPage() {
   const [splitOpen, setSplitOpen] = useState(false); // "Cash + Online" amounts
   // Inline quantity edit while the order is still editable (null = not editing).
   const [editLines, setEditLines] = useState(null);
+  const [editRevision, setEditRevision] = useState(0);
+  const [editPicker, setEditPicker] = useState(null);
   const [bill, setBill]   = useState(null);
   const [showQr, setShowQr] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -226,16 +227,7 @@ export default function OrderDetailPage() {
         // `revision` makes a double tap / retry fail instead of adding twice.
         if (order.paymentStatus === "PAID" && !window.confirm(t("{id} is already paid (₹{amount}). Adding items raises the total — collect the difference. Add them?", { id: order.orderId, amount: order.total }))) return;
         // KH-12: merge only into a line with the same item AND add-ons.
-        const merged = new Map((order.items || []).map((it) => {
-          const ids = addonIdsOf(it);
-          return [lineKey(lineId(it), ids), { menuItemId: lineId(it), qty: it.qty, notes: it.notes || "", ...(ids.length && { addonIds: ids }) }];
-        }));
-        for (const it of items) {
-          const k = lineKey(it.menuItemId, it.addonIds || []);
-          const ex = merged.get(k);
-          merged.set(k, ex ? { ...ex, qty: ex.qty + it.qty } : { ...it, notes: "" });
-        }
-        await modifyOrderItems(id, [...merged.values()], order.revision ?? 0);
+        await modifyOrderItems(id, mergeOrderAdditions(order.items || [], items), order.revision ?? 0);
         toast.success(sentEditable(order) ? t("Items added to {id} — the kitchen gets only the new items", { id: order.orderId }) : t("Items added"));
       } else {
         // KH-07: after the KOT → a follow-up order on a NEW KOT, billed
@@ -250,18 +242,37 @@ export default function OrderDetailPage() {
     finally { setBusy(false); }
   };
 
-  // KH-12: lines keep their add-ons; keyed by item + add-ons (two Biryani lines may differ).
-  const startEdit = () => setEditLines((order.items || []).map((it) => ({
-    key: lineKey(lineId(it), addonIdsOf(it)), menuItemId: lineId(it), name: it.name, nameBn: it.nameBn, price: it.price, qty: it.qty,
-    notes: it.notes || "", addonIds: addonIdsOf(it), addons: it.addons || [],
-  })));
-  const changeQty = (key, d) => setEditLines((p) => p.map((l) => (l.key === key ? { ...l, qty: Math.max(1, Math.min(99, l.qty + d)) } : l)));
+  // Keep row identity independent of its editable extras and kitchen notes.
+  const startEdit = () => {
+    setEditPicker(null);
+    setEditRevision(order.revision ?? 0);
+    setEditLines(editLinesOf(order.items || []));
+  };
+  const changeQty = (key, d) => setEditLines((p) => stepLineQty(p, key, d));
+  const changeAddonQty = (key, addonId, delta) => setEditLines((p) => stepLineAddon(p, key, addonId, delta));
+  const chooseEditAddons = async (line) => {
+    setBusy(true);
+    try {
+      const menu = await fetchOrderData("menu");
+      const item = menu.find((m) => String(m._id) === line.menuItemId);
+      if (!item) throw new Error(t("Item not found. Please refresh menu."));
+      // Keep missing/disabled selections visible until explicitly removed;
+      // saving still goes through the backend's availability validation.
+      const choices = [...(item.addons || [])];
+      for (const a of line.addons) {
+        if (!choices.some((c) => String(c._id) === String(a.addonId))) choices.push({ ...a, _id: a.addonId, isAvailable: false });
+      }
+      setEditPicker({ key: line.key, item: { ...item, addons: choices }, initialIds: line.addonIds });
+    } catch (err) { toast.error(err.response?.data?.message || err.message || t("Couldn't load this order")); }
+    finally { setBusy(false); }
+  };
   const removeLine = (key) => setEditLines((p) => p.filter((l) => l.key !== key));
   const saveEdit = async () => {
     if (!editLines.length) return toast.error(t("An order needs at least one item — cancel it instead"));
     setBusy(true);
     try {
-      await modifyOrderItems(id, editLines.map(({ menuItemId, qty, notes, addonIds }) => ({ menuItemId, qty, notes, ...(addonIds?.length && { addonIds }) })), order.revision ?? 0);
+      const { data } = await modifyOrderItems(id, orderItemsPayload(editLines), editRevision);
+      setOrder(data);
       toast.success(t("Order updated"));
       setEditLines(null);
       load();
@@ -357,14 +368,20 @@ export default function OrderDetailPage() {
         <GlassCard style={{ padding: "14px 16px" }}>
           {(editLines || order.items || []).map((it, i) => (
             <div key={editLines ? it.key : i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "5px 0", fontSize: 13.5, color: "#fff" }}>
-              <span style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 {nameWithSize(localName(it), it.size)}{editLines ? "" : ` × ${it.qty}`}{it.notes ? <span style={{ color: TEXT_FAINT }}> · "{it.notes}"</span> : ""}
-                {(it.addons || []).map((a) => <span key={a.name} style={{ display: "block", fontSize: 12, color: "#93C5FD" }}>+ {addonLabel(a)}</span>)}
-              </span>
+                {(it.addons || []).map((a) => <div key={String(a.addonId ?? a.name)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 12, color: "#93C5FD" }}>
+                  <span>+ {addonLabel(a)}</span>
+                  {editLines && <QtyStepper size="sm" qty={a.qty || 1}
+                    onDec={() => !busy && changeAddonQty(it.key, String(a.addonId), -1)}
+                    onInc={() => !busy && changeAddonQty(it.key, String(a.addonId), 1)} />}
+                </div>)}
+                {editLines && <button type="button" disabled={busy} onClick={() => chooseEditAddons(it)} style={{ ...outlineBtn, padding: "5px 8px", marginTop: 5 }}>{t("Extras")}</button>}
+              </div>
               {editLines ? (
                 <>
-                  <QtyStepper qty={it.qty} onDec={() => changeQty(it.key, -1)} onInc={() => changeQty(it.key, 1)} />
-                  <button type="button" onClick={() => removeLine(it.key)} aria-label={t("Remove {name}", { name: it.name })}
+                  <QtyStepper qty={it.qty} onDec={() => !busy && changeQty(it.key, -1)} onInc={() => !busy && changeQty(it.key, 1)} />
+                  <button type="button" disabled={busy} onClick={() => removeLine(it.key)} aria-label={t("Remove {name}", { name: it.name })}
                     style={{ background: "none", border: 0, color: RED, fontSize: 16, cursor: "pointer", padding: "0 4px" }}>✕</button>
                 </>
               ) : (
@@ -384,9 +401,10 @@ export default function OrderDetailPage() {
             </div>
           )}
           <div style={{ borderTop: `1px dashed ${GLASS_BORDER}`, marginTop: 8, paddingTop: 8, display: "flex", justifyContent: "space-between", alignItems: "baseline", fontWeight: 800, color: "#fff" }}>
-            <span style={{ fontSize: 14 }}>{t("Total")}</span>
-            <span style={{ color: ACCENT, fontSize: 23, fontVariantNumeric: "tabular-nums", letterSpacing: -0.4 }}>₹{order.total}</span>
+            <span style={{ fontSize: 14 }}>{t(editLines ? "Subtotal" : "Total")}</span>
+            <span style={{ color: ACCENT, fontSize: 23, fontVariantNumeric: "tabular-nums", letterSpacing: -0.4 }}>₹{editLines ? draftSubtotal(editLines, order.acServiceCharge) : order.total}</span>
           </div>
+          {editLines && <div style={{ fontSize: 11.5, color: TEXT_FAINT }}>{t("Final total is recalculated when saved")}</div>}
         </GlassCard>
       </div>
 
@@ -544,6 +562,13 @@ export default function OrderDetailPage() {
         </div>
       )}
 
+      {editPicker && editLines && (
+        <AddonPicker key={editPicker.key} item={editPicker.item} initialIds={editPicker.initialIds}
+          onCancel={() => setEditPicker(null)} onConfirm={(ids) => {
+            setEditLines((lines) => replaceLineAddons(lines, editPicker.key, ids, editPicker.item));
+            setEditPicker(null);
+          }} />
+      )}
       {picker && (
         <AddonPicker item={picker} onCancel={() => setPicker(null)}
           onConfirm={(ids) => { addAddLine(picker, ids); setPicker(null); }} />
