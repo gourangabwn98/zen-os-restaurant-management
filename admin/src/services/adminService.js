@@ -139,6 +139,8 @@ export const setEmployeeShift    = (id, state, reason) => api.patch(`/admin/empl
 export const getEmployeeStats    = (id, { from, to } = {}) =>
   api.get(`/admin/employees/${id}/stats`, { params: { from: from || undefined, to: to || undefined } });
 export const getEmployeePerformance = (params) => api.get("/admin/employees/performance", { params });
+// Staff performance & collections — { from, to } as "YYYY-MM-DD" (restaurant days).
+export const getStaffReport        = (params) => api.get("/admin/employees/staff-report", { params });
 
 // ── Employees HR: reviews / pay / leave / documents (Employees page tabs) ──
 export const getHrSummary          = (params) => api.get("/admin/employees/hr/summary", { params });

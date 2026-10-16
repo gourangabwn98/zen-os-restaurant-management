@@ -54,6 +54,12 @@ export default function ActivityPage() {
   const presetLabel = RANGE_PRESETS.find((p) => p.key === preset)?.label;
   const rangeLabel = presetLabel ? t(presetLabel) : (from === to ? from : `${from} → ${to}`);
 
+  // An older server sends no `performance` — fall back to the old two figures.
+  const perf = data?.performance || {
+    taken: data?.orders.ordersCount ?? 0, served: 0, completed: 0,
+    collected: data?.orders.collection ?? 0, cash: 0, online: 0,
+  };
+
   if (error) return <ErrorState message={error} onRetry={load} />;
 
   return (
@@ -88,9 +94,20 @@ export default function ActivityPage() {
         <Loader label={t("Loading activity…")} />
       ) : (
         <>
+          {/* Own figures only — the server reads them for the logged-in user
+              (staffReportService.getMyStaffStats). Collection = payments YOU
+              recorded as Paid, even on orders someone else took or served. */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, padding: "0 16px 10px" }}>
+            <StatTile compact label={t("My orders")} value={perf.taken} />
+            <StatTile compact label={t("Served")} value={perf.served} />
+            <StatTile compact label={t("Completed")} value={perf.completed} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, padding: "0 16px 10px" }}>
+            <StatTile compact label={t("My collection")} value={`₹${perf.collected}`} accent={GREEN} />
+            <StatTile compact label={t("Cash")} value={`₹${perf.cash}`} accent={GREEN} />
+            <StatTile compact label={t("Online")} value={`₹${perf.online}`} accent={GREEN} />
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: "0 16px 16px" }}>
-            <StatTile label={t("My orders")} value={data.orders.ordersCount} />
-            <StatTile label={t("My collection")} value={`₹${data.orders.collection}`} accent={GREEN} />
             <StatTile label={t("Time on duty")} value={formatDuration(data.duty.workingSeconds)} />
             <StatTile label={t("Break time")} value={formatDuration(data.duty.breakSeconds)} accent={AMBER} />
           </div>
@@ -133,11 +150,11 @@ export default function ActivityPage() {
   );
 }
 
-function StatTile({ label, value, accent = ACCENT }) {
+function StatTile({ label, value, accent = ACCENT, compact = false }) {
   return (
-    <div style={{ background: GLASS_BG, border: `1px solid ${GLASS_BORDER}`, borderRadius: 16, padding: "16px 14px" }}>
+    <div style={{ background: GLASS_BG, border: `1px solid ${GLASS_BORDER}`, borderRadius: 16, padding: compact ? "12px 10px" : "16px 14px", minWidth: 0 }}>
       <div style={{ fontSize: 11, color: TEXT_FAINT, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: 21, fontWeight: 800, color: accent, marginTop: 5, fontVariantNumeric: "tabular-nums", letterSpacing: -0.3 }}>
+      <div style={{ fontSize: compact ? 16 : 21, fontWeight: 800, color: accent, marginTop: 5, fontVariantNumeric: "tabular-nums", letterSpacing: -0.3, overflowWrap: "anywhere" }}>
         {value}
       </div>
     </div>

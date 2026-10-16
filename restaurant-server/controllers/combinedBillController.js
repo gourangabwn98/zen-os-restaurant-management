@@ -37,6 +37,7 @@ export const paySelected = async (req, res) => {
   try {
     const { paid, alreadyPaid, rejected, changed } = await markSelectedPaid({
       models: req.models, body: req.body || {}, canPay: canSetPaymentStatus("PAID", getRoleFromUser(req.user)),
+      actor: buildActor(req.user),
     });
     for (const o of changed) emitPaymentStatusChanged(req.tenantKey, o);
     res.json({ paid, alreadyPaid, rejected });

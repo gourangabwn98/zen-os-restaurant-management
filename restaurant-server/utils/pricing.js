@@ -74,6 +74,7 @@ export const priceItems = async (items, MenuItem, scheduleCtx = null, { keepIds 
         qty,
         notes: typeof i.notes === "string" ? i.notes.slice(0, 300) : "",
         ...(addons.length && { addons, basePrice: m.price }), // absent → line exactly as before
+        ...(m.size && { size: m.size }), // portion snapshot for tickets ("3 pcs")
       };
     })
   );

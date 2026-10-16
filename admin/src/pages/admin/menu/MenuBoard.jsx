@@ -15,7 +15,7 @@ import EmptyState from "../shared/EmptyState.jsx";
 import ErrorState from "../shared/ErrorState.jsx";
 import { t, tn, fmtNum, localName } from "../../../i18n/core.js";
 import { VegDot, Thumb, CatThumb } from "./menuUI.jsx";
-import { ITEM_FLAGS } from "./menuKit.js";
+import { ITEM_FLAGS, nameWithSize } from "./menuKit.js";
 import {
   VIEWS, VIEW_CHIPS, hasPhoto, isOutOfStock, scheduledAt, availState,
   timeLabel, daysLabel, datesLabel, fmtMinutes, hhmmOf, windowSegments, DAY_SHORT, hasExtraFilters,
@@ -338,7 +338,8 @@ function GroupHeader({ g, preview, open, onToggle, allSel, someSel, onSelAll, on
 
 // ── views row: built-in chips + saved views + filters ───────────────────────
 function ViewsRow({ counts, view, setView, saved, activeSaved, onApplySaved, onRemoveSaved, onSaveView,
-  filters, setFilters, allTags, search, setSearch, totalItems }) {
+  filters, setFilters, allTags, search, setSearch, totalItems,
+  sectionNames = [], selCat = "All", setSelCat }) {
   const [naming, setNaming] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
   const active = (k) => view === k && !activeSaved && !hasExtraFilters(filters);
@@ -383,6 +384,14 @@ function ViewsRow({ counts, view, setView, saved, activeSaved, onApplySaved, onR
       </div>
       {showFilters && (
         <div className="mb-filters">
+          {setSelCat && (
+            <label>{t("Section")}
+              <select className="zc-select mb-mini" value={selCat} onChange={(e) => setSelCat(e.target.value)}>
+                <option value="All">{t("All")}</option>
+                {sectionNames.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+          )}
           <label>{t("Type")}
             <select className="zc-select mb-mini" value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value })}>
               <option value="">{t("Any")}</option>
@@ -418,6 +427,7 @@ function ViewsRow({ counts, view, setView, saved, activeSaved, onApplySaved, onR
 export function ItemsPanel({
   loading, error, onRetry, totalItems, groups, counts, view, setView, search, setSearch,
   saved, activeSaved, onApplySaved, onRemoveSaved, onSaveView, filters, setFilters, allTags,
+  sectionNames, setSelCat, subOptions = [], subSel = [], onToggleSub,
   selCat, selCatLabel, clearCat, preview, clock, sel, toggleSel, setSelMany, collapsed, toggleGroup, setAllCollapsed,
   busyIds, onEdit, onDelete, onAvail, onEditCat, onNew, bulk, hasFilters, clearFilters,
   simple = false, // manager's page: no tick boxes / bulk bar, plain "hidden"
@@ -450,7 +460,25 @@ export function ItemsPanel({
           <ViewsRow counts={counts} view={view} setView={setView} saved={saved} activeSaved={activeSaved}
             onApplySaved={onApplySaved} onRemoveSaved={onRemoveSaved} onSaveView={onSaveView}
             filters={filters} setFilters={setFilters} allTags={allTags}
+            sectionNames={sectionNames} selCat={selCat} setSelCat={setSelCat}
             search={search} setSearch={setSearch} totalItems={totalItems} />
+        )}
+
+        {/* A category is picked → its subcategories as chips (one at a time; All = none). */}
+        {selCat !== "All" && subOptions.length > 0 && onToggleSub && (
+          <div className="mb-views" role="toolbar" aria-label={t("Subcategory")} style={{ marginTop: 10 }}>
+            <button type="button" className={`mb-chip${subSel.length ? "" : " on"}`} aria-pressed={!subSel.length}
+              onClick={() => onToggleSub(null)}>{t("All")}</button>
+            {subOptions.map((s) => {
+              const on = subSel.includes(s.name);
+              return (
+                <button key={s.name} type="button" className={`mb-chip${on ? " on" : ""}`} aria-pressed={on}
+                  onClick={() => onToggleSub(s.name)}>
+                  {s.name}<span className="n">{fmtNum(s.count)}</span>
+                </button>
+              );
+            })}
+          </div>
         )}
 
         {(selCat !== "All" || hasFilters) && (
@@ -559,7 +587,8 @@ export function ItemsPanel({
                             <VegDot tag={item.tag} />
                             <div style={{ minWidth: 0 }}>
                               <div style={{ fontWeight: 600, color: item.isAvailable ? "var(--text-1)" : "var(--text-3)" }}>
-                                {localName(item)}
+                                {nameWithSize(localName(item), item.size)}
+                                {item.subcategory && <span className="mb-note">{item.subcategory}</span>}
                                 {item.description && <span className="mb-note" title={item.description}>{item.description}</span>}
                               </div>
                             </div>
@@ -610,7 +639,7 @@ export function ItemsPanel({
                         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                           <VegDot tag={item.tag} />
                           <span style={{ fontWeight: 600, fontSize: 13, color: item.isAvailable ? "var(--text-1)" : "var(--text-3)", overflowWrap: "anywhere" }}>
-                            {localName(item)}
+                            {nameWithSize(localName(item), item.size)}
                           </span>
                           <span className="tnum" style={{ marginLeft: "auto" }}><Price item={item} /></span>
                         </div>

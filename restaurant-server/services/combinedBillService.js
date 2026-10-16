@@ -20,7 +20,7 @@
 import { ORDER_STATUSES, PAYMENT_STATUSES, ORDER_TYPES, ADMIN_COMPLETE_FROM } from "../utils/orderStateMachine.js";
 import { isManagementRole } from "../utils/roles.js";
 import { roundMoney } from "../utils/recipeCost.js";
-import { addonsForPrint } from "../utils/menuAddons.js";
+import { addonsForPrint, nameWithSize } from "../utils/menuAddons.js";
 import { SPLIT_METHOD } from "../utils/paymentMode.js";
 import { parseGuests, applyGuestsToSelection } from "./acServiceCharge.js";
 
@@ -158,9 +158,9 @@ export const combinedPrintPayload = ({ tableNo, orders, restaurant }) => {
     tableDisplayNo: orders.find((o) => o.tableDisplayNo != null)?.tableDisplayNo ?? null,
     orders: orders.map((o) => ({
       orderId: o.orderId, total: o.total, paymentStatus: o.paymentStatus,
-      items: (o.items || []).map((i) => ({ name: i.name, qty: i.qty, price: i.price, addons: addonsForPrint(i.addons) })),
+      items: (o.items || []).map((i) => ({ name: nameWithSize(i.name, i.size), qty: i.qty, price: i.price, addons: addonsForPrint(i.addons) })),
     })),
-    items: orders.flatMap((o) => o.items || []).map((i) => ({ name: i.name, qty: i.qty, price: i.price, addons: addonsForPrint(i.addons) })),
+    items: orders.flatMap((o) => o.items || []).map((i) => ({ name: nameWithSize(i.name, i.size), qty: i.qty, price: i.price, addons: addonsForPrint(i.addons) })),
     subtotal: t.subtotal, discount: t.discount, tax: t.tax, serviceCharge: t.serviceCharge, total: t.total,
     // KH-11 — AC Room guest service charge (inside total), with its guests × rate.
     acServiceCharge: t.acServiceCharge,
@@ -217,7 +217,7 @@ export const printCombinedBill = async ({ models, body, actor }) => {
 /** "Mark Selected as Paid" — per order, atomic, idempotent.
  * Only an eligible, not-yet-paid order changes; an already-paid one is
  * reported, never re-written (its method stays as recorded). */
-export const markSelectedPaid = async ({ models, body, canPay }) => {
+export const markSelectedPaid = async ({ models, body, canPay, actor = null }) => {
   const method = body.paymentMethod;
   if (method === SPLIT_METHOD) throw httpError("Cash + Online split is recorded one bill at a time — open the order to collect it");
   if (!PAY_METHODS.includes(method)) throw httpError(`paymentMethod must be one of: ${PAY_METHODS.join(", ")}`);
@@ -231,7 +231,8 @@ export const markSelectedPaid = async ({ models, body, canPay }) => {
     const updated = await models.Order.findOneAndUpdate(
       // Re-checked at write time: still this table, still combinable, still unpaid.
       { _id: o._id, ...scopeFilter, status: { $in: COMBINABLE }, paymentStatus: { $ne: PAID } },
-      { $set: { paymentStatus: PAID, paymentMethod: method } },
+      // paidBy/paidAt: who recorded it (staffReportService) — only on this unpaid → PAID write.
+      { $set: { paymentStatus: PAID, paymentMethod: method, paidBy: actor, paidAt: new Date() } },
       { returnDocument: "after" },
     );
     if (updated) { paid.push(o.orderId); changed.push(updated); continue; }

@@ -9,6 +9,7 @@ import { getDutyHistory } from "../../../services/attendanceService.js";
 import { getSocket } from "../../../services/socketService.js";
 import { Loader, EmptyState, Badge } from "../shared/index.js";
 import ErrorState from "../shared/ErrorState.jsx";
+import SectionToggle from "./SectionToggle.jsx";
 import { toDateInput, roleText, count } from "./shared.js";
 import { t, N_, fmtTime, fmtDate } from "../../../i18n/core.js";
 
@@ -29,6 +30,7 @@ export default function DutyHistory({ people = [] }) {
   const [page, setPage] = useState(1);
   const [data, setData] = useState(null); // { records, total, summary, page, limit }
   const [error, setError] = useState(false);
+  const [open, setOpen] = useState(false);
   // Every filter change starts again at page 1.
   const pick = (current, setter) => (value) => {
     if (value === current) return;
@@ -43,17 +45,17 @@ export default function DutyHistory({ people = [] }) {
       .catch(() => { if (seq === reqSeq.current) setError(true); });
   }, [date, employeeId, action, source, page]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (open) load(); }, [load, open]);
 
   // Live: any duty change (self or admin) re-reads the log; a reconnect
   // re-reads too, so nothing missed while offline stays missing.
   useEffect(() => {
     const socket = getSocket();
-    if (!socket) return undefined;
+    if (!open || !socket) return undefined;
     socket.on("employee:attendance:updated", load);
     socket.on("connect", load);
     return () => { socket.off("employee:attendance:updated", load); socket.off("connect", load); };
-  }, [load]);
+  }, [load, open]);
 
   const s = data?.summary;
   const person = people.find((p) => String(p._id) === employeeId);
@@ -62,10 +64,8 @@ export default function DutyHistory({ people = [] }) {
 
   return (
     <div className="zc-card emp-dh">
-      <div className="zc-card-h">
-        <span className="t">{t("Duty history")}</span>
-        <span className="s">{dayLabel} · {fmtDate(new Date(`${date}T00:00:00`))}</span>
-      </div>
+      <SectionToggle title={t("Duty history")} sub={`${dayLabel} · ${fmtDate(new Date(`${date}T00:00:00`))}`} open={open} onToggle={() => setOpen((v) => !v)} />
+      {open && (<>
 
       <div className="emp-dh-tools">
         <div className="zc-seg" role="group" aria-label={t("Day")}>
@@ -142,6 +142,7 @@ export default function DutyHistory({ people = [] }) {
           </div>
         )}
       </div>
+      </>)}
     </div>
   );
 }

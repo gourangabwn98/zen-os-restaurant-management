@@ -21,6 +21,7 @@ import { runDueOffers } from "./services/notificationService.js";
 import { runPayFirstTick } from "./services/payFirstService.js";
 import { autoSendDueOrders } from "./services/orderService.js";
 import { ensureSmartCategories } from "./services/smartCategoryService.js";
+import { ensureMenuSections } from "./services/categoryService.js";
 import { BRAND_NAME } from "./utils/brand.js";
 
 import authRoutes    from "./routes/authRoutes.js";
@@ -148,8 +149,14 @@ connectDB().then(() => {
     warmUpOcr(); // background — see utils/purchaseImportExtract.js
     // MNU-03/04/05/07 built-in categories (idempotent; never overwrites admin edits).
     getDB(process.env.MONGO_URI)
-      .then((conn) => ensureSmartCategories({ models: getModels(conn) }))
-      .catch((err) => console.error("smart categories setup failed:", err.message));
+      .then(async (conn) => {
+        const models = getModels(conn);
+        await ensureSmartCategories({ models });
+        const { created, renamed } = await ensureMenuSections({ models });
+        if (created.length) console.log(`menu sections added as categories: ${created.join(", ")}`);
+        for (const [from, to] of renamed) console.log(`category "${from}" renamed to section "${to}"`);
+      })
+      .catch((err) => console.error("menu categories setup failed:", err.message));
     // DISABLE_BACKGROUND_JOBS=true — for a second, local copy of the server
     // pointed at the live database: it must not race production on real
     // orders (auto-send → KOT announced where no printer listens), offer

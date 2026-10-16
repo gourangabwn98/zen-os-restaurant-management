@@ -1,0 +1,12 @@
+{
+  "_comment": "Defines which physical printer handles which job role. 'role' matches PrinterDevice.role on the backend (KOT / BILL / BOTH). USB_DIRECT = a USB receipt printer Windows installed with the generic WinUSB driver (not under Printers & scanners) — bytes go straight to the device; vendorId/productId (hex) pick it. For a printer that IS installed in Windows use type USB + windowsPrinterName (and share it); for a network printer use type LAN + ip/port.",
+  "printers": [
+    {
+      "id": "counter",
+      "role": "BOTH",
+      "type": "USB_DIRECT",
+      "vendorId": "0483",
+      "productId": "5720"
+    }
+  ]
+}

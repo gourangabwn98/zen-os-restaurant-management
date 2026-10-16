@@ -10,13 +10,18 @@ import { listMenuTimes, createMenuTime, updateMenuTime, deleteMenuTime } from ".
 import { parseMenuText, parseMenuCsv } from "../utils/menuImportParser.js";
 import { extractDocumentText } from "../utils/purchaseImportExtract.js";
 import { sniffFileType } from "../middleware/importUploadMiddleware.js";
-import { CATEGORY_SORT } from "../services/categoryService.js";
-import { normalizeAddons } from "../utils/menuAddons.js";
+import { CATEGORY_SORT, ensureMenuSections } from "../services/categoryService.js";
+import { normalizeAddons, menuAddonRecords } from "../utils/menuAddons.js";
 import { listBestSellers } from "../services/bestSellerService.js";
 import { getMenuContext, ensureSmartCategories } from "../services/smartCategoryService.js";
 import {
-  smartByKey, itemCategoryList, cleanExtraCategories, parseFlag, ITEM_FLAGS, categoryIcon, notShareableCategoryOf,
+  smartByKey, itemCategoryList, parseFlag, ITEM_FLAGS, categoryIcon, notShareableCategoryOf,
 } from "../utils/menuCategories.js";
+import { FOOD_TYPES } from "../utils/foodTypes.js";
+import { sortBySection } from "../utils/menuSections.js";
+import {
+  buildMenuStructure, readMenuItemFields, parseSubcategoryFilter, escapeRegex,
+} from "../services/menuStructureService.js";
 
 cloudinary.config({
   cloud_name:  process.env.CLOUDINARY_CLOUD_NAME,
@@ -31,13 +36,25 @@ export const getBestSellers = async (req, res) => {
   catch (err) { res.status(500).json({ message: err.message }); }
 };
 
-// MNU-01 — the item's extra categories from the request (array or JSON
-// string in multipart), checked against the manual categories that exist.
-const readExtraCategories = async (req, primary) => {
-  const manual = await req.models.Category.find({ kind: { $ne: "SMART" } }).select("name").lean();
-  return cleanExtraCategories(req.body.categories, { primary, manualNames: new Set(manual.map((c) => c.name)) });
+// GET /api/menu/structure — { sections: [{ name, count, subcategories: [{ name, count }] }] }
+// in the configured section order. Counts follow the same visibility as GET
+// /api/menu (available + category schedule); the admin's manage view
+// (?includeUnavailable=true) counts every item.
+export const getMenuStructure = async (req, res) => {
+  try {
+    const isAdmin = !!(req.user?.isAdmin || isManagementRole(req.user?.role));
+    const manageView = req.query.includeUnavailable === "true" && isAdmin;
+    const filter = manageView ? {} : { isAvailable: true };
+    if (!manageView) {
+      const { hiddenCategories } = await getScheduleContext({ models: req.models });
+      if (hiddenCategories.size) filter.category = { $nin: [...hiddenCategories] };
+    }
+    const items = await req.models.MenuItem.find(filter).select("category subcategory itemId name").lean();
+    res.json(buildMenuStructure(items));
+  } catch (err) { res.status(err.statusCode || 500).json({ message: err.message }); }
 };
-// MNU-03/04/05 — only the flags actually sent are changed.
+
+// MNU-03/04/05 (+ Most Popular) — only the flags actually sent are changed.
 const readFlags = (body) => {
   const out = {};
   for (const f of ITEM_FLAGS) { const v = parseFlag(body?.[f]); if (v !== undefined) out[f] = v; }
@@ -47,7 +64,8 @@ const readFlags = (body) => {
 export const getMenu = async (req, res) => {
   try {
     const { MenuItem, Category } = req.models;
-    const { category, search, vegOnly, includeUnavailable, ignoreSchedule } = req.query;
+    const { category, search, vegOnly, includeUnavailable, ignoreSchedule, tag } = req.query;
+    const subcategories = parseSubcategoryFilter(req.query.subcategory);
     const isAdmin = !!(req.user?.isAdmin || isManagementRole(req.user?.role)); // admin or manager (Menu page)
     const filter = { isAvailable: true };
     const and = [];
@@ -56,8 +74,15 @@ export const getMenu = async (req, res) => {
     // their menu stays "available items only" exactly as before.
     const manageView = includeUnavailable === "true" && isAdmin;
     if (manageView) delete filter.isAvailable;
-    if (search)   filter.name = { $regex: search, $options: "i" };
+    // Escaped: a customer's search text is never a regex (a stray "(" used to 500).
+    if (typeof search === "string" && search.trim()) {
+      const rx = { $regex: escapeRegex(search.trim().slice(0, 80)), $options: "i" };
+      and.push({ $or: [{ name: rx }, { subcategory: rx }] });
+    }
     if (vegOnly === "true") filter.tag = "Veg";
+    else if (FOOD_TYPES.includes(tag)) filter.tag = tag; // unknown values are ignored, never an error
+    // Chips inside a section (one or several) narrow the list; "All" = none sent.
+    if (subcategories.length) filter.subcategory = { $in: subcategories };
 
     // ── Scheduled visibility (services/menuScheduleService.js) ──────────────
     // Enforced here for everyone (customer, guest, waiter, admin ordering)
@@ -79,20 +104,21 @@ export const getMenu = async (req, res) => {
       if (category && hidden.has(category)) return null;
       if (hidden.size) and.push({ category: { $nin: [...hidden] } });
 
-      // ── One category's items (MNU-01/03–07) ──────────────────────────────
-      // An item is listed under its primary category, its extra `categories`,
-      // and any smart category it qualifies for — always the same document.
+      // ── One category's items (MNU-03–07) ─────────────────────────────────
+      // An item is listed under its section (`category`) and any smart
+      // category it qualifies for — always the same document. An unknown
+      // (e.g. old) category name simply matches nothing.
       const menuCtx = { ...baseMenuCtx, hidden };
       if (category) {
         const smart = menuCtx.smartCats.find((c) => c.name === category);
         const def = smart && smartByKey(smart.smartKey);
         if (def?.source === "flag") filter[def.flag] = true;
         else if (def) filter._id = { $in: [...(menuCtx.dataSets.get(def.key) || [])] };
-        else and.push({ $or: [{ category }, { categories: category }] });
+        else and.push({ category: String(category) });
       }
       if (and.length) filter.$and = and;
-      let items = await MenuItem.find(filter).sort({ category: 1, name: 1 }).lean();
-      items = items.map((i) => ({ ...i, categoryList: itemCategoryList(i, menuCtx) }));
+      let items = await MenuItem.find(filter).sort({ category: 1, itemId: 1, name: 1 }).lean();
+      items = items.map((i) => ({ ...i, addons: menuAddonRecords(i), categoryList: itemCategoryList(i, menuCtx) }));
       if (skipSchedule) {
         // Annotate so the admin can see what customers currently can't (its
         // category is scheduled out). Items have no time schedule of their own.
@@ -167,11 +193,8 @@ export const addMenuItem = async (req, res) => {
     if (!name || !price || !category)
       return res.status(400).json({ message: "name, price, category required" });
 
-    let extra;
-    try { extra = await readExtraCategories(req, category); }
-    catch (e) { return res.status(e.statusCode || 400).json({ message: e.message }); }
-    let addons; // KH-12
-    try { addons = normalizeAddons(req.body.addons) || []; }
+    let addons, fields; // KH-12 add-ons · subcategory / size / foodType
+    try { addons = normalizeAddons(req.body.addons) || []; fields = readMenuItemFields(req.body); }
     catch (e) { return res.status(e.statusCode || 400).json({ message: e.message }); }
     if ((await req.models.Category.findOne({ name: category }).select("kind").lean())?.kind === "SMART")
       return res.status(400).json({ message: `"${category}" fills itself — pick an ordinary category and switch on its flag instead` });
@@ -196,8 +219,8 @@ export const addMenuItem = async (req, res) => {
       rating: Number(rating)||4,
       image: imageUrl,
       tags,
-      categories: extra,
       addons,
+      ...fields,
       ...readFlags(req.body),
     });
 
@@ -246,14 +269,9 @@ export const updateMenuItem = async (req, res) => {
     if (price)         item.price         = Number(price);
     if (originalPrice !== undefined) item.originalPrice = Number(originalPrice)||0;
     if (category)      item.category      = category;
-    // MNU-01: extra categories (validated; the primary is never repeated).
-    if (req.body.categories !== undefined) {
-      try { item.categories = await readExtraCategories(req, item.category); }
-      catch (e) { return res.status(e.statusCode || 400).json({ message: e.message }); }
-    } else if (category) {
-      item.categories = (item.categories || []).filter((c) => c !== item.category);
-    }
-    Object.assign(item, readFlags(req.body)); // MNU-03/04/05
+    try { Object.assign(item, readMenuItemFields(req.body)); } // subcategory / size / foodType
+    catch (e) { return res.status(e.statusCode || 400).json({ message: e.message }); }
+    Object.assign(item, readFlags(req.body)); // MNU-03/04/05 + Most Popular
     if (tag)           item.tag           = tag;
     if (isAvailable !== undefined) {
       item.isAvailable = isAvailable === "true" || isAvailable === true;
@@ -308,7 +326,11 @@ const isImageUrl = (s) => typeof s === "string" && /^(https?:\/\/|data:image\/)/
 // One shared run, so two parallel callers never create the same category twice.
 let ensuring = null;
 const ensureOnce = (models) => {
-  if (!ensuring) ensuring = ensureSmartCategories({ models }).finally(() => { ensuring = null; });
+  if (!ensuring) {
+    ensuring = ensureSmartCategories({ models })
+      .then(() => ensureMenuSections({ models })) // every configured section has a Category record
+      .finally(() => { ensuring = null; });
+  }
   return ensuring;
 };
 const readyMenuContext = async (models) => {
@@ -329,8 +351,9 @@ export const getCategoriesWithImage = async (req, res) => {
       readyMenuContext(req.models),
       readyCategories(req.models),
     ]);
-    // Saved admin order (MNU-02) — customers and waiters list categories in it.
-    const cats = allCats.filter((c) => !hiddenCategories.has(c.name));
+    // Sections in the configured order (utils/menuSections.js), then any
+    // other category (built-in smart ones, old ones) in the saved admin order.
+    const cats = sortBySection(allCats.filter((c) => !hiddenCategories.has(c.name)), (c) => c.name);
     const visibleBase = { isAvailable: true, ...(hiddenCategories.size && { category: { $nin: [...hiddenCategories] } }) };
     const result = await Promise.all(cats.map(async (c) => {
       let item = null;
@@ -344,7 +367,10 @@ export const getCategoriesWithImage = async (req, res) => {
         item = await MenuItem.findOne(match).select("categoryImage image").lean();
         if (!item) return null;
       } else {
-        item = await MenuItem.findOne({ ...visibleBase, $or: [{ category: c.name }, { categories: c.name }] }).select("categoryImage").lean();
+        item = await MenuItem.findOne({ ...visibleBase, category: c.name }).select("categoryImage").lean();
+        // Nothing on the menu under it (an old category, or all items off) →
+        // not listed, so the apps never offer a category that shows nothing.
+        if (!item) return null;
       }
       // `image` fields may hold a real URL or a legacy emoji placeholder —
       // categoryImageUrl is only ever an actual URL, the category's own first.

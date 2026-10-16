@@ -40,3 +40,28 @@ export const addonNames = (item, line) => {
   const byId = new Map((item?.addons || []).map((a) => [String(a._id), a.name]));
   return [...countIds(line?.addonIds || [])].filter(([id]) => byId.has(id)).map(([id, qty]) => addonLabel({ name: byId.get(id), qty }));
 };
+
+/** "Boiled Egg (2 pcs)" — name + portion (MenuItem.size, or an order line's
+ * size snapshot), unless the name already says it. Mirrors the server. */
+export const nameWithSize = (name, size) => {
+  const n = String(name || "").trim();
+  const sz = String(size || "").trim();
+  if (!sz || n.toLowerCase().includes(sz.toLowerCase())) return n;
+  return `${n} (${sz})`;
+};
+
+/** Subcategory chips for the items of one category: [{ name, count }] in menu
+ * order (lowest itemId first, then name). Items without one are only in "All". */
+export const subcategoryChips = (items) => {
+  const m = new Map();
+  for (const it of items || []) {
+    const name = String(it.subcategory || "").trim();
+    if (!name) continue;
+    const id = String(it.itemId || "zzzz");
+    const e = m.get(name) || { name, count: 0, first: id };
+    e.count += 1;
+    if (id < e.first) e.first = id;
+    m.set(name, e);
+  }
+  return [...m.values()].sort((a, b) => a.first.localeCompare(b.first) || a.name.localeCompare(b.name)).map(({ name, count }) => ({ name, count }));
+};

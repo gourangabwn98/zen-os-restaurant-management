@@ -41,6 +41,7 @@ import {
   VIEWS, VIEW_KEYS, EMPTY_FILTERS, hasExtraFilters, matchesFilters, matchesSearch,
   loadSavedViews, storeSavedViews, errMsg,
   ITEM_FLAGS, isSmartCat, manualCats, memberNames, CATEGORY_ICON_KEYS,
+  FOOD_TYPE_LABELS, ADDON_TYPES, ADDONS_MAX, subcategoriesBySection, subcategoryChips,
 } from "./menu/menuKit.js";
 import { StatusStrip, MenuTimesCard, CategoryCard, ItemsPanel, CategoryList } from "./menu/MenuBoard.jsx";
 import { MenuTimeModal, BulkEditModal, ImportModal } from "./menu/MenuModals.jsx";
@@ -49,8 +50,8 @@ import { MenuTimeModal, BulkEditModal, ImportModal } from "./menu/MenuModals.jsx
 const TAGS = ["Veg", "Non Veg", "Others"]; // Others: cigarettes, cold drinks, misc.
 const EMPTY_FORM = {
   name: "", nameBn: "", price: "", originalPrice: "", description: "",
-  category: "", tag: "Veg", isAvailable: true, rating: 4.0, tags: [], addons: [],
-  categories: [], isTodaysSpecial: false, isChefsPick: false, isFastAvailable: false,
+  category: "", subcategory: "", size: "", foodType: "", tag: "Veg", isAvailable: true, rating: 4.0, tags: [], addons: [],
+  isTodaysSpecial: false, isChefsPick: false, isMostPopular: false, isFastAvailable: false,
 };
 // Item counts per category name, across every category an item is listed in.
 const countMembers = (items, cats) => {
@@ -523,35 +524,76 @@ function CategoriesModal({ cats: allCats, items, onClose, onChanged, onView, sim
 }
 
 // ── add / edit menu item modal ─────────────────────────────────────────────
-// KH-12 — add-on rows (name + ₹ price) for one menu item.
+// KH-12 — add-on rows (name + ₹ price + type) for one menu item; at most
+// ADDONS_MAX — the server enforces the same option limit.
 function AddonsEditor({ value, onChange }) {
   const update = (i, k, v) => onChange(value.map((a, j) => (j === i ? { ...a, [k]: v } : a)));
   return (
     <div style={{ display: "grid", gap: 6 }}>
       {value.map((a, i) => (
-        <div key={a._id || i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <div key={a._id || i} style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
           <input className="zc-input" style={{ flex: 1 }} maxLength={60} value={a.name}
             placeholder={t("e.g. 1 pc Chicken")} onChange={(e) => update(i, "name", e.target.value)} aria-label={t("Add-on name")} />
           <input className="zc-input" style={{ width: 96 }} type="number" min={0} inputMode="decimal" value={a.price}
             placeholder="₹" onChange={(e) => update(i, "price", e.target.value)} aria-label={t("Add-on price")} />
+          <select className="zc-select" style={{ width: 130 }} value={a.type || ""} onChange={(e) => update(i, "type", e.target.value)} aria-label={t("Add-on type")}>
+            <option value="">{t("Type")}…</option>
+            {ADDON_TYPES.map((ty) => <option key={ty} value={ty}>{t(ty)}</option>)}
+          </select>
           <button type="button" className="zc-btn sm ghost" onClick={() => onChange(value.filter((_, j) => j !== i))}
             aria-label={t("Remove add-on")}>✕</button>
+          <label style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}>
+            <input type="checkbox" checked={a.isAvailable !== false} onChange={(e) => update(i, "isAvailable", e.target.checked)} />
+            {t("Available")}
+          </label>
         </div>
       ))}
-      {value.length < 10 && (
+      {value.length < ADDONS_MAX && (
         <button type="button" className="zc-btn sm ghost" style={{ justifySelf: "start" }}
-          onClick={() => onChange([...value, { name: "", price: "" }])}>＋ {t("Add an add-on")}</button>
+          onClick={() => onChange([...value, { name: "", price: "", type: "" }])}>＋ {t("Add an add-on")}</button>
       )}
     </div>
   );
 }
 
-function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategoryCreated }) {
+// Section → subcategory dropdown; "＋ New subcategory…" switches to a text box.
+const NEW_SUB = "__new__";
+function SubcategoryPicker({ value, options, onChange }) {
+  const [typing, setTyping] = useState(!!value && !options.includes(value));
+  if (typing) {
+    return (
+      <div style={{ display: "flex", gap: 6 }}>
+        <input id="mi-sub" className="zc-input" style={{ flex: 1 }} maxLength={40} autoFocus value={value}
+          placeholder={t("e.g. Eggs, Paneer, Katla")} onChange={(e) => onChange(e.target.value)} />
+        {options.length > 0 && (
+          <button type="button" className="zc-btn sm ghost" onClick={() => { setTyping(false); onChange(options.includes(value) ? value : ""); }}>
+            {t("Pick from list")}
+          </button>
+        )}
+      </div>
+    );
+  }
+  const pick = (v) => {
+    if (v !== NEW_SUB) return onChange(v);
+    setTyping(true);
+    onChange("");
+  };
+  return (
+    <select id="mi-sub" className="zc-select" value={value || ""} onChange={(e) => pick(e.target.value)}>
+      <option value="">{t("None")}</option>
+      {options.map((sub) => <option key={sub} value={sub}>{sub}</option>)}
+      <option value={NEW_SUB}>＋ {t("New subcategory…")}</option>
+    </select>
+  );
+}
+
+function ItemModal({ item, categories, subcatsByCat = new Map(), allTags = [], onClose, onSaved, onCategoryCreated }) {
   const isEdit = !!item?._id;
   const [form, setForm] = useState(
     isEdit
-      ? { ...EMPTY_FORM, ...item, price: item.price ?? "", originalPrice: item.originalPrice || "", tags: item.tags || [], categories: item.categories || [],
-          addons: (item.addons || []).map((a) => ({ _id: a._id, name: a.name, price: String(a.price) })) } // KH-12
+      ? { ...EMPTY_FORM, ...item, price: item.price ?? "", originalPrice: item.originalPrice || "", tags: item.tags || [],
+          subcategory: item.subcategory || "", size: item.size || "", foodType: item.foodType || "",
+          addons: (item.addons || []).map((a) => ({ _id: a._id, name: a.name, price: String(a.price), type: a.type || "", ...(a.isAvailable !== undefined && { isAvailable: a.isAvailable }) })) } // KH-12
       : { ...EMPTY_FORM, category: manualCats(categories)[0]?.name || "" },
   );
   const soldOut = isEdit && isSoldOut(item);
@@ -562,9 +604,7 @@ function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategor
   // Menu items have no time schedule of their own; only the category's
   // window (if any) can hide the item — shown read-only below.
   const catSched = categories.find((c) => c.name === form.category && hasSchedule(c))?.schedule;
-  const extraChoices = manualCats(categories).filter((c) => c.name !== form.category);
-  const toggleExtra = (name) => set("categories", form.categories.includes(name)
-    ? form.categories.filter((n) => n !== name) : [...form.categories, name]);
+  const subOptions = subcatsByCat.get(form.category) || [];
   // Data-driven built-ins this item is in right now (server-computed, read-only).
   const autoIn = isEdit ? categories.filter((c) => isSmartCat(c) && !c.smartFlag && (item.categoryList || []).includes(c.name)) : [];
 
@@ -603,7 +643,9 @@ function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategor
       fd.append("nameBn", (form.nameBn || "").trim());
       fd.append("price", form.price);
       fd.append("category", form.category);
-      fd.append("categories", JSON.stringify((form.categories || []).filter((n) => n !== form.category)));
+      fd.append("subcategory", (form.subcategory || "").trim());
+      fd.append("size", (form.size || "").trim());
+      fd.append("foodType", form.foodType || "");
       for (const f of ITEM_FLAGS) fd.append(f.flag, form[f.flag] ? "true" : "false");
       fd.append("tag", form.tag);
       // Only when changed: sending it clears "Sold out today" on the server.
@@ -612,8 +654,8 @@ function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategor
       fd.append("tags", JSON.stringify(form.tags || []));
       {
         // KH-12: only sent when the list changed (ids of kept add-ons go back).
-        const toSend = addonRows.map((a) => ({ ...(a._id && { _id: a._id }), name: a.name.trim(), price: Number(a.price) }));
-        const before = JSON.stringify((isEdit ? item.addons || [] : []).map((a) => ({ _id: a._id, name: a.name, price: Number(a.price) })));
+        const toSend = addonRows.map((a) => ({ ...(a._id && { _id: a._id }), name: a.name.trim(), price: Number(a.price), ...(a.type && { type: a.type }), ...(a.isAvailable !== undefined && { isAvailable: a.isAvailable }) }));
+        const before = JSON.stringify((isEdit ? item.addons || [] : []).map((a) => ({ _id: a._id, name: a.name, price: Number(a.price), ...(a.type && { type: a.type }), ...(a.isAvailable !== undefined && { isAvailable: a.isAvailable }) })));
         if (JSON.stringify(toSend) !== before) fd.append("addons", JSON.stringify(toSend));
       }
       if (form.originalPrice) fd.append("originalPrice", form.originalPrice);
@@ -667,10 +709,15 @@ function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategor
                   <CategoryPicker
                     value={form.category}
                     categories={categories}
-                    onChange={(v) => set("category", v)}
+                    onChange={(v) => setForm((p) => ({ ...p, category: v, subcategory: v === p.category ? p.subcategory : "" }))}
                     onOpenCreate={() => setShowCat(true)}
                     onDeleteCategory={deleteCat}
                   />
+                </div>
+                <div className="menu-field full">
+                  <label htmlFor="mi-sub">{t("Subcategory")} <span style={{ color: "var(--text-3)", fontWeight: 400 }}>({t("optional")})</span></label>
+                  <SubcategoryPicker key={form.category} value={form.subcategory || ""} options={subOptions} onChange={(v) => set("subcategory", v)} />
+                  <div className="hint">{t("A filter chip inside the section on the customer menu, e.g. Eggs, Paneer, Katla.")}</div>
                 </div>
                 <div className="menu-field full">
                   <label>{t("Food type")} *</label>
@@ -701,6 +748,20 @@ function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategor
                 <div className="hint">{t("Struck-through “was” price — leave empty if none")}</div>
               </div>
               <div className="menu-field">
+                <label htmlFor="mi-size">{t("Size")}</label>
+                <input id="mi-size" className="zc-input" maxLength={30} value={form.size || ""}
+                  onChange={(e) => set("size", e.target.value)} placeholder={t("e.g. 2 pcs, Half, Full")} />
+                <div className="hint">{t("Shown next to the name — leave empty if none")}</div>
+              </div>
+              <div className="menu-field">
+                <label htmlFor="mi-ftype">{t("Food type label")}</label>
+                <select id="mi-ftype" className="zc-select" value={form.foodType || ""} onChange={(e) => set("foodType", e.target.value)}>
+                  <option value="">{t("Same as above")}</option>
+                  {FOOD_TYPE_LABELS.map((ft) => <option key={ft} value={ft}>{t(ft)}</option>)}
+                </select>
+                <div className="hint">{t("Display only (e.g. Egg). Veg / Non-veg above decides the mark.")}</div>
+              </div>
+              <div className="menu-field">
                 <label htmlFor="mi-rating">{t("Rating (1–5)")}</label>
                 <input id="mi-rating" type="number" min="1" max="5" step="0.1" className="zc-input"
                   value={form.rating} onChange={(e) => set("rating", e.target.value)} />
@@ -710,25 +771,6 @@ function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategor
                 <textarea id="mi-desc" rows={3} className="zc-textarea" value={form.description}
                   onChange={(e) => set("description", e.target.value)}
                   placeholder={t("Short description shown to customers…")} />
-              </div>
-              <div className="menu-field full">
-                <label>{t("Also show in")} <span style={{ color: "var(--text-3)", fontWeight: 400 }}>({t("optional")})</span></label>
-                {extraChoices.length === 0 ? (
-                  <div className="hint">{t("Create more categories to list this item in several places.")}</div>
-                ) : (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    {extraChoices.map((c) => {
-                      const on = form.categories.includes(c.name);
-                      return (
-                        <button key={c._id || c.name} type="button" aria-pressed={on}
-                          className={`zc-btn sm${on ? " pri" : " ghost"}`} onClick={() => toggleExtra(c.name)}>
-                          {on ? "✓ " : ""}{localName(c)}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-                <div className="hint">{t("The same item — one price, one stock, one on/off switch — listed in more than one category.")}</div>
               </div>
               <div className="menu-field full">
                 <label>{t("Special lists")}</label>
@@ -753,7 +795,7 @@ function ItemModal({ item, categories, allTags = [], onClose, onSaved, onCategor
               <div className="menu-field full">
                 <label>{t("Add-ons")} <span style={{ color: "var(--text-3)", fontWeight: 400 }}>({t("optional")})</span></label>
                 <AddonsEditor value={form.addons || []} onChange={(v) => set("addons", v)} />
-                <div className="hint">{t("Extras the waiter can add, e.g. “1 pc Chicken” ₹40 — the price is added per item.")}</div>
+                <div className="hint">{t("One optional extra, e.g. “Extra Egg” ₹25 — the price is added per item.")}</div>
               </div>
               <div className="menu-field full">
                 <label>{t("Availability")}</label>
@@ -834,6 +876,9 @@ export default function MenuAdminPage() {
   const [saved, setSaved] = useState(loadSavedViews);
   const [activeSaved, setActiveSaved] = useState(null);
   const [selCat, setSelCat] = useState("All");
+  // The subcategory chip picked inside the selected category — one at a time ([] = All).
+  const [subSel, setSubSel] = useState([]);
+  useEffect(() => { setSubSel([]); }, [selCat]);
   const [selGroup, setSelGroup] = useState(null);
   const [preview, setPreview] = useState(null); // null = now (server flags); else { minutes, day }
   const [collapsed, setCollapsed] = useState(() => new Set());
@@ -932,6 +977,8 @@ export default function MenuAdminPage() {
     for (const i of items) for (const x of i.tags || []) if (!m.has(x.toLowerCase())) m.set(x.toLowerCase(), x);
     return [...m.values()].sort((a, b) => a.localeCompare(b));
   }, [items]);
+  // Section → its subcategories (from the items), for the form and the filter.
+  const subcatsByCat = useMemo(() => subcategoriesBySection(items), [items]);
 
   // Left list on the simple page: the categories the items are really in
   // (each item's own category) — not built-in automatic ones or empty ones.
@@ -948,6 +995,10 @@ export default function MenuAdminPage() {
   // this browser (e.g. "Over ₹200") must never hide items there.
   const effView = simple ? "all" : view;
   const effFilters = simple ? EMPTY_FILTERS : filters;
+  // The selected category's subcategories (from its items), as chips.
+  const subOptions = useMemo(() => (selCat === "All" ? [] : subcategoryChips(
+    items.filter((i) => (simple ? i.category === selCat : memberNames(i, cats).has(selCat))),
+  )), [items, cats, selCat, simple]);
   const groups = useMemo(() => {
     const test = VIEWS[effView]?.test || VIEWS.all.test;
     const byCat = new Map();
@@ -955,6 +1006,7 @@ export default function MenuAdminPage() {
       if (selCat !== "All" && (simple ? i.category !== selCat : !memberNames(i, cats).has(selCat))) continue;
       if (!test(i, viewCtx)) continue;
       if (!matchesFilters(i, effFilters)) continue;
+      if (subSel.length && !subSel.includes(String(i.subcategory || "").trim())) continue;
       const cat = catByName.get(i.category);
       if (!matchesSearch(i, q, cat?.nameBn)) continue;
       // One category picked → its items under it (extra / built-in members too).
@@ -973,7 +1025,7 @@ export default function MenuAdminPage() {
         live: isScheduleActive(cat?.schedule, clock),
       };
     });
-  }, [items, cats, catByName, selCat, simple, effView, viewCtx, effFilters, q, clock, groupOfCat]);
+  }, [items, cats, catByName, selCat, subSel, simple, effView, viewCtx, effFilters, q, clock, groupOfCat]);
 
   const savedWithCounts = useMemo(() => saved.map((sv) => {
     const test = VIEWS[sv.view]?.test || VIEWS.all.test;
@@ -981,10 +1033,10 @@ export default function MenuAdminPage() {
     return { ...sv, count: items.filter((i) => test(i, viewCtx) && matchesFilters(i, f)).length };
   }), [saved, items, viewCtx]);
 
-  const hasFilters = !!q || effView !== "all" || hasExtraFilters(effFilters);
+  const hasFilters = !!q || effView !== "all" || hasExtraFilters(effFilters) || subSel.length > 0;
   const setFilters = (f) => { setFiltersRaw(f || EMPTY_FILTERS); setActiveSaved(null); };
   const pickView = (v) => { setView(v); setActiveSaved(null); };
-  const clearFilters = () => { setSearch(""); setView("all"); setSelCat("All"); setFiltersRaw(EMPTY_FILTERS); setActiveSaved(null); };
+  const clearFilters = () => { setSearch(""); setView("all"); setSelCat("All"); setSubSel([]); setFiltersRaw(EMPTY_FILTERS); setActiveSaved(null); };
   const applySaved = (sv) => {
     if (activeSaved === sv.id) return clearFilters();
     setView(sv.view || "all");
@@ -1219,6 +1271,9 @@ export default function MenuAdminPage() {
           saved={savedWithCounts} activeSaved={activeSaved} onApplySaved={applySaved}
           onRemoveSaved={removeSaved} onSaveView={saveView}
           filters={filters} setFilters={setFilters} allTags={allTags}
+          sectionNames={manualCats(cats).map((c) => c.name)} setSelCat={setSelCat}
+          subOptions={subOptions} subSel={subSel}
+          onToggleSub={(name) => setSubSel((p) => (name === null || p.includes(name) ? [] : [name]))}
           selCat={selCat} selCatLabel={catLabel(cats, selCat)} clearCat={() => setSelCat("All")}
           preview={preview} clock={clock}
           sel={selItems} toggleSel={(id) => setSelItems((p) => toggleIn(p, id))} setSelMany={setSelMany}
@@ -1238,6 +1293,7 @@ export default function MenuAdminPage() {
         <ItemModal
           item={modal === "create" ? null : modal}
           categories={cats}
+          subcatsByCat={subcatsByCat}
           allTags={allTags}
           onClose={() => setModal(null)}
           onSaved={handleSaved}

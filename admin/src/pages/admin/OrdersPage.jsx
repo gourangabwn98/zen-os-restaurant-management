@@ -16,24 +16,52 @@ import { statusKind } from "./shared/statusKind.js";
 import { MANUAL_PAYMENT_STATUSES, needsPaidFirst, canPickStatus, offersStatus, isBillSettled, canSettleBill, PAID_FIRST_HINT } from "./shared/paymentRules.js";
 import ErrorState from "./shared/ErrorState.jsx";
 import EmptyState from "./shared/EmptyState.jsx";
-import { getMenu, getCategories } from "../../services/menuService.js";
+import { getMenu, getCategories, getMenuStructure } from "../../services/menuService.js";
+import OrderMenuPicker from "./shared/OrderMenuPicker.jsx";
+import { OrderScreen, OrderPanel, PanelSection, OrderLine, EmptyLines, Totals, Seg, Collapsible, PanelBar } from "./shared/OrderScreen.jsx";
+import { nameWithSize } from "./menu/menuKit.js";
 import { cached, invalidate } from "../../services/cache.js";
 
-// Menu / categories / pricing settings for the order modals — cached so
-// "New order" and "Add items" open instantly (prefetched with the page,
-// refreshed on the server's "menu:updated" event, max 60s old otherwise).
+// Categories / pricing settings are cached across order modals. Selectable
+// menu options are fetched fresh and synchronized by useOrderMenu below.
 const ORDER_DATA_TTL = 60 * 1000;
-const menuCached       = () => cached("order:menu", ORDER_DATA_TTL, () => getMenu({}));
 const profileCached    = () => cached("order:profile", 5 * ORDER_DATA_TTL, () => getRestaurantProfile());
 const categoriesCached = () => cached("order:categories", ORDER_DATA_TTL, () => getCategories());
-const prefetchOrderData = () => { menuCached().catch(() => {}); profileCached().catch(() => {}); categoriesCached().catch(() => {}); };
+const structureCached  = () => cached("order:structure", ORDER_DATA_TTL, () => getMenuStructure());
+const prefetchOrderData = () => { profileCached().catch(() => {}); categoriesCached().catch(() => {}); structureCached().catch(() => {}); };
+
+// Keep open POS selections by ID while refreshing live options and prices.
+function useOrderMenu(setMi, setMenuLoading, setCart, setPicker) {
+  useEffect(() => {
+    let active = true, request = 0;
+    const reload = async () => {
+      const version = ++request;
+      setMenuLoading(true);
+      try {
+        const { data } = await getMenu({});
+        if (!active || version !== request) return;
+        const items = data || [];
+        setMi(items);
+        setCart((cart) => cart.map((line) => ({ ...line, item: items.find((m) => String(m._id) === String(line.item._id)) || line.item })));
+        setPicker((picker) => picker ? { ...picker, item: items.find((m) => String(m._id) === String(picker.item._id)) || { ...picker.item, addons: [], isAvailable: false } } : null);
+      } catch {
+        if (active) toast.error(t("Could not load menu. Close and reopen to retry."));
+      } finally { if (active && version === request) setMenuLoading(false); }
+    };
+    reload();
+    const socket = getSocket();
+    socket?.on("menu:updated", reload);
+    socket?.on("connect", reload);
+    return () => { active = false; socket?.off("menu:updated", reload); socket?.off("connect", reload); };
+  }, [setMi, setMenuLoading, setCart, setPicker]);
+}
 import { useAuth } from "../../hooks/useAuth.js";
 import { isManager } from "../../utils/access.js";
 import { t, tn, N_, fmtNum, fmtDate, fmtDateTime, fmtTime, localName } from "../../i18n/core.js";
 import { customerName } from "./shared/customerName.js";
 import { takenByName, takenByIsAcceptor } from "./shared/takenBy.js";
 import { DINING_AREA_LABEL, TABLE_AREAS, TABLE_AREA_LABEL, groupTablesByArea, tableLabel, isAcRoom } from "./shared/diningArea.js";
-import { hasAddons, cartLineKey, unitPrice, addonIdsOf, addonLabel } from "./shared/addons.js";
+import { hasAddons, cartLineKey, unitPrice, addonIdsOf, addonLabel, stepLineAddon, replaceLineAddons } from "./shared/addons.js";
 import { AddonLines, AddonHint, AddonPicker } from "./shared/AddonUI.jsx";
 import SplitPayButton from "./shared/SplitPay.jsx";
 import { SPLIT, paymentLabel } from "../../utils/payment.js";
@@ -97,18 +125,6 @@ const AVATAR_GRADS = [
   "linear-gradient(140deg,#F2564D,#B91C1C)",
   "linear-gradient(140deg,#6366F1,#4338CA)",
 ];
-const CATEGORY_ORDER = [
-  "pizza","burger","snack","french fry","momo","sandwich",
-  "beverage","mocktail","biscuit","cake","extra",
-];
-
-const normalizeCategory = (s) => (s || "").trim().toLowerCase();
-const getCategoryRank = (cat) => {
-  const n = normalizeCategory(cat);
-  const idx = CATEGORY_ORDER.findIndex((key) => n.includes(key));
-  return idx === -1 ? CATEGORY_ORDER.length : idx;
-};
-
 const avc = (n) => AVATAR_GRADS[(n?.charCodeAt(0)||0) % AVATAR_GRADS.length];
 const ini = (n) => !n||n==="Guest" ? "G" : n.split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
 const fmt = (n) => fmtNum(Math.round(n||0));
@@ -149,8 +165,6 @@ const GlobalOrdersStyle = () => (
     .op-btn:hover { filter: brightness(1.08); }
     .op-btn:active { transform: scale(0.98); }
     .op-chip { transition: background .15s ease, color .15s ease, border-color .15s ease; }
-    .op-menu-card { transition: border-color .15s ease, background .15s ease, transform .1s ease; }
-    .op-menu-card:hover { border-color: var(--violet-glow); }
     .op-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
     .op-scroll::-webkit-scrollbar-thumb { background: var(--edge-hi); border-radius: 8px; }
     .op-scroll::-webkit-scrollbar-track { background: transparent; }
@@ -170,21 +184,16 @@ const GlobalOrdersStyle = () => (
       .op-detail-grid { grid-template-columns: 1fr 1fr; }
     }
     /* ── New order (NewOrderModal): cart always visible ──
-       Wide: categories | menu | cart column (items first, details below,
-       totals pinned). Narrow (≤780px): category strip on top, full-width
-       menu, and the cart as a bottom bar that opens a full sheet. */
+       Wide: category rail | dishes (shared/OrderMenuPicker.jsx) | cart column (items first, details below,
+       totals pinned). Narrow (≤900px — phones and tablets held upright, where
+       rail + dishes + cart left only 2 thin columns of dishes): category strip
+       on top, full-width menu, and the cart as a bottom bar that opens a full sheet. */
     .op-no-modal { position: relative; }
     .op-no-main { display: flex; flex: 1; overflow: hidden; min-height: 0; }
-    .op-no-cats { width: 132px; flex-direction: column; overflow-y: auto; }
-    .op-no-cart { width: 300px; display: flex; flex-direction: column; flex-shrink: 0; min-height: 0; }
     .op-no-cartbar { display: none; }
     .op-no-back { display: none; }
-    @media (max-width: 780px) {
+    @media (max-width: 900px) {
       .op-no-main { flex-direction: column; }
-      .op-no-cats { width: 100% !important; flex-direction: row !important; overflow-x: auto; overflow-y: hidden !important;
-        border-right: 0 !important; border-bottom: 1px solid var(--edge); padding: 6px 8px !important; }
-      .op-no-cats > button { flex: none; min-width: 76px; padding: 6px 4px !important; }
-      .op-no-cats > button img { width: 24px !important; height: 24px !important; }
       .op-no-cart { display: none; position: absolute; inset: 0; z-index: 20; width: auto; border-left: 0 !important; border-radius: inherit; }
       .op-no-cart.open { display: flex; }
       .op-no-cartbar { display: flex; flex-shrink: 0; align-items: center; gap: 10px; padding: 10px 14px;
@@ -294,10 +303,21 @@ const lineKey = (i) => String(i.menuItem?._id ?? i.menuItem ?? i.menuItemId);
 const EditOrderItemsModal = ({ order, onClose, onSaved, onAddMore }) => {
   // KH-12: a line keeps its add-ons; keyed by item + add-ons (two Biryani lines may differ).
   const [lines, setLines] = useState(() => (order.items || []).map((i) => ({
-    key: cartLineKey(lineKey(i), addonIdsOf(i)), menuItemId: lineKey(i), name: i.name, nameBn: i.nameBn || "", price: i.price, qty: i.qty,
-    notes: i.notes || "", addonIds: addonIdsOf(i), addons: i.addons || [],
+    key: cartLineKey(lineKey(i), addonIdsOf(i), i.notes), menuItemId: lineKey(i), name: i.name, nameBn: i.nameBn || "", price: i.price, qty: i.qty,
+    notes: i.notes || "", basePrice: i.basePrice, addonIds: addonIdsOf(i), addons: i.addons || [],
   })));
   const [saving, setSaving] = useState(false);
+  const [editMenu, setEditMenu] = useState([]);
+  const [menuLoading, setMenuLoading] = useState(true);
+  const [menuError, setMenuError] = useState(false);
+  const [picker, setPicker] = useState(null);
+  const loadEditMenu = () => {
+    setMenuLoading(true); setMenuError(false);
+    getMenu({ includeUnavailable: true, ignoreSchedule: true })
+      .then(({ data }) => setEditMenu(data || []))
+      .catch(() => setMenuError(true)).finally(() => setMenuLoading(false));
+  };
+  useEffect(() => { loadEditMenu(); }, []);
 
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && !saving && onClose();
@@ -320,6 +340,7 @@ const EditOrderItemsModal = ({ order, onClose, onSaved, onAddMore }) => {
       onClose();
     } catch (e) {
       toast.error(e?.response?.data?.message || t("Couldn't update the order"));
+      loadEditMenu();
     } finally { setSaving(false); }
   };
 
@@ -347,7 +368,14 @@ const EditOrderItemsModal = ({ order, onClose, onSaved, onAddMore }) => {
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-1)" }}>{localName(l)}</div>
-                  <AddonLines line={l} />
+                  <AddonLines line={l} item={editMenu.find((m) => String(m._id) === l.menuItemId)} disabled={saving || menuLoading} onStep={(id, delta) => setLines((p) => stepLineAddon(p, l.key, id, delta))} />
+                  <button type="button" className="zc-btn sm" disabled={saving || menuLoading}
+                    onClick={() => {
+                      const item = editMenu.find((m) => String(m._id) === l.menuItemId);
+                      if (menuError) { loadEditMenu(); return; }
+                      if (!item || !hasAddons(item)) return toast.error(t("No extras available for this item"));
+                      setPicker({ item, lineKey: l.key, initialIds: l.addonIds });
+                    }}>{menuLoading ? t("Loading…") : menuError ? t("Retry") : t("Extras")}</button>
                   <div className="tnum" style={{ fontSize: 11.5, color: "var(--text-3)" }}>{t("₹{price} each", { price: fmtNum(l.price) })}</div>
                 </div>
                 <button type="button" className="zc-btn sm" aria-label={t("Less {name}", { name: localName(l) })} disabled={l.qty <= 1} onClick={() => setQty(l.key, -1)}>−</button>
@@ -370,6 +398,8 @@ const EditOrderItemsModal = ({ order, onClose, onSaved, onAddMore }) => {
           <button type="button" className="zc-btn pri" disabled={saving || !lines.length} onClick={save}>{saving ? t("Saving…") : t("Save changes")}</button>
         </div>
       </div>
+      {picker && <AddonPicker item={picker.item} initialIds={picker.initialIds} onCancel={() => setPicker(null)}
+        onConfirm={(ids) => { setLines((p) => replaceLineAddons(p, picker.lineKey, ids, picker.item)); setPicker(null); }} />}
     </div>
   );
 };
@@ -691,12 +721,6 @@ const OrderDetailModal = ({ order, onClose, onStatusChange, onPaymentChange, onC
   );
 };
 
-// ── ItemImage ─────────────────────────────────────────────────────────────────
-const isUrl = (s) => typeof s==="string"&&s.startsWith("http");
-const ItemImage = ({ src, name }) => isUrl(src)
-  ? <img src={src} alt={name} onError={e=>e.target.style.display="none"} style={{ width:40, height:40, borderRadius:8, objectFit:"cover", flexShrink:0 }}/>
-  : <span style={{ fontSize:24, flexShrink:0 }}>{src||"🍽️"}</span>;
-
 // ── CreateOrderModal — KFC-style rush ordering ────────────────────────────────
 // The area (Indoor / AC Room / Garden) is NOT picked per order — it comes
 // from the table (Admin → Tables), set server-side.
@@ -710,11 +734,10 @@ const PAYMENT_STATUS_OPTIONS = [
 ];
 
 const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOrderType = "DINE_IN", tables = [] }) => {
-  const [vegFilter,  setVegFilter]  = useState("All");
-  const [tempFilter, setTempFilter] = useState("All");
   const [mi,          setMi]          = useState([]);
-  const [selCat,      setSelCat]      = useState("All");
   const [search,      setSearch]      = useState("");
+  const [orderCats, setOrderCats] = useState([]);       // Category records: photo, Bengali name, icon
+  const [sectionOrder, setSectionOrder] = useState([]); // section names, configured menu order
   const [cart,        setCart]        = useState([]); // [{key, item, qty, addonIds}] — KH-12: one line per item + add-ons
   const [picker,      setPicker]      = useState(null); // KH-12: item whose add-ons are being asked about
   const [orderType,   setOrderType]   = useState(initialOrderType);
@@ -731,51 +754,25 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
   const [menuLoading, setMenuLoading] = useState(true);
   const [scpi,        setScpi]        = useState(0);
   const [gstRate,     setGstRate]     = useState(0);
-  const [catImages, setCatImages] = useState({});
-  const [catBn, setCatBn] = useState({}); // category name → Bengali name
   const [idemKey] = useState(newIdempotencyKey);
   const [cartOpen, setCartOpen] = useState(false); // phone: cart sheet over the menu
   const tableRef = useRef(null);
   const guestsRef = useRef(null);
+  useOrderMenu(setMi, setMenuLoading, setCart, setPicker);
 
   useEffect(()=>{
-    menuCached().then(r=>{ setMi(r.data||[]); setMenuLoading(false); }).catch(()=>setMenuLoading(false));
     profileCached().then(r=>{ const p=r.data?.data||r.data; setScpi(p?.serviceCharge||0); setGstRate(p?.gstRate||0); if(p?.acServiceChargePerGuest!=null) setAcRate(Number(p.acServiceChargePerGuest)); }).catch(()=>{});
-    categoriesCached().then(r=>{
-      const list = r.data?.data || r.data || [];
-      const map = {};
-      const bn = {};
-      list.forEach(c=>{ if(c.name && c.image) map[c.name] = c.image; if(c.name && c.nameBn) bn[c.name] = c.nameBn; });
-      setCatImages(map);
-      setCatBn(bn);
-    }).catch(()=>{});
+    categoriesCached().then(r=>setOrderCats(r.data?.data || r.data || [])).catch(()=>{});
+    structureCached().then(r=>setSectionOrder((r.data?.sections || []).map(x=>x.name))).catch(()=>{});
   },[]);
 
-  const COLD_CATS = ["Mocktail","Cold Coffee","Shake","Juice","Lassi","Cold Drinks"];
-  const HOT_CATS  = ["Tea","Coffee","Hot Drinks","Soup"];
-  const BEV_CATS  = [...COLD_CATS, ...HOT_CATS, "Drinks","Beverages"];
-  const isBeverageCat = BEV_CATS.includes(selCat);
 
-  const categories = useMemo(() => {
-    const unique = Array.from(new Set(mi.map(m=>m.category).filter(Boolean)));
-    const sorted = [...unique].sort((a,b) => getCategoryRank(a) - getCategoryRank(b));
-    return ["All", ...sorted];
-  }, [mi]);
 
-  const filtered = mi.filter(m=>{
-    const matchCat    = selCat==="All" || m.category===selCat;
-    const matchSearch = m.name.toLowerCase().includes(search.toLowerCase()) || (m.nameBn || "").toLowerCase().includes(search.toLowerCase());
-    const matchVeg    = vegFilter==="All" || m.tag===vegFilter;
-    const matchTemp   = tempFilter==="All"
-      || (tempFilter==="Cold" && COLD_CATS.includes(m.category))
-      || (tempFilter==="Hot"  && HOT_CATS.includes(m.category));
-    return matchCat && matchSearch && matchVeg && matchTemp;
-  });
 
   // KH-12: a line = item + add-ons. Menu-card "+" asks about extras first.
   const getQty    = (id) => cart.filter(c=>c.item._id===id).reduce((s,c)=>s+c.qty,0);
   const addLine   = (item, addonIds=[]) => setCart(p=>{ const key=cartLineKey(item._id, addonIds); const ex=p.find(c=>c.key===key); return ex?p.map(c=>c.key===key?{...c,qty:Math.min(99,c.qty+1)}:c):[...p,{key,item,qty:1,addonIds:[...addonIds]}]; });
-  const addItem   = (item) => (hasAddons(item) ? setPicker(item) : addLine(item, []));
+  const addItem   = (item) => (hasAddons(item) ? setPicker({ item }) : addLine(item, []));
   const incLine   = (key) => setCart(p=>p.map(c=>c.key===key?{...c,qty:Math.min(99,c.qty+1)}:c));
   const decLine   = (key) => setCart(p=>p.map(c=>c.key===key?{...c,qty:c.qty-1}:c).filter(c=>c.qty>0));
   // Lines confirmed in the 🎤 voice-order panel (shared/VoiceOrder.jsx).
@@ -837,408 +834,125 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
     finally{ setLoading(false); }
   };
 
-  const CAT_ICONS = {
-    All:"🍽️", Biryani:"🍛", Burger:"🍔", Pizza:"🍕", Shake:"🥤",
-    Mocktail:"🍹", Coffee:"☕", Tea:"🍵", Dessert:"🍨", Snacks:"🍟",
-    Drinks:"🧃", Juice:"🍊", Lassi:"🥛", Noodles:"🍜", Rice:"🍚",
-  };
 
-  const getCatIcon = (cat) => {
-    if (catImages[cat]) return catImages[cat];
-    return CAT_ICONS[cat] || "🍽️";
-  };
+  // One short context line for the header: what this order is for.
+  const contextLine = orderType==="DINE_IN"
+    ? (pickedTable ? `${t("Dining")} · ${tableLabel(pickedTable)}` : t("Dining · pick a table"))
+    : t("Take Away");
+  const customerSummary = [customerName.trim(), customerPhone.trim() && `+91 ${customerPhone.trim()}`].filter(Boolean).join(" · ");
 
   return (
-    <div className="zc-scrim" style={{ padding:12 }}>
+    <OrderScreen
+      title={t("New order")} context={contextLine}
+      search={search} onSearch={setSearch}
+      voice={<VoiceOrder menu={mi} onAdd={addVoiceItems} onSearch={(q)=>setSearch(q)} />}
+      canEscape={!cart.length} onClose={onClose}
+      overlay={picker && <AddonPicker item={picker.item} initialIds={picker.initialIds} onCancel={()=>setPicker(null)} onConfirm={(ids)=>{
+        if (picker.lineKey) setCart(p=>replaceLineAddons(p, picker.lineKey, ids, picker.item));
+        else addLine(picker.item, ids);
+        setPicker(null);
+      }} />}
+      bar={<PanelBar count={totalQty} total={total} onOpen={()=>setCartOpen(true)} />}
+    >
+      {/* Categories (photo) → subcategory chips → dishes */}
+      <OrderMenuPicker items={mi} loading={menuLoading} search={search} cats={orderCats} sectionOrder={sectionOrder}
+        getQty={getQty} onAdd={addItem} onRemove={removeItem} />
 
-      <div className="zc-modal op-no-modal" style={{ width:"100%", maxWidth:1300, height:"92vh",
-        display:"flex", flexDirection:"column", overflow:"hidden" }}>
-
-        {/* ── TOP BAR ── */}
-        <div style={{ display:"flex", alignItems:"center", gap:14,
-          padding:"14px 20px", borderBottom:"1px solid var(--edge)", flexShrink:0 }}>
-
-          <div style={{ flexShrink:0 }}>
-            <div style={{ fontSize:16, fontWeight:700, letterSpacing:"-.02em", color:"var(--text-1)" }}>{t("New order")}</div>
-            <div style={{ fontSize:11.5, color:"var(--text-3)" }}>{t("Select items to add")}</div>
-          </div>
-
-          <div style={{ flex:1, display:"flex", alignItems:"center", gap:8 }}>
-            <span style={{ fontSize:16 }}>🔍</span>
-            <input value={search} onChange={e=>setSearch(e.target.value)}
-              placeholder={t("Search items…")} className="zc-input" />
-            {search && <button onClick={()=>setSearch("")}
-              className="zc-btn ghost sm" style={{ flexShrink:0 }}>✕</button>}
-            <VoiceOrder menu={mi} onAdd={addVoiceItems} onSearch={(q)=>{ setSearch(q); setSelCat("All"); }} />
-            {picker && <AddonPicker item={picker} onCancel={()=>setPicker(null)} onConfirm={(ids)=>{ addLine(picker, ids); setPicker(null); }} />}
-          </div>
-
-          <button type="button" className="zc-x" onClick={onClose} aria-label={t("Close")}>✕</button>
-        </div>
-
-        {/* ── MAIN CONTENT ── */}
-        <div className="op-no-main">
-
-          {/* ── LEFT: Category tabs (vertical) ── */}
-          <div className="op-scroll op-no-cats" style={{ background:"var(--surface)",
-            borderRight:"1px solid var(--edge)",
-            display:"flex", gap:4, flexShrink:0, padding:"10px 8px" }}>
-            {categories.map(cat=>{
-              const active = selCat===cat;
-              const count  = cat==="All" ? mi.length : mi.filter(m=>m.category===cat).length;
-              return (
-                <button key={cat} onClick={()=>setSelCat(cat)} style={{
-                  padding:"10px 6px", border:"none", borderRadius:"var(--r-ctl)", cursor:"pointer",
-                  background:active?"var(--grad-btn)":"transparent",
-                  boxShadow:active?"0 4px 12px -4px var(--violet-glow)":"none",
-                  display:"flex", flexDirection:"column",
-                  alignItems:"center", gap:4, transition:"var(--theme-transition)",
-                }}>
-                  {(() => {
-                    const icon = getCatIcon(cat);
-                    return icon?.startsWith?.("http")
-                      ? <img src={icon} alt={cat}
-                          onError={e=>e.target.style.display="none"}
-                          style={{ width:32, height:32, borderRadius:7, objectFit:"cover" }}/>
-                      : <span style={{ fontSize:19 }}>{icon}</span>;
-                  })()}
-                  <span style={{ fontSize:10.5, fontWeight:active?700:500,
-                    color:active?"#fff":"var(--text-2)", textAlign:"center",
-                    lineHeight:1.2, wordBreak:"break-word" }}>
-                    {cat === "All" ? t("All") : (catBn[cat] && localName({ name: cat, nameBn: catBn[cat] })) || cat}
-                  </span>
-                  <span style={{ fontSize:9, color:active?"rgba(255,255,255,.75)":"var(--text-3)" }}>{fmtNum(count)}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* ── MIDDLE: Menu items grid ── */}
-          <div className="op-scroll" style={{ flex:1, overflowY:"auto", padding:16 }}>
-
-            <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap", alignItems:"center" }}>
-              <div className="zc-seg">
-                {[["All",`🍽️ ${t("All")}`],["Veg",`🟢 ${t("Veg")}`],["Non Veg",`🔴 ${t("Non Veg")}`],["Others",`⚪ ${t("Others")}`]].map(([v,label])=>(
-                  <button key={v} onClick={()=>setVegFilter(v)} style={vegFilter===v ? {
-                    background: v==="Veg" ? "var(--ready-fill)" : v==="Non Veg" ? "var(--stop-fill)" : "var(--grad-btn)",
-                    color: v==="Veg" ? "var(--ready-ink)" : v==="Non Veg" ? "var(--stop-ink)" : "#fff",
-                    fontWeight:600,
-                  } : undefined}>{label}</button>
-                ))}
-              </div>
-
-              {(isBeverageCat || selCat==="All") && (
-                <div className="zc-seg">
-                  {[["All",t("All")],["Hot",`🔥 ${t("Hot")}`],["Cold",`🧊 ${t("Cold")}`]].map(([v,label])=>(
-                    <button key={v} onClick={()=>setTempFilter(v)} style={tempFilter===v ? {
-                      background: v==="Hot" ? "var(--wait-fill)" : v==="Cold" ? "var(--live-fill)" : "var(--grad-btn)",
-                      color: v==="Hot" ? "var(--wait-ink)" : v==="Cold" ? "var(--live-ink)" : "#fff",
-                      fontWeight:600,
-                    } : undefined}>{label}</button>
-                  ))}
-                </div>
-              )}
-
-              <span style={{ fontSize:12, color:"var(--text-3)", alignSelf:"center" }}>
-                {tn(filtered.length, "{n} item", "{n} items")}
-              </span>
-            </div>
-
-            {menuLoading ? (
-              <div style={{ textAlign:"center", padding:60, color:"var(--text-3)" }}>
-                <div className="zc-spin" style={{ margin:"0 auto 14px" }} />
-                {t("Loading menu…")}
-              </div>
-            ) : filtered.length===0 ? (
-              <div style={{ textAlign:"center", padding:60, color:"var(--text-3)" }}>
-                <div style={{ fontSize:32, marginBottom:8 }}>📭</div>
-                {t("No items found")}
-              </div>
-            ) : (
-              <div style={{ display:"grid",
-                gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",
-                gap:12 }}>
-                {filtered.map(m=>{
-                  const qty = getQty(m._id);
-                  const inCart = qty > 0;
-                  return (
-                    <div key={m._id} className="op-menu-card" style={{
-                      background:inCart?"var(--violet-faint)":"var(--card-2)",
-                      border:`1px solid ${inCart?"var(--violet-line)":"var(--edge)"}`,
-                      borderRadius:"var(--r-card)", overflow:"hidden",
-                      cursor:"pointer",
-                      display:"flex", flexDirection:"column",
-                      position:"relative", transition:"var(--theme-transition)",
-                    }}>
-                      <div style={{ height:100, background:"var(--card-2)",
-                        display:"flex", alignItems:"center", justifyContent:"center",
-                        overflow:"hidden", flexShrink:0 }}>
-                        {m.image?.startsWith("http")
-                          ? <img src={m.image} alt={m.name}
-                              onError={e=>e.target.style.display="none"}
-                              style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
-                          : <span style={{ fontSize:42 }}>🍽️</span>
-                        }
-                      </div>
-
-                      {inCart && (
-                        <div style={{ position:"absolute", top:8, right:8,
-                          background:"var(--grad-btn)", color:"#fff", borderRadius:"50%",
-                          width:24, height:24, display:"flex",
-                          alignItems:"center", justifyContent:"center",
-                          fontSize:12, fontWeight:700, boxShadow:"0 4px 10px -4px var(--violet-glow)" }}>{fmtNum(qty)}</div>
-                      )}
-
-                      <div style={{ padding:"10px 10px 6px", flex:1 }}>
-                        <div style={{ fontWeight:600, fontSize:13, color:"var(--text-1)",
-                          lineHeight:1.3, marginBottom:3 }}>{localName(m)}</div>
-                        {m.notShareableCategory && <div style={{ fontSize:11, fontWeight:700, color:"var(--stop-ink)", marginBottom:3 }}>{t("{name} not shareable", { name: m.notShareableCategory })}</div>}
-                        <AddonHint item={m} />
-                        <div style={{ fontSize:11, color:"var(--text-3)" }}>{(catBn[m.category] && localName({ name: m.category, nameBn: catBn[m.category] })) || m.category}</div>
-                        <div style={{ fontWeight:700, fontSize:15, color:"var(--text-1)",
-                          marginTop:4 }}>₹{fmtNum(m.price)}</div>
-                      </div>
-
-                      <div style={{ padding:"0 8px 10px",
-                        display:"flex", alignItems:"center", gap:6 }}>
-                        {qty===0 ? (
-                          <button className="zc-btn pri sm" onClick={()=>addItem(m)} style={{ flex:1, justifyContent:"center" }}>+ {t("Add")}</button>
-                        ) : (
-                          <>
-                            <button onClick={()=>removeItem(m._id)} style={{
-                              width:30, height:30, borderRadius:"50%",
-                              border:"1px solid var(--violet-line)", background:"var(--violet-weak)",
-                              color:"var(--accent-ink)", cursor:"pointer", fontWeight:700,
-                              fontSize:18, display:"flex", alignItems:"center",
-                              justifyContent:"center",
-                            }}>−</button>
-                            <span className="tnum" style={{ flex:1, textAlign:"center",
-                              fontWeight:700, fontSize:16, color:"var(--text-1)" }}>{fmtNum(qty)}</span>
-                            <button onClick={()=>addItem(m)} style={{
-                              width:30, height:30, borderRadius:"50%",
-                              background:"var(--grad-btn)", color:"#fff", border:"none",
-                              cursor:"pointer", fontWeight:700, fontSize:18,
-                              display:"flex", alignItems:"center",
-                              justifyContent:"center", boxShadow:"0 4px 10px -4px var(--violet-glow)",
-                            }}>+</button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* ── RIGHT: Cart + Order details ── */}
-          <div className={`op-no-cart${cartOpen ? " open" : ""}`} style={{ background:"var(--grad-rail)",
-            borderLeft:"1px solid var(--edge)" }}>
-
-            {/* Cart header */}
-            <div style={{ padding:"14px 14px 10px",
-              borderBottom:"1px solid var(--edge)", flexShrink:0 }}>
-              <div style={{ display:"flex", justifyContent:"space-between",
-                alignItems:"center" }}>
-                <div style={{ fontWeight:700, fontSize:15, color:"var(--text-1)", display:"flex", alignItems:"center", gap:6 }}>
-                  <button type="button" className="zc-btn sm ghost op-no-back" onClick={()=>setCartOpen(false)}>← {t("Menu")}</button>
-                  🛒 {t("Cart")}
-                  {totalQty>0 && <span className="tnum" style={{ marginLeft:8, background:"var(--grad-btn)",
-                    color:"#fff", borderRadius:"50%", width:20, height:20,
-                    display:"inline-flex", alignItems:"center",
-                    justifyContent:"center", fontSize:11, fontWeight:700,
-                  }}>{fmtNum(totalQty)}</span>}
-                </div>
-                {cart.length>0 && (
-                  <button onClick={clearCart} style={{ background:"none",
-                    border:"none", color:"var(--stop-ink)", cursor:"pointer",
-                    fontSize:12, fontWeight:600 }}>{t("Clear")}</button>
-                )}
-              </div>
-            </div>
-
-            {/* Cart items first, then order details — one scroll area; the
-                totals + Place Order stay pinned below. */}
-            <div className="op-scroll" style={{ flex:1, overflowY:"auto", minHeight:0 }}>
-            {/* Cart items */}
-            <div style={{ padding:"10px 14px" }}>
-              {cart.length===0 ? (
-                <div style={{ textAlign:"center", padding:"22px 0", color:"var(--text-3)" }}>
-                  <div style={{ fontSize:36, marginBottom:8 }}>🛒</div>
-                  <div style={{ fontSize:13 }}>{t("No items yet")}</div>
-                  <div style={{ fontSize:11, marginTop:4 }}>{t("Tap items to add")}</div>
-                </div>
-              ) : (
-                <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-                  {cart.map(c=>(
-                    <div key={c.key} className="zc-panel" style={{
-                      display:"flex", alignItems:"center", gap:8, padding:"8px 10px",
-                    }}>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:13, fontWeight:600, color:"var(--text-1)",
-                          overflow:"hidden", textOverflow:"ellipsis",
-                          whiteSpace:"nowrap" }}>{localName(c.item)}</div>
-                        <AddonLines item={c.item} line={c} />
-                        <div className="tnum" style={{ fontSize:11, color:"var(--text-3)" }}>
-                          ₹{fmtNum(unitPrice(c.item,c.addonIds))} × {fmtNum(c.qty)}
-                        </div>
-                      </div>
-                      <div className="tnum" style={{ fontWeight:700, color:"var(--text-1)", fontSize:13,
-                        minWidth:44, textAlign:"right" }}>
-                        ₹{fmtNum(unitPrice(c.item,c.addonIds)*c.qty)}
-                      </div>
-                      <div style={{ display:"flex", alignItems:"center", gap:4 }}>
-                        <button onClick={()=>decLine(c.key)} style={{
-                          width:24, height:24, borderRadius:"50%",
-                          border:"1px solid var(--edge)", background:"var(--card-2)",
-                          color:"var(--text-2)", cursor:"pointer", fontWeight:700,
-                          fontSize:14, display:"flex", alignItems:"center",
-                          justifyContent:"center",
-                        }}>−</button>
-                        <button onClick={()=>incLine(c.key)} style={{
-                          width:24, height:24, borderRadius:"50%",
-                          background:"var(--grad-btn)", color:"#fff", border:"none",
-                          cursor:"pointer", fontWeight:700, fontSize:14,
-                          display:"flex", alignItems:"center",
-                          justifyContent:"center",
-                        }}>+</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Order details — below the items so the cart never gets squeezed */}
-            <div style={{ padding:"12px 14px", borderTop:"1px solid var(--edge)",
-              display:"flex", flexDirection:"column", gap:8 }}>
-
-              {/* Order type */}
-              <div className="zc-seg" style={{ width:"100%" }}>
-                {ORDER_TYPE_OPTIONS.map(({value,label,icon})=>(
-                  <button key={value} onClick={()=>setOrderType(value)}
-                    className={orderType===value ? "on" : ""} style={{ flex:1, justifyContent:"center" }}>
-                    {icon} {t(label)}
-                  </button>
-                ))}
-              </div>
-
-              {/* Table number — only for Dining */}
-              {orderType==="DINE_IN" && (
-                <div style={{ display:"flex", alignItems:"center", gap:8,
-                  background:"var(--card-2)", border:`1px solid ${tableNo?"var(--violet-line)":"var(--edge)"}`,
-                  borderRadius:"var(--r-ctl)", padding:"6px 14px" }}>
-                  <span style={{ fontSize:13, color:"var(--text-2)", fontWeight:500 }}>{t("Table")}</span>
-                  {/* Picked by name ("Indoor-AC 1"); the value is the table's
-                      internal key, which the server uses — never typed by hand
-                      (Indoor-AC 1 may be internal table 15). */}
-                  <select ref={tableRef} value={tableNo}
-                    onChange={e=>setTableNo(e.target.value)}
-                    style={{ flex:1, background:"transparent", border:"none",
-                      outline:"none", fontSize:15, fontWeight:700, color:"var(--text-1)",
-                      textAlign:"center" }}>
-                    <option value="" style={{ color:"#111" }}>{t("Select table")}</option>
-                    {groupTablesByArea(tables.filter((tb) => (tb.status || "Active") === "Active" || String(tb.tableNo) === String(tableNo))).map((g) => (
-                      <optgroup key={g.area || "indoor"} label={t(TABLE_AREA_LABEL[g.area] || TABLE_AREA_LABEL[""])} style={{ color:"#111" }}>
-                        {g.tables.map((tb) => (
-                          <option key={tb.tableNo} value={String(tb.tableNo)} style={{ color:"#111" }}>{tableLabel(tb)}</option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Customer name */}
-              <input value={customerName} onChange={e=>setCustomerName(e.target.value)}
-                placeholder={t("Customer name")} className="zc-input" />
-
-              {/* Customer phone */}
-              <input value={customerPhone}
-                onChange={e=>setCustomerPhone(e.target.value.replace(/\D/g,""))}
-                maxLength={10} placeholder={t("Phone number")} className="zc-input" />
-
-              {/* KH-11: Indoor-AC — number of guests (₹/guest, in the subtotal) */}
-              {acTable && (
-                <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-                  <input ref={guestsRef} value={guests}
-                    onChange={e=>setGuests(e.target.value.replace(/\D/g,"").slice(0,3))}
-                    inputMode="numeric" className="zc-input"
-                    placeholder={guestsReq ? t("Number of guests *") : t("Number of guests")}
-                    style={guestsReq && !guestsN ? { borderColor:"var(--violet-line)" } : undefined} />
-                  <span style={{ fontSize:11, color:"var(--text-3)" }}>
-                    {guestsReq
-                      ? t("Required for Indoor-AC · ₹{rate} per guest", { rate: fmtNum(acRate) })
-                      : t("Table in use — only if guests weren't entered on its first order")}
-                  </span>
-                </div>
-              )}
-
-              {/* No payment choice here: a new order is always unpaid (the
-                  server sets it) — payment is taken later from the order or
-                  the table's 🧾 Bill. */}
-
-              {/* WhatsApp notice */}
-              {customerPhone?.length===10 && (
-                <span style={{ fontSize:11, color:"var(--ready-ink)" }}>
-                  📱 {t("Will notify +91 {phone}", { phone: customerPhone })}
-                </span>
-              )}
-            </div>
-
-            </div>
-
-            {/* Bill summary + Place order */}
+      <OrderPanel open={cartOpen} title={t("Order")} count={totalQty} onClear={clearCart} onBack={()=>setCartOpen(false)}
+        footer={(
+          <>
             {cart.length>0 && (
-              <div style={{ padding:"12px 14px 16px",
-                borderTop:"1px solid var(--edge)", flexShrink:0 }}>
-                <div style={{ display:"flex", flexDirection:"column", gap:5,
-                  marginBottom:12 }}>
-                  <div className="tnum" style={{ display:"flex", justifyContent:"space-between",
-                    fontSize:12, color:"var(--text-2)" }}>
-                    <span>{t("Subtotal")}</span><span>₹{fmtNum(subtotal + acCharge)}</span>
-                  </div>
-                  {acCharge>0 && <div className="tnum" style={{ display:"flex",
-                    justifyContent:"space-between", fontSize:11.5, color:"var(--text-3)" }}>
-                    <span>{t("incl. AC charge")} ({t("{n} guests × ₹{rate}", { n: guestsN, rate: fmtNum(acRate) })})</span><span>₹{fmtNum(acCharge)}</span>
-                  </div>}
-                  {tax>0 && <div className="tnum" style={{ display:"flex",
-                    justifyContent:"space-between", fontSize:12, color:"var(--text-2)" }}>
-                    <span>{t("GST")} ({fmtNum(gstRate)}%)</span><span>₹{fmtNum(tax)}</span>
-                  </div>}
-                  {scAmt>0 && <div className="tnum" style={{ display:"flex",
-                    justifyContent:"space-between", fontSize:12, color:"var(--text-2)" }}>
-                    <span>{t("Service")}</span><span>₹{fmtNum(scAmt)}</span>
-                  </div>}
-                  <div className="tnum" style={{ display:"flex", justifyContent:"space-between",
-                    fontWeight:700, fontSize:17, paddingTop:8,
-                    borderTop:"1px solid var(--edge)", marginTop:4 }}>
-                    <span style={{ color:"var(--text-1)" }}>{t("Total")}</span>
-                    <span className="zc-grad-text">₹{fmtNum(total)}</span>
-                  </div>
-                </div>
+              <Totals
+                rows={[
+                  [t("Items"), subtotal],
+                  acCharge>0 && [t("AC charge ({n} guests × ₹{rate})", { n: guestsN, rate: fmtNum(acRate) }), acCharge, { muted:true }],
+                  tax>0 && [`${t("GST")} (${fmtNum(gstRate)}%)`, tax],
+                  scAmt>0 && [t("Service"), scAmt],
+                ]}
+                totalLabel={t("Total")} total={total}
+              />
+            )}
+            <button type="button" className="os-cta" onClick={handleSubmit} disabled={loading||cart.length===0}>
+              {loading ? t("Placing…") : cart.length===0 ? t("Add dishes to place the order") : <>{t("Place order")}<span className="amt tnum">₹{fmtNum(total)}</span></>}
+            </button>
+          </>
+        )}
+      >
+        {/* 1 · Where the order goes — picked first */}
+        <PanelSection label={t("Order type")}>
+          <Seg value={orderType} onChange={setOrderType} label={t("Order type")}
+            options={ORDER_TYPE_OPTIONS.map(({value,label})=>[value, t(label)])} />
+          {orderType==="DINE_IN" && (
+            <label className={`os-field${!tableNo ? " need" : ""}`}>
+              <span>{t("Table")}</span>
+              {/* Picked by name ("Indoor-AC 1"); the value is the table's internal key, which the server uses. */}
+              <select ref={tableRef} value={tableNo} onChange={e=>setTableNo(e.target.value)}>
+                <option value="">{t("Select table")}</option>
+                {groupTablesByArea(tables.filter((tb) => (tb.status || "Active") === "Active" || String(tb.tableNo) === String(tableNo))).map((g) => (
+                  <optgroup key={g.area || "indoor"} label={t(TABLE_AREA_LABEL[g.area] || TABLE_AREA_LABEL[""])}>
+                    {g.tables.map((tb) => <option key={tb.tableNo} value={String(tb.tableNo)}>{tableLabel(tb)}</option>)}
+                  </optgroup>
+                ))}
+              </select>
+            </label>
+          )}
+          {/* KH-11: Indoor-AC — number of guests (₹/guest, in the subtotal) */}
+          {acTable && (
+            <label className={`os-field${guestsReq && !guestsN ? " need" : ""}`}>
+              <span>{guestsReq ? t("Number of guests *") : t("Number of guests")}</span>
+              <input ref={guestsRef} value={guests} inputMode="numeric"
+                onChange={e=>setGuests(e.target.value.replace(/\D/g,"").slice(0,3))} />
+              <small>{guestsReq
+                ? t("Required for Indoor-AC · ₹{rate} per guest", { rate: fmtNum(acRate) })
+                : t("Table in use — only if guests weren't entered on its first order")}</small>
+            </label>
+          )}
+        </PanelSection>
 
-                <button className="zc-btn pri" onClick={handleSubmit}
-                  disabled={loading||cart.length===0}
-                  style={{ width:"100%", justifyContent:"center", padding:"13px 0", fontSize:14 }}>
-                  {loading?t("Placing…"):t("Place Order · ₹{amount}", { amount: fmtNum(total) })}
-                </button>
+        {/* 2 · The dishes */}
+        <PanelSection label={t("Items")} aside={totalQty>0 && <span className="tnum">{tn(totalQty, "{n} item", "{n} items")}</span>}>
+          {cart.length===0
+            ? <EmptyLines title={t("No items yet")} hint={t("Tap a dish on the left to add it")} />
+            : (
+              <div className="os-lines">
+                {cart.map(c=>(
+                  <OrderLine key={c.key}
+                    name={nameWithSize(localName(c.item), c.item.size)}
+                    addons={<><AddonLines item={c.item} line={c} disabled={loading} onStep={(id, delta)=>setCart(p=>stepLineAddon(p,c.key,id,delta))} />
+                      {hasAddons(c.item) && <button type="button" className="zc-btn sm" disabled={loading}
+                        onClick={()=>setPicker({item:c.item,lineKey:c.key,initialIds:c.addonIds})}>{t("Extras")}</button>}</>}
+                    unit={unitPrice(c.item,c.addonIds)} qty={c.qty}
+                    onDec={()=>decLine(c.key)} onInc={()=>incLine(c.key)} />
+                ))}
               </div>
             )}
+          {/* Prices aren't editable here — the server prices every order from the menu. */}
+          <div className="os-info warn">
+            <b>{t("Price looks wrong on an item? No need to panic.")}</b>
+            {t("Go to Menu > search for the item > tap Edit and correct the price > Come back here and you will see the change saved.")}
           </div>
-        </div>
+        </PanelSection>
 
-        {/* Phone: cart bar under the menu — opens the full cart. */}
-        <div className="op-no-cartbar">
-          <div style={{ flex:1, minWidth:0, fontSize:13, color:"var(--text-2)" }}>
-            {cart.length ? <>🛒 <b style={{ color:"var(--text-1)" }}>{tn(totalQty, "{n} item", "{n} items")}</b> · <b className="tnum" style={{ color:"var(--text-1)" }}>₹{fmtNum(total)}</b></> : t("Cart is empty")}
-          </div>
-          <button type="button" className="zc-btn pri sm" disabled={!cart.length} onClick={()=>setCartOpen(true)}>{t("View cart")} →</button>
-        </div>
-      </div>
-    </div>
+        {/* 3 · Customer — optional, out of the way until needed */}
+        <PanelSection>
+          <Collapsible label={t("Customer details ")} summary={customerSummary}>
+            <label className="os-field"><span>{t("Customer name")}</span>
+              <input value={customerName} onChange={e=>setCustomerName(e.target.value)} />
+            </label>
+            <label className="os-field"><span>{t("Phone number")}</span>
+              <input value={customerPhone} inputMode="numeric" maxLength={10}
+                onChange={e=>setCustomerPhone(e.target.value.replace(/\D/g,""))} />
+            </label>
+            {customerPhone?.length===10 && <span className="os-hint">{t("Will notify +91 {phone}", { phone: customerPhone })}</span>}
+          </Collapsible>
+          {/* No payment choice here: a new order is always unpaid (the server sets it) —
+              payment is taken later from the order or the table's Bill. */}
+        </PanelSection>
+      </OrderPanel>
+    </OrderScreen>
   );
 };
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ADD ITEMS TO EXISTING ORDER — Modal Component
@@ -1247,8 +961,9 @@ const CreateOrderModal = ({ onClose, onCreated, initialTableNo = null, initialOr
 const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }) => {
   const [followUpKey] = useState(newIdempotencyKey); // KH-07: one follow-up per open modal
   const [mi,          setMi]          = useState([]);
-  const [selCat,      setSelCat]      = useState("All");
   const [search,      setSearch]      = useState("");
+  const [orderCats, setOrderCats] = useState([]);       // Category records: photo, Bengali name, icon
+  const [sectionOrder, setSectionOrder] = useState([]); // section names, configured menu order
   const [cart,        setCart]        = useState([]); // [{key, item, qty, addonIds}] — KH-12: one line per item + add-ons
   const [picker,      setPicker]      = useState(null); // KH-12: item whose add-ons are being asked about
   const [cartOpen,    setCartOpen]    = useState(false); // phone: cart sheet over the menu
@@ -1258,49 +973,21 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }
   const [gstRate,     setGstRate]     = useState(0);
   const [paymentMethod,setPaymentMethod] = useState(order.paymentMethod||"Cash");
   const [paymentStatus,setPaymentStatus] = useState(order.paymentStatus||"PENDING_VERIFICATION");
-  const [vegFilter,   setVegFilter]   = useState("All");
-  const [tempFilter,  setTempFilter]  = useState("All");
-  const [catImages, setCatImages] = useState({});
-  const [catBn, setCatBn] = useState({}); // category name → Bengali name
+  useOrderMenu(setMi, setMenuLoading, setCart, setPicker);
 
   useEffect(()=>{
-    menuCached().then(r=>{ setMi(r.data||[]); setMenuLoading(false); }).catch(()=>setMenuLoading(false));
     profileCached().then(r=>{ const p=r.data?.data||r.data; setScpi(p?.serviceCharge||0); setGstRate(p?.gstRate||0); }).catch(()=>{});
-    categoriesCached().then(r=>{
-      const list = r.data?.data || r.data || [];
-      const map = {};
-      const bn = {};
-      list.forEach(c=>{ if(c.name && c.image) map[c.name] = c.image; if(c.name && c.nameBn) bn[c.name] = c.nameBn; });
-      setCatImages(map);
-      setCatBn(bn);
-    }).catch(()=>{});
+    categoriesCached().then(r=>setOrderCats(r.data?.data || r.data || [])).catch(()=>{});
+    structureCached().then(r=>setSectionOrder((r.data?.sections || []).map(x=>x.name))).catch(()=>{});
   },[]);
 
-  const COLD_CATS = ["Mocktail","Cold Coffee","Shake","Juice","Lassi","Cold Drinks"];
-  const HOT_CATS  = ["Tea","Coffee","Hot Drinks","Soup"];
-  const BEV_CATS  = [...COLD_CATS,...HOT_CATS,"Drinks","Beverages"];
-  const isBeverageCat = BEV_CATS.includes(selCat);
 
-  const categories = useMemo(() => {
-    const unique = Array.from(new Set(mi.map(m=>m.category).filter(Boolean)));
-    const sorted = [...unique].sort((a,b) => getCategoryRank(a) - getCategoryRank(b));
-    return ["All", ...sorted];
-  }, [mi]);
 
-  const filtered = mi.filter(m=>{
-    const matchCat    = selCat==="All" || m.category===selCat;
-    const matchSearch = m.name.toLowerCase().includes(search.toLowerCase()) || (m.nameBn || "").toLowerCase().includes(search.toLowerCase());
-    const matchVeg    = vegFilter==="All" || m.tag===vegFilter;
-    const matchTemp   = tempFilter==="All"
-      || (tempFilter==="Cold" && COLD_CATS.includes(m.category))
-      || (tempFilter==="Hot"  && HOT_CATS.includes(m.category));
-    return matchCat && matchSearch && matchVeg && matchTemp;
-  });
 
   // KH-12: a line = item + add-ons. Menu-card "+" asks about extras first.
   const getQty    = (id) => cart.filter(c=>c.item._id===id).reduce((s,c)=>s+c.qty,0);
   const addLine   = (item, addonIds=[]) => setCart(p=>{ const key=cartLineKey(item._id, addonIds); const ex=p.find(c=>c.key===key); return ex?p.map(c=>c.key===key?{...c,qty:Math.min(99,c.qty+1)}:c):[...p,{key,item,qty:1,addonIds:[...addonIds]}]; });
-  const addItem   = (item) => (hasAddons(item) ? setPicker(item) : addLine(item, []));
+  const addItem   = (item) => (hasAddons(item) ? setPicker({ item }) : addLine(item, []));
   const incLine   = (key) => setCart(p=>p.map(c=>c.key===key?{...c,qty:Math.min(99,c.qty+1)}:c));
   const decLine   = (key) => setCart(p=>p.map(c=>c.key===key?{...c,qty:c.qty-1}:c).filter(c=>c.qty>0));
   // Lines confirmed in the 🎤 voice-order panel (shared/VoiceOrder.jsx).
@@ -1324,12 +1011,6 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }
   const total    = subtotal+tax+scAmt;
   const isPaid   = order.paymentStatus==="PAID";
 
-  const CAT_ICONS = {
-    All:"🍽️",Biryani:"🍛",Burger:"🍔",Pizza:"🍕",Shake:"🥤",
-    Mocktail:"🍹",Coffee:"☕",Tea:"🍵",Dessert:"🍨",Snacks:"🍟",
-    Drinks:"🧃",Juice:"🍊",Lassi:"🥛",Noodles:"🍜",Rice:"🍚",
-  };
-  const getCatIcon = (cat) => catImages[cat] || CAT_ICONS[cat] || "🍽️";
 
   const handleSubmit = async () => {
     if(!cart.length) return toast.error(t("Add at least one item"));
@@ -1391,397 +1072,95 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }
     finally{ setLoading(false); }
   };
 
+  // Where the new items go — so nobody is surprised by a second order number.
+  const whereNote = REOPENS_ON_ADD.includes(order.status) && addsIntoSameOrder(order)
+    ? t("Adds to this order ({id}) · it goes back to Cooking for the new items · the kitchen gets only the new items", { id: order.orderId })
+    : order.status === "CONFIRMED" || addsIntoSameOrder(order)
+    ? t("Adds to this order ({id}) · the kitchen gets only the new items", { id: order.orderId })
+    : t("This order is {status} — new items go on a linked add-on order with its own KOT, same bill", { status: formatStatus(order.status) });
+  const contextLine = [order.orderId, order.tableNo ? tableLabel(order) : t("Take Away"), customerName(order) || t("Guest")].join(" · ");
+
   return (
-    <div style={{ position:"fixed", inset:0, background:"var(--scrim)", zIndex:999,
-      display:"flex", alignItems:"center", justifyContent:"center",
-      padding:12, backdropFilter:"blur(6px)" }}>
+    <OrderScreen
+      title={t("Add items to order")} context={contextLine}
+      search={search} onSearch={setSearch}
+      voice={<VoiceOrder menu={mi} onAdd={addVoiceItems} onSearch={(q)=>setSearch(q)} />}
+      canEscape={!cart.length} onClose={onClose}
+      overlay={picker && <AddonPicker item={picker.item} initialIds={picker.initialIds} onCancel={()=>setPicker(null)} onConfirm={(ids)=>{
+        if (picker.lineKey) setCart(p=>replaceLineAddons(p, picker.lineKey, ids, picker.item));
+        else addLine(picker.item, ids);
+        setPicker(null);
+      }} />}
+      bar={<PanelBar count={totalQty} total={total} onOpen={()=>setCartOpen(true)} />}
+    >
+      {/* Categories (photo) → subcategory chips → dishes */}
+      <OrderMenuPicker items={mi} loading={menuLoading} search={search} cats={orderCats} sectionOrder={sectionOrder}
+        getQty={getQty} onAdd={addItem} onRemove={removeItem} />
 
-      <div className="op-no-modal" style={{ background:"var(--surface)", borderRadius:20, width:"100%", maxWidth:1300,
-        height:"92vh", display:"flex", flexDirection:"column",
-        border:`1px solid var(--violet-mid)`,
-        boxShadow:"var(--shadow-pop)", overflow:"hidden" }}>
-
-        {/* ── TOP BAR ── */}
-        <div style={{ display:"flex", alignItems:"center", gap:12, flexWrap:"wrap",
-          padding:"14px 20px", borderBottom:`1px solid ${BDR}`,
-          background:"var(--card)", flexShrink:0 }}>
-
-          <div style={{ display:"flex", flexDirection:"column" }}>
-            <span style={{ fontWeight:700, fontSize:15, color:T1 }}>
-              {t("Add Items to Order")}
-            </span>
-            <span style={{ fontSize:12, color:T2, marginTop:2 }}>
-              {order.orderId} · {customerName(order)||t("Guest")}
-              {order.tableNo ? ` · ${tableLabel(order)}` : ""}
-              · <span style={{ color:isPaid?"var(--ready-ink)":"var(--wait-ink)", fontWeight:600 }}>
-                  {isPaid?`✓ ${t("PAID")}`:`⏳ ${t("DUE")}`} ₹{fmtNum(Math.round(order.total))}
-                </span>
-            </span>
-            {/* Where the new items go — so nobody is surprised by a second order number. */}
-            <span style={{ fontSize:11.5, color:T3, marginTop:2 }}>
-              {REOPENS_ON_ADD.includes(order.status) && addsIntoSameOrder(order)
-                ? t("Adds to this order ({id}) · it goes back to Cooking for the new items · the kitchen gets only the new items", { id: order.orderId })
-                : order.status === "CONFIRMED" || addsIntoSameOrder(order)
-                ? t("Adds to this order ({id}) · the kitchen gets only the new items", { id: order.orderId })
-                : t("This order is {status} — new items go on a linked add-on order with its own KOT, same bill", { status: formatStatus(order.status) })}
-            </span>
+      <OrderPanel open={cartOpen} title={t("New items")} count={totalQty} onClear={clearCart} onBack={()=>setCartOpen(false)}
+        footer={(
+          <>
+            {cart.length>0 && (
+              <Totals
+                rows={[[t("New items"), subtotal], tax>0 && [`${t("GST")} (${fmtNum(gstRate)}%)`, tax], scAmt>0 && [t("Service"), scAmt]]}
+                totalLabel={t("Adds")} total={total}
+                note={t("Order total: ₹{from} → ₹{to}", { from: fmtNum(Math.round(order.total)), to: fmtNum(Math.round(Number(order.total||0)+total)) })}
+              />
+            )}
+            <button type="button" className="os-cta" onClick={handleSubmit} disabled={loading||cart.length===0}>
+              {loading ? t("Adding…") : cart.length===0 ? t("Pick dishes to add") : <>{t("Add to order")}<span className="amt tnum">₹{fmtNum(total)}</span></>}
+            </button>
+          </>
+        )}
+      >
+        {/* The order being changed */}
+        <PanelSection label={t("Current order")}>
+          <div className="os-sum">
+            <div className="os-sum-r"><span>{t("Order")}</span><b>{order.orderId}</b></div>
+            <div className="os-sum-r"><span>{t("Items")}</span><b className="tnum">{fmtNum(order.items?.length||0)}</b></div>
+            <div className="os-sum-r">
+              <span>{t("Total")}</span>
+              <span style={{ display:"flex", gap:8, alignItems:"center" }}>
+                <span className={`os-pill ${isPaid ? "paid" : "due"}`}>{isPaid ? t("PAID") : t("DUE")}</span>
+                <b className="tnum">₹{fmtNum(Math.round(order.total))}</b>
+              </span>
+            </div>
           </div>
+          <div className="os-info">{whereNote}</div>
+        </PanelSection>
 
-          <div style={{ flex:1 }}/>
-
-          <div style={{ display:"flex", alignItems:"center", gap:8,
-            background:CARD2, border:`1px solid ${BDR}`, borderRadius:10,
-            padding:"7px 14px", minWidth:200 }}>
-            <span style={{ fontSize:16 }}>🔍</span>
-            <input value={search} onChange={e=>setSearch(e.target.value)}
-              placeholder={t("Search items…")}
-              style={{ flex:1, background:"transparent", border:"none",
-                outline:"none", fontSize:13, color:T1 }}/>
-            {search && <button onClick={()=>setSearch("")}
-              style={{ background:"none", border:"none", color:T3,
-                cursor:"pointer", fontSize:14 }}>✕</button>}
-          </div>
-          <VoiceOrder menu={mi} onAdd={addVoiceItems} onSearch={(q)=>{ setSearch(q); setSelCat("All"); }} />
-            {picker && <AddonPicker item={picker} onCancel={()=>setPicker(null)} onConfirm={(ids)=>{ addLine(picker, ids); setPicker(null); }} />}
-
-          <div style={{ display:"flex", gap:4, background:CARD2, padding:3,
-            borderRadius:8, border:`1px solid ${BDR}` }}>
-            {["Cash","Online"].map(m=>(
-              <button key={m} onClick={()=>setPaymentMethod(m)} style={{
-                padding:"6px 10px", borderRadius:6, cursor:"pointer",
-                fontWeight:600, fontSize:12, border:"none",
-                background:paymentMethod===m?PINK:"transparent",
-                color:paymentMethod===m?"#fff":T2,
-              }}>{m==="Cash"?"💵":"📱"} {t(m)}</button>
-            ))}
-          </div>
-
-          <div style={{ display:"flex", gap:4, background:CARD2, padding:3,
-            borderRadius:8, border:`1px solid ${BDR}` }}>
-            {PAYMENT_STATUS_OPTIONS.map(({value,label,icon})=>{
-              const st = PAY_STYLE[value] || DEFAULT_STATUS_STYLE;
-              const active = paymentStatus===value;
-              return (
-                <button key={value} onClick={()=>setPaymentStatus(value)} style={{
-                  padding:"6px 10px", borderRadius:6, cursor:"pointer",
-                  fontWeight:600, fontSize:12, border:"none",
-                  background:active?st.bg:"transparent",
-                  color:active?st.color:T2,
-                }}>{icon} {t(label)}</button>
-              );
-            })}
-          </div>
-
-          <button className="op-btn" onClick={onClose} style={{ width:34, height:34, borderRadius:"50%",
-            border:`1px solid ${BDR}`, background:CARD, cursor:"pointer",
-            display:"flex", alignItems:"center", justifyContent:"center",
-            color:T2, fontSize:16, flexShrink:0 }} aria-label={t("Close")}>✕</button>
-        </div>
-
-        {/* ── MAIN CONTENT ── */}
-        <div className="op-no-main">
-
-          {/* ── LEFT: Category tabs ── */}
-          <div className="op-scroll op-no-cats" style={{ background:"var(--bg)",
-            borderRight:`1px solid ${BDR}`,
-            display:"flex", flexShrink:0 }}>
-            {categories.map(cat=>{
-              const active = selCat===cat;
-              const count  = cat==="All" ? mi.length : mi.filter(m=>m.category===cat).length;
-              return (
-                <button key={cat} onClick={()=>setSelCat(cat)} style={{
-                  padding:"14px 8px", border:"none", cursor:"pointer",
-                  background:active?`var(--violet-weak)`:"transparent",
-                  borderLeft:active?`3px solid ${PINK}`:"3px solid transparent",
-                  display:"flex", flexDirection:"column",
-                  alignItems:"center", gap:4, transition:"all .15s",
-                }}>
-                {(() => {
-                  const icon = getCatIcon(cat);
-                  return icon?.startsWith?.("http")
-                    ? <img src={icon} alt={cat}
-                        onError={e=>e.target.style.display="none"}
-                        style={{ width:36, height:36, borderRadius:8, objectFit:"cover" }}/>
-                    : <span style={{ fontSize:22 }}>{icon}</span>;
-                })()}
-                  <span style={{ fontSize:10, fontWeight:active?700:500,
-                    color:active?PINK:T2, textAlign:"center",
-                    lineHeight:1.2, wordBreak:"break-word" }}>
-                    {cat === "All" ? t("All") : (catBn[cat] && localName({ name: cat, nameBn: catBn[cat] })) || cat}
-                  </span>
-                  <span style={{ fontSize:9, color:T3 }}>{fmtNum(count)}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* ── MIDDLE: Menu grid ── */}
-          <div className="op-scroll" style={{ flex:1, overflowY:"auto", padding:16 }}>
-
-            <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap", alignItems:"center" }}>
-              <div style={{ display:"flex", gap:3, background:CARD2, padding:3,
-                borderRadius:20, border:`1px solid ${BDR}` }}>
-                {[["All",`🍽️ ${t("All")}`],["Veg",`🟢 ${t("Veg")}`],["Non Veg",`🔴 ${t("Non Veg")}`],["Others",`⚪ ${t("Others")}`]].map(([v,label])=>(
-                  <button key={v} onClick={()=>setVegFilter(v)} style={{
-                    padding:"5px 12px", borderRadius:16, border:"none",
-                    cursor:"pointer", fontSize:12, fontWeight:600,
-                    background:vegFilter===v
-                      ? (v==="Veg"?"var(--ready-line)"
-                        : v==="Non Veg"?"var(--stop-line)"
-                        : PINK)
-                      : "transparent",
-                    color:vegFilter===v
-                      ? (v==="Veg"?"var(--ready-ink)"
-                        : v==="Non Veg"?"var(--stop-ink)"
-                        : "#fff")
-                      : T2,
-                  }}>{label}</button>
+        {/* The new dishes */}
+        <PanelSection label={t("New items")} aside={totalQty>0 && <span className="tnum">{tn(totalQty, "{n} item", "{n} items")}</span>}>
+          {cart.length===0
+            ? <EmptyLines title={t("Nothing added yet")} hint={t("Tap a dish on the left to add it")} />
+            : (
+              <div className="os-lines">
+                {cart.map(c=>(
+                  <OrderLine key={c.key}
+                    name={nameWithSize(localName(c.item), c.item.size)}
+                    addons={<><AddonLines item={c.item} line={c} disabled={loading} onStep={(id, delta)=>setCart(p=>stepLineAddon(p,c.key,id,delta))} />
+                      {hasAddons(c.item) && <button type="button" className="zc-btn sm" disabled={loading}
+                        onClick={()=>setPicker({item:c.item,lineKey:c.key,initialIds:c.addonIds})}>{t("Extras")}</button>}</>}
+                    unit={unitPrice(c.item,c.addonIds)} qty={c.qty}
+                    onDec={()=>decLine(c.key)} onInc={()=>incLine(c.key)} />
                 ))}
               </div>
-
-              {(isBeverageCat || selCat==="All") && (
-                <div style={{ display:"flex", gap:3, background:CARD2, padding:3,
-                  borderRadius:20, border:`1px solid ${BDR}` }}>
-                  {[["All",t("All")],["Hot",`🔥 ${t("Hot")}`],["Cold",`🧊 ${t("Cold")}`]].map(([v,label])=>(
-                    <button key={v} onClick={()=>setTempFilter(v)} style={{
-                      padding:"5px 12px", borderRadius:16, border:"none",
-                      cursor:"pointer", fontSize:12, fontWeight:600,
-                      background:tempFilter===v
-                        ? (v==="Hot"?"var(--wait-line)"
-                          : v==="Cold"?"var(--live-line)"
-                          : PINK)
-                        : "transparent",
-                      color:tempFilter===v
-                        ? (v==="Hot"?"var(--wait-ink)"
-                          : v==="Cold"?"var(--live-ink)"
-                          : "#fff")
-                        : T2,
-                    }}>{label}</button>
-                  ))}
-                </div>
-              )}
-              <span style={{ fontSize:12, color:T3 }}>{tn(filtered.length, "{n} item", "{n} items")}</span>
-            </div>
-
-            {menuLoading ? (
-              <div style={{ textAlign:"center", padding:60, color:T3 }}>
-                <div style={{ fontSize:32, marginBottom:8 }}>⏳</div>{t("Loading menu…")}
-              </div>
-            ) : filtered.length===0 ? (
-              <div style={{ textAlign:"center", padding:60, color:T3 }}>
-                <div style={{ fontSize:32, marginBottom:8 }}>📭</div>{t("No items found")}
-              </div>
-            ) : (
-              <div style={{ display:"grid",
-                gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))", gap:12 }}>
-                {filtered.map(m=>{
-                  const qty = getQty(m._id);
-                  const inCart = qty>0;
-                  return (
-                    <div key={m._id} className="op-menu-card" style={{
-                      background:inCart?`var(--violet-faint)`:CARD2,
-                      border:`2px solid ${inCart?PINK:BDR}`,
-                      borderRadius:RADIUS, overflow:"hidden",
-                      display:"flex", flexDirection:"column",
-                      position:"relative",
-                    }}>
-                      <div style={{ height:100, background:"var(--card-2)",
-                        display:"flex", alignItems:"center", justifyContent:"center",
-                        overflow:"hidden", flexShrink:0 }}>
-                        {m.image?.startsWith("http")
-                          ? <img src={m.image} alt={m.name} onError={e=>e.target.style.display="none"}
-                              style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
-                          : <span style={{ fontSize:42 }}>🍽️</span>}
-                      </div>
-                      {inCart && (
-                        <div style={{ position:"absolute", top:8, right:8,
-                          background:PINK, color:"#fff", borderRadius:"50%",
-                          width:24, height:24, display:"flex", alignItems:"center",
-                          justifyContent:"center", fontSize:12, fontWeight:700 }}>{fmtNum(qty)}</div>
-                      )}
-                      <div style={{ padding:"10px 10px 6px", flex:1 }}>
-                        <div style={{ fontWeight:600, fontSize:13, color:T1,
-                          lineHeight:1.3, marginBottom:3 }}>{localName(m)}</div>
-                        {m.notShareableCategory && <div style={{ fontSize:11, fontWeight:700, color:"var(--stop-ink)", marginBottom:3 }}>{t("{name} not shareable", { name: m.notShareableCategory })}</div>}
-                        <AddonHint item={m} />
-                        <div style={{ fontSize:11, color:T3 }}>{(catBn[m.category] && localName({ name: m.category, nameBn: catBn[m.category] })) || m.category}</div>
-                        <div style={{ fontWeight:700, fontSize:15, color:PINK, marginTop:4 }}>₹{fmtNum(m.price)}</div>
-                      </div>
-                      <div style={{ padding:"0 8px 10px", display:"flex", alignItems:"center", gap:6 }}>
-                        {qty===0 ? (
-                          <button className="op-btn" onClick={()=>addItem(m)} style={{
-                            flex:1, padding:"8px 0", borderRadius:10,
-                            background:"var(--grad-btn)",
-                            color:"#fff", border:"none", cursor:"pointer",
-                            fontWeight:700, fontSize:13,
-                          }}>+ {t("Add")}</button>
-                        ) : (
-                          <>
-                            <button onClick={()=>removeItem(m._id)} style={{
-                              width:32, height:32, borderRadius:"50%",
-                              border:`2px solid ${PINK}`, background:"transparent",
-                              color:PINK, cursor:"pointer", fontWeight:700,
-                              fontSize:18, display:"flex", alignItems:"center",
-                              justifyContent:"center" }}>−</button>
-                            <span style={{ flex:1, textAlign:"center",
-                              fontWeight:700, fontSize:16, color:T1 }}>{fmtNum(qty)}</span>
-                            <button onClick={()=>addItem(m)} style={{
-                              width:32, height:32, borderRadius:"50%",
-                              background:PINK, color:"#fff", border:"none",
-                              cursor:"pointer", fontWeight:700, fontSize:18,
-                              display:"flex", alignItems:"center",
-                              justifyContent:"center" }}>+</button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
             )}
-          </div>
+        </PanelSection>
 
-          {/* ── RIGHT: Cart ── */}
-          <div className={`op-no-cart${cartOpen ? " open" : ""}`} style={{ background:"var(--card)",
-            borderLeft:`1px solid ${BDR}` }}>
-
-            <div style={{ padding:"12px 14px 8px", flexShrink:0, borderBottom:`1px solid ${BDR}` }}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                <span style={{ fontSize:13, fontWeight:700, color:T1, display:"flex", alignItems:"center", gap:6 }}>
-                  <button type="button" className="zc-btn sm ghost op-no-back" onClick={()=>setCartOpen(false)}>← {t("Menu")}</button>
-                  {t("New Items")}
-                  {totalQty>0 && <span style={{ marginLeft:8, background:PINK,
-                    color:"#fff", borderRadius:"50%", width:20, height:20,
-                    display:"inline-flex", alignItems:"center",
-                    justifyContent:"center", fontSize:11, fontWeight:700,
-                  }}>{fmtNum(totalQty)}</span>}
-                </span>
-                {cart.length>0 && (
-                  <button onClick={clearCart} style={{ background:"none",
-                    border:"none", color:"var(--stop-ink)", cursor:"pointer",
-                    fontSize:12, fontWeight:600 }}>{t("Clear")}</button>
-                )}
-              </div>
-            </div>
-
-            {/* New items first, the current order below — one scroll area so
-                the list is never squeezed; totals + button stay pinned. */}
-            <div className="op-scroll" style={{ flex:1, overflowY:"auto", minHeight:0 }}>
-            <div style={{ padding:"8px 14px" }}>
-              {cart.length===0 ? (
-                <div style={{ textAlign:"center", padding:"30px 0", color:T3 }}>
-                  <div style={{ fontSize:32, marginBottom:6 }}>➕</div>
-                  <div style={{ fontSize:12 }}>{t("Select items to add")}</div>
-                </div>
-              ) : (
-                <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-                  {cart.map(c=>(
-                    <div key={c.key} style={{
-                      display:"flex", alignItems:"center", gap:8,
-                      padding:"8px 10px", borderRadius:10,
-                      background:CARD, border:`1px solid ${BDR}`,
-                    }}>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:13, fontWeight:600, color:T1,
-                          overflow:"hidden", textOverflow:"ellipsis",
-                          whiteSpace:"nowrap" }}>{localName(c.item)}</div>
-                        <AddonLines item={c.item} line={c} />
-                        <div style={{ fontSize:11, color:T3 }}>₹{fmtNum(unitPrice(c.item,c.addonIds))} × {fmtNum(c.qty)}</div>
-                      </div>
-                      <div style={{ fontWeight:700, color:PINK, fontSize:13, minWidth:44, textAlign:"right" }}>
-                        ₹{fmtNum(unitPrice(c.item,c.addonIds)*c.qty)}
-                      </div>
-                      <div style={{ display:"flex", alignItems:"center", gap:4 }}>
-                        <button onClick={()=>decLine(c.key)} style={{
-                          width:24, height:24, borderRadius:"50%",
-                          border:`1.5px solid ${BDR}`, background:CARD2,
-                          color:T2, cursor:"pointer", fontWeight:700, fontSize:14,
-                          display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
-                        <button onClick={()=>incLine(c.key)} style={{
-                          width:24, height:24, borderRadius:"50%",
-                          background:PINK, color:"#fff", border:"none",
-                          cursor:"pointer", fontWeight:700, fontSize:14,
-                          display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div style={{ padding:"12px 14px", borderTop:`1px solid ${BDR}` }}>
-              <div style={{ fontSize:10, fontWeight:600, color:T3, letterSpacing:1,
-                textTransform:"uppercase", marginBottom:8 }}>{t("Current Order")}</div>
-              <div style={{ background:CARD2, borderRadius:8, padding:10,
-                border:`1px solid ${isPaid?"var(--ready-line)":"var(--wait-line)"}` }}>
-                <div style={{ display:"flex", justifyContent:"space-between", fontSize:12 }}>
-                  <span style={{ color:T3 }}>{t("Items")}</span>
-                  <span style={{ color:T1, fontWeight:500 }}>{fmtNum(order.items?.length||0)}</span>
-                </div>
-                <div style={{ display:"flex", justifyContent:"space-between", fontSize:13,
-                  fontWeight:700, marginTop:4 }}>
-                  <span style={{ color:T1 }}>{t("Total")}</span>
-                  <span style={{ color:PINK }}>₹{fmtNum(Math.round(order.total))}</span>
-                </div>
-                <div style={{ marginTop:6, display:"flex", gap:6 }}>
-                  <span style={{ fontSize:11, fontWeight:700, padding:"2px 8px",
-                    borderRadius:20,
-                    background:isPaid?"var(--ready-fill)":"var(--wait-fill)",
-                    color:isPaid?"var(--ready-ink)":"var(--wait-ink)" }}>
-                    {isPaid?`✓ ${t("PAID")}`:`⏳ ${t("DUE")}`}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            </div>
-
-            {cart.length>0 && (
-              <div style={{ padding:"12px 14px 16px",
-                borderTop:`1px solid ${BDR}`, flexShrink:0 }}>
-                <div style={{ display:"flex", flexDirection:"column", gap:4, marginBottom:10 }}>
-                  <div style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:T2 }}>
-                    <span>{t("New subtotal")}</span><span>₹{fmtNum(subtotal)}</span>
-                  </div>
-                  {tax>0 && <div style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:T2 }}>
-                    <span>{t("GST")} ({fmtNum(gstRate)}%)</span><span>₹{fmtNum(tax)}</span>
-                  </div>}
-                  <div style={{ display:"flex", justifyContent:"space-between",
-                    fontWeight:700, fontSize:14, paddingTop:6,
-                    borderTop:`1px solid ${BDR}`, marginTop:2 }}>
-                    <span style={{ color:T1 }}>{t("New Total")}</span>
-                    <span style={{ color:PINK }}>₹{fmtNum(total)}</span>
-                  </div>
-                  <div style={{ fontSize:11, color:T3, textAlign:"center", marginTop:4 }}>
-                    {t("Order total:")} ₹{fmtNum(Math.round(order.total))} → ₹{fmtNum(Math.round(Number(order.total||0)+total))}
-                  </div>
-                </div>
-
-                <button className="op-btn" onClick={handleSubmit} disabled={loading||cart.length===0} style={{
-                  width:"100%", padding:"13px 0", borderRadius:14, border:"none",
-                  background:loading?"var(--raise)":"var(--grad-btn)",
-                  color:loading?T3:"#fff", fontWeight:800, fontSize:14,
-                  cursor:loading?"not-allowed":"pointer",
-                  boxShadow:loading?"none":`0 6px 20px var(--violet-line)`,
-                }}>
-                  {loading?t("Adding…"):t("Add Items · ₹{amount}", { amount: fmtNum(total) })}
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Phone: cart bar under the menu — opens the full cart. */}
-        <div className="op-no-cartbar">
-          <div style={{ flex:1, minWidth:0, fontSize:13, color:T2 }}>
-            {cart.length ? <>➕ <b style={{ color:T1 }}>{tn(totalQty, "{n} item", "{n} items")}</b> · <b style={{ color:T1 }}>₹{fmtNum(total)}</b></> : t("Cart is empty")}
-          </div>
-          <button type="button" className="zc-btn pri sm" disabled={!cart.length} onClick={()=>setCartOpen(true)}>{t("View cart")} →</button>
-        </div>
-      </div>
-    </div>
+        {/* Payment for this order */}
+        <PanelSection label={t("Payment")}>
+          <Seg value={paymentMethod} onChange={setPaymentMethod} label={t("Payment method")}
+            options={[["Cash", t("Cash")], ["Online", t("Online")]]} />
+          <Seg value={paymentStatus} onChange={setPaymentStatus} label={t("Payment status")}
+            options={PAYMENT_STATUS_OPTIONS.map(({value,label})=>[value, t(label)])}
+            tone={(v)=>(v==="PAID" ? "good" : "warn")} />
+        </PanelSection>
+      </OrderPanel>
+    </OrderScreen>
   );
 };
+
 
 // ══════════════════════════════════════════════════════════════════════════════
 // MULTI-ORDER TABLE VIEW

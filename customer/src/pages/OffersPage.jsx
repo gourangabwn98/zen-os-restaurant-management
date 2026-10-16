@@ -29,8 +29,8 @@ export default function OffersPage() {
     .filter((m) => discountPct(m) > 0)
     .sort((a, b) => (isOutOfStock(a) - isOutOfStock(b)) || discountPct(b) - discountPct(a)), [items]);
 
-  const handleAdd = (item, qty = 1, notes = "") => {
-    cart.addItem(item, qty, notes);
+  const handleAdd = (item, qty = 1, notes = "", addonIds = []) => {
+    cart.addItem(item, qty, notes, addonIds);
     toast.success(`${item.name} added to cart`);
   };
 
@@ -70,7 +70,7 @@ export default function OffersPage() {
             {deals.map((item) => (
               <ItemCard
                 key={item._id} item={item} qty={cart.getQty(item._id)} onOpen={setOpenItem}
-                onAdd={(i) => handleAdd(i, 1)} onInc={(i) => cart.addItem(i, 1)} onDec={(i) => cart.removeItem(i._id)}
+                onAdd={(i) => handleAdd(i, 1)} onInc={(i) => cart.incLine(i._id)} onDec={(i) => cart.removeItem(i._id)}
               />
             ))}
           </div>

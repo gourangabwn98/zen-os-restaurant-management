@@ -33,22 +33,26 @@ export const ensureSmartCategories = async ({ models, force = false }) => {
   if (ensured && !force) return;
   const { Category, MenuItem } = models;
   for (const def of SMART_CATEGORIES) {
-    const existing = await Category.findOne({ smartKey: def.key }).select("_id").lean();
-    if (existing) continue;
+    const existing = await Category.findOne({ smartKey: def.key }).select("_id name").lean();
+    if (existing) {
+      // A built-in's name is fixed in code — follow a rename there
+      // ("Chef's Picks" → "Khoai Signature"). Bengali name / picture / position untouched.
+      if (existing.name !== def.name) {
+        const taken = await Category.findOne({ _id: { $ne: existing._id }, name: { $regex: `^${escapeRegex(def.name)}$`, $options: "i" } }).select("_id").lean();
+        if (!taken) await Category.updateOne({ _id: existing._id }, { $set: { name: def.name } });
+      }
+      continue;
+    }
     const sameName = await Category.findOne({ name: { $regex: `^${escapeRegex(def.name)}$`, $options: "i" } }).lean();
     if (sameName) {
       const oldName = sameName.name;
       if (def.source === "flag") {
-        await MenuItem.updateMany(
-          { $or: [{ category: oldName }, { categories: oldName }] },
-          { $set: { [def.flag]: true } },
-        );
+        await MenuItem.updateMany({ category: oldName }, { $set: { [def.flag]: true } });
       }
       await Category.updateOne({ _id: sameName._id }, { $set: { kind: "SMART", smartKey: def.key, name: def.name } });
       if (oldName !== def.name) {
         // Same name, other spelling ("chef's picks") — references follow.
         await MenuItem.updateMany({ category: oldName }, { $set: { category: def.name } });
-        await MenuItem.updateMany({ categories: oldName }, { $set: { "categories.$[c]": def.name } }, { arrayFilters: [{ c: oldName }] });
       }
       continue;
     }

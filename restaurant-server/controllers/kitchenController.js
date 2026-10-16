@@ -1,6 +1,7 @@
 // controllers/kitchenController.js
 import { transitionOrderStatusTx } from "../services/orderService.js";
 import { emitOrderStatusChanged, emitSentToKitchen } from "../sockets/socket.js";
+import { addonLabel, nameWithSize } from "../utils/menuAddons.js";
 
 // The kitchen sees an order from PREPARING on — that's when its KOT prints.
 // A Placed (CONFIRMED) order can still be changed, so it isn't shown yet.
@@ -19,7 +20,10 @@ const toKitchenTicket = (order) => ({
   status: order.status,
   priority: order.priority,
   waiterName: order.waiterName || "",
-  items: (order.items || []).map((i) => ({ name: i.name, qty: i.qty, notes: i.notes || "" })),
+  items: (order.items || []).map((i) => ({
+    name: nameWithSize(i.name, i.size), qty: i.qty, notes: i.notes || "",
+    ...(i.addons?.length && { addons: i.addons.map(addonLabel) }), // names only — no prices in the kitchen
+  })),
   notes: order.notes || "",
   createdAt: order.createdAt,
   preparingAt: order.preparingAt,

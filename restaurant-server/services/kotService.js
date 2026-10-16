@@ -12,7 +12,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { ORDER_SOURCES } from "../utils/orderStateMachine.js";
-import { addonLabel, lineAddonKey } from "../utils/menuAddons.js";
+import { addonLabel, lineAddonKey, nameWithSize } from "../utils/menuAddons.js";
 
 const SOURCE_CUSTOMER = ORDER_SOURCES.find((s) => s === "CUSTOMER");
 if (!SOURCE_CUSTOMER) throw new Error("kotService: ORDER_SOURCES has no CUSTOMER");
@@ -67,7 +67,7 @@ export const createKotJobForOrder = async ({ KOTJob, order, actor, session, cust
           tableNo:   order.tableNo,
           orderType: order.orderType,
           items:     order.items.map((i) => ({
-            name: i.name, nameBn: i.nameBn || "", qty: i.qty, notes: i.notes || "",
+            name: nameWithSize(i.name, i.size), nameBn: i.nameBn || "", qty: i.qty, notes: i.notes || "",
             ...(i.addons?.length && { addons: i.addons.map(addonLabel) }), // KH-12 — printed under the item
           })),
           notes:     order.notes || "",
@@ -99,7 +99,7 @@ export const createKotJobForOrder = async ({ KOTJob, order, actor, session, cust
 // note shows as cancel-old / make-new, which is what the cook must do.
 const changeKey = (i) => `${String(i.menuItem)}|${lineAddonKey(i.addons)}|${String(i.notes || "").trim()}`;
 const slipLine = (i, qty, cancel = false) => ({
-  name: cancel ? `${CANCEL_PREFIX}${i.name}` : i.name,
+  name: cancel ? `${CANCEL_PREFIX}${nameWithSize(i.name, i.size)}` : nameWithSize(i.name, i.size),
   nameBn: i.nameBn ? (cancel ? `${CANCEL_PREFIX}${i.nameBn}` : i.nameBn) : "",
   qty, notes: i.notes || "",
   ...(i.addons?.length && { addons: i.addons.map(addonLabel) }),

@@ -1,6 +1,6 @@
 // controllers/adminController.js
 import mongoose from "mongoose";
-import { lineAddonKey, addonsForPrint } from "../utils/menuAddons.js";
+import { lineAddonKey, addonsForPrint, nameWithSize } from "../utils/menuAddons.js";
 import { isManagementRole } from "../utils/roles.js";
 import { parseGuests, applyGuestsToOrder } from "../services/acServiceCharge.js";
 import { priceItems, computeTotals } from "../utils/pricing.js";
@@ -383,7 +383,20 @@ export const updateOrderPayment = async (req, res) => {
       ...((update.paymentStatus === "PENDING_VERIFICATION" || update.paymentMethod) && unsettled),
       ...totalGuard,
     };
-    const order = await Order.findOneAndUpdate(filter, { $set: update }, { returnDocument: "after", runValidators: true });
+    // Undoing a Paid takes the collection back off whoever recorded it.
+    if (update.paymentStatus === "PENDING_VERIFICATION") { update.paidBy = null; update.paidAt = null; }
+    // Staff collections: the person who records the Paid is credited — in the
+    // same atomic write that flips it to PAID, so a retry or a second tap by
+    // someone else can't re-credit it. Already PAID → the plain write below
+    // (e.g. a method correction) leaves paidBy as it was.
+    let order = update.paymentStatus === "PAID"
+      ? await Order.findOneAndUpdate(
+        { ...filter, paymentStatus: { $ne: "PAID" } },
+        { $set: { ...update, paidBy: buildActor(req.user), paidAt: new Date() } },
+        { returnDocument: "after", runValidators: true },
+      )
+      : null;
+    if (!order) order = await Order.findOneAndUpdate(filter, { $set: update }, { returnDocument: "after", runValidators: true });
     if (!order) {
       const existing = await Order.findById(req.params.id).select("status billStatus total").lean();
       if (!existing) return res.status(404).json({ message: "Order not found" });
@@ -573,6 +586,7 @@ export const printBill = async (req, res) => {
       // KH-12: add-on qty folded into the printed name ("2 x 1 pc Chicken").
       items:         order.items.map((i) => {
         const line = i.toObject ? i.toObject() : { ...i };
+        line.name = nameWithSize(line.name, line.size); // "Chicken Kosha (3 pcs)"
         return line.addons?.length ? { ...line, addons: addonsForPrint(line.addons) } : line;
       }),
       subtotal:      order.subtotal || 0,

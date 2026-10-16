@@ -284,7 +284,8 @@ export const getEmployeePerformance = async ({ User, Order, from, to, role, tz, 
 
 /** A waiter's own order activity for a date range (defaults to "today") —
  * backs the Activity tab's "My orders" / "My collection" / "Unpaid" /
- * "Cancelled" cards. Attribution mirrors getEmployeeTodayStats: orders are
+ * "Cancelled" cards. "My collection" is by who recorded the payment (see
+ * the aggregate below). Otherwise attribution mirrors getEmployeeTodayStats: orders are
  * "mine" via confirmedBy.id (the waiter who actually placed/confirmed
  * them), scoped by confirmedAt — except cancelled orders, which are scoped
  * by cancelledBy.id/cancelledAt instead, since an order can be cancelled
@@ -298,9 +299,11 @@ export const getWaiterOrderActivity = async ({ Order, employeeId, from, to, tz }
   const [ordersCount, collectionAgg, unpaidOrders, cancelledOrders] = await Promise.all([
     Order.countDocuments({ "confirmedBy.id": idMatch, confirmedAt: { $gte: start, $lte: end } }),
     Order.aggregate([
-      // Collection = revenue (PAID and not CANCELLED) — a paid-then-cancelled
-      // order is not money the waiter took (insightsService.revenueOrderMatch).
-      { $match: { "confirmedBy.id": employeeId, confirmedAt: { $gte: start, $lte: end }, ...revenueOrderMatch() } },
+      // Collection = money THIS waiter recorded as Paid in the range (paidBy /
+      // paidAt — services/staffReportService.js), not the orders they took:
+      // another waiter may have collected it. Revenue rule: PAID and not
+      // CANCELLED (insightsService.revenueOrderMatch).
+      { $match: { "paidBy.id": employeeId, paidAt: { $gte: start, $lte: end }, ...revenueOrderMatch() } },
       { $group: { _id: null, total: { $sum: "$total" } } },
     ]),
     Order.find({

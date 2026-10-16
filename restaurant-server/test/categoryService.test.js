@@ -8,7 +8,7 @@
 
 import assert from "node:assert/strict";
 import {
-  normalizeCategoryName, listCategoriesWithCounts, createCategory, updateCategory, deleteCategory,
+  normalizeCategoryName, listCategoriesWithCounts, createCategory, updateCategory, deleteCategory, _resetSectionsEnsured,
 } from "../services/categoryService.js";
 import { _resetSmartCache } from "../services/smartCategoryService.js";
 
@@ -45,7 +45,10 @@ const fakeWorld = ({ cats = [], items = [], failItemUpdate = false } = {}) => {
     },
     findOne: (f = {}) => lean(state.cats.find((c) => nameMatch(c, f) && idMatch(c, f) && keyMatch(c, f)) || null),
     updateOne: async ({ _id }, u) => { Object.assign(state.cats.find((c) => c._id === _id), u.$set); },
-    find: () => ({ sort: () => ({ lean: async () => [...state.cats].sort((a, b) => a.name.localeCompare(b.name)) }) }),
+    find: () => ({
+      sort: () => ({ lean: async () => [...state.cats].sort((a, b) => a.name.localeCompare(b.name)) }),
+      select: () => ({ lean: async () => state.cats.map((c) => ({ ...c })) }),
+    }),
     create: async (doc) => { const row = { _id: `c${state.cats.length + 1}`, ...doc }; state.cats.push(row); return row; },
     findByIdAndUpdate: async (id, u) => { const c = state.cats.find((x) => x._id === id); Object.assign(c, u.$set); return { ...c }; },
     findOneAndUpdate: async (f, u, opts) => {
@@ -96,6 +99,7 @@ const fakeWorld = ({ cats = [], items = [], failItemUpdate = false } = {}) => {
     },
   };
   _resetSmartCache();
+  _resetSectionsEnsured();
   return { state, models: { Category, MenuItem, Order }, db };
 };
 
@@ -105,7 +109,7 @@ await test("name: trimmed, inner spaces collapsed; empty/too long rejected", () 
   assert.throws(() => normalizeCategoryName("x".repeat(41)), (e) => e.statusCode === 400);
 });
 
-await test("list: every category with its item count (primary + extra listings, MNU-01)", async () => {
+await test("list: every category with its item count (by `category`; the old extra list is ignored)", async () => {
   const { models } = fakeWorld({
     cats: [{ _id: "c1", name: "Pizza" }, { _id: "c2", name: "Drinks" }],
     items: [{ category: "Pizza" }, { category: "Pizza", categories: ["Drinks"] }],
@@ -113,7 +117,7 @@ await test("list: every category with its item count (primary + extra listings, 
   const rows = await listCategoriesWithCounts({ models });
   const count = (n) => rows.find((r) => r.name === n)?.itemCount;
   assert.equal(count("Pizza"), 2);
-  assert.equal(count("Drinks"), 1, "the extra listing counts, the item is still one document");
+  assert.equal(count("Drinks"), 0);
 });
 
 await test("list: built-in smart categories exist once; counts come from flags / real data (MNU-03/04/05/07)", async () => {
@@ -125,21 +129,33 @@ await test("list: built-in smart categories exist once; counts come from flags /
   await listCategoriesWithCounts({ models }); // idempotent
   assert.equal(state.cats.filter((c) => c.kind === "SMART").length, 6);
   const count = (n) => rows.find((r) => r.name === n)?.itemCount;
-  assert.equal(count("Chef's Picks"), 1);
+  assert.equal(count("Khoai Signature"), 1);
   assert.equal(count("Fast Available"), 1);
   assert.equal(count("Most Ordered"), 0, "no sales yet → empty, never invented");
 });
 
-await test("smart: a hand-made \"Chef's Picks\" is adopted, not duplicated — its items get the flag", async () => {
+await test("smart: a hand-made \"Khoai Signature\" is adopted, not duplicated — its items get the flag", async () => {
   const { models, state } = fakeWorld({
-    cats: [{ _id: "c1", name: "chef's picks" }, { _id: "c2", name: "Chai" }],
-    items: [{ name: "Tea", category: "Chai", categories: ["chef's picks"] }],
+    cats: [{ _id: "c1", name: "khoai signature" }, { _id: "c2", name: "Chai" }],
+    items: [{ name: "Tea", category: "khoai signature" }],
   });
   await listCategoriesWithCounts({ models });
-  const adopted = state.cats.filter((c) => /chef's picks/i.test(c.name));
+  const adopted = state.cats.filter((c) => /khoai signature/i.test(c.name));
   assert.equal(adopted.length, 1);
   assert.equal(adopted[0].smartKey, "CHEFS_PICKS");
+  assert.equal(adopted[0].name, "Khoai Signature");
   assert.equal(state.items[0].isChefsPick, true);
+});
+
+await test("smart: the existing built-in \"Chef's Picks\" is renamed to \"Khoai Signature\" (same doc, Bengali name kept)", async () => {
+  const { models, state } = fakeWorld({
+    cats: [{ _id: "s1", name: "Chef's Picks", nameBn: "নিজের", kind: "SMART", smartKey: "CHEFS_PICKS", sortOrder: 3 }],
+  });
+  await listCategoriesWithCounts({ models });
+  const doc = state.cats.find((c) => c._id === "s1");
+  assert.equal(doc.name, "Khoai Signature");
+  assert.equal(doc.nameBn, "নিজের");
+  assert.equal(state.cats.filter((c) => c.smartKey === "CHEFS_PICKS").length, 1);
 });
 
 await test("smart: built-in categories can't be renamed or deleted", async () => {
@@ -174,17 +190,7 @@ await test("rename: category and all its items move together in one transaction"
   assert.equal(state.cats[0].name, "Appetizers");
   assert.deepEqual(state.items.map((i) => i.category), ["Appetizers", "Appetizers", "Mains"]);
   assert.equal(state.txCommitted, 1);
-  assert.deepEqual(state.txWrites, ["category", "items", "items"], "every write used the transaction session");
-});
-
-await test("rename: items listing it as an EXTRA category follow too (MNU-01)", async () => {
-  const { models, db, state } = fakeWorld({
-    cats: [{ _id: "c1", name: "Specials" }],
-    items: [{ name: "Tea", category: "Chai", categories: ["Specials"] }],
-  });
-  await updateCategory({ models, db, id: "c1", name: "House Specials" });
-  assert.deepEqual(state.items[0].categories, ["House Specials"]);
-  assert.equal(state.items[0].category, "Chai");
+  assert.deepEqual(state.txWrites, ["category", "items"], "every write used the transaction session");
 });
 
 await test("rename: if moving the items fails, the category keeps its old name", async () => {
@@ -220,11 +226,6 @@ await test("image-only update: no transaction, items untouched; \"\" removes the
 await test("update: unknown id → 404", async () => {
   const { models, db } = fakeWorld();
   await assert.rejects(updateCategory({ models, db, id: "nope", name: "X" }), (e) => e.statusCode === 404);
-});
-
-await test("delete: refused while an item lists it only as an extra category (MNU-01)", async () => {
-  const { models } = fakeWorld({ cats: [{ _id: "c1", name: "Specials" }], items: [{ category: "Chai", categories: ["Specials"] }] });
-  await assert.rejects(deleteCategory({ models, id: "c1" }), (e) => e.statusCode === 409);
 });
 
 await test("delete: refused (409) while items use it; allowed once empty", async () => {

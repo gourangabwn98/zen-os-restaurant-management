@@ -2,6 +2,7 @@ import { useAppState } from "../context/AppState.jsx";
 import { isOutOfStock, discountPct } from "../hooks/useMenu.js";
 import QtyStepper, { AddButton } from "./ui/QtyStepper.jsx";
 import Icon from "./ui/Icon.jsx";
+import { nameWithSize, itemAddons, isNotSharable, SIGNATURE_LABEL } from "../utils/menuDisplay.js";
 
 /** Menu product card (reference ".pcard") — photo, favourite heart, veg
  * mark, rating, price (+ struck original price) and the +/stepper control. */
@@ -23,11 +24,17 @@ export default function ItemCard({ item, qty, onOpen, onAdd, onInc, onDec, conte
 
       <div className="bd">
         <button type="button" className="nm" onClick={() => onOpen(item)}>
-          <VegDot tag={item.tag} />{item.name}
+          <VegDot tag={item.tag} />{nameWithSize(item.name, item.size)}
         </button>
-        <div className="ds">{item.description || item.category}</div>
+        <div className="ds">{item.description || item.subcategory || item.category}</div>
+        {itemAddons(item).slice(0, 1).map((a) => (
+          <div key={a._id} className="addon">+ {a.name} ₹{a.price}</div>
+        ))}
         {item.notShareableCategory && (
           <div className="danger" style={{ fontSize: 11.5, fontWeight: 800 }}>{item.notShareableCategory} not shareable</div>
+        )}
+        {!item.notShareableCategory && isNotSharable(item) && (
+          <div className="danger" style={{ fontSize: 11.5, fontWeight: 800 }}>Not sharable</div>
         )}
         <Stars rating={item.rating} />
         <div className="pf">
@@ -44,6 +51,9 @@ export default function ItemCard({ item, qty, onOpen, onAdd, onInc, onDec, conte
 }
 
 function ItemBadge({ item, off, context }) {
+  if (item.isChefsPick) return <span className="badge amber">{SIGNATURE_LABEL}</span>;
+  if (item.isTodaysSpecial) return <span className="badge save">Today's Special</span>;
+  if (item.isMostPopular) return <span className="badge">Most Popular</span>;
   if (off >= 10) return <span className="badge save">Save {off}%</span>;
   if (Number(item.rating) >= 4.5) return <span className="badge">Bestseller</span>;
   if (context === "popular" && Number(item.rating) >= 4) return <span className="badge amber">Popular</span>;

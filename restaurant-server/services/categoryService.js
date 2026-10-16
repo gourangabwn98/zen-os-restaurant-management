@@ -22,12 +22,14 @@
 
 import { ensureSmartCategories, getDataSets } from "./smartCategoryService.js";
 import { smartByKey, CATEGORY_ICONS, categoryIcon } from "../utils/menuCategories.js";
+import { MENU_SECTIONS } from "../utils/menuSections.js";
 
 const MAX_NAME = 40;
 export const CATEGORY_SORT = { sortOrder: 1, name: 1 };
 
-// MNU-01: an item is "in" a manual category as its primary OR as an extra.
-const inCategory = (name) => ({ $or: [{ category: name }, { categories: name }] });
+// An item is "in" a manual category by its `category` (the old extra
+// `categories` list was removed — scripts/importMenu.js unsets it).
+const inCategory = (name) => ({ category: name });
 const builtInError = (name) => httpError(`"${name}" is a built-in category — its name and members are automatic`, 400);
 
 const httpError = (msg, statusCode = 400) => {
@@ -53,27 +55,67 @@ const assertNameFree = async (Category, name, exceptId = null) => {
   if (clash) throw httpError(`A category named "${clash.name}" already exists`, 409);
 };
 
+// ── configured sections always have a Category record ──────────────────────
+// Items name their section (utils/menuSections.js); the category list every
+// app shows, its schedule and its picture come from Category records. A menu
+// loaded straight into the database (not via scripts/importMenu.js) left the
+// sections without records — so the waiter's category chips showed only the
+// old, now empty categories. This puts them back, idempotently:
+//   • a record with the exact name exists        → nothing
+//   • one differs only in case ("BreakFast")      → renamed to the section, so
+//     its picture / schedule / Menu time are kept (items move first, so a
+//     failure half-way is finished by the next run)
+//   • none                                       → created
+// Old categories are never deleted here (Admin → Categories, once empty).
+let sectionsEnsured = false;
+export const _resetSectionsEnsured = () => { sectionsEnsured = false; };
+
+export const ensureMenuSections = async ({ models, force = false }) => {
+  if (sectionsEnsured && !force) return { created: [], renamed: [] };
+  const { Category, MenuItem } = models;
+  const cats = await Category.find().select("name kind").lean();
+  const exact = new Set(cats.map((c) => c.name));
+  const created = [], renamed = [];
+  for (const name of MENU_SECTIONS) {
+    if (exact.has(name)) continue;
+    const other = cats.find((c) => c.kind !== "SMART" && c.name.toLowerCase() === name.toLowerCase());
+    if (other) {
+      await MenuItem.updateMany({ category: other.name }, { $set: { category: name } });
+      await Category.updateOne({ _id: other._id, name: other.name }, { $set: { name } });
+      renamed.push([other.name, name]);
+      continue;
+    }
+    try {
+      await Category.create({ name, sortOrder: MENU_SECTIONS.indexOf(name) });
+      created.push(name);
+    } catch (err) {
+      if (err?.code !== 11000) throw err; // another instance created it a moment ago
+    }
+  }
+  sectionsEnsured = true;
+  return { created, renamed };
+};
+
 /** Admin view: every category with how many items use it. */
 export const listCategoriesWithCounts = async ({ models }) => {
   const { Category, MenuItem } = models;
   await ensureSmartCategories({ models });
-  const [cats, counts, extraCounts, dataSets] = await Promise.all([
+  await ensureMenuSections({ models });
+  const [cats, counts, dataSets] = await Promise.all([
     Category.find().sort(CATEGORY_SORT).lean(),
     MenuItem.aggregate([{ $group: { _id: "$category", n: { $sum: 1 } } }]),
-    MenuItem.aggregate([{ $unwind: "$categories" }, { $group: { _id: "$categories", n: { $sum: 1 } } }]),
     getDataSets({ models }),
   ]);
   const byName = new Map(counts.map((c) => [c._id, c.n]));
-  const extraByName = new Map(extraCounts.map((c) => [c._id, c.n]));
   return Promise.all(cats.map(async (c) => {
     const def = c.kind === "SMART" ? smartByKey(c.smartKey) : null;
-    let itemCount = (byName.get(c.name) || 0) + (extraByName.get(c.name) || 0);
+    let itemCount = byName.get(c.name) || 0;
     if (def?.source === "flag") itemCount = await MenuItem.countDocuments({ [def.flag]: true });
     else if (def) itemCount = dataSets.get(def.key)?.size || 0;
     // iconShown: what customers see (own pick → smart default → name guess);
     // smartSource/smartFlag tell the admin how a built-in one fills itself.
     return {
-      ...c, kind: c.kind || "MANUAL", itemCount, extraCount: extraByName.get(c.name) || 0,
+      ...c, kind: c.kind || "MANUAL", itemCount, extraCount: 0,
       iconShown: categoryIcon(c), smartSource: def?.source || null, smartFlag: def?.flag || null,
     };
   }));
@@ -150,12 +192,6 @@ export const updateCategory = async ({ models, db, id, name, nameBn, image, icon
       if (!category) throw httpError("This category was changed by someone else — refresh and try again", 409);
       const r = await MenuItem.updateMany({ category: current.name }, { $set: { category: newName } }, { session });
       itemsMoved = r.modifiedCount || 0;
-      // MNU-01: items listing it as an EXTRA category follow the rename too.
-      await MenuItem.updateMany(
-        { categories: current.name },
-        { $set: { "categories.$[c]": newName } },
-        { session, arrayFilters: [{ c: current.name }] },
-      );
     });
   } catch (err) {
     if (err?.code === 11000) throw httpError(`A category named "${newName}" already exists`, 409);
@@ -224,11 +260,6 @@ export const mergeCategory = async ({ models, db, id, intoId }) => {
     await session.withTransaction(async () => {
       const r = await MenuItem.updateMany({ category: from.name }, { $set: { category: into.name } }, { session });
       itemsMoved = r.modifiedCount || 0;
-      // MNU-01: extra listings move too, without duplicating the target or
-      // repeating an item's primary category.
-      await MenuItem.updateMany({ categories: from.name }, { $addToSet: { categories: into.name } }, { session });
-      await MenuItem.updateMany({ categories: from.name }, { $pull: { categories: from.name } }, { session });
-      await MenuItem.updateMany({ category: into.name, categories: into.name }, { $pull: { categories: into.name } }, { session });
       const del = await Category.deleteOne({ _id: from._id, name: from.name }, { session });
       if (!del.deletedCount) throw httpError("This category was changed by someone else — refresh and try again", 409);
     });

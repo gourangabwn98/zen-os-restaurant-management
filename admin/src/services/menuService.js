@@ -1,6 +1,8 @@
 // // ─── src/services/menuService.js ─────────────────────────────────────────────
 // import api from "./api.js";
 // export const getMenu = (params) => api.get("/menu", { params });
+// Sections → subcategories, in the configured menu order (server: utils/menuSections.js).
+export const getMenuStructure = () => api.get("/menu/structure");
 // export const getCategories = () => api.get("/menu/categories");
 // // Admin operations (require JWT token)
 // export const createMenuItem = (data) => api.post("/menu", data);

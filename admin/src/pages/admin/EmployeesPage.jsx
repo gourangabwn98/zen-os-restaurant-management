@@ -6,6 +6,7 @@
 //   GET   /admin/attendance/today          live duty status + today's hours
 //   GET   /admin/employees/performance     today's order counts per person
 //   GET   /admin/attendance/duty-history   ON/OFF audit log (employees/DutyHistory.jsx)
+//   GET   /admin/employees/staff-report    taken / served / completed / collected (employees/StaffCollections.jsx)
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import toast from "react-hot-toast";
 import { getEmployees, setEmployeeStatus, getEmployeePerformance, getHrSummary } from "../../services/adminService.js";
@@ -17,6 +18,7 @@ import ErrorState from "./shared/ErrorState.jsx";
 import EmployeeForm from "./employees/EmployeeForm.jsx";
 import EmployeeProfile from "./employees/EmployeeProfile.jsx";
 import DutyHistory from "./employees/DutyHistory.jsx";
+import StaffCollections from "./employees/StaffCollections.jsx";
 import { DUTY_LABEL, initials, fmtDuration, count, roleText } from "./employees/shared.js";
 import { t, N_, tn, fmtTime, fmtNum, fmtDate } from "../../i18n/core.js";
 import "./employees/employees.css";
@@ -366,6 +368,8 @@ export default function EmployeesPage() {
               )}
             </div>
           </div>
+
+          <StaffCollections />
 
           <DutyHistory people={historyPeople} />
         </>

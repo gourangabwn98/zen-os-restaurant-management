@@ -7,6 +7,8 @@
 import mongoose from "mongoose";
 import { ORDER_STATUSES, ORDER_SOURCES, ORDER_TYPES, BILL_STATUSES } from "../utils/orderStateMachine.js";
 import { FOOD_TYPES } from "../utils/foodTypes.js";
+import { FOOD_TYPE_LABELS, ADDON_TYPES, SUBCATEGORY_MAX, SIZE_MAX } from "../utils/menuSections.js";
+import { ADDONS_MAX, menuAddonRecords } from "../utils/menuAddons.js";
 import { COLLECT_METHODS } from "../utils/paymentMode.js";
 import {
   STOCK_UNITS, LEDGER_TYPES, WASTAGE_REASONS, AUTO_ORDER_PREFERENCES, CREDIT_PREFERENCES, BILL_NUMBER_SOURCES,
@@ -233,15 +235,23 @@ const menuItemSchema = new mongoose.Schema({
   price:         { type: Number, required: true },
   originalPrice: { type: Number },
   description:   { type: String },
+  // The section (utils/menuSections.js MENU_SECTIONS). The old extra
+  // `categories` list is gone — scripts/importMenu.js unsets it.
   category:      { type: String, required: true },
-  // MNU-01 — the SAME item also listed under these categories (names, like
-  // `category`, which stays the primary: schedule, reports, history). One
-  // document, so price / stock / availability can never drift between them.
-  categories:    { type: [String], default: [] },
+  // Filter chip inside a section ("Eggs", "Paneer", "Katla"). Free text; the
+  // list a section offers is derived from its items (menuStructureService).
+  subcategory:   { type: String, default: "", trim: true, maxlength: SUBCATEGORY_MAX },
+  // Stable menu code from the menu file ("BF-005"); the import upserts by it.
+  itemId:        { type: String, trim: true, default: undefined },
+  // Portion — "2 pcs", "Half", "Full". Display only ("" = none).
+  size:          { type: String, default: "", trim: true, maxlength: SIZE_MAX },
+  // Display only (Veg / Egg / Non-veg). `tag` below stays authoritative.
+  foodType:      { type: String, enum: [...FOOD_TYPE_LABELS, ""], default: "" },
   // MNU-03/04/05 — flags that put the item in the built-in smart categories.
   isFastAvailable: { type: Boolean, default: false },
-  isChefsPick:     { type: Boolean, default: false },
+  isChefsPick:     { type: Boolean, default: false }, // shown as "Khoai Signature"
   isTodaysSpecial: { type: Boolean, default: false },
+  isMostPopular:   { type: Boolean, default: false }, // badge only
   categoryImage: { type: String, default: "" },
   tag:           { type: String, enum: FOOD_TYPES, required: true }, // Veg | Non Veg | Others
   image:         { type: String, default: "" },
@@ -258,16 +268,24 @@ const menuItemSchema = new mongoose.Schema({
   soldOutUntil:  { type: Date, default: null },
   // KH-12 — optional extras with a price ("1 pc chicken" ₹40). Picked per
   // order line by id; priced only server-side (utils/menuAddons.js).
+  // At most ADDONS_MAX per item — validated on both menu writes and orders.
   addons: {
     type: [new mongoose.Schema({
       name:  { type: String, required: true, trim: true, maxlength: 60 },
       price: { type: Number, required: true, min: 0 },
+      type:  { type: String, enum: ADDON_TYPES, default: undefined },
+      isAvailable: { type: Boolean, default: undefined },
     })],
     default: [],
+    validate: { validator: (v) => !v || v.length <= ADDONS_MAX, message: `At most ${ADDONS_MAX} add-on per item` },
   },
 }, { timestamps: true });
+menuItemSchema.pre("init", function (data) {
+  if (data.addons?.some((a) => !a._id)) data.addons = menuAddonRecords(data);
+});
 menuItemSchema.index({ soldOutUntil: 1 }, { partialFilterExpression: { soldOutUntil: { $type: "date" } } });
-menuItemSchema.index({ categories: 1 });
+menuItemSchema.index({ category: 1, subcategory: 1 });
+menuItemSchema.index({ itemId: 1 }, { unique: true, sparse: true });
 
 const orderItemSchema = new mongoose.Schema({
   menuItem: { type: mongoose.Schema.Types.ObjectId, ref: "MenuItem", required: true },
@@ -284,11 +302,14 @@ const orderItemSchema = new mongoose.Schema({
       addonId: { type: mongoose.Schema.Types.ObjectId, required: true },
       name:    { type: String, required: true },
       price:   { type: Number, required: true },
+      type:    { type: String, default: undefined }, // MenuItem add-on type, snapshotted
       qty:     { type: Number, min: 1, default: undefined }, // 2 × chicken; absent = 1
     }, { _id: false })],
     default: undefined,
   },
   basePrice: { type: Number, default: undefined },
+  // Snapshot of MenuItem.size ("3 pcs") — absent on items without one.
+  size:      { type: String, default: undefined },
   // Recipe making cost of ONE of this item, snapshotted when the order goes
   // to the kitchen (inventoryService.deductStockForOrder) — Insights' COGS
   // uses this, so later stock-price or recipe changes never rewrite history.
@@ -391,6 +412,15 @@ const orderSchema = new mongoose.Schema({
   // Only when paymentMethod is "Both": how much came in cash and how much
   // online (utils/paymentMode.js parsePaymentSplit — adds up to `total`).
   paymentSplit:   { type: new mongoose.Schema({ cash: Number, online: Number }, { _id: false }), default: null },
+  // Who recorded the payment, and when (services/staffReportService.js — staff
+  // collections). Set ONLY in the same atomic write that flips paymentStatus
+  // to PAID (filter `paymentStatus: {$ne: PAID}`), so a retry or a second
+  // person tapping Paid never re-credits it; cleared when an admin undoes a
+  // Paid. A verified PhonePe payment sets paidAt with paidBy null (the
+  // customer paid the gateway, not an employee). Orders paid before these
+  // fields existed have neither — reported as Unattributed, never guessed.
+  paidBy:         { type: actorSchema, default: null },
+  paidAt:         { type: Date, default: null },
 
   // ── Bill lifecycle (BIL-02) ───────────────────────────────────────────────
   // Financial state of this order's bill, independent of the operational
@@ -487,6 +517,13 @@ orderSchema.index({ status: 1, createdAt: -1 });
 // Newest-first lists and date-range filters (admin Orders "All", Invoices, Insights).
 orderSchema.index({ createdAt: -1 });
 orderSchema.index({ tableSession: 1 });
+// Staff performance & collections (services/staffReportService.js) reads one
+// date range per activity: taken (confirmedAt), served (deliveredAt),
+// completed (completedAt), payment recorded (paidAt).
+orderSchema.index({ confirmedAt: -1 });
+orderSchema.index({ deliveredAt: -1 });
+orderSchema.index({ completedAt: -1 });
+orderSchema.index({ paidAt: -1 });
 // KH-07 — a running order's follow-ups. Sparse: only follow-ups carry it.
 orderSchema.index({ parentOrder: 1 }, { partialFilterExpression: { parentOrder: { $type: "objectId" } } });
 // PhonePe callbacks/status polls look an order up by its gateway txn id.
