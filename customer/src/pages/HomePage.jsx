@@ -18,6 +18,7 @@ import { EmptyState, ErrorState } from "../components/StateViews.jsx";
 import Icon from "../components/ui/Icon.jsx";
 import { getBestSellers } from "../services/menuService.js";
 import { getLiveCoupons } from "../services/couponService.js";
+import { itemAddons } from "../utils/menuDisplay.js";
 
 export default function HomePage() {
   const nav = useNavigate();
@@ -84,7 +85,7 @@ export default function HomePage() {
           <BannerCarousel
             banners={profile?.banners} specials={specials} chefsPicks={chefsPicks} fastItems={fastItems}
             bestSellers={bestSellers} tableLabel={table.tableLabel}
-            onBrowse={() => nav("/menu")} onAdd={(it) => handleAdd(it, 1)}
+            onBrowse={() => nav("/menu")} onAdd={(it) => itemAddons(it).length ? setOpenItem(it) : handleAdd(it, 1)}
           />
 
           <OffersRail offers={offers} />
