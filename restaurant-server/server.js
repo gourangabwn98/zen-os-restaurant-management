@@ -36,6 +36,7 @@ import waitlistRoutes from "./routes/waitlistRoutes.js";
 import supportRoutes from "./routes/supportRoutes.js";
 import printerRoutes from "./routes/printerRoutes.js";
 import inventoryRoutes from "./routes/inventoryRoutes.js";
+import inventoryV3Routes from "./routes/inventoryV3Routes.js";
 import { warmUpOcr } from "./utils/purchaseImportExtract.js";
 import chefRoutes    from "./routes/chefRoutes.js";
 import employeeRoutes from "./routes/employeeRoutes.js";
@@ -104,6 +105,7 @@ app.use("/api/invoices",          invoiceRoutes);
 app.use("/api/admin/tables",      tableRoutes);
 app.use("/api/admin/table-sessions", tableSessionRoutes);
 app.use("/api/admin/waitlist",    waitlistRoutes);
+app.use("/api/admin/inventory/v3", inventoryV3Routes);
 app.use("/api/admin/inventory",   inventoryRoutes);
 app.use("/api/admin/chefs",       chefRoutes);
 // New Employee Management system (Admin → Employees) — supersedes the old
