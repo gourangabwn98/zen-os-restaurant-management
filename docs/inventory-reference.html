@@ -1,0 +1,291 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>ZenOS Inventory and Profit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Inter:wght@400;500;600;700&family=Hind+Siliguri:wght@400;500;600&family=Caveat:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{color-scheme:dark;--bg:#120c22;--bg2:#140f24;--surface:#1a1430;--card:#211a3d;--line:#2e2653;--line2:#3a3166;--accent:#7c5cfc;--accent2:#8b5cf6;--accent-soft:rgba(124,92,252,.16);--accent-ink:#b8a6ff;--text:#ECE9F7;--muted:#A9A3C9;--faint:#8a83ad;--green:#34d399;--amber:#f5b73b;--red:#f26d6d;--blue:#60a5fa;--cyan:#22d3ee;--grey:#9a95b3;--green-s:rgba(52,211,153,.14);--amber-s:rgba(245,183,59,.15);--red-s:rgba(242,109,109,.15);--blue-s:rgba(96,165,250,.15);--grey-s:rgba(154,149,179,.14);
+--disp:"Bricolage Grotesque",system-ui,sans-serif;--ui:"Inter","Hind Siliguri",system-ui,-apple-system,"Segoe UI",sans-serif;--mono:"JetBrains Mono",ui-monospace,Consolas,monospace}
+*{box-sizing:border-box}html,body{background:var(--bg)}
+body{color:var(--text);font-family:var(--ui);font-size:15px;line-height:1.5;padding-inline:16px;padding-block:0 60px}
+h1,h2,h3{font-family:var(--disp);text-wrap:balance;margin:0;line-height:1.2}p{margin:0}
+button{font:inherit;color:inherit;cursor:pointer}button:focus-visible,textarea:focus-visible{outline:2px solid var(--accent2);outline-offset:2px}
+.page{max-width:1320px;margin:0 auto}
+.top{padding-block:26px 18px;display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end;justify-content:space-between}
+.eyebrow{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent2);font-weight:600}
+.top h1{font-size:clamp(26px,3.4vw,36px);margin-top:6px}.top p{color:var(--muted);max-width:80ch;margin-top:8px;font-size:14.5px}
+.seg{display:inline-flex;background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:3px;gap:2px}
+.seg button{border:0;background:transparent;padding:6px 12px;border-radius:8px;font-size:13px;color:var(--muted);white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#fff}
+.stage-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-size:13px;color:var(--faint)}
+.stage{border:1px solid var(--line);border-radius:16px;background:#0c0818;padding:10px;overflow:hidden}.stage.actual{overflow-x:auto}.scaler{transform-origin:0 0}
+.app{width:1280px;min-height:900px;display:grid;grid-template-columns:232px 1fr;background:var(--bg);border-radius:10px;overflow:hidden;font-size:14px;position:relative}
+.sb{background:linear-gradient(180deg,#1a1333,#150f29);border-right:1px solid var(--line);padding:16px 12px;display:flex;flex-direction:column;gap:1px}
+.sb-brand{display:flex;align-items:center;gap:10px;padding:2px 4px 14px}
+.sb-logo{width:38px;height:38px;border-radius:10px;background:radial-gradient(circle at 35% 30%,#3b2f63,#140f24);border:1px solid var(--line2);display:grid;place-items:center;font-family:var(--disp);font-weight:700;font-size:12px;color:#e8d9b0}
+.sb-brand b{display:block;font-size:15px}.sb-brand span{font-size:12px;color:var(--faint)}
+.sb-g{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin:10px 0 3px 10px;font-weight:600}
+.sb-i{padding:6px 10px;border-radius:9px;color:var(--muted);font-size:14px}.sb-i.on{background:var(--accent-soft);color:var(--text);box-shadow:inset 3px 0 0 var(--accent)}
+.main{padding:20px 22px 26px;display:flex;flex-direction:column;gap:14px;min-width:0;position:relative}
+.mh{display:flex;align-items:flex-end;justify-content:space-between;gap:16px}
+.mh h2{font-family:var(--disp);font-size:28px}.mh .sub{font-size:14px;color:var(--muted);margin-top:4px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;background:var(--accent);color:#fff;border-radius:10px;padding:8px 14px;font-weight:600;font-size:13.5px;white-space:nowrap;border:0}
+.btn.ghost{background:transparent;border:1px solid var(--line2);color:var(--text)}.btn.sm{padding:5px 10px;font-size:12.5px;border-radius:8px}.btn.green{background:#1f9d63}
+.chip{display:inline-flex;align-items:center;gap:5px;border-radius:99px;padding:2px 9px;font-size:12px;font-weight:600;white-space:nowrap}
+.c-red{background:var(--red-s);color:var(--red)}.c-amber{background:var(--amber-s);color:var(--amber)}.c-green{background:var(--green-s);color:var(--green)}.c-blue{background:var(--blue-s);color:var(--blue)}.c-grey{background:var(--grey-s);color:var(--grey)}.c-violet{background:var(--accent-soft);color:var(--accent-ink)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;position:relative;min-width:0}
+.card h3{font-family:var(--ui);font-size:15px;font-weight:600}.hint{font-size:12.5px;color:var(--faint)}
+.ico{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.addbar{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;position:relative}
+.add{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;display:flex;gap:10px;align-items:center;text-align:left}
+.add:hover{border-color:var(--accent)}.add.soon{opacity:.72;border-style:dashed}
+.add .ic{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent-ink);flex:0 0 auto}
+.add b{display:block;font-size:14px}.add small{font-size:12px;color:var(--muted)}
+.soonb{font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--cyan);border:1px solid rgba(34,211,238,.4);border-radius:5px;padding:0 5px;margin-left:6px;vertical-align:1px;white-space:nowrap}
+.pl{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:14px}
+.lad{display:flex;flex-direction:column;gap:0;margin-top:8px}
+.lr{display:grid;grid-template-columns:230px minmax(0,1fr) 110px 56px;gap:10px;align-items:center;padding:6px 0;font-size:13.5px}
+.lr .bx{height:14px;border-radius:4px;position:relative;background:transparent}
+.lr .bx i{position:absolute;top:0;bottom:0;border-radius:4px}
+.lr b.num{text-align:right;font-variant-numeric:tabular-nums}.lr .pc{text-align:right;font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums}
+.lr.tot{border-top:1px solid var(--line2);font-weight:700}.lr.tot span:first-child{color:var(--text)}
+.lr.key{background:var(--accent-soft);border-radius:10px;padding:8px 8px;margin:2px -8px}
+.lr span.lbl small{display:block;font-size:11.5px;color:var(--faint);font-weight:400}
+.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:13.5px}
+.row:first-of-type{border-top:0}.row small{display:block;font-size:12px;color:var(--faint)}
+.dot{width:9px;height:9px;border-radius:50%}
+.meter{height:10px;border-radius:99px;background:var(--line);overflow:hidden;margin:8px 0}.meter i{display:block;height:100%;background:linear-gradient(90deg,var(--amber),var(--green))}
+.ck{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line);font-size:13px}.ck:first-of-type{border-top:0}
+.ck .m{font-weight:700}.ck small{display:block;font-size:11.5px;color:var(--faint)}
+.src{font-size:11px;font-weight:600;border-radius:6px;padding:1px 6px;background:var(--grey-s);color:var(--grey)}
+.src.auto{background:var(--green-s);color:var(--green)}.src.photo{background:var(--blue-s);color:var(--blue)}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);position:relative}
+.tab{padding:9px 14px;font-size:14px;color:var(--muted);border:0;background:transparent;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab.on{color:var(--text);border-bottom-color:var(--accent);font-weight:600}
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px}
+.tbl th{font-size:11.5px;color:var(--faint);text-align:left;font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl td{padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}.tbl .num{text-align:right;font-variant-numeric:tabular-nums}
+.bar{height:7px;border-radius:99px;background:var(--line);position:relative;min-width:110px}.bar i{position:absolute;left:0;top:0;bottom:0;border-radius:99px}.bar .mk{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--text)}
+.step{display:inline-flex;align-items:center;gap:6px}.step button{width:26px;height:26px;border-radius:7px;border:1px solid var(--line2);background:var(--surface)}
+.opts{display:flex;gap:6px;flex-wrap:wrap}.opts button{border:1px solid var(--line2);background:var(--bg2);border-radius:10px;padding:5px 10px;font-size:12.5px;color:var(--muted)}
+.opts button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--text)}
+.gap{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
+.gap div{background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:10px 12px}.gap .l{font-size:12px;color:var(--muted)}.gap .v{font-family:var(--disp);font-size:20px;font-weight:700}
+.field{background:var(--bg2);border:1px solid var(--line2);border-radius:10px;padding:8px 11px;font-size:13.5px}
+.fl{font-size:11.5px;color:var(--faint);margin:8px 0 3px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.scrim{position:absolute;inset:0;background:rgba(8,5,18,.62);z-index:6}
+.modal{position:absolute;left:50%;top:60px;transform:translateX(-50%);width:820px;background:var(--surface);border:1px solid var(--line2);border-radius:18px;z-index:7;padding:20px;display:flex;flex-direction:column;gap:10px;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+.two{display:grid;grid-template-columns:240px minmax(0,1fr);gap:16px}
+.paper{background:#f3ecd9;color:#2a2a4a;border-radius:6px;padding:14px;font-family:"Caveat",cursive;font-size:19px;line-height:1.3;transform:rotate(-1.2deg)}
+.paper b{font-size:22px;display:block;text-align:center}
+.soonbox{border:1px dashed rgba(34,211,238,.5);background:rgba(34,211,238,.06);border-radius:12px;padding:10px 12px;font-size:13px;color:var(--muted)}
+.toast{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);background:#1f9d63;color:#fff;border-radius:12px;padding:10px 18px;font-weight:600;font-size:14px;z-index:9;white-space:nowrap}
+.pin{position:absolute;top:-9px;right:-9px;z-index:4;width:24px;height:24px;border-radius:50%;background:#fff;color:#1a1033;font:700 12px/24px var(--mono);text-align:center;box-shadow:0 0 0 3px var(--accent);display:none;pointer-events:none}
+.shownotes .pin{display:block}
+.sec{margin-top:40px}.sec h2{font-size:24px}.sec .intro{color:var(--muted);margin:8px 0 18px;max-width:80ch;font-size:14.5px}
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:14px}
+.crit{width:100%;border-collapse:collapse;font-size:14px;min-width:720px}
+.crit th{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--surface)}
+.crit td{padding:9px 14px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--muted)}.crit td:first-child{color:var(--text)}.crit tr:last-child td{border-bottom:0}
+.crit tr.h td{background:var(--surface);color:var(--accent-ink);font-weight:600;font-size:12.5px;letter-spacing:.04em;text-transform:uppercase}
+.chg{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:10px;display:grid;grid-template-columns:34px minmax(0,1fr);gap:12px}
+.chg .n{width:28px;height:28px;border-radius:50%;background:#fff;color:#1a1033;font:700 12.5px/28px var(--mono);text-align:center;box-shadow:0 0 0 3px var(--accent)}
+.chg h3{font-family:var(--ui);font-size:15.5px;font-weight:600}.chg p{font-size:14px;color:var(--muted);margin-top:4px}
+.foot-note{font-size:13px;color:var(--faint);margin-top:26px;border-top:1px solid var(--line);padding-top:14px}
+</style>
+
+<div class="page">
+  <header class="top">
+    <div>
+      <div class="eyebrow">ZenOS Admin · Inventory · mock v3 (earnings moved to Insights)</div>
+      <h1>Every rupee in and out, captured here; the earnings are in Insights</h1>
+      <p>Inventory's job is to capture every purchase, count, expense and leak, and to keep kitchen costs in check. The earnings ladder (actual revenue → EBITDA) now lives only in Insights, so it isn't shown on two pages. The Overview opens on Kitchen cost control: food cost % against the 35% target, spend by group, unexplained loss, stock on hand and supplier dues. Books complete stays here, because this is where missing entries get added. The AI entry buttons are marked Coming soon.</p>
+    </div>
+    <div style="display:flex;gap:10px"><div class="seg" id="c-notes"><button type="button" data-v="on" aria-pressed="true">Show pins</button><button type="button" data-v="off" aria-pressed="false">Hide</button></div><div class="seg"><button type="button" id="resetBtn">Reset</button></div></div>
+  </header>
+  <div class="stage-bar"><span>Laptop view · stock items, costs, the supplier and the 7 Sep bill are real · the month's money figures are a sample for a cafe your size</span>
+    <div class="seg" id="c-zoom"><button type="button" data-v="fit" aria-pressed="true">Fit</button><button type="button" data-v="actual" aria-pressed="false">Actual size</button></div></div>
+  <div class="stage" id="stage"><div class="scaler" id="scaler"><div class="app shownotes" id="app"></div></div></div>
+
+  <section class="sec">
+    <h2>Everything that must go in, and where it comes from</h2>
+    <p class="intro">The detailed list. If any row is missing, the earnings figure is wrong. "Auto" means another ZenOS page already records it, so nobody types it twice.</p>
+    <div class="tw"><table class="crit"><thead><tr><th>What</th><th>Where it's recorded</th><th>How often</th><th>Counts as</th></tr></thead><tbody>
+      <tr class="h"><td colspan="4">Money in</td></tr>
+      <tr><td>Dine-in and takeaway sales</td><td>Auto · Invoices</td><td>Every bill</td><td>Revenue</td></tr>
+      <tr><td>Discounts and offer codes</td><td>Auto · Invoices / Offers</td><td>Every bill</td><td>Reduce revenue</td></tr>
+      <tr><td>Bills written off, cancelled after cooking</td><td>Auto · Invoices (with reason)</td><td>When it happens</td><td>Reduce revenue; food cost stays</td></tr>
+      <tr><td>Party / bulk orders, outside catering</td><td>Invoices (as an order), or Add income</td><td>When it happens</td><td>Revenue</td></tr>
+      <tr><td>Other income (selling empty tins or oil, scrap, room hire)</td><td>Add income</td><td>When it happens</td><td>Other income</td></tr>
+      <tr class="h"><td colspan="4">Food cost (cost of goods sold, COGS)</td></tr>
+      <tr><td>Ingredient purchases: groceries, fish, meat, vegetables, milk</td><td>Record purchase (Snap a bill later)</td><td>Daily</td><td>Food cost, via stock</td></tr>
+      <tr><td>Stock left on the shelf</td><td>Count every 4th day</td><td>Every 4 days</td><td>Food cost = last count + bought − left now</td></tr>
+      <tr><td>Wastage (spoiled, burnt, expired)</td><td>Log wastage</td><td>When it happens</td><td>Food cost; also shown as a loss</td></tr>
+      <tr><td>Staff meals, free food for family or guests</td><td>Log wastage → "Staff / free meal"</td><td>Daily</td><td>Food cost; also shown as a loss</td></tr>
+      <tr><td>Packaging (boxes, bags, foil, cups)</td><td>Record purchase → Packaging</td><td>Weekly</td><td>Food cost</td></tr>
+      <tr class="h"><td colspan="4">Running costs (operating expenses)</td></tr>
+      <tr><td>Salaries, overtime</td><td>Auto · Staff page</td><td>Monthly</td><td>Expense</td></tr>
+      <tr><td>Salary advances</td><td>Auto · Staff page</td><td>When given</td><td>Not an expense; it's taken off the next salary</td></tr>
+      <tr><td>Rent</td><td>Add expense · repeats</td><td>Monthly</td><td>Expense</td></tr>
+      <tr><td>Gas cylinders / fuel</td><td>Add expense</td><td>About every 5 days</td><td>Expense</td></tr>
+      <tr><td>Electricity, water</td><td>Add expense (with bill photo)</td><td>Monthly</td><td>Expense</td></tr>
+      <tr><td>Repairs, cleaning, pest control</td><td>Add expense</td><td>When it happens</td><td>Expense</td></tr>
+      <tr><td>Transport, delivery petrol</td><td>Add expense</td><td>Weekly</td><td>Expense</td></tr>
+      <tr><td>Marketing: stickers, printing, banners</td><td>Add expense</td><td>When it happens</td><td>Expense</td></tr>
+      <tr><td>Software, internet, phone</td><td>Add expense · repeats</td><td>Monthly</td><td>Expense</td></tr>
+      <tr><td>Licences and fees (FSSAI, trade licence)</td><td>Add expense · yearly, spread by month</td><td>Yearly</td><td>Expense</td></tr>
+      <tr class="h"><td colspan="4">Below operating profit (not counted in EBITDA)</td></tr>
+      <tr><td>Big equipment (fridge, oven, furniture)</td><td>Add expense → "Big purchase", spread over its life</td><td>Rare</td><td>Wear and tear (depreciation)</td></tr>
+      <tr><td>Loan interest</td><td>Add expense → Loan</td><td>Monthly</td><td>Interest</td></tr>
+      <tr><td>Tax</td><td>Add expense → Tax</td><td>When paid</td><td>Tax</td></tr>
+      <tr class="h"><td colspan="4">Not an expense at all, but must be recorded so cash matches</td></tr>
+      <tr><td>Expenses paid from the cash drawer</td><td>"Paid from: Cash drawer"</td><td>When paid</td><td>Reduces "Should be in the drawer" at Invoices day close</td></tr>
+      <tr><td>Owner takes cash home</td><td>Add → "Owner took cash"</td><td>When it happens</td><td>Drawings; affects cash only, not profit</td></tr>
+      <tr><td>Paying a supplier's old bill</td><td>Suppliers → Mark paid</td><td>When paid</td><td>Clears what you owe; the cost was counted when bought</td></tr>
+    </tbody></table></div>
+  </section>
+
+  <section class="sec">
+    <h2>About recipes and food cost: your idea, argued</h2>
+    <p class="intro">You were right to keep recipes. On their own they only show what food <i>should</i> have cost. Counts show what it <i>did</i> cost. ZenOS uses both, and the difference is the most useful number a kitchen can watch.</p>
+    <div class="tw"><table class="crit"><thead><tr><th></th><th>Count-based food cost</th><th>Recipe-based food cost</th></tr></thead><tbody>
+      <tr><td>Answers</td><td>How much food did we really use?</td><td>How much should each dish cost to make?</td></tr>
+      <tr><td>Needs</td><td>A count every 4th day plus purchase bills</td><td>A recipe per dish (ingredients and quantities)</td></tr>
+      <tr><td>Works from</td><td>Day one</td><td>Once the top 20 dishes have recipes. They usually make up most of sales</td></tr>
+      <tr><td>Feeds</td><td>Real profit and EBITDA in Financial Insights</td><td>Food cost % per dish, price advice on the Menu page</td></tr>
+      <tr><td>Together</td><td colspan="2">Actual food cost − recipe food cost = <b style="color:var(--text)">unexplained loss</b> (over-portioning, waste not logged, theft)</td></tr>
+    </tbody></table></div>
+    <p class="intro" style="margin-top:12px">A note on words: <b style="color:var(--text)">revenue</b> means money coming in. What you mean by "actual revenue of the hotel" is closer to <b style="color:var(--text)">operating profit (EBITDA)</b>. The page shows both, labelled plainly.</p>
+  </section>
+
+  <section class="sec"><h2>What changed from v1</h2>
+    <div id="chglist"></div>
+    <p class="foot-note">Real: 11 stock items, quantities, costs, reorder levels, the ₹13,530 value, supplire1 and bill BFS-2026-0907, and dish prices (Veg Thali ₹160, Katla Kalia ₹140, Chai ₹20, Cold Coffee ₹60). Samples: all monthly money figures, recipe costs, counts, and the fish bill.</p>
+  </section>
+</div>
+
+<script>
+(function(){
+const R=n=>(n<0?'−':'')+'₹'+Math.abs(Math.round(n)).toLocaleString('en-IN');
+const IC={cam:'<svg class="ico" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',mic:'<svg class="ico" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',box:'<svg class="ico" viewBox="0 0 24 24"><path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/></svg>',rs:'<svg class="ico" viewBox="0 0 24 24"><path d="M7 4h10M7 9h10M7 4c5 0 5 10 0 10l8 6"/></svg>',cart:'<svg class="ico" viewBox="0 0 24 24"><path d="M3 4h2l2 11h11l2-8H6"/><circle cx="9" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></svg>'};
+const STOCK=[['All Purpose Flour (Maida)','kg',20,0,52,17,'Grocery'],['Basmati Rice','kg',25,24,95,21,'Grocery'],['Chicken breast','kg',0,2,200,0,'Meat & fish'],['Mineral Water','pcs',10,0,180,6,'Drinks'],['Red Chilli Powder','kg',4,4,280,3,'Spices'],['Masoor Dal','kg',10,0,120,8,'Grocery'],['Salt','kg',10,0,25,9,'Grocery'],['Sugar','kg',25,0,48,22,'Grocery'],['Sunflower Oil','l',15,0,145,11,'Grocery'],['Tomato Ketchup','pcs',12,0,110,9,'Sauces'],['Turmeric Powder','kg',5,0,210,4,'Spices']];
+const RECIPES=[['Veg Thali',160,142,58,'Rice, dal, sabji, papad, oil'],['Katla Kalia',140,96,62,'Katla 150 g, onion, oil, spices'],['Chai',20,610,6,'Milk 80 ml, tea, sugar'],['Cold Coffee',60,188,22,'Milk 200 ml, coffee, sugar, ice'],['Chicken Momo · 6 pc',90,154,34,'Chicken 90 g, maida 60 g, oil'],['Sorshe Ilish',340,41,168,'Ilish 1 piece, mustard, oil'],['Cold Drink (packaged)',30,260,22,'Bought at ₹22 a bottle; no recipe needed'],['Masoor Dal (extra)',80,120,14,null]];
+const S0={tab:'over',modal:null,auto:'ask',counts:STOCK.map(s=>s[5]),added:[],extra:[],expKind:'Electricity',expFrom:'drawer',big:false,toast:'',notes:'on',zoom:'fit'};
+let ST=JSON.parse(JSON.stringify(S0));
+const pin=(n,st)=>'<span class="pin"'+(st?' style="'+st+'"':'')+'>'+n+'</span>';
+const MON={gross:187331,disc:3200,wo:131,other:1500,cogs:71800,opex:[['Salaries & overtime (before advances)','auto · Staff',30180],['Rent','repeats',12000],['Gas cylinders','6 entries',6600],['Electricity','bill photo',4200],['Packaging','purchases',2400],['Repairs, cleaning, transport','4 entries',3100],['Software, internet, phone','repeats',1500],['Licences (yearly, per month)','spread',400]],dep:500,interest:0,tax:0};
+function sb(){const it=(n,on)=>'<div class="sb-i'+(on?' on':'')+'">'+n+'</div>';
+ return '<aside class="sb"><div class="sb-brand"><div class="sb-logo">AD</div><div><b>AD\'s Cafe</b><span>Admin panel</span></div></div><div class="sb-g">Operations</div>'+['Orders','Table Map','Kitchen Display','Dashboard','Invoices'].map(n=>it(n)).join('')+it('Inventory',true)+'<div class="sb-g">Management</div>'+it('Employees')+it('Users')+it('Menu Items')+it('Offers')+'<div class="sb-g">Finance</div>'+it('Insights')+'<div class="sb-g">Settings</div>'+it('Profile')+it('Help & Support')+'</aside>'}
+function addbar(){const b=(k,ic,t,s,soon)=>'<button type="button" class="add'+(soon?' soon':'')+'" data-act="m:'+k+'"><span class="ic">'+ic+'</span><span><b>'+t+(soon?'<span class="soonb">AI · SOON</span>':'')+'</b><small>'+s+'</small></span></button>';
+ return '<div class="addbar">'+b('buy',IC.cart,'Record purchase','ingredients, packaging')+b('exp',IC.rs,'Add expense','or income, or cash taken')+b('count',IC.box,'Count stock','every 4th day')+b('bill',IC.cam,'Snap a bill','read from a photo',1)+b('voice',IC.mic,'Say it','Bengali or English',1)+pin(3)+'</div>'}
+function ladder(){const M=MON,rev=M.gross-M.disc-M.wo,opexT=M.opex.reduce((s,e)=>s+e[2],0)+ST.extra.reduce((s,e)=>s+e[1],0),gp=rev-M.cogs,ebitda=gp-opexT+M.other,net=ebitda-M.dep-M.interest-M.tax,max=M.gross,pc=v=>(v/rev*100).toFixed(1)+'%';
+ const line=(lbl,sub,v,left,w,col,cls)=>'<div class="lr'+(cls?' '+cls:'')+'"><span class="lbl">'+lbl+(sub?'<small>'+sub+'</small>':'')+'</span><span class="bx"><i style="left:'+(left/max*100)+'%;width:'+(Math.abs(w)/max*100)+'%;background:'+col+'"></i></span><b class="num">'+R(v)+'</b><span class="pc">'+(cls==='tot'||cls==='tot key'?pc(v):'')+'</span></div>';
+ let h='<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline"><h3>September · where every rupee went (sample month)</h3><span class="hint">% of actual revenue</span></div><div class="lad">';
+ h+=line('Gross sales billed','Invoices',M.gross,0,M.gross,'#4b3c8f');
+ h+=line('− Discounts & written-off bills','Invoices, Offers',-(M.disc+M.wo),rev,M.disc+M.wo,'var(--red)');
+ h+=line('Actual revenue','what customers really paid',rev,0,rev,'var(--accent2)','tot');
+ h+=line('− Food cost (COGS)','count every 4th day + purchases',-M.cogs,rev-M.cogs,M.cogs,'#b0567a');
+ h+=line('Gross profit','food margin',gp,0,gp,'#6b4fd0','tot');
+ h+=line('− Running costs','salaries, rent, gas, power…',-opexT,gp-opexT,opexT,'#8a5a2c');
+ h+=line('+ Other income','scrap, tins, room hire',M.other,gp-opexT,M.other,'var(--cyan)');
+ h+=line('Operating profit (EBITDA)','what the hotel really earns',ebitda,0,ebitda,'#1f9d63','tot key');
+ h+=line('− Equipment wear, loan interest, tax','below the line',-(M.dep+M.interest+M.tax),ebitda-M.dep,M.dep,'var(--grey)');
+ h+=line('Net profit','what you keep',net,0,net,'#15805a','tot');
+ return h+'</div>'+pin(1)+pin(2,'right:40px')+'</div>'}
+function books(){const items=[['✓','var(--green)','Sales, discounts, write-offs','auto from Invoices',''],['✓','var(--green)','Salaries & overtime','auto from Staff',''],['✓','var(--green)','Rent, software','repeat themselves',''],['✗','var(--red)','Electricity bill for September','not added yet','m:exp'],['✗','var(--red)','Stock count due','every 4th day · last 24 Sep','m:count'],['!','var(--amber)','3 days with no purchase entered','22, 23, 26 Sep: nothing bought?','toast:Marked: nothing was bought on those days'],['!','var(--amber)','Gas usually every 5 days','last entry 20 Sep','m:exp']];
+ const done=items.filter(i=>i[0]==='✓').length+(ST.extra.length?1:0);const pct=Math.round(done/items.length*100);
+ return '<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline"><h3>Books complete</h3><b style="font-family:var(--disp);font-size:22px;color:'+(pct>=85?'var(--green)':'var(--amber)')+'">'+pct+'%</b></div><div class="meter"><i style="width:'+pct+'%"></i></div><div class="hint" style="margin-bottom:4px">The earnings figure is only as true as this.</div>'+items.map(i=>'<div class="ck"><span class="m" style="color:'+i[1]+'">'+i[0]+'</span><div>'+i[2]+'<small>'+i[3]+'</small></div>'+(i[4]?'<button type="button" class="btn ghost sm" data-act="'+i[4]+'">'+(i[4].startsWith('toast')?'Nothing bought':'Add')+'</button>':'<span></span>')+'</div>').join('')+pin(4)+'</div>'}
+function kcc(){const wk=[['14–20 Sep',37.5],['7–13 Sep',38.2],['31 Aug–6 Sep',36.9],['21–27 Sep',39.0]].reverse(),tgt=35,col=v=>v>tgt+5?'var(--red)':v>tgt?'var(--amber)':'var(--green)';
+ const grp=[['Fish & meat',8000,'#b0567a'],['Grocery',5220,'#6b4fd0'],['Dairy',2440,'var(--cyan)'],['Packaging',1740,'var(--grey)']],gt=grp.reduce((s,g)=>s+g[1],0);
+ const tile=(l,v,s,extra,c)=>'<div style="background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:12px"><div class="hint" style="color:var(--muted)">'+l+'</div><div style="font-family:var(--disp);font-size:24px;font-weight:700;font-variant-numeric:tabular-nums'+(c?';color:'+c:'')+'">'+v+'</div><div class="hint">'+s+'</div>'+(extra||'')+'</div>';
+ let h='<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline"><h3>Kitchen cost control · this week, 21–27 Sep</h3><span class="hint">target food cost 35%</span></div><div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-top:10px">';
+ h+=tile('Food cost','39.0%','of actual revenue · 4.0 points over target','<div style="display:flex;gap:4px;align-items:flex-end;height:30px;margin-top:8px">'+wk.map(w=>'<i title="'+w[0]+' '+w[1]+'%" style="flex:1;height:'+((w[1]-30)*3)+'px;background:'+col(w[1])+';border-radius:3px"></i>').join('')+'</div><div class="hint" style="font-size:11px">last 4 weeks</div>','var(--amber)');
+ h+=tile('Spent on stock',R(gt),'purchases this week','<div style="display:flex;height:8px;border-radius:99px;overflow:hidden;margin-top:8px">'+grp.map(g=>'<i style="width:'+(g[1]/gt*100)+'%;background:'+g[2]+'"></i>').join('')+'</div><div class="hint" style="font-size:11px;margin-top:4px">'+grp.map(g=>g[0]+' '+Math.round(g[1]/gt*100)+'%').join(' · ')+'</div>');
+ h+=tile('Unexplained loss','₹850','recipes vs counts','<div class="hint" style="font-size:11.5px;margin-top:6px">Oil 3 l (₹435) · Chicken 1.5 kg (₹300)</div><button type="button" class="btn ghost sm" style="margin-top:6px" data-act="tab:rec">See why</button>','var(--red)');
+ h+=tile('Stock on hand',R(13530),'lasts about 6 days','<div class="hint" style="font-size:11.5px;margin-top:6px">3 items to buy now</div><button type="button" class="btn ghost sm" style="margin-top:6px" data-act="tab:stock">Open stock</button>');
+ h+=tile('You owe suppliers',R(13530),'supplire1 · bill of 7 Sep','<button type="button" class="btn ghost sm" style="margin-top:8px" data-act="tab:supp">Open suppliers</button>');
+ h+='</div><div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:10px;border-top:1px solid var(--line);font-size:13.5px"><span>Earnings this week: <b style="color:var(--green)">₹12,611</b> operating profit (EBITDA) · 29.2% of actual revenue</span><button type="button" class="btn ghost sm" data-act="toast:Opening Insights → Where every rupee went">See in Insights →</button></div>'+pin(1)+pin(2,'right:40px')+'</div>';
+ return h}
+function overview(){let h=kcc()+'<div class="pl">'+books()+'<div class="card"><h3>What happens when you enter</h3><div class="hint" style="line-height:1.7;margin-top:6px">Purchases raise stock and food cost · counts every 4th day set what was used · expenses add to running costs · all of it feeds <b style="color:var(--text)">Insights → Where every rupee went</b>. Entries count by bill date.</div></div></div>';
+ h+='<div class="pl"><div class="card"><h3>Needs attention</h3><div style="margin-top:6px">'+[
+  ['var(--red)','Chicken breast is out','0 kg · reorder at 2 kg · last paid ₹200/kg',ST.auto==='auto'?'Order ready · send':'Order now','toast:Order for Chicken breast 5 kg sent to supplire1'],
+  ['var(--amber)','Basmati Rice and Red Chilli at reorder level','25 kg and 4 kg left','Order','toast:Order list sent to supplire1'],
+  ['var(--amber)','Food cost 39% is above your 35% target','recipes say 37%; the 2% gap is ₹3,400 unexplained','See recipes','tab:rec'],
+  ['var(--blue)','You owe supplire1 '+R(13530),'7 Sep bill, on credit','Mark paid','toast:supplire1 marked paid · paid from bank'],
+  ['var(--cyan)','Katla costs 12% more than last month','price-rise alerts from bill photos','','']
+ ].map(r=>'<div class="row"><span class="dot" style="background:'+r[0]+'"></span><div>'+r[1]+'<small>'+r[2]+'</small></div>'+(r[3]?'<button type="button" class="btn ghost sm" data-act="'+r[4]+'">'+r[3]+'</button>':'<span class="soonb">AI · SOON</span>')+'</div>').join('')+'</div>'+pin(9)+'</div>';
+ h+='<div class="card"><h3>Running costs this month</h3><div style="margin-top:6px">'+MON.opex.concat(ST.extra.map(e=>[e[0],'just added',e[1]])).map(e=>'<div class="row"><span class="src'+(/auto|repeats/.test(e[1])?' auto':/photo/.test(e[1])?' photo':'')+'">'+e[1]+'</span><div>'+e[0]+'</div><b style="font-variant-numeric:tabular-nums">'+R(e[2])+'</b></div>').join('')+'</div>'+pin(7)+'</div></div>';
+ return h}
+function stockTab(){let h='<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div class="opts"><span class="hint" style="align-self:center;margin-right:4px">Auto order when an item hits reorder level:</span>'+[['off','Off'],['ask','Ask me first'],['auto','Prepare, send in one tap']].map(o=>'<button type="button" data-act="auto:'+o[0]+'" aria-pressed="'+(ST.auto===o[0])+'">'+o[1]+'</button>').join('')+'</div><button type="button" class="btn" data-act="m:item">+ Add stock item</button></div><table class="tbl"><thead><tr><th>Item</th><th>Group</th><th>Left now</th><th>vs usual stock</th><th class="num">Cost</th><th class="num">Value</th><th></th></tr></thead><tbody>';
+ STOCK.concat(ST.added).forEach(s=>{const st=s[2]===0?'c-red':s[3]&&s[2]<=s[3]?'c-amber':'c-green',lab=s[2]===0?'Out':s[3]&&s[2]<=s[3]?'Buy soon':'OK',usual=Math.max(s[2],s[3]*3,1)*1.4;
+  h+='<tr><td>'+s[0]+'</td><td><span class="chip c-grey">'+s[6]+'</span></td><td><b>'+s[2]+' '+s[1]+'</b> <span class="chip '+st+'">'+lab+'</span></td><td><div class="bar"><i style="width:'+(s[2]/usual*100)+'%;background:'+(st==='c-green'?'var(--green)':st==='c-amber'?'var(--amber)':'var(--red)')+'"></i>'+(s[3]?'<span class="mk" style="left:'+(s[3]/usual*100)+'%"></span>':'')+'</div></td><td class="num">₹'+s[4]+'/'+s[1]+'</td><td class="num">'+R(s[2]*s[4])+'</td><td><button type="button" class="btn ghost sm" data-act="m:count">Count</button> <span class="hint">⋯</span></td></tr>'});
+ return h+'</tbody></table><div class="hint" style="margin-top:8px">8 items have no reorder level; one is suggested after two counts. "Ask me first" sends you the order to approve on your phone.</div>'+pin(10)+pin(8,'right:220px')+'</div>'}
+const OHR=MON.opex.reduce((s,e)=>s+e[2],0)/(MON.gross-MON.disc-MON.wo);
+function recTab(){const tot=RECIPES.filter(r=>r[4]).reduce((s,r)=>s+r[1]*r[2],0);
+ let h='<div class="pl"><div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h3>Recipes & food cost · top dishes first</h3><div style="display:flex;gap:6px"><button type="button" class="btn ghost sm" data-act="m:rec">+ Add recipe</button><button type="button" class="btn ghost sm" data-act="m:recai" style="opacity:.75">Draft with AI <span class="soonb">SOON</span></button></div></div><div class="hint" style="margin:4px 0 8px">Actual value of each dish: price − food cost − its share of all running costs. Recipes on 6 dishes cover 58% of sales; costs update when a new bill changes a price.</div><table class="tbl"><thead><tr><th>Dish</th><th class="num">Sold</th><th class="num">Price (MRP)</th><th class="num">Food cost</th><th class="num">Running-cost share</th><th class="num">Actual profit / plate</th><th class="num">Profit (Sep)</th></tr></thead><tbody>'+
+  RECIPES.map(r=>{const p=r[3]/r[1]*100,oh=r[1]*OHR,ap=r[1]-r[3]-oh;return '<tr title="'+(r[4]||'')+'"><td>'+r[0]+(r[4]?'':' <button type="button" class="btn ghost sm" data-act="m:rec">Add recipe</button>')+'</td><td class="num">'+r[2]+'</td><td class="num">₹'+r[1]+'</td><td class="num">'+(r[4]?'₹'+r[3]+' <span class="chip '+(p>40?'c-red':p>35?'c-amber':'c-green')+'">'+p.toFixed(0)+'%</span>':'—')+'</td><td class="num">'+(r[4]?'₹'+oh.toFixed(0):'—')+'</td><td class="num">'+(r[4]?'<b style="color:'+(ap<0?'var(--red)':ap<r[1]*0.1?'var(--amber)':'var(--green)')+'">₹'+ap.toFixed(0)+'</b> <span class="hint">'+(ap/r[1]*100).toFixed(0)+'%</span>':'—')+'</td><td class="num">'+(r[4]?R(ap*r[2]):'—')+'</td></tr>'}).join('')+'</tbody></table><div class="hint" style="margin-top:8px">Running-cost share = price × '+(OHR*100).toFixed(1)+'% (this month\'s running costs ÷ actual revenue). Every rupee of rent, salary, gas and power is carried by the dishes, in proportion to their price.</div>'+pin(11)+'</div>';
+ h+='<div class="card"><h3>Should have used vs did use · September</h3><div class="gap"><div><div class="l">Recipes say (should)</div><div class="v">₹68,400</div></div><div><div class="l">Counts say (did)</div><div class="v">₹71,800</div></div><div style="border-color:rgba(242,109,109,.45)"><div class="l">Unexplained</div><div class="v" style="color:var(--red)">₹3,400</div></div></div><div class="hint" style="margin-top:10px;line-height:1.6">Biggest gaps: <b style="color:var(--text)">Sunflower oil</b> (4 l more than recipes), <b style="color:var(--text)">Chicken</b> (1.5 kg). Usual causes: bigger portions than the recipe, waste not logged, or stock walking out. Dishes without recipes are counted at your average food cost, so the gap is shown only for dishes that have one.</div><div class="hint" style="margin-top:8px">Sorshe Ilish costs 49% of its price. <b style="color:var(--amber)">Consider ₹380</b>, or a smaller piece.</div>'+pin(12)+'</div></div>';
+ return h}
+function billsTab(){return '<div class="card"><div class="hint" style="margin-bottom:8px">Purchases, expenses, income and cash taken, in one list. Filter: All · Purchases · Expenses · Income · On credit · Paid from cash drawer</div><table class="tbl"><thead><tr><th>Date</th><th>What</th><th>Counts as</th><th>Paid from</th><th class="num">Amount</th></tr></thead><tbody>'+ST.extra.map(e=>'<tr><td>28 Sep</td><td>'+e[0]+'</td><td>Running cost</td><td>'+e[2]+'</td><td class="num">'+R(e[1])+'</td></tr>').join('')+
+ '<tr><td>25 Sep</td><td>Gas cylinder</td><td>Running cost</td><td><span class="chip c-amber">Cash drawer</span></td><td class="num">₹1,100</td></tr><tr><td>21 Sep</td><td>Sold empty oil tins</td><td>Other income</td><td>Cash drawer</td><td class="num">+₹300</td></tr><tr><td>20 Sep</td><td>Owner took cash</td><td>Drawings, not a cost</td><td>Cash drawer</td><td class="num">₹2,000</td></tr><tr><td>7 Sep</td><td>supplire1 · 10 items · BFS-2026-0907</td><td>Food cost (stock)</td><td><span class="chip c-amber">On credit</span></td><td class="num">₹13,530</td></tr><tr><td>1 Sep</td><td>Rent · repeats monthly</td><td>Running cost</td><td>Bank</td><td class="num">₹12,000</td></tr></tbody></table>'+pin(7)+'</div>'}
+function lossTab(){return '<div class="card"><h3>Losses · September</h3><table class="tbl" style="margin-top:8px"><thead><tr><th>Kind</th><th>From</th><th class="num">Amount</th></tr></thead><tbody><tr><td>Wasted (spoiled, burnt, expired)</td><td>Log wastage</td><td class="num">₹2,300</td></tr><tr><td>Staff and free meals</td><td>Log wastage → Staff / free meal</td><td class="num">₹1,800</td></tr><tr><td>Unexplained (did use − should use)</td><td>Counts vs recipes</td><td class="num">₹3,400</td></tr><tr><td>Discounts</td><td>Invoices, Offers</td><td class="num">₹3,200</td></tr><tr><td>Bills written off</td><td>Invoices</td><td class="num">₹131</td></tr><tr style="font-weight:700"><td>Total leaks</td><td></td><td class="num">₹10,831</td></tr></tbody></table><div class="hint" style="margin-top:8px">Already inside the figures in Insights: wastage, staff meals and the unexplained loss are part of food cost; discounts and written-off bills are taken off revenue. This list shows where they came from; it isn\'t subtracted again.</div>'+pin(6)+'</div>'}
+function suppTab(){return '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span class="hint">Who you buy from, what you owe them, and how orders reach them</span><button type="button" class="btn" data-act="m:supp">+ Add supplier</button></div><table class="tbl"><thead><tr><th>Supplier</th><th>Phone</th><th>Buys</th><th>Auto order</th><th class="num">You owe</th><th></th></tr></thead><tbody><tr><td>supplire1 <span class="chip c-amber">fix name</span></td><td>98989 89898 <span class="chip c-amber">check</span></td><td>Groceries · 10 items</td><td>'+({off:'Off',ask:'Ask me first',auto:'Prepared, one tap'}[ST.auto])+'</td><td class="num">₹13,530</td><td><button type="button" class="btn ghost sm" data-act="toast:supplire1 marked paid">Mark paid</button></td></tr></tbody></table>'+pin(8)+'</div>'}
+function modal(){const k=ST.modal;let h='<div class="scrim" data-act="close"></div><div class="modal">';const head=(t,s)=>'<div style="display:flex;justify-content:space-between"><div><h3 style="font-family:var(--disp);font-size:20px">'+t+'</h3><div class="hint">'+s+'</div></div><button type="button" class="btn ghost sm" data-act="close">✕</button></div>';
+ if(k==='bill'||k==='voice'||k==='recai'){h+=head((k==='bill'?'Snap a bill':k==='voice'?'Say it':'Draft recipes with AI')+'<span class="soonb">COMING SOON</span>','A preview of what\'s coming. Nothing here saves yet.');
+  h+=k==='bill'?'<div class="two"><div class="paper"><b>Maa Tara Fish</b>28/9<br>Katla 5 kg @240 = 1200<br>Chingri 2 kg @480 = 960<br>Ice — 50<br>Total 2210 /-<br>baki</div><div class="soonbox">Claude will read handwritten or printed bills: items, kg, rates, total check, supplier, and "baki" as on credit, then fill in Record purchase for you to check. Until then, use <b style="color:var(--text)">Record purchase</b>, and attach the bill photo as proof.</div></div>':k==='voice'?'<div class="soonbox" style="font-family:\'Hind Siliguri\',var(--ui);font-size:15px">"আজ দুই কেজি চিকেন নষ্ট হয়ে গেছে" → Wastage · Chicken breast · 2 kg · ₹400<br>"গ্যাস সিলিন্ডার এগারোশো" → Expense · Gas · ₹1,100 · Cash drawer</div>':'<div class="soonbox">Type or say a dish name ("Katla Kalia") and Claude drafts a recipe from your stock items: Katla 150 g, onion 60 g, oil 25 ml, spices. You adjust the quantities and save.</div>';
+  h+=pin(5)}
+ else if(k==='buy'){h+=head('Record purchase','Ingredients and packaging. Stock goes up; the cost counts as food cost.')+'<div class="grid2"><div><div class="fl">Supplier</div><div class="field">supplire1 ▾ <span class="hint">or type a new one</span></div></div><div><div class="fl">Bill no. and date</div><div class="field">BFS-2026-0928 · 28/09/2026</div></div></div><table class="tbl"><thead><tr><th>Item</th><th>Qty</th><th class="num">Rate</th><th class="num">Amount</th></tr></thead><tbody><tr><td>Chicken breast</td><td>5 kg</td><td class="num">₹200</td><td class="num">₹1,000</td></tr><tr><td>Takeaway boxes <span class="chip c-grey">Packaging</span></td><td>200 pcs</td><td class="num">₹3</td><td class="num">₹600</td></tr><tr><td><span class="hint">+ add line · type to search your stock items</span></td><td></td><td></td><td></td></tr></tbody></table><div class="grid2"><div><div class="fl">Paid?</div><div class="opts"><button type="button" aria-pressed="true">Paid now</button><button type="button">On credit (baki)</button></div></div><div><div class="fl">Paid from</div><div class="opts"><button type="button" aria-pressed="true">Cash drawer</button><button type="button">Bank / UPI</button><button type="button">Owner\'s pocket</button></div></div></div><div style="display:flex;justify-content:space-between;align-items:center"><span class="hint">Attach bill photo (proof) · Total ₹1,600</span><button type="button" class="btn green" data-act="saveBuy">Save purchase</button></div>'}
+ else if(k==='exp'){const kinds=['Rent','Gas / fuel','Electricity','Water','Repairs','Cleaning','Transport','Marketing','Software & phone','Licences','Big purchase (equipment)','Loan interest','Tax','Other income','Owner took cash'];
+  h+=head('Add expense, income or cash taken','Pick what it is; ZenOS puts it in the right place in the earnings ladder.')+'<div class="opts">'+kinds.map(x=>'<button type="button" data-act="kind:'+x+'" aria-pressed="'+(ST.expKind===x)+'">'+x+'</button>').join('')+'</div><div class="grid2"><div><div class="fl">Amount</div><div class="field">'+(ST.expKind==='Big purchase (equipment)'?'₹30,000':'₹4,200')+'</div></div><div><div class="fl">Repeats</div><div class="opts"><button type="button" aria-pressed="true">Every month</button><button type="button">No</button></div></div></div><div><div class="fl">Paid from</div><div class="opts">'+[['drawer','Cash drawer'],['bank','Bank / UPI'],['owner','Owner\'s pocket']].map(o=>'<button type="button" data-act="from:'+o[0]+'" aria-pressed="'+(ST.expFrom===o[0])+'">'+o[1]+'</button>').join('')+'</div>'+(ST.expFrom==='drawer'?'<div class="hint" style="margin-top:6px;color:var(--amber)">Tonight\'s "Should be in the drawer" (Invoices → Close the day) goes down by this amount.</div>':'')+'</div>'+(ST.expKind==='Big purchase (equipment)'?'<div class="soonbox" style="color:var(--text)">Spread over <b>5 years</b> (change it for this item if needed): ₹500 a month shows as equipment wear, below operating profit. It won\'t wipe out one month\'s earnings.</div>':'')+'<div style="display:flex;justify-content:space-between;align-items:center"><span class="hint">Attach bill photo (optional)</span><button type="button" class="btn green" data-act="saveExp">Save</button></div>'}
+ else if(k==='count'){h+=head('Count stock · every 4th day','Last count 24 Sep. Tap + and −. Used = last count + bought − left now. Cooks can count; the owner or manager approves before it counts.')+'<table class="tbl"><thead><tr><th>Item</th><th class="num">Last count</th><th class="num">Bought since</th><th>Left now</th><th class="num">Used</th><th class="num">Cost of use</th></tr></thead><tbody>'+
+  STOCK.slice(0,7).map((s,i)=>{const used=s[2]-ST.counts[i];return '<tr><td>'+s[0]+'</td><td class="num">'+s[2]+' '+s[1]+'</td><td class="num">0</td><td><span class="step"><button type="button" data-act="cnt:'+i+':-1">−</button><b style="min-width:44px;text-align:center">'+ST.counts[i]+' '+s[1]+'</b><button type="button" data-act="cnt:'+i+':1">+</button></span></td><td class="num">'+used+' '+s[1]+'</td><td class="num">'+R(used*s[4])+'</td></tr>'}).join('')+'</tbody></table><div style="display:flex;justify-content:space-between;align-items:center"><span class="hint">Used since 24 Sep, these items: <b style="color:var(--text)">'+R(STOCK.slice(0,7).reduce((t,s,i)=>t+(s[2]-ST.counts[i])*s[4],0))+'</b> · next count due 2 Oct</span><button type="button" class="btn green" data-act="saveCount">Save count</button></div>'+pin(6)}
+ else if(k==='item'){h+=head('Add stock item','Only 4 things needed; the rest can wait.')+'<div class="grid2"><div><div class="fl">Name</div><div class="field">Katla fish</div></div><div><div class="fl">Unit</div><div class="opts"><button type="button" aria-pressed="true">kg</button><button type="button">g</button><button type="button">l</button><button type="button">pcs</button><button type="button">packet</button></div></div><div><div class="fl">In stock now</div><div class="field">0 kg</div></div><div><div class="fl">Cost per unit (last bill)</div><div class="field">₹240</div></div><div><div class="fl">Group</div><div class="opts"><button type="button" aria-pressed="true">Meat & fish</button><button type="button">Grocery</button><button type="button">Vegetables</button><button type="button">Dairy</button><button type="button">Packaging</button></div></div><div><div class="fl">Reorder at (optional)</div><div class="field">3 kg · supplier: Maa Tara Fish</div></div></div><div style="display:flex;justify-content:flex-end"><button type="button" class="btn green" data-act="saveItem">Add item</button></div>'+pin(10)}
+ else if(k==='supp'){h+=head('Add supplier','Only name and phone are needed.')+'<div class="grid2"><div><div class="fl">Name</div><div class="field">Maa Tara Fish Supply</div></div><div><div class="fl">Phone (WhatsApp)</div><div class="field">+91 98xxx xxxxx</div></div><div><div class="fl">Supplies</div><div class="opts"><button type="button" aria-pressed="true">Meat & fish</button><button type="button">Grocery</button><button type="button">Vegetables</button><button type="button">Dairy</button><button type="button">Packaging</button></div></div><div><div class="fl">Auto order</div><div class="opts"><button type="button">Off</button><button type="button" aria-pressed="true">Ask me first</button><button type="button">Prepare, send in one tap</button></div></div><div><div class="fl">GST no. (optional)</div><div class="field">—</div></div><div><div class="fl">Usually on credit?</div><div class="opts"><button type="button">Yes</button><button type="button" aria-pressed="true">Sometimes</button><button type="button">No</button></div></div></div><div style="display:flex;justify-content:flex-end"><button type="button" class="btn green" data-act="saveSupp">Add supplier</button></div>'}
+ else if(k==='rec'){h+=head('Add recipe · Katla Kalia (₹140)','Pick ingredients from your stock and the amount per plate. The cost works itself out.')+'<table class="tbl"><thead><tr><th>Ingredient</th><th>Per plate</th><th class="num">Cost</th></tr></thead><tbody><tr><td>Katla fish</td><td>150 g</td><td class="num">₹36.00</td></tr><tr><td>Onion</td><td>60 g</td><td class="num">₹2.40</td></tr><tr><td>Sunflower Oil</td><td>25 ml</td><td class="num">₹3.63</td></tr><tr><td>Spices (Red Chilli, Turmeric…)</td><td>12 g</td><td class="num">₹3.10</td></tr><tr><td>Rice served with it</td><td>—</td><td class="num">₹16.87</td></tr><tr style="font-weight:700"><td>Cost to make (ingredients only)</td><td></td><td class="num">₹62.00 · 44%</td></tr><tr><td>+ Share of running costs (32.8% of price)</td><td></td><td class="num">₹45.95</td></tr><tr style="font-weight:700"><td>Actual profit per plate</td><td></td><td class="num">₹32.05 · 23%</td></tr></tbody></table><div class="hint" style="color:var(--amber)">44% is above your 35% target. Price ₹175 would bring it to 35%.</div><div style="display:flex;justify-content:flex-end"><button type="button" class="btn green" data-act="close">Save recipe</button></div>'+pin(11)}
+ return h+'</div>'}
+function main(){let h='<div class="main"><div class="mh"><div><h2>Inventory</h2><div class="sub">Stock, purchases, expenses and recipes → the hotel\'s real earnings</div></div></div>'+addbar();
+ h+='<div class="tabs">'+[['over','Overview'],['stock','Stock'],['rec','Recipes & food cost'],['bills','Bills & expenses'],['loss','Losses'],['supp','Suppliers']].map(t=>'<button type="button" class="tab'+(ST.tab===t[0]?' on':'')+'" data-act="tab:'+t[0]+'">'+t[1]+'</button>').join('')+'</div>';
+ h+={over:overview,stock:stockTab,rec:recTab,bills:billsTab,loss:lossTab,supp:suppTab}[ST.tab]();
+ return h+(ST.modal?modal():'')+(ST.toast?'<div class="toast">'+ST.toast+'</div>':'')+'</div>'}
+function render(){const app=document.getElementById('app');app.className='app'+(ST.notes==='on'?' shownotes':'');app.innerHTML=sb()+main();fit()}
+let tt;function toast(s){ST.toast=s;clearTimeout(tt);tt=setTimeout(()=>{ST.toast='';render()},2600)}
+document.getElementById('app').addEventListener('click',e=>{const el=e.target.closest('[data-act]');if(!el)return;const a=el.dataset.act.split(':'),k=a[0];
+ if(k==='tab'){ST.tab=a[1];ST.modal=null}else if(k==='m')ST.modal=a[1];else if(k==='close')ST.modal=null;
+ else if(k==='auto'){ST.auto=a[1];toast({off:'Auto order off',ask:'Auto order: you approve each order on your phone',auto:'Auto order: ZenOS prepares the order; you tap Send in WhatsApp'}[a[1]])}
+ else if(k==='kind')ST.expKind=a.slice(1).join(':');else if(k==='from')ST.expFrom=a[1];
+ else if(k==='saveExp'){const big=ST.expKind==='Big purchase (equipment)';ST.extra.push([ST.expKind+(big?' (₹500/month)':''),big?500:4200,{drawer:'Cash drawer',bank:'Bank / UPI',owner:'Owner\'s pocket'}[ST.expFrom]]);ST.modal=null;toast('Saved · '+ST.expKind+' added to the earnings ladder')}
+ else if(k==='saveBuy'){ST.modal=null;toast('Purchase saved · Chicken +5 kg · boxes +200 · ₹1,600 from cash drawer')}
+ else if(k==='cnt'){const i=+a[1];ST.counts[i]=Math.max(0,ST.counts[i]+(+a[2]))}
+ else if(k==='saveCount'){ST.modal=null;toast('Count saved · food cost updated · next count 2 Oct')}
+ else if(k==='saveSupp'){ST.modal=null;toast('Maa Tara Fish Supply added · auto order: Ask me first')}
+ else if(k==='saveItem'){ST.added.push(['Katla fish','kg',0,3,240,0,'Meat & fish']);ST.modal=null;ST.tab='stock';toast('Katla fish added to stock')}
+ else if(k==='toast')toast(a.slice(1).join(':'));else return;render()});
+function fit(){const st=document.getElementById('stage'),sc=document.getElementById('scaler'),app=document.getElementById('app');
+ if(ST.zoom==='actual'){sc.style.transform='none';sc.style.height='auto';st.classList.add('actual');return}
+ st.classList.remove('actual');const kk=Math.min(1,(st.clientWidth-20)/1280);sc.style.transform='scale('+kk+')';sc.style.height=(app.offsetHeight*kk)+'px'}
+function wire(id,key){const el=document.getElementById(id);el.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;ST[key]=b.dataset.v;el.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b?'true':'false'));render()})}
+wire('c-notes','notes');wire('c-zoom','zoom');
+document.getElementById('resetBtn').addEventListener('click',()=>{const n=ST.notes,z=ST.zoom;ST=JSON.parse(JSON.stringify(S0));ST.notes=n;ST.zoom=z;render()});
+window.addEventListener('resize',fit);if(window.ResizeObserver)new ResizeObserver(fit).observe(document.getElementById('stage'));
+render();if(document.fonts&&document.fonts.ready)document.fonts.ready.then(fit);
+const CHG=[
+ ['Kitchen cost control (v3, replaces the earnings ladder here)','Food cost % vs 35% target with a 4-week trend · spent on stock by group · unexplained loss · stock on hand and days it lasts · owed to suppliers. One line links to the earnings in Insights, which is now the only home of the ladder.'],
+ ['Pulled in from other pages','Invoices (sales, discounts, write-offs), Staff (salaries), Offers. Unchanged, as you accepted.'],
+ ['Add bar','Record purchase · Add expense · Count stock are live; Snap a bill and Say it are marked Coming soon.'],
+ ['Books complete meter (new)','Shows what is missing: an electricity bill, a count due, days with no purchase, gas not logged. The earnings are only as true as this.'],
+ ['AI: Coming soon','Snap a bill, Say it, recipe drafts and price-rise alerts show a Coming soon preview, as you asked.'],
+ ['Count every 4th day','Your choice. Food cost = last count + bought − left now.'],
+ ['Expenses cover everything','Rent, gas, power, water, repairs, transport, marketing, software, licences, big equipment (spread over its life), loan interest, tax, other income, and owner took cash. Each has a "Paid from" that links to Invoices day close.'],
+ ['Supplier credit and auto order','On credit (sometimes, as you said), what you owe, and auto order: Off / Ask me first / Send automatically.'],
+ ['Needs attention','Out and low stock, food cost over target, the recipe gap, supplier dues; AI alerts marked Coming soon.'],
+ ['Add stock item','Your note: a "+ Add stock item" button that needs only name, unit, stock and cost.'],
+ ['Recipes & food cost stays, as you argued','Top dishes first, cost per plate, food cost % and price advice. Costs update from new bills.'],
+ ['Actual value per dish (your addition)','Price (MRP) − recipe food cost − its share of all running costs = actual profit per plate, and profit for the month. Packaged items use their purchase price as food cost.'],
+ ['Should have used vs did use','Recipes vs counts. The gap (₹3,400 in the sample) is the unexplained loss.']
+];
+const host=document.getElementById('chglist');CHG.forEach((c,i)=>{const d=document.createElement('div');d.className='chg';d.innerHTML='<span class="n">'+(i+1)+'</span><div><h3></h3><p></p></div>';d.querySelector('h3').textContent=c[0];d.querySelector('p').textContent=c[1];host.appendChild(d)});
+})();
+</script>
+
+</body></html>
