@@ -13,11 +13,11 @@ export const settingsView = (record) => ({
 });
 export const capabilitiesView = ({ record = null, backendEnabled = false, role }) => {
   const ready = record?.storageVersion === V3_STORAGE_VERSION;
+  const enabled = backendEnabled && ready && record?.enabled === true;
   return {
-    version: 3, phase: "P1", enabled: backendEnabled && ready && record?.enabled === true,
+    version: 3, phase: "P5", enabled,
     storageReady: ready,
-    // Release only implemented workflows. P1 deliberately has no business writes.
-    features: { stock: false, suppliers: false, purchases: false, financialEntries: false, counts: false, recipes: false, overview: false },
+    features: { stock: enabled, suppliers: enabled, purchases: enabled, financialEntries: enabled && role === "admin", counts: enabled, recipes: enabled, overview: enabled },
     permissions: { manageSettings: role === "admin", viewFinancials: role === "admin" },
   };
 };

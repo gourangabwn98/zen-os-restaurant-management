@@ -31,6 +31,14 @@ test("recipe lines retain sub-paisa rates and round only the final line", () => 
   assert.equal(c.lineAmountPaise({ quantity: "150", unit: "g", unitRateRupees: "0.052" }), 780);
   assert.equal(c.lineAmountPaise({ quantity: "1", unit: "pcs", stockUnit: "dozen", unitRateRupees: "12" }), 100);
 });
+test("new compatibility helpers preserve exact quantity, conversion and weighted count valuation", () => {
+  assert.equal(c.legacyDecimal(1.230000), "1.23");
+  assert.equal(c.unitRateConverted("240", "kg", "g"), 0.24);
+  assert.equal(c.multiplyPaise(125, "1.5"), 188);
+  assert.deepEqual(c.intervalValuation({ openingQty: "10", openingRate: "100", purchases: [{ quantity: "5", amountPaise: 60000 }], closingQty: "5" }),
+    { amountPaise: 106667, closingPaise: 53333, complete: true });
+  assert.equal(c.intervalValuation({ openingQty: "1", openingRate: "100", purchases: [], closingQty: "2" }).amountPaise, null);
+});
 test("purchase totals sum independently rounded lines", () => {
   assert.deepEqual(c.purchaseTotals([
     { quantity: "5", unit: "kg", unitRateRupees: "200" },

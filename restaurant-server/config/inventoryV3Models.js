@@ -131,7 +131,7 @@ const lossClassification = new Schema({
 unique(lossClassification, { wastage: 1 }, "v3_loss_classification_unique");
 const operation = new Schema({
   requestKey, payloadHash: { type: String, required: true, match: /^[a-f0-9]{64}$/ },
-  kind: { type: String, enum: ["PURCHASE", "OPENING_STOCK", "COUNT", "SETTLEMENT", "WASTAGE", "RECIPE", "FINANCIAL_ENTRY"], required: true },
+  kind: { type: String, enum: ["PURCHASE", "OPENING_STOCK", "COUNT", "SETTLEMENT", "WASTAGE", "RECIPE", "FINANCIAL_ENTRY", "ITEM_CONFIG", "SUPPLIER", "CONFIRMATION"], required: true },
   resultRef: { type: sourceRef, required: true }, createdBy: requiredActor,
 }, options);
 unique(operation, { requestKey: 1 }, "v3_operation_request_unique");

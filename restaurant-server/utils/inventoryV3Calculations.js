@@ -4,6 +4,28 @@
 import { normalizeUnit, areUnitsCompatible, conversionFactor } from "./units.js";
 
 export const CALCULATION_VERSION = 1;
+export const legacyDecimal = (value) => {
+  if (!Number.isFinite(Number(value))) throw bad("Invalid legacy decimal");
+  return Number(value).toFixed(6).replace(/\.?0+$/, "") || "0";
+};
+export const legacyRupees = (paise) => safe(integer(paise, "paise", true)) / 100;
+export const percentageBps = (part, total) => ratio(integer(part, "part", true), integer(total, "total", true));
+export const multiplyPaise = (paise, quantity) => {
+  const q = decimal(quantity);
+  return safe(rounded(integer(paise, "paise", true) * q.n, q.d));
+};
+export const unitRateConverted = (rate, from, to) => {
+  const r = decimal(rate, "rate"), f = factor(to, from);
+  return safe(rounded(r.n * f.n * 1000000n, r.d * f.d)) / 1000000;
+};
+export const intervalValuation = ({ openingQty, openingRate, purchases, closingQty }) => {
+  const oq = BigInt(quantityMicros(openingQty)), cq = BigInt(quantityMicros(closingQty));
+  const available = oq + purchases.reduce((n, p) => n + BigInt(quantityMicros(p.quantity)), 0n);
+  const basis = integer(lineAmountPaise({ quantity: openingQty, unitRateRupees: openingRate, unit: "pcs" })) + purchases.reduce((n, p) => n + integer(p.amountPaise), 0n);
+  if (cq > available) return { amountPaise: null, complete: false };
+  const closingPaise = available ? safe(rounded(basis * cq, available)) : 0;
+  return { amountPaise: safe(basis - BigInt(closingPaise)), closingPaise, complete: true };
+};
 const MAX = BigInt(Number.MAX_SAFE_INTEGER);
 const bad = (message) => Object.assign(new Error(message), { statusCode: 400, code: "INVALID_CALCULATION_INPUT" });
 const integer = (value, name = "amountPaise", signed = false) => {

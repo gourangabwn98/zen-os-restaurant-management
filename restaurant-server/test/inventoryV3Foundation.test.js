@@ -41,7 +41,10 @@ test("runtime and backend switches plus storage version are all required", () =>
   const manager = capabilitiesView({ record, backendEnabled: true, role: "manager" });
   assert.equal(manager.permissions.viewFinancials, false);
   assert.equal(manager.permissions.manageSettings, false);
-  assert.ok(Object.values(manager.features).every((v) => v === false));
+  assert.equal(manager.features.stock, true);
+  assert.equal(manager.features.financialEntries, false);
+  const disabled = capabilitiesView({ record: { ...record, enabled: false }, backendEnabled: true, role: "admin" });
+  assert.ok(Object.values(disabled.features).every((v) => v === false));
 });
 test("backend environment defaults off and only literal true enables it", () => {
   const previous = process.env.INVENTORY_V3_ENABLED;
