@@ -54,7 +54,7 @@ import { sanitizeInput } from "./middleware/sanitizeInput.js";
 
 // Deployment settings security depends on (warns; stops only without JWT_SECRET).
 runSecurityCheck();
-
+//test
 const app    = express();
 const server = http.createServer(app);
 
