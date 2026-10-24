@@ -1,26 +1,26 @@
 # Inventory V3 — delivery and operations
 
-## Current milestone: P1
+## Current milestone: P1–P5 implemented on the feature branch
 
 Branch: `feature/inventory-v3`, created from the checked-out `dev` at `a05525f`.
 The actual deployed SHA has not been verified. Compare Render's `/api/health`
 `commit` and Vercel's deployment commit before selecting a production release.
 
-P1 adds only:
+The branch adds:
 
 - `utils/inventoryV3Calculations.js`: exact decimal arithmetic with integer-paise
   results, shared by future V3 read/write services and previews.
 - `config/inventoryV3Models.js`: twelve companion schemas, registered on the
   existing restaurant DB connection only when explicitly needed. No changes to
   legacy schemas, model registration, response shapes or stock transactions.
-- Versioned capability/settings endpoints, using existing auth and RBAC.
+- Versioned capability/settings and workspace/mutation endpoints, using existing auth and RBAC.
 - A manual, dry-run-by-default storage/index setup script.
+- Flagged Inventory V3 UI with all six reference tabs and server-calculated money.
 - Calculation, schema, feature-gate, settings concurrency and setup tests.
 
-There is no V3 UI or business mutation endpoint in P1. Every advertised workflow
-capability remains false. Do not interpret `enabled: true` as a completed UI.
-Legacy Inventory and all other frontend pages are unchanged. No new dependency.
-No migration, setup against MongoDB, or deployment was run during implementation.
+P1 through P5 are implemented, but V3 remains off by default. The legacy
+Inventory page is intact and selected whenever either feature switch is off.
+No new dependency, migration, setup against MongoDB, or deployment was run.
 
 ## Feature switches and API contract
 
@@ -28,19 +28,28 @@ No migration, setup against MongoDB, or deployment was run during implementation
 missing, `false`, and other strings mean Off. The runtime settings document must
 also have `enabled: true` and the exact supported `storageVersion: 1`.
 
-The admin app uses Vite. `VITE_INVENTORY_V3=false` will be added with the P2 page
-gate, not as a Next.js environment variable. Runtime availability will be checked
+The admin app uses Vite. Set `VITE_INVENTORY_V3=true` only when ready to serve the
+new page; missing or any other value keeps the old page. Runtime availability is checked
 on initial load, focus and periodically. A build variable alone is not an instant
 rollback mechanism. Future V3 mutations must re-check runtime availability on the
 server, not trust the browser.
 
-New endpoints only:
+All V3 routes are new and mounted ahead of the legacy `/api/admin/inventory`
+router. No existing response shape or endpoint was changed:
 
 | Method | Path | Existing permission | Behavior |
 | --- | --- | --- | --- |
 | GET | `/api/admin/inventory/v3/capabilities` | Staff | Off by default; no V3 collection access when backend switch is Off; `Cache-Control: no-store`; fails closed on read error |
 | GET | `/api/admin/inventory/v3/settings` | Admin | Defaults if missing; explicit `storageReady`; fixed DTO |
 | PATCH | `/api/admin/inventory/v3/settings` | Admin | Allowlisted fields and required current revision; no upsert; conflict if stale/unprepared; can disable when backend switch is Off |
+| GET | `/api/admin/inventory/v3/workspace?month=YYYY-MM` | Admin/Manager | Inventory, suppliers, counts, recipes and book projections; financial detail is admin-only |
+| POST/PATCH | `/items` and `/items/:id`, `/suppliers` and `/suppliers/:id` | Admin/Manager | Opening stock plus ledger, stock settings and supplier preferences |
+| POST | `/purchases/preview`, `/purchases`, `/purchases/:id/settlements` | Staff / Admin+Manager for settlement | Server preview, transactionally recorded purchase, one-time payable settlement |
+| POST | `/financial-entries`, `/financial-entries/:id/reversals` | Admin | Expenses, income, drawings, recurrence, allocations and immutable reversals |
+| POST | `/counts`, `/counts/:id/approve`, `/wastage` | Employee / Admin+Manager approval / Staff | Count submission, stale-safe approval, known waste/free meal |
+| POST | `/recipes/preview`, `/recipes` | Admin/Manager | Server cost preview and recipe upsert, including custom ingredients |
+| POST | `/book-confirmations`, `/receipts` | Admin/Manager / Staff | Confirm a no-purchase day; upload bill photo as proof with no OCR |
+| PUT/PATCH | `/book-expectations/gas`, `/recurring-rules/:id` | Admin | Set gas interval and stop a recurring rule |
 
 Example PATCH body (revision comes from GET, never hard-code it):
 
@@ -152,9 +161,9 @@ npm.cmd run i18n:check
 `npm.cmd` avoids this Windows machine's PowerShell script execution-policy error.
 On other platforms use `npm`. Backend is plain JS; it has no build script.
 
-P1 observed results:
+Current observed results:
 
-- 41 new tests passed (no database connection).
+- 42 new tests passed (no database connection).
 - All 12 listed existing regression suites passed.
 - Admin production build passed; server syntax check passed.
 - Existing admin lint fails with five errors: duplicate `Break` key in
@@ -171,31 +180,45 @@ transaction rollback. No production DB should be used for these tests.
 
 ## Deploy and rollback checks
 
-1. Verify deployed base commits; reconcile release differences without merging
-   unrelated changes into this feature branch.
-2. Deploy P1 backend with `INVENTORY_V3_ENABLED=false` or absent. No seed/setup runs.
-3. Check `/api/health`, existing Inventory loading, stock/purchase/payable reads,
-   and existing menu availability. Test stock writes/order reversals on staging;
-   observe normal business activity in production rather than creating fake sales.
-4. Authenticated capabilities should return `enabled:false`, all workflow flags
-   false, and `Cache-Control:no-store`. Unauthenticated requests should be 401;
-   manager requests to V3 settings should be 403.
-5. Before later rollout, manually prepare staging storage and exercise flag changes.
-   The flag alone must never enable unfinished features.
-6. Rollback: disable runtime V3, then keep/set backend flag Off. Restore the prior
-   frontend deployment if needed. Preserve companion collections and valid stock
-   movements; never delete transactions to roll back a UI.
+1. Verify deployed base commits; deploy the backend with
+   `INVENTORY_V3_ENABLED=false` or absent. No setup runs from deploy hooks.
+2. Check `/api/health`, legacy Inventory loading and stock writes, purchase reads,
+   payable settlement and menu deductions on staging. Capabilities must report
+   `enabled:false` and all feature flags false; unauthenticated requests are 401
+   and manager requests to settings are 403.
+3. On a dedicated staging replica set, follow the manual dry-run/apply commands
+   above. Exercise purchases and repeated request keys, stale counts, approvals,
+   custom recipes, recurrence replacement, reversals, uploads and transaction
+   rollback. Do not use a production database.
+4. Set backend `INVENTORY_V3_ENABLED=true` while the stored runtime setting stays
+   false. Set Vercel `VITE_INVENTORY_V3=true` and deploy the admin build. The old
+   page remains selected until the runtime setting is enabled.
+5. Using an authenticated admin token, enable runtime V3 with the revision
+   returned by GET `/api/admin/inventory/v3/settings`:
+
+   ```powershell
+   $headers = @{ Authorization = "Bearer <admin-token>" }
+   $body = @{ revision = 0; enabled = $true } | ConvertTo-Json
+   Invoke-RestMethod -Method Patch -Uri "https://<api-host>/api/admin/inventory/v3/settings" -Headers $headers -ContentType "application/json" -Body $body
+   ```
+
+   Replace revision `0` with the current revision. Verify the V3 tabs, order
+   deductions and count approval on staging before enabling production.
+6. Rollback: use V3 Settings (or “Switch back to original Inventory”) to disable
+   runtime V3, then set the Render switch false if needed. Browsers poll every ten
+   seconds. Restore the prior Vercel build if necessary. Preserve companion
+   collections and valid stock/purchase movements; never delete transactions.
 
 The legacy page cannot display new V3 expense/drawing records after rollback;
 those records must remain preserved and accessible when V3 is restored. Existing
 legacy stock/purchase records remain readable by the old UI.
 
-## Remaining delivery phases and reference constraints
+## Delivered phases and reference constraints
 
 - P2: flagged Stock/Suppliers, audited opening stock, reorder configuration.
 - P3: purchases, expenses/income/drawings, recurring rules, schedules, ledger.
 - P4: count submit/approve, losses, recipes, allocations and coverage.
-- P5: overview/books/attention/running costs and flagged Insights earnings consumer.
+- P5: overview/books/attention/running costs and a one-line link to the existing Insights ladder.
 
 Keep the original page intact and the earnings ladder exclusively in Insights.
 All mock figures, historical sample names and hardcoded success toasts are replaced
@@ -211,6 +234,9 @@ Scope limits from the Phase 1 review remain in force:
 - Salary gross comes from existing Staff snapshots; do not alter payroll rules.
 - Packaging is food cost once, not also an operating expense.
 - Known waste/free meals are separated before unexplained-loss totals.
+- Calendar-period food cost and EBITDA stay unavailable until count coverage and
+  eligible sales align; the UI shows missing evidence instead of scaling partial
+  count intervals or filling gaps with estimates.
 - Supplier order preparation never silently sends a message. The reference's
   interactive "Prepare, send in one tap" takes precedence over its contradictory
   change-note wording "Send automatically".
