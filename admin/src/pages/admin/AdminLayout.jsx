@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.js";
-import { canOpenPage, isManager } from "../../utils/access.js";
+import { canOpenPage, isManager, isInventoryManager } from "../../utils/access.js";
 import { getDashboard, getRestaurantProfile } from "../../services/adminService.js";
 import { getSocket } from "../../services/socketService.js";
 import { useLiveOrders } from "../../hooks/useLiveOrders.js";
@@ -210,15 +210,17 @@ export default function AdminLayout() {
   const [page, setPageRaw]            = useState(() => {
     // Attendance now lives inside Employees (person → Attendance tab).
     try {
-      const p = sessionStorage.getItem("adminPage") || "orders";
+      const p = sessionStorage.getItem("adminPage") || (isInventoryManager(user) ? "inventory" : "orders");
       const want = p === "attendance" ? "employees" : p;
-      return canOpenPage(user, want) ? want : "orders"; // a manager never lands on an admin-only page
-    } catch { return "orders"; }
+      return canOpenPage(user, want) ? want : (isInventoryManager(user) ? "inventory" : "orders");
+    } catch { return isInventoryManager(user) ? "inventory" : "orders"; }
   });
   // Every way of changing page (sidebar, bell, a page's own links) goes
   // through here, so a manager can't be sent to a page they don't have.
   const setPage = useCallback((id) => { if (canOpenPage(user, id)) setPageRaw(id); }, [user]);
   const manager = isManager(user);
+  const inventoryManager = isInventoryManager(user);
+  const activePage = canOpenPage(user, page) ? page : (inventoryManager ? "inventory" : "orders");
   const allowed = (list) => list.filter((n) => canOpenPage(user, n.id));
   useEffect(() => { try { sessionStorage.setItem("adminPage", page); } catch { /* storage disabled */ } }, [page]);
   const [dashboardData, setDashboardData] = useState(null);
@@ -255,16 +257,17 @@ export default function AdminLayout() {
     getRestaurantProfile()
       .then((profileRes) => setRestaurant(profileRes?.data?.data || profileRes?.data || null))
       .catch(() => {});
-    getDashboard()
+    if (!isInventoryManager(user)) getDashboard()
       .then((dashRes) => setDashboardData(dashRes.data))
       .catch(() => toast.error(t("Failed to load dashboard")));
   }, [user, navigate]);
-  useEffect(() => { prefetchPages(); }, []);
+  useEffect(() => { if (!inventoryManager) prefetchPages(); }, [inventoryManager]);
   // Sidebar order badge: re-read the counts on every order event (a new
   // customer order shows at once) and after a socket reconnect.
   const refreshCounts = useCallback(() => {
+    if (inventoryManager) return;
     getDashboard().then((r) => setDashboardData(r.data)).catch(() => {});
-  }, []);
+  }, [inventoryManager]);
   useLiveOrders(refreshCounts, { debounceMs: 800 });
   // Any menu change (this admin or another device) drops the cached order data.
   useEffect(() => {
@@ -344,39 +347,39 @@ export default function AdminLayout() {
 
           <div className="zc-navgrp">{t("Operations")}</div>
           {allowed(OPERATIONS_NAV_A).map((n) => (
-            <NavItem key={n.id} {...n} rail={rail} active={page === n.id} count={badgeFor(n.badgeKey)} onClick={() => go(n.id)} />
+            <NavItem key={n.id} {...n} rail={rail} active={activePage === n.id} count={badgeFor(n.badgeKey)} onClick={() => go(n.id)} />
           ))}
-          {!manager && (
+          {!manager && !inventoryManager && (
             <a href="/kitchen" target="_blank" rel="noopener noreferrer" className="zc-nav" style={{ textDecoration: "none" }}
               title={rail ? t("Kitchen Display") : undefined} aria-label={rail ? t("Kitchen Display") : undefined}>
               <Icon id="chef" />{!rail && t("Kitchen Display")}
             </a>
           )}
           {allowed(OPERATIONS_NAV_B).map((n) => (
-            <NavItem key={n.id} {...n} rail={rail} active={page === n.id} onClick={() => go(n.id)} />
+            <NavItem key={n.id} {...n} rail={rail} active={activePage === n.id} onClick={() => go(n.id)} />
           ))}
 
           <div className="zc-navgrp">{t("Management")}</div>
           {allowed(MANAGEMENT_NAV).map((n) => (
-            <NavItem key={n.id} {...n} rail={rail} active={page === n.id} onClick={() => go(n.id)} />
+            <NavItem key={n.id} {...n} rail={rail} active={activePage === n.id} onClick={() => go(n.id)} />
           ))}
 
           {allowed(FINANCE_NAV).length > 0 && <div className="zc-navgrp">{t("Finance")}</div>}
           {allowed(FINANCE_NAV).map((n) => (
-            <NavItem key={n.id} {...n} rail={rail} active={page === n.id} onClick={() => go(n.id)} />
+            <NavItem key={n.id} {...n} rail={rail} active={activePage === n.id} onClick={() => go(n.id)} />
           ))}
 
           <div className="side-sp" />
           <div className="zc-navgrp">{t("Settings")}</div>
           {allowed(SETTINGS_NAV).map((n) => (
-            <NavItem key={n.id} {...n} rail={rail} active={page === n.id} onClick={() => go(n.id)} />
+            <NavItem key={n.id} {...n} rail={rail} active={activePage === n.id} onClick={() => go(n.id)} />
           ))}
 
           {user && !rail && (
             <div className="side-who">
               <div className="av">{(user.name || user.email || "A").charAt(0).toUpperCase()}</div>
               <div style={{ minWidth: 0 }}>
-                <div className="n">{user.name || t(manager ? "Manager" : "Admin")}{manager && <span style={{ color: "var(--text-3)", fontWeight: 500 }}> · {t("Manager")}</span>}</div>
+                <div className="n">{user.name || t(inventoryManager ? "Inventory Manager" : manager ? "Manager" : "Admin")}{(manager || inventoryManager) && <span style={{ color: "var(--text-3)", fontWeight: 500 }}> · {t(inventoryManager ? "Inventory Manager" : "Manager")}</span>}</div>
                 <div className="r">{user.email || user.phone || ""}</div>
               </div>
             </div>
@@ -414,19 +417,19 @@ export default function AdminLayout() {
       }}>
         <Suspense fallback={<PageFallback />}>
           <>
-            {page === "dashboard"  && <DashboardPage data={dashboardData} onNavigate={setPage} />}
-            {page === "orders"     && <OrdersPage />}
-            {page === "tables"     && <TablesPage onNavigate={setPage} />}
-            {page === "menu"       && <MenuAdminPage />}
-            {page === "employees"  && <EmployeesPage />}
-            {page === "inventory"  && <InventoryPage />}
-            {page === "users"      && <UsersPage />}
-            {page === "notifications" && <NotificationsPage />}
-            {page === "coupons"    && <CouponsPage />}
-            {page === "invoices"   && <InvoicesPage />}
-            {page === "analytics"  && <AnalyticsPage onNavigate={setPage} />}
-            {page === "profile"    && <ProfilePage />}
-            {page === "help"       && <HelpPage />}
+            {activePage === "dashboard"  && <DashboardPage data={dashboardData} onNavigate={setPage} />}
+            {activePage === "orders"     && <OrdersPage />}
+            {activePage === "tables"     && <TablesPage onNavigate={setPage} />}
+            {activePage === "menu"       && <MenuAdminPage />}
+            {activePage === "employees"  && <EmployeesPage />}
+            {activePage === "inventory"  && <InventoryPage />}
+            {activePage === "users"      && <UsersPage />}
+            {activePage === "notifications" && <NotificationsPage />}
+            {activePage === "coupons"    && <CouponsPage />}
+            {activePage === "invoices"   && <InvoicesPage />}
+            {activePage === "analytics"  && <AnalyticsPage onNavigate={setPage} />}
+            {activePage === "profile"    && <ProfilePage />}
+            {activePage === "help"       && <HelpPage />}
           </>
         </Suspense>
       </main>

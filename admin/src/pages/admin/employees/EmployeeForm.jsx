@@ -88,6 +88,7 @@ export default function EmployeeForm({ employee, customRoles = [], onClose, onSa
         <Field label={t("Role")}>
           <select className="zc-select" value={role} onChange={(e) => setRole(e.target.value)}>
             {canMakeManager && <option value="manager">{t("Manager")}</option>}
+            {canMakeManager && <option value="inventory_manager">{t("Inventory Manager")}</option>}
             <option value="waiter">{t("Waiter")}</option>
             <option value="chef">{t("Chef")}</option>
             <option value="staff">{t("Other (type the job)")}</option>

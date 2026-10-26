@@ -1,7 +1,7 @@
 import cloudinary from "../config/cloudinary.js";
 import { Readable } from "node:stream";
 import { sniffFileType } from "../middleware/importUploadMiddleware.js";
-import { workspaceData } from "../services/inventoryV3ReadService.js";
+import { workspaceData, mobileWorkspaceData } from "../services/inventoryV3ReadService.js";
 import * as ops from "../services/inventoryV3Operations.js";
 
 export const respond = (fn) => async (req, res) => {
@@ -10,6 +10,7 @@ export const respond = (fn) => async (req, res) => {
   catch (err) { res.status(err.statusCode || (err.name === "ValidationError" || err.name === "CastError" ? 400 : 500)).json({ message: err.statusCode || err.name === "ValidationError" ? err.message : "Could not complete inventory action. Refresh and try again." }); }
 };
 export const getWorkspace = respond(workspaceData);
+export const getMobileWorkspace = respond(mobileWorkspaceData);
 export const saveItem = respond(ops.saveItem);
 export const saveSupplier = respond(ops.saveSupplier);
 export const previewPurchase = respond(ops.purchasePreview);
@@ -19,6 +20,7 @@ export const settle = respond(ops.settle);
 export const submitCount = respond(ops.submitCount);
 export const approveCount = respond(ops.approveCount);
 export const saveWastage = respond(ops.saveWastage);
+export const adjustStock = respond(ops.adjustStock);
 export const previewRecipe = respond(ops.recipePreview);
 export const saveRecipe = respond(ops.saveRecipeV3);
 export const confirmNothing = respond((req) => ops.transact(req, "CONFIRMATION", async ({ session, actor }) => {

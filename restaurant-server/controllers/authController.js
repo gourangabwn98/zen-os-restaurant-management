@@ -398,7 +398,7 @@ export const adminVerifyOTP = async (req, res) => {
 // ── Staff (waiter/chef/admin) login helpers — shared by the OTP and Firebase
 // paths so both apply exactly the same "who counts as active staff" rule and
 // return exactly the same session shape.
-const STAFF_ROLES = ["waiter", "chef", "admin", "manager"];
+const STAFF_ROLES = ["waiter", "chef", "admin", "manager", "inventory_manager"];
 
 const findActiveStaffByPhone = (User, phone) =>
   User.findOne({
@@ -496,7 +496,7 @@ export const waiterVerifyOTP = async (req, res) => {
 
     const staffUser = await User.findOne({
       phone,
-      role: { $in: ["waiter","chef","admin","manager"] },
+      role: { $in: ["waiter","chef","admin","manager","inventory_manager"] },
     });
 
     if (!staffUser)
@@ -765,10 +765,10 @@ export const firebaseLogin = async (req, res) => {
     // accounts created before `role` existed. A "manager" (made by an admin
     // in Employees) signs in here too and gets a limited admin app —
     // utils/roles.js; the server's RBAC enforces the limit, not the UI.
-    const user = await User.findOne({ phone, $or: [{ isAdmin: true }, { role: { $in: ["admin", "manager"] } }] });
+    const user = await User.findOne({ phone, $or: [{ isAdmin: true }, { role: { $in: ["admin", "manager", "inventory_manager"] } }] });
 
     if (!user)
-      return res.status(403).json({ message: "Phone not registered as admin or manager" });
+      return res.status(403).json({ message: "Phone not registered as an admin, manager, or inventory manager" });
     if (user.status === "Inactive")
       return res.status(403).json({ message: "This admin account has been deactivated" });
 

@@ -4,7 +4,7 @@ import mongoose from "mongoose";
 import { inventoryV3Schemas, getInventoryV3Models } from "../config/inventoryV3Models.js";
 import { capabilitiesView, settingsView, validateSettingsPatch, updateV3Settings, serverEnabled } from "../services/inventoryV3SettingsService.js";
 import { getCapabilities, getSettings, patchSettings } from "../controllers/inventoryV3Controller.js";
-import { requireAdmin, requireStaff } from "../middleware/rbac.js";
+import { requireAdmin, requireStaff, requireInventory } from "../middleware/rbac.js";
 import { parseSetupArgs, setupStorage } from "../scripts/setup-inventory-v3.js";
 
 const conn = mongoose.createConnection(); // Never opens a socket.
@@ -124,6 +124,14 @@ test("existing RBAC permits staff capabilities and keeps settings admin-only", (
   const inactive = response();
   requireAdmin({ user: { role: "admin", status: "Inactive" } }, inactive, () => assert.fail("inactive access"));
   assert.equal(inactive.code, 403);
+});
+test("inventory manager is limited to inventory RBAC", () => {
+  let allowed = false;
+  requireInventory({ user: { role: "inventory_manager", status: "Active" } }, response(), () => { allowed = true; });
+  assert.equal(allowed, true);
+  const denied = response();
+  requireInventory({ user: { role: "waiter", status: "Active" } }, denied, () => assert.fail("waiter should not use inventory-manager routes"));
+  assert.equal(denied.code, 403);
 });
 test("financial entries require safe amounts and valid effective dates", async () => {
   const valid = { requestKey: "test-entry-01", treatment: "OPERATING_EXPENSE", category: "electricity", amountPaise: 420000, effectiveDate: "2026-10-24", occurredAt: new Date(), paymentSource: "CASH_DRAWER", createdBy: actor };
