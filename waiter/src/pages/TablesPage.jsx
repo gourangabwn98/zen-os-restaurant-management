@@ -46,9 +46,9 @@ export default function TablesPage() {
   const nav = useNavigate();
   const { auth, duty } = useAppState();
   const dutyGated = auth.user?.role === "waiter" && !duty.onDuty;
-  const goToNewOrder = (tableNo) => {
+  const goToNewOrder = (tableNo, tableData = null) => {
     if (dutyGated) return toast.error(t("You must be ON DUTY to perform this action."));
-    nav(`/new-order?table=${tableNo}`);
+    nav(`/new-order?table=${tableNo}`, { state: tableData ? { table: tableData } : undefined });
   };
   // Take Away starts here (the order page no longer offers it once a table is picked).
   const goToTakeaway = () => {
@@ -56,7 +56,7 @@ export default function TablesPage() {
     nav("/new-order?type=takeaway");
   };
   const [tables, setTables]     = useState(null);
-  const [sessions, setSessions] = useState({});
+  const [sessions, setSessions] = useState(null);
   const [error, setError]       = useState(null);
   const [selected, setSelected] = useState(null);
   const [pendingOrders, setPendingOrders] = useState([]);
@@ -70,20 +70,28 @@ export default function TablesPage() {
 
   const load = useCallback(async () => {
     setError(null);
+    // Tables are the critical path. Start every request together, but render
+    // the map as soon as its own response arrives instead of waiting for the
+    // pending/takeaway order lists or table-session query.
+    const tablesRequest = getAllTables();
+    const sessionsRequest = getOpenTableSessions().catch(() => null);
+    const pendingRequest = getAllOrders({ status: "PENDING_CONFIRMATION", limit: 50 }).catch(() => null);
+    const takeawayRequest = getAllOrders({ type: "TAKEAWAY", scope: "live", limit: 50 }).catch(() => null);
     try {
-      const [tRes, sRes, pRes, twRes] = await Promise.all([
-        getAllTables(), getOpenTableSessions(), getAllOrders({ status: "PENDING_CONFIRMATION", limit: 50 }),
-        getAllOrders({ type: "TAKEAWAY", scope: "live", limit: 50 }).catch(() => null),
-      ]);
-      if (twRes) setTakeaways((twRes.data?.orders || []).filter((o) => RUNNING_TAKEAWAY.includes(o.status)));
+      const tRes = await tablesRequest;
       setTables(tRes.data?.tables || []);
+    } catch {
+      setError(t("Couldn't load tables"));
+      return;
+    }
+    const [sRes, pRes, twRes] = await Promise.all([sessionsRequest, pendingRequest, takeawayRequest]);
+    if (twRes) setTakeaways((twRes.data?.orders || []).filter((o) => RUNNING_TAKEAWAY.includes(o.status)));
+    if (sRes) {
       const map = {};
       (sRes.data?.sessions || []).forEach((s) => { map[Number(s.tableNo)] = s; });
       setSessions(map);
-      setPendingOrders(pRes.data?.orders || []);
-    } catch {
-      setError(t("Couldn't load tables"));
-    }
+    } else setSessions({});
+    if (pRes) setPendingOrders(pRes.data?.orders || []);
   }, []);
 
   // Live: a customer's new order (and every status / table change) shows up
@@ -94,8 +102,15 @@ export default function TablesPage() {
   useEffect(() => { prefetchOrderData(); }, []);
   useEffect(() => {
     load();
-    const iv = setInterval(load, 15000);
-    return () => clearInterval(iv);
+    const iv = setInterval(load, 30000);
+    const onResume = () => { if (document.visibilityState === "visible") load(); };
+    window.addEventListener("focus", onResume);
+    document.addEventListener("visibilitychange", onResume);
+    return () => {
+      clearInterval(iv);
+      window.removeEventListener("focus", onResume);
+      document.removeEventListener("visibilitychange", onResume);
+    };
   }, [load]);
 
   // Forces a re-render every minute so each card's "since seated" timer and
@@ -136,7 +151,8 @@ export default function TablesPage() {
   // Same tables, same order as the admin's Table Map: the server sends them
   // sorted by area, then table number (Admin → Tables is the one source).
   const liveTables = tables.filter((t) => t.status !== "Inactive");
-  const classified = liveTables.map((t) => classifyTable(t, sessions[t.tableNo]));
+  const sessionReady = sessions !== null;
+  const classified = liveTables.map((t) => classifyTable(t, sessions?.[t.tableNo]));
   const summary = summarize(classified);
 
   // Areas the admin set up (server order) → the tabs; a removed area falls back to All.
@@ -144,7 +160,7 @@ export default function TablesPage() {
   const activeTab = tab === "takeaway" || tab === "all" || areaGroups.some((g) => g.area === tab) ? tab : "all";
   const shownGroups = activeTab === "all" ? areaGroups : areaGroups.filter((g) => g.area === activeTab);
   const selectedClassified = selected ? classified.find((c) => c.table.tableNo === selected) : null;
-  const selectedSession = selected ? sessions[selected] : null;
+  const selectedSession = selected ? sessions?.[selected] : null;
 
   return (
     <div style={{ paddingBottom: NAV_HEIGHT + 90, background: BG, minHeight: "100vh", fontFamily: FONT_BODY }}>
@@ -262,8 +278,8 @@ export default function TablesPage() {
               <FreeTableCard
                 key={c.table.tableNo}
                 table={c.table}
-                onClick={() => goToNewOrder(c.table.tableNo)}
-                style={dutyGated ? { opacity: 0.55 } : undefined}
+                onClick={() => sessionReady && goToNewOrder(c.table.tableNo, c.table)}
+                style={!sessionReady || dutyGated ? { opacity: 0.55 } : undefined}
               />
             )
           )}
@@ -329,7 +345,7 @@ export default function TablesPage() {
               <div style={{ fontFamily: FONT_HEAD, fontWeight: 800, fontSize: 16, color: TEXT_MAIN }}>{selectedClassified ? tableLabel(selectedClassified.table) : t("Table {n}", { n: selected })}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <button
-                  onClick={() => goToNewOrder(selected)}
+                  onClick={() => goToNewOrder(selected, selectedClassified?.table)}
                   style={{
                     minHeight: 40, padding: "0 16px", borderRadius: 999, border: "none", cursor: "pointer",
                     background: dutyGated ? "rgba(255,255,255,0.1)" : ACCENT,

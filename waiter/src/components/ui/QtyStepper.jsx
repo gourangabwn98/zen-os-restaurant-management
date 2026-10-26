@@ -3,7 +3,9 @@ import { ACCENT, ACCENT_GRADIENT, GLASS_BG, GLASS_BORDER } from "../../theme.js"
 export default function QtyStepper({ qty, onInc, onDec, size = "md", style }) {
   const dims = size === "sm"
     ? { btn: 32, font: 14, gap: 10, pad: "4px 8px" }
-    : { btn: 34, font: 15, gap: 12, pad: "4px 8px" };
+    : size === "xs"
+      ? { btn: 24, font: 12, gap: 6, pad: "3px 6px" }
+      : { btn: 34, font: 15, gap: 12, pad: "4px 8px" };
 
   return (
     <div
