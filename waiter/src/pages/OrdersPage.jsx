@@ -44,17 +44,24 @@ export default function OrdersPage() {
   useLiveOrders(load);
   useEffect(() => {
     load();
-    const iv = setInterval(load, 12000);
-    return () => clearInterval(iv);
+    const iv = setInterval(load, 30000);
+    const onResume = () => { if (document.visibilityState === "visible") load(); };
+    window.addEventListener("focus", onResume);
+    document.addEventListener("visibilitychange", onResume);
+    return () => {
+      clearInterval(iv);
+      window.removeEventListener("focus", onResume);
+      document.removeEventListener("visibilitychange", onResume);
+    };
   }, [load]);
 
   const handleQuickConfirm = async (e, order) => {
     e.stopPropagation();
     setBusyId(order._id);
     try {
-      await confirmOrder(order._id);
+      const { data } = await confirmOrder(order._id);
+      if (data?.order) setOrders((current) => current?.map((item) => item._id === order._id ? data.order : item));
       toast.success(t("Order {id} accepted", { id: order.orderId }));
-      load();
     } catch (err) {
       toast.error(err.response?.data?.message || t("Couldn't accept the order"));
     } finally { setBusyId(null); }

@@ -23,6 +23,8 @@ import { hasAddons, lineKey, addonLabel, nameWithSize } from "../utils/addons.js
 import { tableLabel } from "../utils/diningArea.js";
 import { STATUS_LABEL } from "../components/StatusBadge.jsx";
 import { editLinesOf, stepLineQty, stepLineAddon, replaceLineAddons, orderItemsPayload, mergeOrderAdditions, draftSubtotal } from "../utils/orderDraft.js";
+import { isServed, paymentActionsVisible } from "../utils/orderLifecycle.js";
+import { useLiveOrders } from "../hooks/useLiveOrders.js";
 
 // DSH-04: the floor steps a waiter drives. Kitchen marks Ready; the waiter
 // taps Served (→ Eating). Completed is NOT here — it follows from settling
@@ -38,7 +40,8 @@ const NEXT_LABEL = {
   READY: N_("Served"),
 };
 const STAGES = ["CONFIRMED", "PREPARING", "READY", "DELIVERED", "COMPLETED"];
-// Bill can be settled once the order is accepted (server: billingService.SETTLEABLE).
+// The server still supports the existing counter/admin prepayment workflow.
+// Waiters only see collection and final bill actions after Served (DELIVERED).
 const SETTLEABLE = ["CONFIRMED", "PREPARING", "READY", "DELIVERED"];
 const billSettled = (o) => (o.billStatus ? o.billStatus === "SETTLED" : o.status === "COMPLETED");
 // The kitchen already has it (Cooking / Ready / Served) and the bill is open:
@@ -90,16 +93,17 @@ export default function OrderDetailPage() {
   // KH-03 / KH-07: the running orders billed together with this one — the
   // table's orders (dine-in) or this order + its follow-ups (takeaway).
   const [billGroup, setBillGroup] = useState(null);
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
 
   const loadBillGroup = useCallback(async (o) => {
-    if (!o || !SETTLEABLE.includes(o.status)) { setBillGroup(null); return; }
+    if (!o || o.status !== "DELIVERED") { setBillGroup(null); return; }
     try {
       if (o.orderType === "DINE_IN" && o.tableNo) {
         const { data } = await getCombinedBill({ tableNo: o.tableNo });
-        setBillGroup({ scope: { tableNo: o.tableNo }, orders: (data.orders || []).filter((x) => SETTLEABLE.includes(x.status)) });
+        setBillGroup({ scope: { tableNo: o.tableNo }, orders: (data.orders || []).filter((x) => x.status === "DELIVERED") });
       } else {
         const { data } = await getOrderGroup(o._id);
-        setBillGroup({ scope: { groupOf: data.rootId }, orders: (data.orders || []).filter((x) => SETTLEABLE.includes(x.status)) });
+        setBillGroup({ scope: { groupOf: data.rootId }, orders: (data.orders || []).filter((x) => x.status === "DELIVERED") });
       }
     } catch { setBillGroup(null); }
   }, []);
@@ -109,13 +113,25 @@ export default function OrderDetailPage() {
     getOrder(id).then((r) => { setOrder(r.data); loadBillGroup(r.data); }).catch(() => setError(t("Couldn't load this order")));
   }, [id, loadBillGroup]);
 
-  useEffect(() => { load(); const iv = setInterval(load, 10000); return () => clearInterval(iv); }, [load]);
+  useLiveOrders(load, { debounceMs: 250 });
+  useEffect(() => {
+    load();
+    const iv = setInterval(load, 30000);
+    const onResume = () => { if (document.visibilityState === "visible") load(); };
+    window.addEventListener("focus", onResume);
+    document.addEventListener("visibilitychange", onResume);
+    return () => {
+      clearInterval(iv);
+      window.removeEventListener("focus", onResume);
+      document.removeEventListener("visibilitychange", onResume);
+    };
+  }, [load]);
   // Paid meanwhile → stop the item edit (it would no longer match the payment).
   useEffect(() => { if (order?.paymentStatus === "PAID") setEditLines(null); }, [order?.paymentStatus]);
 
   const handleConfirm = async () => {
     setBusy(true);
-    try { await confirmOrder(id); toast.success(t("Order accepted — it goes to the kitchen when the change window ends")); load(); }
+    try { const { data } = await confirmOrder(id); if (data?.order) { setOrder(data.order); loadBillGroup(data.order); } toast.success(t("Order accepted — it goes to the kitchen when the change window ends")); }
     catch (err) { toast.error(err.response?.data?.message || t("Couldn't accept the order")); }
     finally { setBusy(false); }
   };
@@ -123,7 +139,7 @@ export default function OrderDetailPage() {
   const handleReject = async () => {
     if (!window.confirm(t("Cancel this order?"))) return;
     setBusy(true);
-    try { await rejectOrder(id, "Cancelled by waiter"); toast.success(t("Order cancelled")); load(); }
+    try { const { data } = await rejectOrder(id, "Cancelled by waiter"); if (data?.order) setOrder(data.order); toast.success(t("Order cancelled")); }
     catch (err) { toast.error(err.response?.data?.message || t("Couldn't cancel")); }
     finally { setBusy(false); }
   };
@@ -132,7 +148,7 @@ export default function OrderDetailPage() {
     const next = NEXT_STATUS[order.status];
     if (!next) return;
     setBusy(true);
-    try { await updateOrderStatus(id, next); toast.success(`→ ${t(STATUS_LABEL[next] || next)}`); load(); }
+    try { const { data } = await updateOrderStatus(id, next); if (data) { setOrder(data); loadBillGroup(data); } toast.success(`→ ${t(STATUS_LABEL[next] || next)}`); }
     catch (err) { toast.error(err.response?.data?.message || t("Couldn't update status")); }
     finally { setBusy(false); }
   };
@@ -141,22 +157,34 @@ export default function OrderDetailPage() {
   // yet. The server completes the order if it has been served.
   // paymentSplit { cash, online } only with "Both" (part cash, part online).
   const handleSettle = async (paymentMethod, paymentSplit) => {
+    if (!order || !paymentActionsVisible(order) || busy || paymentSubmitting) return;
+    setPaymentSubmitting(true);
     setBusy(true);
     try {
       const { data } = await settleOrders([id], paymentMethod, paymentSplit);
       const why = data?.rejected?.[0]?.reason;
       if (why) toast.error(why);
-      else { setSplitOpen(false); toast.success(data?.completed?.length ? t("Bill settled — order completed") : t("Bill settled")); }
-      load();
+      else {
+        setSplitOpen(false);
+        const updated = data?.orders?.[0];
+        if (updated) { setOrder(updated); loadBillGroup(updated); }
+        toast.success(data?.completed?.length ? t("Bill settled — order completed") : t("Bill settled"));
+      }
     } catch (err) { toast.error(err.response?.data?.message || t("Couldn't settle the bill")); }
-    finally { setBusy(false); }
+    finally { setPaymentSubmitting(false); setBusy(false); }
   };
 
   const handlePayment = async (paymentStatus) => {
+    if (!order || !paymentActionsVisible(order) || busy || paymentSubmitting) return;
+    setPaymentSubmitting(true);
     setBusy(true);
-    try { await updateOrderPayment(id, { paymentStatus }); toast.success(t("Payment marked {s}", { s: t(PAYMENT_LABEL[paymentStatus]) })); load(); }
+    try {
+      const { data } = await updateOrderPayment(id, { paymentStatus });
+      if (data?.order) setOrder(data.order);
+      toast.success(t("Payment marked {s}", { s: t(PAYMENT_LABEL[paymentStatus]) }));
+    }
     catch (err) { toast.error(err.response?.data?.message || t("Couldn't update payment")); }
-    finally { setBusy(false); }
+    finally { setPaymentSubmitting(false); setBusy(false); }
   };
 
   // The whole live menu once per opening (a young kept copy shows at once,
@@ -275,7 +303,6 @@ export default function OrderDetailPage() {
       setOrder(data);
       toast.success(t("Order updated"));
       setEditLines(null);
-      load();
     } catch (err) {
       toast.error(err.response?.data?.message || t("Couldn't update the order"));
       load();
@@ -283,6 +310,7 @@ export default function OrderDetailPage() {
   };
 
   const handleBill = async () => {
+    if (!paymentActionsVisible(order)) return;
     try {
       const { data } = await getCombinedBill({ orderIds: id });
       setBill(data);
@@ -292,6 +320,7 @@ export default function OrderDetailPage() {
   // Payment QR is uploaded by the admin (Profile → Payment) and comes back
   // on the bill. Scanning it is not proof of payment — still Mark Paid.
   const handleShowQr = async () => {
+    if (!paymentActionsVisible(order)) return;
     try {
       // fresh — items/total may have changed; KH-03/07: the whole combined bill
       const ids = billGroup && billGroup.orders.length > 1 ? billGroup.orders.map((o) => o._id).join(",") : id;
@@ -303,6 +332,7 @@ export default function OrderDetailPage() {
   };
 
   const handlePrint = async () => {
+    if (!paymentActionsVisible(order)) return;
     // KH-11: Indoor-AC guests are entered on the order itself — not asked here.
     try { await printBill(id); toast.success(t("Sent to printer")); load(); }
     catch (err) { toast.error(err.response?.data?.message || t("Couldn't reach the printer")); }
@@ -314,7 +344,8 @@ export default function OrderDetailPage() {
   const isPending = order.status === "PENDING_CONFIRMATION";
   const canAdvance = !!NEXT_STATUS[order.status];
   const settled = billSettled(order);
-  const canSettle = !settled && SETTLEABLE.includes(order.status);
+  const served = isServed(order);
+  const canSettle = served && !settled && order.status === "DELIVERED";
   // ORD-01: items can change while the order is held — awaiting acceptance
   // or Placed — i.e. before its KOT prints.
   const isPlaced = order.status === "CONFIRMED" && !order.stockDeducted;
@@ -408,8 +439,8 @@ export default function OrderDetailPage() {
         </GlassCard>
       </div>
 
-      {/* Payment */}
-      <div style={{ margin: "0 16px 14px" }}>
+      {/* Payment and final bill actions are intentionally unavailable before Served. */}
+      {paymentActionsVisible(order) && <div style={{ margin: "0 16px 14px" }}>
         <GlassCard style={{ padding: "14px 16px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ fontSize: 12, color: TEXT_MUTED }}>{t("Payment")} · {order.paymentMethod === "Both"
@@ -450,7 +481,7 @@ export default function OrderDetailPage() {
             </div>
           )}
         </GlassCard>
-      </div>
+      </div>}
 
       {combined && (
         <div style={{ margin: "0 16px 14px" }}>
@@ -508,13 +539,13 @@ export default function OrderDetailPage() {
           </div>
         )}
 
-        {!combined && (
+        {served && !combined && (
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={handleBill} style={outlineBtn}>🧾 {t("Generate bill")}</button>
             <button onClick={handlePrint} style={outlineBtn}>🖨️ {t("Print bill")}</button>
           </div>
         )}
-        <button onClick={handleShowQr} style={{ ...outlineBtn, width: "100%" }}>📱 {t("Payment QR")}</button>
+        {served && <button onClick={handleShowQr} style={{ ...outlineBtn, width: "100%" }}>📱 {t("Payment QR")}</button>}
       </div>
 
       {bill && (
