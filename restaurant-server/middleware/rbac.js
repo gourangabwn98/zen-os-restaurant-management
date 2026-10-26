@@ -10,7 +10,7 @@
 // before `role` existed on some records.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { STAFF_ROLES, MANAGEMENT_ROLES } from "../utils/roles.js";
+import { STAFF_ROLES, MANAGEMENT_ROLES, INVENTORY_ROLES, INVENTORY_MANAGER } from "../utils/roles.js";
 
 const effectiveRole = (user) => {
   if (!user) return null;
@@ -51,6 +51,11 @@ export const requireStaff = requireRole(...STAFF_ROLES);
  *  invoices, tables, inventory, employees, menu). Settings, Insights, Users,
  *  Offers, Notifications and printers stay requireAdmin. */
 export const requireManagement = requireRole(...MANAGEMENT_ROLES);
+/** Inventory Manager, manager, or admin for inventory-only operations. */
+export const requireInventory = requireRole(...INVENTORY_ROLES);
+/** Existing staff inventory endpoints keep their former staff access while
+ * allowing the dedicated inventory manager to use the same business logic. */
+export const requireInventoryStaff = requireRole(...new Set([...STAFF_ROLES, INVENTORY_MANAGER]));
 
 /** Shorthand: admin or chef (kitchen operations) */
 export const requireKitchen = requireRole("admin", "chef");

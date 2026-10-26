@@ -51,7 +51,7 @@ const userSchema = new mongoose.Schema({
   // "staff" (EMP-03) = an employee with a custom job (Cashier, Helper …) and
   // no app login — the OTP login and RBAC only ever accept admin/manager/waiter/chef.
   // "manager" = admin-app login limited to some pages (utils/roles.js).
-  role:       { type: String, enum: ["admin","manager","waiter","chef","customer","staff"], default: "customer" },
+  role:       { type: String, enum: ["admin","manager","inventory_manager","waiter","chef","customer","staff"], default: "customer" },
   // EMP-03 — the custom role name for role "staff" (reused for later hires).
   jobTitle:   { type: String, default: "", trim: true, maxlength: 40 },
   address:    { type: String, default: "" }, // employee address (Employee Management)

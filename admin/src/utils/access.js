@@ -4,7 +4,11 @@
 // (restaurant-server/utils/roles.js, middleware/rbac.js requireManagement).
 
 export const isManager = (user) => !!user && !user.isAdmin && user.role === "manager";
+export const isInventoryManager = (user) => !!user && !user.isAdmin && user.role === "inventory_manager";
 
 export const MANAGER_PAGES = ["orders", "tables", "invoices", "inventory", "employees", "menu", "help"];
+export const INVENTORY_MANAGER_PAGES = ["inventory"];
 
-export const canOpenPage = (user, page) => !isManager(user) || MANAGER_PAGES.includes(page);
+export const canOpenPage = (user, page) => isInventoryManager(user)
+  ? INVENTORY_MANAGER_PAGES.includes(page)
+  : !isManager(user) || MANAGER_PAGES.includes(page);

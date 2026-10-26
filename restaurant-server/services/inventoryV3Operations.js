@@ -231,6 +231,20 @@ export const saveWastage = (req) => transact(req, "WASTAGE", async ({ session, a
   return { model: "WastageLog", id: doc._id };
 });
 
+// Simple shift-friendly stock movement. The conditional decrement prevents
+// negative stock and the ledger row is written in the same transaction.
+export const adjustStock = (req) => transact(req, "STOCK_ADJUSTMENT", async ({ session, legacyActor }) => {
+  const b = req.body || {}, quantity = positiveQty(b.quantity), direction = b.direction;
+  if (!["IN", "OUT"].includes(direction)) throw fail("Choose stock in or stock out");
+  const reason = cleanText(b.reason, 200);
+  if (!reason) throw fail("A reason is required");
+  const filter = { _id: id(b.inventoryItem), status: "Active", ...(direction === "OUT" ? { currentStock: { $gte: quantity } } : {}) };
+  const item = await req.models.InventoryItem.findOneAndUpdate(filter, { $inc: { currentStock: direction === "IN" ? quantity : -quantity } }, { session, returnDocument: "after" });
+  if (!item) throw fail(direction === "OUT" ? "Not enough stock, or item is inactive" : "Item is inactive", 409);
+  const movement = await create(req.models.StockLedger, { inventoryItem: item._id, type: "ADJUSTMENT", quantity: direction === "IN" ? quantity : -quantity, balanceAfter: item.currentStock, reason, createdBy: legacyActor }, session);
+  return { model: "StockLedger", id: movement._id };
+});
+
 export const recipePreview = async (req, session = null) => {
   const b = req.body;
   const menu = await req.models.MenuItem.findById(id(b.menuItem)).session(session).lean();

@@ -37,6 +37,37 @@ export const stockData = async (req) => {
   };
 };
 
+// Inventory Manager read model: operational stock only. It deliberately omits
+// revenue, EBITDA, financial entries, payables and recipe profitability.
+export const mobileWorkspaceData = async (req) => {
+  const [items, configs] = await Promise.all([
+    bounded(req.models.InventoryItem.find({ status: "Active" }).select("name category unit currentStock reorderLevel criticalLevel costPrice updatedAt").sort({ name: 1 })),
+    bounded(req.v3.InventoryItemV3Config.find()),
+  ]);
+  const byConfig = new Map(configs.map((x) => [sid(x.inventoryItem), x]));
+  const rows = items.map((i) => {
+    const config = byConfig.get(sid(i)) || {};
+    return { _id: i._id, name: i.name, category: i.category || "", unit: i.unit,
+      currentStock: i.currentStock, reorderLevel: i.reorderLevel || 0, criticalLevel: i.criticalLevel || 0,
+      costPrice: i.costPrice || 0, updatedAt: i.updatedAt, config: { usualStockQty: config.usualStockQty, costClass: config.costClass },
+      stockLevel: classifyStockLevel(i.currentStock, i.reorderLevel, i.criticalLevel) };
+  });
+  const ids = items.map((i) => i._id);
+  const movements = ids.length ? await req.models.StockLedger.find({ inventoryItem: { $in: ids } }).select("inventoryItem type quantity balanceAfter reason createdAt createdBy").sort({ createdAt: -1, _id: -1 }).limit(150).lean() : [];
+  const byItem = new Map(rows.map((i) => [sid(i), i]));
+  return {
+    items: rows,
+    categories: [...new Set(rows.map((i) => i.category).filter(Boolean))].sort(),
+    summary: {
+      total: rows.length,
+      low: rows.filter((i) => i.currentStock > 0 && i.stockLevel !== "OK").length,
+      out: rows.filter((i) => i.currentStock <= 0).length,
+    },
+    movements: movements.map((m) => ({ _id: m._id, itemId: m.inventoryItem, itemName: byItem.get(sid(m.inventoryItem))?.name || "Item", type: m.type,
+      quantity: m.quantity, balanceAfter: m.balanceAfter, reason: m.reason || "", createdAt: m.createdAt, createdBy: m.createdBy || null })),
+  };
+};
+
 export const projectCosts = ({ entries, rules, schedules, month, startDay, endDay }) => {
   const scheduledIds = new Set(schedules.map((s) => sid(s.financialEntry)));
   const reversed = new Set(entries.filter((e) => e.reversalOf).map((e) => sid(e.reversalOf)));
