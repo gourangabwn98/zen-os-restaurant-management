@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js",
-    "seed": "node seed.js"
+    "seed": "node seed.js",
+    "test:inventory-v3": "node --test test/inventoryV3Calculations.test.js test/inventoryV3Foundation.test.js"
   },
   "keywords": [],
   "author": "",

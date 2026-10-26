@@ -16,7 +16,7 @@ export default function CartLine({ line: c, cart }) {
       <div className="nm">
         <b>{c.item.tag && <VegDot tag={c.item.tag} />}{name}</b>
         {(c.addons || []).map((a) => (
-          <div key={a.addonId} className="small addon-line" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+          <div key={a.addonId} className="small addon-line">
             <span>+ {addonLabel(a)} · ₹{a.price} each</span>
             <QtyStepper qty={addonQty(a)} label={`${a.name} quantity`}
               onDec={() => cart.changeAddonQty(key, a.addonId, -1)}

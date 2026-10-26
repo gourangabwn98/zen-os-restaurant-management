@@ -23,7 +23,7 @@ const PAGE_LOADERS = {
   invoices:      () => import("./InvoicesPage.jsx"),
   analytics:     () => import("./AnalyticsPage.jsx"),
   employees:     () => import("./EmployeesPage.jsx"),
-  inventory:     () => import("./InventoryPage.jsx"),
+  inventory:     () => import("./InventoryEntry.jsx"),
   profile:       () => import("./ProfilePage.jsx"),
   help:          () => import("./HelpPage.jsx"),
 };
