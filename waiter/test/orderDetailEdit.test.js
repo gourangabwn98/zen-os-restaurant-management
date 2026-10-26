@@ -66,7 +66,7 @@ const button = (tree, label) => nodes(tree).find((n) => (n.type === "button" || 
 let tree = render();
 button(tree, "Edit items").props.onClick();
 tree = render();
-const addonControls = () => nodes(tree).filter((n) => n.type === QtyStepper && n.props.size === "sm");
+const addonControls = () => nodes(tree).filter((n) => n.type === QtyStepper && n.props.size === "xs");
 for (const quantity of [2, 3, 2, 1, 0]) {
   const controls = addonControls();
   const oldQuantity = controls[0].props.qty;

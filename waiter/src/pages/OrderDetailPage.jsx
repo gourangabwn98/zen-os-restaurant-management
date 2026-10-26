@@ -115,12 +115,17 @@ export default function OrderDetailPage() {
 
   useLiveOrders(load, { debounceMs: 250 });
   useEffect(() => {
-    load();
+    // A newly placed order is already in router state. Render that confirmed
+    // response immediately and let the socket/fallback refresh reconcile it,
+    // instead of issuing a duplicate GET during the place-order transition.
+    const firstRefresh = placed ? setTimeout(load, 1200) : null;
+    if (!placed) load();
     const iv = setInterval(load, 30000);
     const onResume = () => { if (document.visibilityState === "visible") load(); };
     window.addEventListener("focus", onResume);
     document.addEventListener("visibilitychange", onResume);
     return () => {
+      if (firstRefresh) clearTimeout(firstRefresh);
       clearInterval(iv);
       window.removeEventListener("focus", onResume);
       document.removeEventListener("visibilitychange", onResume);
@@ -403,7 +408,7 @@ export default function OrderDetailPage() {
                 {nameWithSize(localName(it), it.size)}{editLines ? "" : ` × ${it.qty}`}{it.notes ? <span style={{ color: TEXT_FAINT }}> · "{it.notes}"</span> : ""}
                 {(it.addons || []).map((a) => <div key={String(a.addonId ?? a.name)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 12, color: "#93C5FD" }}>
                   <span>+ {addonLabel(a)}</span>
-                  {editLines && <QtyStepper size="sm" qty={a.qty || 1}
+                  {editLines && <QtyStepper size="xs" qty={a.qty || 1} style={{ borderColor: "rgba(147,197,253,0.45)", background: "rgba(147,197,253,0.08)" }}
                     onDec={() => !busy && changeAddonQty(it.key, String(a.addonId), -1)}
                     onInc={() => !busy && changeAddonQty(it.key, String(a.addonId), 1)} />}
                 </div>)}

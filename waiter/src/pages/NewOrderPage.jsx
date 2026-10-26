@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 import { peekOrderData, fetchOrderData } from "../services/orderDataCache.js";
 import { getAllTables } from "../services/tableService.js";
@@ -25,11 +25,13 @@ const SUB_CHIP = { padding: "6px 13px", fontSize: 12 };
 
 export default function NewOrderPage() {
   const nav = useNavigate();
+  const location = useLocation();
   const [params] = useSearchParams();
   const preTable = params.get("table");
   // Opened from the Table Map: a picked table, or the "Take Away" tile.
   // Either way the type is decided — no Dine-in / Takeaway switch.
   const preTakeaway = params.get("type") === "takeaway";
+  const preselectedTable = location.state?.table || null;
   const locked = Boolean(preTable) || preTakeaway;
   const { auth, duty } = useAppState();
   // Only a waiter is duty-gated (mirrors the backend — see
@@ -41,7 +43,7 @@ export default function NewOrderPage() {
   const [tableNo, setTableNo]     = useState(preTable || "");
   // The table's area (Indoor / AC Room / Garden) is set by the admin on the
   // table; the server takes the order's area from the table.
-  const [tables, setTables]       = useState([]);
+  const [tables, setTables]       = useState(() => (preselectedTable ? [preselectedTable] : []));
   // The picked table's area, as the admin configured it (display only — the
   // server sets the order's area from the table itself).
   const pickedTable = tables.find((x) => String(x.tableNo) === String(tableNo));
@@ -81,7 +83,12 @@ export default function NewOrderPage() {
   useEffect(() => {
     // The table list is only shown when no table was picked on the map.
     // Always fresh — occupancy decides the Indoor-AC guests rule.
-    getAllTables().then(({ data }) => setTables((data.tables || []).filter((t) => t.status !== "Inactive"))).catch(() => {});
+    // The table map passes the selected table snapshot, so opening an order
+    // from a table avoids a second table-list request. The backend remains
+    // authoritative for availability and pricing when the order is placed.
+    if (!preselectedTable || !preTable) {
+      getAllTables().then(({ data }) => setTables((data.tables || []).filter((t) => t.status !== "Inactive"))).catch(() => {});
+    }
     const showCats = (data) => setCategories(data || []);
     const showRate = (data) => { const r = (data?.data || data)?.acServiceChargePerGuest; if (r != null) setAcRate(Number(r)); };
     const keptCats = peekOrderData("categories");
@@ -91,7 +98,7 @@ export default function NewOrderPage() {
     if (keptProfile) showRate(keptProfile);
     fetchOrderData("profile").then(showRate).catch(() => {});
     loadFullMenu();
-  }, [locked, loadFullMenu]);
+  }, [locked, loadFullMenu, preTable, preselectedTable]);
 
   // Menu changed on the server (item switched off, sold out, price) → reload,
   // as tapping a category used to.
