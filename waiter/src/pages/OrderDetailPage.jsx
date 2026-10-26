@@ -630,14 +630,17 @@ export default function OrderDetailPage() {
             </div>
 
             <div style={{ padding: "12px 16px 0", flexShrink: 0 }}>
-              <input
-                value={menuSearch} onChange={(e) => setMenuSearch(e.target.value)}
-                placeholder={t("Search menu…")}
-                style={{
-                  width: "100%", padding: "11px 15px", borderRadius: 14, border: `1px solid ${GLASS_BORDER}`,
-                  fontSize: 14, boxSizing: "border-box", background: GLASS_BG, color: "#fff", fontFamily: "inherit",
-                }}
-              />
+              <div style={{ position: "relative" }}>
+                <input
+                  value={menuSearch} onChange={(e) => setMenuSearch(e.target.value)}
+                  placeholder={t("Search menu…")}
+                  style={{
+                    width: "100%", padding: "11px 40px 11px 15px", borderRadius: 14, border: `1px solid ${GLASS_BORDER}`,
+                    fontSize: 14, boxSizing: "border-box", background: GLASS_BG, color: "#fff", fontFamily: "inherit",
+                  }}
+                />
+                {menuSearch && <button type="button" onClick={() => setMenuSearch("")} aria-label="Clear search" title="Clear search" style={clearSearchButton}>×</button>}
+              </div>
             </div>
 
             {menuCategories.length > 0 && (
@@ -703,4 +706,10 @@ const Row = ({ label, value, bold }) => (
 const outlineBtn = {
   flex: 1, padding: 13, borderRadius: 14, cursor: "pointer", fontWeight: 700, fontSize: 12.5,
   border: `1.5px solid ${GLASS_BORDER}`, background: "rgba(255,255,255,0.05)", color: TEXT_MUTED,
+};
+
+const clearSearchButton = {
+  position: "absolute", top: "50%", right: 8, transform: "translateY(-50%)",
+  width: 26, height: 26, border: 0, borderRadius: "50%", background: "rgba(255,255,255,0.12)",
+  color: "rgba(255,255,255,0.85)", fontSize: 20, lineHeight: 1, cursor: "pointer", padding: 0,
 };

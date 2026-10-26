@@ -23,6 +23,12 @@ import { TABLE_AREA_LABEL, groupTablesByArea, tableLabel, isAcRoom } from "../ut
 // Subcategory chips: a touch smaller than the category row above them.
 const SUB_CHIP = { padding: "6px 13px", fontSize: 12 };
 
+const clearSearchButton = {
+  position: "absolute", top: "50%", right: 8, transform: "translateY(-50%)",
+  width: 26, height: 26, border: 0, borderRadius: "50%", background: "rgba(255,255,255,0.12)",
+  color: "rgba(255,255,255,0.85)", fontSize: 20, lineHeight: 1, cursor: "pointer", padding: 0,
+};
+
 export default function NewOrderPage() {
   const nav = useNavigate();
   const location = useLocation();
@@ -423,14 +429,17 @@ export default function NewOrderPage() {
 
       {/* Search */}
       <div style={{ padding: "6px 16px", display: "flex", gap: 8 }}>
-        <input
-          value={search} onChange={(e) => setSearch(e.target.value)}
-          placeholder={tr("Search menu…")}
-          style={{
-            flex: 1, minWidth: 0, padding: "11px 15px", borderRadius: 14, border: `1px solid ${GLASS_BORDER}`,
-            fontSize: 14, boxSizing: "border-box", background: GLASS_BG, color: "#fff",
-          }}
-        />
+        <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+          <input
+            value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder={tr("Search menu…")}
+            style={{
+              width: "100%", minWidth: 0, padding: "11px 40px 11px 15px", borderRadius: 14, border: `1px solid ${GLASS_BORDER}`,
+              fontSize: 14, boxSizing: "border-box", background: GLASS_BG, color: "#fff",
+            }}
+          />
+          {search && <button type="button" onClick={() => setSearch("")} aria-label="Clear search" title="Clear search" style={clearSearchButton}>×</button>}
+        </div>
         <VoiceOrder menu={voiceMenu} onAdd={addVoiceItems} onSearch={(q) => { setCategory(""); setSearch(q); }} />
       </div>
 
