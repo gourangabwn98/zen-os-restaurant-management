@@ -24,7 +24,18 @@ export const getLegacyManagerWorkspace = async (historyPage = 1) => {
 };
 
 export const saveLegacyManagerItem = async (form, editing) => {
-  const payload = { name: form.name.trim(), unit: form.unit, category: form.category || "", costPrice: Number(form.costPrice || 0), reorderLevel: Number(form.reorderLevel || 0), supplier: form.supplier || null };
+  const payload = {
+    name: form.name.trim(),
+    nameBn: form.nameBn?.trim() || "",
+    unit: form.unit,
+    category: form.category || "",
+    costPrice: Number(form.costPrice || 0),
+    reorderLevel: Number(form.reorderLevel || 0),
+    criticalLevel: form.criticalLevel === "" || form.criticalLevel == null ? null : Number(form.criticalLevel),
+    supplier: form.supplier || null,
+    isBatchTracked: Boolean(form.isBatchTracked),
+    notes: form.notes?.trim() || "",
+  };
   if (editing) return updateInventoryItem(editing._id, payload);
   const result = await createInventoryItem(payload);
   const item = result.data?.item;

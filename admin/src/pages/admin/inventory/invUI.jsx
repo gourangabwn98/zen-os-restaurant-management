@@ -167,6 +167,7 @@ export function TableFooter({ page, pages, total, perPage, onPage, unit = N_("ro
 
 // ── line icons (same stroke style as the sidebar / Dashboard icons) ─────────
 const ICONS = {
+  search: <><circle cx="10.8" cy="10.8" r="6.8" /><path d="m16 16 5 5" /></>,
   cart:  <><path d="M3 4h2l2 11h11l2-8H6" /><circle cx="9" cy="19" r="1.5" /><circle cx="17" cy="19" r="1.5" /></>,
   bin:   <><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /><path d="M10 11v6M14 11v6" /></>,
   box:   <><path d="M3 7l9-4 9 4v10l-9 4-9-4z" /><path d="M3 7l9 4 9-4M12 11v10" /></>,
