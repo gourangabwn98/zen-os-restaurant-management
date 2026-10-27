@@ -8,7 +8,7 @@
 // router.delete("/:id",protect,      deleteCategory);
 // export default router;
 import express from "express";
-import { getCategories, createCategory, updateCategory, deleteCategory, reorderCategories, mergeCategory } from "../controllers/categoryController.js";
+import { getCategories, createCategory, updateCategory, deleteCategory, reorderCategories, mergeCategory, setCategoryOrdering } from "../controllers/categoryController.js";
 import { protect, dbFromHeader } from "../middleware/authMiddleware.js";
 import { requireManagement } from "../middleware/rbac.js";
 import { upload } from "../middleware/uploadMiddleware.js"; // ← ADD
@@ -28,6 +28,7 @@ router.post("/",      protect, requireManagement, upload.single("image"), create
 // Before "/:id" so "order" is never read as an id.
 router.put("/order",  protect, requireManagement, reorderCategories);
 router.post("/:id/merge", protect, requireManagement, mergeCategory);
+router.patch("/:id/ordering", protect, requireManagement, setCategoryOrdering);
 router.put("/:id",    protect, requireManagement, upload.single("image"), updateCategory);
 router.delete("/:id", protect, requireManagement, deleteCategory);
 export default router;

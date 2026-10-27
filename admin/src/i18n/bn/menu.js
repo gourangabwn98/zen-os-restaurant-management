@@ -400,4 +400,10 @@ export default {
   "Renaming moves the category’s items with it. A category can only be deleted once it has no items.": "নাম বদলালে ক্যাটাগরির আইটেমগুলোও সাথে যাবে। কোনো আইটেম না থাকলে তবেই ক্যাটাগরি মোছা যাবে।",
   "Opening…": "খোলা হচ্ছে…",
   "Couldn't open this category": "এই ক্যাটাগরি খোলা গেল না",
+  "Turn ordering off": "অর্ডার নেওয়া বন্ধ করুন",
+  "Turn ordering on": "অর্ডার নেওয়া চালু করুন",
+  "Category ordering enabled": "ক্যাটাগরির অর্ডার চালু হয়েছে",
+  "Category ordering disabled": "ক্যাটাগরির অর্ডার বন্ধ হয়েছে",
+  "Could not update category ordering": "ক্যাটাগরির অর্ডার স্ট্যাটাস বদলানো যায়নি",
+  "Currently unavailable for ordering": "এখন অর্ডার নেওয়া হচ্ছে না",
 };

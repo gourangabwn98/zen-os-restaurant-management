@@ -16,6 +16,7 @@ export default function ItemDetailSheet({ item, onClose, onAdd }) {
   const [notes, setNotes] = useState("");
   const [addonIds, setAddonIds] = useState([]);
   const outOfStock = isOutOfStock(item);
+  const categoryOff = item.categoryOrderingEnabled === false;
   const hasOriginal = Number(item.originalPrice) > Number(item.price);
   const addons = itemAddons(item);
   const counts = countAddonIds(addonIds);
@@ -29,7 +30,7 @@ export default function ItemDetailSheet({ item, onClose, onAdd }) {
     <Sheet
       onClose={onClose}
       label={title}
-      footer={!outOfStock && (
+      footer={!outOfStock && !categoryOff && (
         <Button onClick={() => { onAdd(item, qty, notes.trim(), addonIds); onClose(); }}>
           Add {qty} to cart · ₹{unit * qty}
         </Button>
@@ -62,10 +63,12 @@ export default function ItemDetailSheet({ item, onClose, onAdd }) {
         </div>
         {outOfStock
           ? <span className="na">Sold out</span>
+          : categoryOff
+            ? <span className="na">Currently unavailable for ordering</span>
           : <QtyStepper qty={qty} size="lg" onDec={() => setQty((q) => Math.max(1, q - 1))} onInc={() => setQty((q) => q + 1)} />}
       </div>
 
-      {!outOfStock && addons.map((a) => (
+      {!outOfStock && !categoryOff && addons.map((a) => (
         <div key={a._id} className="addon-opt" style={{ flexWrap: "wrap" }}>
           <span className="grow">+ {a.name} <span className="muted small">(optional)</span></span>
           <span>₹{a.price}</span>
@@ -74,7 +77,7 @@ export default function ItemDetailSheet({ item, onClose, onAdd }) {
         </div>
       ))}
 
-      {!outOfStock && (
+      {!outOfStock && !categoryOff && (
         <label className="field" style={{ marginTop: 18 }}>
           <span>Special instructions (optional)</span>
           <textarea
