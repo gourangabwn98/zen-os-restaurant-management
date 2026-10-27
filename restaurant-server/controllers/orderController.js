@@ -13,6 +13,8 @@ import {
   emitNewOrderPendingConfirmation, emitOrderCancelled, emitOrderConfirmed,
   emitSentToKitchen, emitOrderModified, emitKitchenOrderModified,
 } from "../sockets/socket.js";
+import { normalizeDiningArea, DINING_AREA_AC_ROOM } from "../utils/diningArea.js";
+import { acRateFor, parseGuests } from "../services/acServiceCharge.js";
 
 
 // ── POST /api/orders ──────────────────────────────────────────────────────
@@ -75,20 +77,36 @@ export const placeOrder = async (req, res) => {
 // back as couponError next to the un-discounted bill — never a failed quote.
 export const quoteOrder = async (req, res) => {
   try {
-    const { items, couponCode } = req.body || {};
+    const { items, couponCode, orderType, tableNo, tableToken } = req.body || {};
+    const guests = parseGuests(req.body?.guests);
     if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ message: "Add at least one item" });
     const source = getSourceFromUser(req.user);
     const isStaffOrder = source === "ADMIN" || source === "WAITER";
     const restaurant = await req.models.RestaurantProfile.findOne();
+    let acServiceCharge = 0;
+    let acServiceRate = null;
+    // Customer QR quote: use the same table metadata and AC rate as placeOrderTx.
+    // Staff quotes retain their existing behavior and do not enter this path.
+    if (!isStaffOrder && orderType === "DINE_IN" && tableNo && tableToken) {
+      const table = await req.models.Table.findOne({ tableNo: Number(tableNo) }).select("tableNo status qrToken diningArea").lean();
+      const validQr = table?.status === "Active" && table.qrToken === tableToken;
+      const isAcRoom = validQr && normalizeDiningArea(table.diningArea || "", orderType) === DINING_AREA_AC_ROOM;
+      if (isAcRoom) {
+        acServiceRate = acRateFor(null, restaurant);
+        const open = req.models.TableSession && await req.models.TableSession.findOne({ tableNo: table.tableNo, status: "OPEN" }).select("_id").lean();
+        const counted = open && await req.models.Order.findOne({ tableSession: open._id, status: { $ne: "CANCELLED" }, guests: { $gt: 0 } }).select("_id").lean();
+        if (!counted && guests != null) acServiceCharge = Math.round(guests * acServiceRate * 100) / 100;
+      }
+    }
     const shape = (p) => ({
       items: p.dbItems.map((i) => ({ menuItemId: i.menuItem, name: i.name, price: i.price, qty: i.qty, lineTotal: i.price * i.qty })),
       subtotal: p.subtotal, discount: p.discount, tax: p.tax, serviceCharge: p.serviceCharge, total: p.total,
-      coupon: p.coupon, gstRate: restaurant?.gstRate || 0,
+      coupon: p.coupon, gstRate: restaurant?.gstRate || 0, acServiceCharge, acServiceRate,
     });
-    const base = await priceOrderDraft({ req, items, isStaffOrder, restaurant });
+    const base = await priceOrderDraft({ req, items, isStaffOrder, restaurant, acServiceCharge });
     if (!couponCode || isStaffOrder) return res.json({ ...shape(base), couponError: null });
     try {
-      const withCoupon = await priceOrderDraft({ req, items, couponCode, isStaffOrder, restaurant });
+      const withCoupon = await priceOrderDraft({ req, items, couponCode, isStaffOrder, restaurant, acServiceCharge });
       return res.json({ ...shape(withCoupon), couponError: null });
     } catch (err) {
       if (!err.statusCode || err.statusCode >= 500) throw err;

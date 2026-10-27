@@ -88,7 +88,7 @@ export function useTableSession() {
     verify(tableNo, token).then((r) => {
       if (!alive) return;
       if (r.valid) {
-        const next = { tableNo: r.data.tableNo, label: r.data.tableName || r.data.label || `Table ${r.data.tableNo}`, tableToken: token, verified: true };
+        const next = { tableNo: r.data.tableNo, label: r.data.tableName || r.data.label || `Table ${r.data.tableNo}`, diningArea: r.data.diningArea || "", tableToken: token, verified: true };
         writeCtx(next);
         setCtx(next);
       } else if (!r.offline) {
@@ -114,6 +114,7 @@ export function useTableSession() {
   return {
     tableNo:    ctx?.verified ? ctx.tableNo : null,
     tableLabel: ctx?.verified ? ctx.label   : null,
+    diningArea: ctx?.verified ? ctx.diningArea || "" : "",
     tableToken: ctx?.verified ? ctx.tableToken : null,
     isDineIn:   !!ctx?.verified,
     checking,

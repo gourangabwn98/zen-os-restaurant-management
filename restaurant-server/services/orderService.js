@@ -74,7 +74,7 @@ const buildActor = (user, fallbackName) => ({
  * validated against the server clock and the caller's login
  * (couponService.resolveCouponForOrder); totals are utils/pricing.computeTotals.
  */
-export const priceOrderDraft = async ({ req, items, couponCode, isStaffOrder, restaurant }) => {
+export const priceOrderDraft = async ({ req, items, couponCode, isStaffOrder, restaurant, acServiceCharge = 0 }) => {
   const { MenuItem, RestaurantProfile } = req.models;
   const profile = restaurant !== undefined ? restaurant : await RestaurantProfile.findOne();
   const scheduleCtx = await getScheduleContext({ models: req.models, profile });
@@ -86,7 +86,7 @@ export const priceOrderDraft = async ({ req, items, couponCode, isStaffOrder, re
     models: req.models, code: couponCode, subtotal: dbItems.reduce((s, i) => s + i.price * i.qty, 0),
     isRegistered: Boolean(req.user), // guests can't apply coupons; audience rule
   });
-  return { dbItems, coupon, ...computeTotals(dbItems, profile, coupon) };
+  return { dbItems, coupon, ...computeTotals(dbItems, profile, coupon, { acServiceCharge }) };
 };
 
 // ── Place order ────────────────────────────────────────────────────────────
@@ -230,6 +230,7 @@ export const placeOrderTx = async ({ req, body }) => {
   // ── Table / QR verification (soft — see schema comment) + session ─────────
   let tableSessionId = null;
   let tableVerified  = false;
+  let isCustomerQr   = false;
   let tableArea      = ""; // the table's configured area (Table Management)
   let tableDisplay   = null; // its number within that area ("Indoor-AC 1" → 1)
   let ac             = {};   // KH-11: Indoor-AC guest charge fields
@@ -253,6 +254,7 @@ export const placeOrderTx = async ({ req, body }) => {
         err.statusCode = 400;
         throw err;
       }
+      isCustomerQr = true;
     }
     // else: guest didn't send a token (today's customer app doesn't yet) —
     // order still proceeds, just tableVerified stays false for audit/reporting.
@@ -265,7 +267,7 @@ export const placeOrderTx = async ({ req, body }) => {
   // the table marked occupied.
   const isAcRoom = !!dineInTable && normalizeDiningArea(tableArea, normalizedType) === DINING_AREA_AC_ROOM;
   const countedAlready = async () => {
-    if (!(isAcRoom && isStaffOrder && !followUp)) return false;
+    if (!(isAcRoom && (isStaffOrder || isCustomerQr) && !followUp)) return false;
     const open = await TableSession.findOne({ tableNo: tableDoc.tableNo, status: "OPEN" });
     return !!open && !!(await Order.findOne({ tableSession: open._id, status: { $ne: "CANCELLED" }, guests: { $gt: 0 } }));
   };
@@ -288,7 +290,7 @@ export const placeOrderTx = async ({ req, body }) => {
   const { dbItems, coupon } = draft;
 
   if (dineInTable) {
-    ac = acChargeForNewOrder({ isAcRoom, isStaffOrder, isFollowUp: !!followUp, alreadyCounted, guests, profile: restaurant });
+    ac = acChargeForNewOrder({ isAcRoom, isStaffOrder, isCustomerQr, isFollowUp: !!followUp, alreadyCounted, guests, profile: restaurant });
 
     // A pay-first order must not occupy the table until it's paid — it joins
     // the table session in promotePaidOrder instead.

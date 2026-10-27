@@ -52,8 +52,8 @@ export const acRateFor = (order, profile) => {
  * `alreadyCounted`: the table's open session already has a counted order.
  * Throws 400 when the guest count is required but missing.
  */
-export const acChargeForNewOrder = ({ isAcRoom, isStaffOrder, isFollowUp, alreadyCounted, guests, profile }) => {
-  if (!isAcRoom || !isStaffOrder || isFollowUp || alreadyCounted) return {};
+export const acChargeForNewOrder = ({ isAcRoom, isStaffOrder, isCustomerQr = false, isFollowUp, alreadyCounted, guests, profile }) => {
+  if (!isAcRoom || (!isStaffOrder && !isCustomerQr) || isFollowUp || alreadyCounted) return {};
   if (guests == null) throw httpError("Enter the number of guests — required for an Indoor-AC table");
   const rate = acRateFor(null, profile);
   return { guests, acServiceRate: rate, acServiceCharge: round2(guests * rate) };

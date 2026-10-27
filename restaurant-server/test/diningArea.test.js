@@ -100,6 +100,15 @@ await test("KH-11: staff Indoor-AC order needs the guest count; guests × ₹20 
   assert.equal(garden.subtotal, 90);
 });
 
+await test("KH-11: verified customer QR Indoor-AC order includes the guest charge", async () => {
+  const { req } = makeReq({ _id: "c1", role: "customer" });
+  req.models.Table.findOne = async ({ tableNo }) => ({ _id: `t${tableNo}`, tableNo, status: "Active", qrToken: "qr-token", diningArea: "AC_ROOM" });
+  const { order } = await placeOrderTx({ req, body: body({ tableNo: 11, tableToken: "qr-token", guests: 3 }) });
+  assert.equal(order.guests, 3);
+  assert.equal(order.acServiceCharge, 60);
+  assert.equal(order.total, 90 + 60);
+});
+
 await test("KH-11: a second order while the AC table's guests are already counted is not charged again", async () => {
   const { req } = makeReq(WAITER);
   req.models.Order.findOne = async (q) => (q?.tableSession ? { _id: "earlier", guests: 4 } : null);

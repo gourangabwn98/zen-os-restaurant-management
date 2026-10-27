@@ -215,7 +215,7 @@ export const validateTableToken = async (req, res) => {
       return res.status(404).json({ valid: false, message: "Table not found or inactive" });
     }
     const valid = !!token && !!table.qrToken && token === table.qrToken;
-    res.json({ valid, tableNo: table.tableNo, label: table.label, tableName: tableDisplayName(table.diningArea || "", tableDisplayNo(table)) });
+    res.json({ valid, tableNo: table.tableNo, label: table.label, diningArea: table.diningArea || "", tableName: tableDisplayName(table.diningArea || "", tableDisplayNo(table)) });
   } catch (err) {
     res.status(500).json({ valid: false, message: err.message });
   }
