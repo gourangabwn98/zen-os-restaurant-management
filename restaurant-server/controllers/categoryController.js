@@ -11,6 +11,7 @@ import {
   reorderCategories as reorderCategoriesSvc,
   mergeCategory as mergeCategorySvc,
   CATEGORY_SORT,
+  setCategoryOrdering as setCategoryOrderingSvc,
 } from "../services/categoryService.js";
 import { emitMenuUpdated } from "../sockets/socket.js";
 
@@ -99,5 +100,15 @@ export const mergeCategory = async (req, res) => {
     const result = await mergeCategorySvc({ models: req.models, db: req.db, id: req.params.id, intoId: req.body?.into });
     emitMenuUpdated(req.tenantKey);
     res.json(result);
+  } catch (err) { fail(res, err); }
+};
+
+export const setCategoryOrdering = async (req, res) => {
+  try {
+    const category = await setCategoryOrderingSvc({
+      models: req.models, id: req.params.id, enabled: req.body?.enabled,
+    });
+    emitMenuUpdated(req.tenantKey);
+    res.json(category);
   } catch (err) { fail(res, err); }
 };

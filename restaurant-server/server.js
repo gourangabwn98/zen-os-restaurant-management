@@ -22,6 +22,8 @@ import { runPayFirstTick } from "./services/payFirstService.js";
 import { autoSendDueOrders } from "./services/orderService.js";
 import { ensureSmartCategories } from "./services/smartCategoryService.js";
 import { ensureMenuSections } from "./services/categoryService.js";
+import { categoryResetDay, isAfterCategoryResetBoundary, resetCategoryOrdering } from "./services/categoryOrderingService.js";
+import { resolveTimezone } from "./utils/menuSchedule.js";
 import { BRAND_NAME } from "./utils/brand.js";
 
 import authRoutes    from "./routes/authRoutes.js";
@@ -169,6 +171,7 @@ connectDB().then(() => {
       startScheduledOfferTick();
       startPayFirstTick();
       startAutoSendTick();
+      startCategoryOrderingResetTick();
     }
   });
 });
@@ -244,6 +247,30 @@ const startPayFirstTick = () => {
   };
   tick();
   setInterval(tick, PAY_FIRST_TICK_MS);
+};
+
+const CATEGORY_ORDERING_TICK_MS = 60 * 1000;
+let categoryOrderingResetDay = null;
+const startCategoryOrderingResetTick = () => {
+  const tick = async () => {
+    try {
+      const mongoUri = process.env.MONGO_URI;
+      const conn = await getDB(mongoUri);
+      const models = getModels(conn);
+      const profile = await models.RestaurantProfile.findOne().select("timezone").lean();
+      const timezone = resolveTimezone(profile?.timezone);
+      if (!isAfterCategoryResetBoundary(new Date(), timezone)) return;
+      const day = categoryResetDay(new Date(), timezone);
+      if (day === categoryOrderingResetDay) return;
+      const changed = await resetCategoryOrdering({ models });
+      categoryOrderingResetDay = day;
+      if (changed) console.log(`category ordering reset: ${changed} categor${changed === 1 ? "y" : "ies"}`);
+    } catch (err) {
+      console.error("category ordering reset tick failed:", err.message);
+    }
+  };
+  tick();
+  setInterval(tick, CATEGORY_ORDERING_TICK_MS);
 };
 
 // ── Employee duty: no automatic OFF ─────────────────────────────────────────

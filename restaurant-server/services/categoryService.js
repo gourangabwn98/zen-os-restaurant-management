@@ -27,6 +27,17 @@ import { MENU_SECTIONS } from "../utils/menuSections.js";
 const MAX_NAME = 40;
 export const CATEGORY_SORT = { sortOrder: 1, name: 1 };
 
+export const setCategoryOrdering = async ({ models, id, enabled }) => {
+  if (typeof enabled !== "boolean") throw httpError("enabled must be a boolean");
+  const category = await models.Category.findOneAndUpdate(
+    { _id: id },
+    { $set: { orderingEnabled: enabled } },
+    { returnDocument: "after" },
+  ).lean();
+  if (!category) throw httpError("Category not found", 404);
+  return category;
+};
+
 // An item is "in" a manual category by its `category` (the old extra
 // `categories` list was removed — scripts/importMenu.js unsets it).
 const inCategory = (name) => ({ category: name });

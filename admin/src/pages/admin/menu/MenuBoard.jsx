@@ -50,7 +50,7 @@ export function StatusStrip({ tiles, view, onView }) {
 // ── Category list (left rail; a chip row on phones): tap one → only its
 // items on the right. `list`: [{ name, label, count }] — the categories the
 // items really are in. `actions`: admin-only setup buttons under the title.
-export function CategoryList({ list, totalItems, selCat, onPick, actions = null }) {
+export function CategoryList({ list, totalItems, selCat, onPick, actions = null, onToggleOrdering = null, busyCategoryIds = new Set() }) {
   return (
     <div className="zc-card mb-catcol">
       <div className="zc-card-h" style={{ flexWrap: "wrap", gap: 8 }}>
@@ -69,6 +69,15 @@ export function CategoryList({ list, totalItems, selCat, onPick, actions = null 
               aria-pressed={selCat === c.name} title={c.label} onClick={() => onPick(c.name)}>
               <span className="nm">{c.label}</span>
               <span className="ct">{fmtNum(c.count)}</span>
+              {onToggleOrdering && c.categoryId && <span role="button" tabIndex={0}
+                className={`mb-order-toggle${c.orderingEnabled ? " on" : ""}`}
+                aria-label={c.orderingEnabled ? t("Turn ordering off") : t("Turn ordering on")}
+                aria-pressed={c.orderingEnabled} aria-disabled={busyCategoryIds.has(c.categoryId)}
+                style={busyCategoryIds.has(c.categoryId) ? { opacity: 0.55, pointerEvents: "none" } : undefined}
+                onClick={(e) => { e.stopPropagation(); onToggleOrdering(c); }}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onToggleOrdering(c); } }}>
+                {c.orderingEnabled ? "ON" : "OFF"}
+              </span>}
             </button>
           ))}
         </div>

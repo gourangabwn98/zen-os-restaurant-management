@@ -76,10 +76,10 @@ const buildActor = (user, fallbackName) => ({
  * (couponService.resolveCouponForOrder); totals are utils/pricing.computeTotals.
  */
 export const priceOrderDraft = async ({ req, items, couponCode, isStaffOrder, restaurant, acServiceCharge = 0 }) => {
-  const { MenuItem, RestaurantProfile } = req.models;
+  const { MenuItem, Category, RestaurantProfile } = req.models;
   const profile = restaurant !== undefined ? restaurant : await RestaurantProfile.findOne();
   const scheduleCtx = await getScheduleContext({ models: req.models, profile });
-  const dbItems = await priceItems(items, MenuItem, scheduleCtx);
+  const dbItems = await priceItems(items, MenuItem, scheduleCtx, { Category });
   // Coupons are a customer checkout feature: validated against the
   // server-priced item subtotal and the server clock (couponService); the
   // client only sends the code. Staff orders don't take one.
@@ -616,7 +616,7 @@ const couponDroppedNote = (order, discount) => (order.coupon && order.discount >
  * Returns { order, kotChange: { job, created }, inventoryAlerts }.
  */
 const modifySentOrderTx = async ({ req, order, items, revision }) => {
-  const { Order, MenuItem, RestaurantProfile, KOTChangeJob } = req.models;
+  const { Order, MenuItem, Category, RestaurantProfile, KOTChangeJob } = req.models;
   const restaurant = await RestaurantProfile.findOne();
   const scheduleCtx = await getScheduleContext({ models: req.models, profile: restaurant });
 
@@ -628,7 +628,8 @@ const modifySentOrderTx = async ({ req, order, items, revision }) => {
   if (effectiveBillStatus(order) === "SETTLED") throw editError("This bill is already settled — place a new order instead", 409);
 
   const { dbItems, subtotal, tax, serviceCharge, discount, total } = await priceOrder({
-    items, MenuItem, restaurantProfile: restaurant, scheduleCtx, coupon: order.coupon, acServiceCharge: order.acServiceCharge, keepIds,
+    items, MenuItem, Category, restaurantProfile: restaurant, scheduleCtx, coupon: order.coupon, acServiceCharge: order.acServiceCharge, keepIds,
+    existingQuantities: had,
   });
 
   const actor = buildActor(req.user);
@@ -686,7 +687,7 @@ const modifySentOrderTx = async ({ req, order, items, revision }) => {
  * racing the send to the kitchen (the write is conditional on the status).
  */
 export const modifyOrderItemsTx = async ({ req, orderId, items, revision }) => {
-  const { Order, MenuItem, RestaurantProfile } = req.models;
+  const { Order, MenuItem, Category, RestaurantProfile } = req.models;
   const order = await Order.findById(orderId);
   if (!order) {
     const err = new Error("Order not found");
@@ -753,8 +754,9 @@ export const modifyOrderItemsTx = async ({ req, orderId, items, revision }) => {
 
   const restaurant = await RestaurantProfile.findOne();
   const scheduleCtx = await getScheduleContext({ models: req.models, profile: restaurant });
+  const existingQuantities = order.items.reduce((m, i) => m.set(String(i.menuItem), (m.get(String(i.menuItem)) || 0) + Number(i.qty || 0)), new Map());
   const { dbItems, subtotal, tax, serviceCharge, discount, total } =
-    await priceOrder({ items, MenuItem, restaurantProfile: restaurant, scheduleCtx, coupon: order.coupon, acServiceCharge: order.acServiceCharge }); // KH-11: keep it
+    await priceOrder({ items, MenuItem, Category, restaurantProfile: restaurant, scheduleCtx, coupon: order.coupon, acServiceCharge: order.acServiceCharge, existingQuantities }); // KH-11: keep it
   await assertStockForItems({ models: req.models, items: dbItems });
 
   const actor = buildActor(req.user, order.guestName);

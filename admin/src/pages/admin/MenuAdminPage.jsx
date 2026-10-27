@@ -24,7 +24,7 @@ import toast from "react-hot-toast";
 import {
   getMenu, getCategories, createMenuItem, updateMenuItem, deleteMenuItem,
   createCategory, updateCategory, deleteCategory,
-  getMenuTimes, setMenuAvailability, reorderCategories, mergeCategory,
+  getMenuTimes, setMenuAvailability, reorderCategories, mergeCategory, setCategoryOrdering,
 } from "../../services/menuService.js";
 import { getRestaurantProfile } from "../../services/adminService.js";
 import { useAuth } from "../../hooks/useAuth.js";
@@ -895,6 +895,7 @@ export default function MenuAdminPage() {
   const [showImport, setShowImport] = useState(false);
   const [selItems, setSelItems] = useState(() => new Set()); // list selection — bulk bar + modals
   const [busyIds, setBusyIds] = useState(() => new Set());
+  const [orderingBusy, setOrderingBusy] = useState(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
 
   const loadCats = useCallback(
@@ -986,8 +987,11 @@ export default function MenuAdminPage() {
   const itemCats = useMemo(() => {
     const n = new Map();
     for (const i of items) if (i.category) n.set(i.category, (n.get(i.category) || 0) + 1);
-    const order = [...cats.map((c) => c.name).filter((x) => n.has(x)), ...[...n.keys()].filter((x) => !catByName.has(x)).sort()];
-    return order.map((name) => ({ name, count: n.get(name), label: catByName.has(name) ? localName(catByName.get(name)) : name }));
+    const order = [...cats.map((c) => c.name), ...[...n.keys()].filter((x) => !catByName.has(x)).sort()];
+    return order.map((name) => ({ name, count: n.get(name), label: catByName.has(name) ? localName(catByName.get(name)) : name,
+      orderingEnabled: catByName.has(name) ? catByName.get(name).orderingEnabled !== false : true,
+      categoryId: catByName.get(name)?._id || null,
+    }));
   }, [items, cats, catByName]);
 
   const q = search.trim().toLowerCase();
@@ -1243,7 +1247,22 @@ export default function MenuAdminPage() {
         {simple && (loading ? (
           <div className="zc-card"><div className="zc-card-b"><Loader rows={5} /></div></div>
         ) : !error && (
-          <CategoryList list={itemCats} totalItems={items.length} selCat={selCat} onPick={setSelCat} />
+          <CategoryList list={itemCats} totalItems={items.length} selCat={selCat} onPick={setSelCat} busyCategoryIds={orderingBusy}
+            onToggleOrdering={async (category) => {
+              if (!category.categoryId) return;
+              if (orderingBusy.has(category.categoryId)) return;
+              const enabled = !category.orderingEnabled;
+              setOrderingBusy((prev) => new Set(prev).add(category.categoryId));
+              try {
+                const r = await setCategoryOrdering(category.categoryId, enabled);
+                setCats((prev) => prev.map((c) => c._id === category.categoryId ? { ...c, ...r.data } : c));
+                toast.success(enabled ? t("Category ordering enabled") : t("Category ordering disabled"));
+              } catch (e) {
+                toast.error(e?.response?.data?.message || t("Could not update category ordering"));
+              } finally {
+                setOrderingBusy((prev) => { const next = new Set(prev); next.delete(category.categoryId); return next; });
+              }
+            }} />
         ))}
         {!simple && <div className="mb-left">
           {loading ? (

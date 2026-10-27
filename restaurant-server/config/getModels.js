@@ -219,6 +219,9 @@ const categorySchema = new mongoose.Schema({
   // (menu / order screens). Admin switch; off by default, so nothing changes
   // until it is turned on (e.g. for Thali). Display only — never affects price.
   notShareable: { type: Boolean, default: false },
+  // Ordering availability is independent from schedule visibility. OFF
+  // categories remain visible, but their items cannot be newly ordered.
+  orderingEnabled: { type: Boolean, default: true },
 }, { timestamps: true });
 categorySchema.index({ smartKey: 1 }, { unique: true, partialFilterExpression: { smartKey: { $type: "string" } } });
 

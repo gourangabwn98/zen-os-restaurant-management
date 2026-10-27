@@ -133,10 +133,11 @@ export const getMenu = async (req, res) => {
     // query, one after another (≈5 DB round trips in a row → ≈2). Same
     // results: stock status is computed for every active recipe and looked up
     // per listed item. One Promise.all, so any failure is still caught below.
-    const [items, stockStatus, flaggedCats] = await Promise.all([
+    const [items, stockStatus, flaggedCats, orderingCats] = await Promise.all([
       listMenuItems(),
       computeStockStatusForActiveRecipes({ models: req.models }),
       Category.find({ notShareable: true }).select("name").lean(),
+      Category.find().select("name orderingEnabled").lean(),
     ]);
     if (!items) return res.json([]); // the asked category is scheduled out
 
@@ -149,11 +150,13 @@ export const getMenu = async (req, res) => {
     // Added after every visibility rule, so it never changes which items are
     // listed. Field present only on flagged items.
     const flagged = new Set(flaggedCats.map((c) => c.name));
+    const orderingByName = new Map(orderingCats.map((c) => [c.name, c.orderingEnabled !== false]));
     const withStock = items.map((i) => {
       const s = stockStatus.get(String(i._id));
       const notShareableCategory = notShareableCategoryOf(i, flagged);
       return {
         ...i, stockAvailable: s ? s.inStock : true, stockTracked: !!s?.tracked,
+        categoryOrderingEnabled: orderingByName.get(i.category) !== false,
         ...(notShareableCategory && { notShareableCategory }),
       };
     });
@@ -378,6 +381,7 @@ export const getCategoriesWithImage = async (req, res) => {
       return {
         _id: c._id, category: c.name, nameBn: c.nameBn || "", categoryImage: c.image || "", categoryImageUrl: url,
         kind: c.kind || "MANUAL", smartKey: c.smartKey || null, icon: categoryIcon(c), sortOrder: c.sortOrder ?? 0,
+        orderingEnabled: c.orderingEnabled !== false,
       };
     }));
     res.json(result.filter(Boolean));

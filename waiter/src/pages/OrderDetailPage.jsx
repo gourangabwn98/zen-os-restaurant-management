@@ -623,15 +623,16 @@ export default function OrderDetailPage() {
                     {catItems.map((it) => {
                       const qty = getAddQty(it._id);
                       const outOfStock = it.stockTracked && !it.stockAvailable;
+                      const categoryOff = it.categoryOrderingEnabled === false;
                       return (
-                        <GlassCard key={it._id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", opacity: outOfStock ? 0.5 : 1 }}>
+                        <GlassCard key={it._id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", opacity: outOfStock || categoryOff ? 0.5 : 1 }}>
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontWeight: 700, fontSize: 13.5, color: "#fff" }}>{nameWithSize(localName(it), it.size)}</div>
                             <NotShareableNote item={it} />
-                            <div style={{ fontSize: 12, color: TEXT_FAINT, marginTop: 2 }}>₹{it.price}{outOfStock ? ` · ${t("Out of stock")}` : ""}</div>
+                            <div style={{ fontSize: 12, color: TEXT_FAINT, marginTop: 2 }}>₹{it.price}{categoryOff ? ` · ${t("Currently unavailable for ordering")}` : outOfStock ? ` · ${t("Out of stock")}` : ""}</div>
                             <AddonHint item={it} />
                           </div>
-                          {!outOfStock && (
+                          {!outOfStock && !categoryOff && (
                             qty > 0
                               ? <QtyStepper qty={qty} size="sm" onDec={() => adjustAddQty(it, -1)} onInc={() => adjustAddQty(it, 1)} />
                               : <AddButton size="sm" onClick={() => adjustAddQty(it, 1)} />

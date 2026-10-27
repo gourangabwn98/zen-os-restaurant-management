@@ -105,6 +105,8 @@ if (typeof document !== "undefined" && !document.getElementById("menu-styles")) 
     .mb-catbtn.on { border-color: var(--violet-line); background: var(--violet-weak); color: var(--text-1); }
     .mb-catbtn .nm { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .mb-catbtn .ct { flex: none; font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+    .mb-order-toggle { flex: none; border: 1px solid var(--edge); border-radius: 999px; padding: 3px 7px; font-size: 9px; font-weight: 800; line-height: 1; color: var(--text-3); background: var(--card-2); cursor: pointer; }
+    .mb-order-toggle.on { color: var(--ready-ink, var(--accent-ink)); border-color: var(--ready-line, var(--edge)); background: var(--ready-fill, var(--card-2)); }
     .mb-catbtn.on .ct { color: var(--accent-ink); font-weight: 700; }
     .mb-catbtn.all { margin-bottom: 4px; }
     .mb-catacts { display: flex; gap: 6px; flex-wrap: wrap; }
