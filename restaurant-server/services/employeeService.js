@@ -12,12 +12,12 @@ import { zonedInstant } from "./offerStatsService.js";
 
 // "staff" = EMP-03's "Other": a custom job (jobTitle) with no app login.
 // "manager" = admin-app login limited to some pages (utils/roles.js).
-export const EMPLOYEE_ROLES = ["manager", "waiter", "chef", "staff"]; // extensible — add new categories here only
+export const EMPLOYEE_ROLES = ["manager", "inventory_manager", "waiter", "chef", "staff"]; // extensible — add new categories here only
 
 /** The employee categories this person may see and manage: everything for
  *  an admin; a manager never another manager (middleware/managerScope.js). */
 export const employeeRolesFor = (user) =>
-  (!user?.isAdmin && user?.role === "manager" ? EMPLOYEE_ROLES.filter((r) => r !== "manager") : EMPLOYEE_ROLES);
+  (!user?.isAdmin && user?.role === "manager" ? EMPLOYEE_ROLES.filter((r) => !["manager", "inventory_manager"].includes(r)) : EMPLOYEE_ROLES);
 
 /** EMP-03: a custom role name — trimmed, single-spaced, Title-ish as typed. */
 export const cleanJobTitle = (v) => String(v ?? "").trim().replace(/\s+/g, " ").slice(0, 40);
