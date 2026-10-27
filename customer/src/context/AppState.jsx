@@ -5,6 +5,7 @@ import { useTableSession } from "../hooks/useTableSession.js";
 import { useFavorites } from "../hooks/useFavorites.js";
 import { useMenuFilters } from "../hooks/useMenuFilters.js";
 import { useOrderEdit } from "../hooks/useOrderEdit.js";
+import { useLocationGate } from "../hooks/useLocationGate.js";
 
 const AppCtx = createContext(null);
 
@@ -15,12 +16,13 @@ export function AppStateProvider({ children }) {
   const favorites = useFavorites();
   const filters   = useMenuFilters();
   const orderEdit = useOrderEdit();
+  const locationGate = useLocationGate();
   // ORD-02: while an order is being changed, every screen that adds to "the
   // cart" adds to the order's draft instead — the shopping cart is untouched.
   const cart = orderEdit.active ? orderEdit.draft : shoppingCart;
 
   return (
-    <AppCtx.Provider value={{ cart, shoppingCart, orderEdit, auth, table, favorites, filters }}>
+    <AppCtx.Provider value={{ cart, shoppingCart, orderEdit, auth, table, favorites, filters, locationGate }}>
       {children}
     </AppCtx.Provider>
   );

@@ -66,7 +66,7 @@ export const placeOrder = async (req, res) => {
       err.code === 11000
         ? "Could not place the order due to a conflict. Please try again."
         : err.message || "Could not place the order.";
-    res.status(status).json({ message: clientMessage, ...(typeof err.code === "string" && { code: err.code }) });
+    res.status(status).json({ message: clientMessage, ...(typeof err.code === "string" && { code: err.code }), ...(err.details && { details: err.details }) });
   }
 };
 

@@ -23,6 +23,7 @@ import {
 import { isPhonePeConfigured } from "./paymentService.js";
 import { isStaffRole, isManagementRole } from "../utils/roles.js";
 import { assertServiceEnabled } from "../utils/serviceToggles.js";
+import { assertWithinDiningRadius } from "../utils/diningRadius.js";
 import { resolveCustomerPaymentMethod, isPayFirst, PAYMENT_METHODS, PAY_FIRST_WINDOW_MS } from "../utils/paymentMode.js";
 
 // ── Identity helpers ──────────────────────────────────────────────────────
@@ -207,6 +208,9 @@ export const placeOrderTx = async ({ req, body }) => {
 
   // SET-01: a customer can't order a service the restaurant switched off.
   if (!isStaffOrder) assertServiceEnabled(restaurant, normalizedType);
+  // Customer dine-in orders are location-gated from the authoritative profile.
+  // Staff orders intentionally retain their existing workflow.
+  if (!isStaffOrder && normalizedType === "DINE_IN") assertWithinDiningRadius({ profile: restaurant, location: body.location });
 
   // ── Payment method (utils/paymentMode.js) ─────────────────────────────────
   // Customers are held to the restaurant's payment mode; a pay-first order
@@ -692,6 +696,10 @@ export const modifyOrderItemsTx = async ({ req, orderId, items, revision }) => {
 
   const role = getRoleFromUser(req.user);
   const isStaff = isStaffRole(role);
+  if (!isStaff && order.orderType === "DINE_IN") {
+    const restaurant = await RestaurantProfile.findOne();
+    assertWithinDiningRadius({ profile: restaurant, location: req.body?.location });
+  }
   if (role === "chef") {
     const err = new Error("Chef accounts cannot edit orders");
     err.statusCode = 403;
