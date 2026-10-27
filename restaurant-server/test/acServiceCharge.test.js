@@ -142,6 +142,7 @@ await test("acChargeForNewOrder: guests required on a new staff Indoor-AC order,
   assert.deepEqual(acChargeForNewOrder({ ...base, isFollowUp: true, guests: null }), {}, "follow-up: not charged again");
   assert.deepEqual(acChargeForNewOrder({ ...base, alreadyCounted: true, guests: 5 }), {}, "table already counted: no second charge");
   assert.deepEqual(acChargeForNewOrder({ ...base, isStaffOrder: false, guests: null }), {}, "customer QR order: not asked");
+  assert.deepEqual(acChargeForNewOrder({ ...base, isStaffOrder: false, isCustomerQr: true, guests: 3 }), { guests: 3, acServiceRate: 20, acServiceCharge: 60 }, "verified customer QR order is charged");
 });
 
 await test("computeTotals: AC charge is inside the subtotal; coupon + GST on items only", () => {

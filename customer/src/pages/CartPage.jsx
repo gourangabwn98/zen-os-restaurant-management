@@ -36,12 +36,14 @@ function ShoppingCart() {
   // The server refuses a switched-off one too; this just never offers it.
   const [services, setServices] = useState({ dineIn: true, takeAway: true, delivery: false });
   const [paymentMethod, setPaymentMethod] = useState("Cash");
+  const [guests, setGuests] = useState("");
   const [placing, setPlacing] = useState(false);
   const [idemKey] = useState(newIdempotencyKey);
   const [phonePeEnabled, setPhonePeEnabled] = useState(false);
   // Admin → Profile → Payment (server: utils/paymentMode.js). The server
   // enforces it too; this only decides which options to offer.
   const [payMode, setPayMode] = useState("BOTH");
+  const [acRate, setAcRate] = useState(20);
   // Applied coupon (public fields from GET /api/coupons). Only its CODE is
   // sent with the order — the server re-checks it and computes the discount.
   const [coupon, setCoupon] = useState(null);
@@ -55,6 +57,7 @@ function ShoppingCart() {
         setServices({ dineIn: true, takeAway: true, delivery: false, ...(d.services || {}) });
         const mode = d.effectivePaymentMode || "BOTH";
         setPayMode(mode);
+        if (d.acServiceChargePerGuest != null) setAcRate(Number(d.acServiceChargePerGuest));
         if (mode === "ONLINE") setPaymentMethod("Online");
         if (mode === "CASH") setPaymentMethod("Cash");
       })
@@ -71,6 +74,8 @@ function ShoppingCart() {
   // SET-01: the order types this customer can actually use right now.
   const canDineIn = table.isDineIn && services.dineIn !== false;
   const canTakeaway = services.takeAway !== false;
+  const isAcTable = orderType === "DINE_IN" && canDineIn && table.diningArea === "AC_ROOM";
+  const guestsN = /^\d+$/.test(guests) ? Number(guests) : 0;
   useEffect(() => {
     if (canDineIn) setOrderType("DINE_IN");
     else if (canTakeaway) setOrderType("TAKEAWAY");
@@ -82,13 +87,18 @@ function ShoppingCart() {
   // the items, the coupon or the login change; nothing is computed here.
   const [quote, setQuote] = useState(null);
   const [quoteState, setQuoteState] = useState("loading"); // loading | ok | error
-  const quoteKey = JSON.stringify([cart.cart.map((c) => [c.item._id, c.qty, c.addonIds || []]), coupon?.code || "", auth.isLoggedIn]);
+  const quoteKey = JSON.stringify([cart.cart.map((c) => [c.item._id, c.qty, c.addonIds || []]), coupon?.code || "", auth.isLoggedIn, orderType, table.tableNo, table.tableToken, isAcTable ? guests : ""]);
   useEffect(() => {
     if (cart.itemCount === 0) return undefined;
     let live = true;
     setQuoteState("loading");
     const h = setTimeout(() => {
-      quoteOrder({ items: cart.cart.map(toOrderLine), couponCode: coupon?.code || undefined })
+      quoteOrder({
+        items: cart.cart.map(toOrderLine), couponCode: coupon?.code || undefined,
+        orderType, tableNo: orderType === "DINE_IN" ? table.tableNo : undefined,
+        tableToken: orderType === "DINE_IN" ? table.tableToken : undefined,
+        guests: isAcTable && guestsN > 0 ? guestsN : undefined,
+      })
         .then(({ data }) => { if (live) { setQuote(data); setQuoteState("ok"); } })
         .catch(() => { if (live) setQuoteState("error"); });
     }, 250);
@@ -135,8 +145,9 @@ function ShoppingCart() {
     if (table.checking) return false; // a scanned QR is still being verified
     if (orderType === "DINE_IN" && !canDineIn) return false;
     if (orderType === "TAKEAWAY" && !canTakeaway) return false;
+    if (isAcTable && !(guestsN >= 1 && guestsN <= 100)) return false;
     return true;
-  }, [cart.itemCount, table.checking, orderType, canDineIn, canTakeaway]);
+  }, [cart.itemCount, table.checking, orderType, canDineIn, canTakeaway, isAcTable, guestsN]);
 
   const handlePlace = async () => {
     // Login is required to order (the server refuses guest orders too). The
@@ -150,6 +161,7 @@ function ShoppingCart() {
         orderType,
         tableNo: orderType === "DINE_IN" ? table.tableNo : undefined,
         tableToken: orderType === "DINE_IN" ? table.tableToken : undefined,
+        guests: isAcTable ? guestsN : undefined,
         // A logged-in customer's profile; a guest sends nothing.
         customerName: auth.user?.name || undefined,
         customerPhone: auth.user?.phone || undefined,
@@ -248,6 +260,24 @@ function ShoppingCart() {
         <Link to="/menu" className="btn btn-ghost" style={{ margin: "12px 0", minHeight: 46 }}>+ Add more items</Link>
       </div>
 
+      {isAcTable && (
+        <div className="card" style={{ marginTop: 12 }}>
+          <div className="card-title">কত আছে <span className="muted small">/ Number of guests</span></div>
+          <p className="muted small" style={{ margin: "4px 0 10px" }}>
+            Indoor-AC table · ₹{quote?.acServiceRate ?? acRate} per guest
+          </p>
+          <input
+            type="number" min="1" max="100" step="1" inputMode="numeric"
+            value={guests} aria-label="কত আছে / Number of guests"
+            onChange={(e) => setGuests(e.target.value.replace(/\D/g, "").slice(0, 3))}
+            placeholder="Number of guests"
+          />
+          {guests !== "" && !(guestsN >= 1 && guestsN <= 100) && (
+            <p className="small danger" style={{ margin: "6px 0 0" }}>Enter a whole number from 1 to 100.</p>
+          )}
+        </div>
+      )}
+
       {/* ── Login required to place an order (your cart is kept) ── */}
       {!auth.isLoggedIn && (
         <div className="card login-nudge">
@@ -303,6 +333,7 @@ function ShoppingCart() {
             {saving > 0 && <div className="row"><span className="muted">Coupon ({coupon.code})</span><span className="ok">−{rupees(saving)}</span></div>}
             {quote.tax > 0 && <div className="row"><span className="muted">GST{quote.gstRate ? ` (${quote.gstRate}%)` : ""}</span><span>{rupees(quote.tax)}</span></div>}
             {quote.serviceCharge > 0 && <div className="row"><span className="muted">Service charge</span><span>{rupees(quote.serviceCharge)}</span></div>}
+            {quote.acServiceCharge > 0 && <div className="row"><span className="muted">AC charge ({guestsN} guests × ₹{quote.acServiceRate ?? acRate})</span><span>{rupees(quote.acServiceCharge)}</span></div>}
             <div className={`row total${quoteState === "loading" ? " stale" : ""}`}><span>Total payable</span><span>{rupees(quote.total)}</span></div>
           </>
         )}
