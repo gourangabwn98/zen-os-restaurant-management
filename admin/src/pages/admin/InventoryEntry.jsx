@@ -8,6 +8,6 @@ export default function InventoryEntry(props) {
   const { user } = useAuth();
   const enabled = useInventoryV3Flag();
   const manager = user && !user.isAdmin && user.role === "inventory_manager";
-  if (manager) return <Suspense fallback={<p role="status">Loading inventory…</p>}><InventoryManagerPage {...props} /></Suspense>;
+  if (manager) return <Suspense fallback={<p role="status">Loading inventory…</p>}><InventoryManagerPage {...props} v3Enabled={enabled} /></Suspense>;
   return enabled ? <Suspense fallback={<p role="status">Loading inventory…</p>}><InventoryV3Page {...props} /></Suspense> : <InventoryPage {...props} />;
 }
