@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import PageHeader from "../shared/PageHeader.jsx";
 import { v3Get, v3Write, requestKey, moneyV3 as money } from "../../../services/inventoryV3Service.js";
+import { getLegacyManagerWorkspace, saveLegacyManagerItem, adjustLegacyManagerStock } from "../../../services/inventoryManagerService.js";
 import { fmtDateTime, fmtNum, t } from "../../../i18n/core.js";
 import "./inventory-manager.css";
 
@@ -18,7 +19,7 @@ function Sheet({ title, children, onClose }) {
   </div>;
 }
 
-export default function InventoryManagerPage() {
+export default function InventoryManagerPage({ v3Enabled = false }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -31,10 +32,10 @@ export default function InventoryManagerPage() {
 
   const load = useCallback(async (background = false) => {
     if (!background) setLoading(true);
-    try { setData(await v3Get("mobile", { historyPage, historyLimit: 25 })); setError(""); }
+    try { setData(v3Enabled ? await v3Get("mobile", { historyPage, historyLimit: 25 }) : await getLegacyManagerWorkspace(historyPage)); setError(""); }
     catch (e) { setError(message(e)); }
     finally { if (!background) setLoading(false); }
-  }, [historyPage]);
+  }, [historyPage, v3Enabled]);
   useEffect(() => { load(); }, [load]);
 
   const items = useMemo(() => (data?.items || []).filter((item) => {
@@ -50,7 +51,8 @@ export default function InventoryManagerPage() {
     setBusy(true);
     try {
       const path = editing ? `items/${editing._id}` : "items";
-      await v3Write(path, { ...form, name: form.name.trim(), requestKey: requestKey(), ...(editing ? { updatedAt: editing.updatedAt } : {}) }, editing ? "patch" : "post");
+      if (v3Enabled) await v3Write(path, { ...form, name: form.name.trim(), requestKey: requestKey(), ...(editing ? { updatedAt: editing.updatedAt } : {}) }, editing ? "patch" : "post");
+      else await saveLegacyManagerItem(form, editing);
       setSheet(null); await load(true); toast.success(t("Inventory item saved"));
     } catch (e) { toast.error(message(e)); }
     finally { setBusy(false); }
@@ -59,7 +61,8 @@ export default function InventoryManagerPage() {
     if (!(Number(quantity) > 0) || !reason.trim()) return toast.error(t("Enter a positive quantity and reason"));
     setBusy(true);
     try {
-      await v3Write("stock-adjustments", { inventoryItem: item._id, direction, quantity: Number(quantity), reason: reason.trim(), requestKey: requestKey() });
+      if (v3Enabled) await v3Write("stock-adjustments", { inventoryItem: item._id, direction, quantity: Number(quantity), reason: reason.trim(), requestKey: requestKey() });
+      else await adjustLegacyManagerStock(item, direction, Number(quantity), reason.trim());
       setSheet(null); await load(true); toast.success(t("Stock updated"));
     } catch (e) { toast.error(message(e)); }
     finally { setBusy(false); }
