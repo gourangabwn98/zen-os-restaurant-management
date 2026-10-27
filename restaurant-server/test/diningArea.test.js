@@ -27,12 +27,12 @@ const makeReq = (user) => {
   const created = [];
   const models = {
     MenuItem: { findById: async (id) => MENU.find((m) => m._id === id) || null },
-    RestaurantProfile: { findOne: async () => ({ gstRate: 0, serviceCharge: 0, editWindowMinutes: 3 }) },
+    RestaurantProfile: { findOne: async () => ({ gstRate: 0, serviceCharge: 0, editWindowMinutes: 3, latitude: 0, longitude: 0, dineInRange: 1000 }) },
     Category: { find: () => ({ select: () => ({ lean: async () => [] }) }) },
     Recipe: { find: async () => [] },
     InventoryItem: {},
     Table: {
-      findOne: async ({ tableNo }) => ({ _id: `t${tableNo}`, tableNo, status: "Active", ...(AREA_OF[tableNo] && { diningArea: AREA_OF[tableNo] }) }),
+      findOne: async ({ tableNo }) => ({ _id: `t${tableNo}`, tableNo, status: "Active", qrToken: "qr-token", ...(AREA_OF[tableNo] && { diningArea: AREA_OF[tableNo] }) }),
       updateOne: async () => ({}),
     },
     TableSession: { findOne: async () => ({ _id: "ts1" }), findByIdAndUpdate: async () => ({}), updateOne: async () => ({}) },
@@ -77,7 +77,13 @@ await test("order on an AC Room table is AC Room — from the TABLE, whatever th
 
 await test("a customer QR order at an AC Room table is AC Room too (area belongs to the table)", async () => {
   const { req } = makeReq({ _id: "cust1", role: "customer", name: "Priya" }); // logged-in customer
-  assert.equal((await placeOrderTx({ req, body: body({ tableNo: 11 }) })).order.diningArea, "AC_ROOM");
+  assert.equal((await placeOrderTx({ req, body: body({ tableNo: 11, tableToken: "qr-token", guests: 2, location: { latitude: 0, longitude: 0 } }) })).order.diningArea, "AC_ROOM");
+});
+
+await test("customer dine-in orders reject missing and out-of-range device location", async () => {
+  const { req } = makeReq({ _id: "cust2", role: "customer" });
+  await assert.rejects(placeOrderTx({ req, body: body({ tableNo: 3, tableToken: "qr-token", location: { latitude: 0.1, longitude: 0 } }) }), (e) => e.code === "OUTSIDE_DINING_RADIUS" && e.statusCode === 403);
+  await assert.rejects(placeOrderTx({ req, body: body({ tableNo: 3, tableToken: "qr-token" }) }), (e) => e.code === "LOCATION_REQUIRED" && e.statusCode === 400);
 });
 
 await test("takeaway never gets an area; dine-in still needs a table", async () => {
@@ -103,7 +109,7 @@ await test("KH-11: staff Indoor-AC order needs the guest count; guests × ₹20 
 await test("KH-11: verified customer QR Indoor-AC order includes the guest charge", async () => {
   const { req } = makeReq({ _id: "c1", role: "customer" });
   req.models.Table.findOne = async ({ tableNo }) => ({ _id: `t${tableNo}`, tableNo, status: "Active", qrToken: "qr-token", diningArea: "AC_ROOM" });
-  const { order } = await placeOrderTx({ req, body: body({ tableNo: 11, tableToken: "qr-token", guests: 3 }) });
+  const { order } = await placeOrderTx({ req, body: body({ tableNo: 11, tableToken: "qr-token", guests: 3, location: { latitude: 0, longitude: 0 } }) });
   assert.equal(order.guests, 3);
   assert.equal(order.acServiceCharge, 60);
   assert.equal(order.total, 90 + 60);

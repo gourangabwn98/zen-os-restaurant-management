@@ -13,7 +13,7 @@ import Icon from "./ui/Icon.jsx";
  * re-prices everything (taxes included) and refuses once the KOT has fired. */
 export default function OrderEditReview() {
   const nav = useNavigate();
-  const { cart, orderEdit } = useAppState();
+  const { cart, orderEdit, locationGate } = useAppState();
   const [saving, setSaving] = useState(false);
   const { meta } = orderEdit;
 
@@ -27,7 +27,7 @@ export default function OrderEditReview() {
     if (!cart.itemCount) return toast.error("Your order needs at least one item — cancel the order instead");
     setSaving(true);
     try {
-      await modifyOrder(meta.orderId, cart.cart.map((c) => ({ ...toOrderLine(c), notes: c.notes || "" })), meta.revision);
+      await modifyOrder(meta.orderId, cart.cart.map((c) => ({ ...toOrderLine(c), notes: c.notes || "" })), meta.revision, locationGate.coords);
       toast.success(`Order #${meta.orderNo} updated`);
       const id = meta.orderId;
       orderEdit.stop();

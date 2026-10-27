@@ -6,7 +6,6 @@ import { keyOf } from "../utils/menuDisplay.js";
 import { useAppState } from "../context/AppState.jsx";
 import { placeOrder, quoteOrder, saveGuestOrderToken, newIdempotencyKey } from "../services/orderService.js";
 import { checkCoupon } from "../services/couponService.js";
-import { getRestaurantProfile } from "../services/restaurantService.js";
 import { initiatePhonePePayment } from "../services/paymentService.js";
 import { EmptyState } from "../components/StateViews.jsx";
 import TableBadge from "../components/TableBadge.jsx";
@@ -29,7 +28,7 @@ export default function CartPage() {
 function ShoppingCart() {
   const nav = useNavigate();
   const location = useLocation();
-  const { cart, auth, table } = useAppState();
+  const { cart, auth, table, locationGate } = useAppState();
 
   const [orderType, setOrderType] = useState(table.isDineIn ? "DINE_IN" : "TAKEAWAY");
   // SET-01: which services the restaurant has switched on (Admin → Profile).
@@ -50,19 +49,16 @@ function ShoppingCart() {
   const [couponOpen, setCouponOpen] = useState(false);
 
   useEffect(() => {
-    getRestaurantProfile()
-      .then((r) => {
-        const d = r.data?.data || {};
-        setPhonePeEnabled(Boolean(d.phonePeEnabled));
-        setServices({ dineIn: true, takeAway: true, delivery: false, ...(d.services || {}) });
-        const mode = d.effectivePaymentMode || "BOTH";
-        setPayMode(mode);
-        if (d.acServiceChargePerGuest != null) setAcRate(Number(d.acServiceChargePerGuest));
-        if (mode === "ONLINE") setPaymentMethod("Online");
-        if (mode === "CASH") setPaymentMethod("Cash");
-      })
-      .catch(() => {});
-  }, []);
+    const d = locationGate.profile;
+    if (!d) return;
+    setPhonePeEnabled(Boolean(d.phonePeEnabled));
+    setServices({ dineIn: true, takeAway: true, delivery: false, ...(d.services || {}) });
+    const mode = d.effectivePaymentMode || "BOTH";
+    setPayMode(mode);
+    if (d.acServiceChargePerGuest != null) setAcRate(Number(d.acServiceChargePerGuest));
+    if (mode === "ONLINE") setPaymentMethod("Online");
+    if (mode === "CASH") setPaymentMethod("Cash");
+  }, [locationGate.profile]);
 
   const methods = payMode === "CASH" ? ["Cash"] : payMode === "ONLINE" ? ["Online"] : ["Cash", "Online"];
   // Online + PhonePe = pay first: the order reaches the restaurant only once paid.
@@ -145,9 +141,10 @@ function ShoppingCart() {
     if (table.checking) return false; // a scanned QR is still being verified
     if (orderType === "DINE_IN" && !canDineIn) return false;
     if (orderType === "TAKEAWAY" && !canTakeaway) return false;
+    if (orderType === "DINE_IN" && locationGate.status !== "allowed") return false;
     if (isAcTable && !(guestsN >= 1 && guestsN <= 100)) return false;
     return true;
-  }, [cart.itemCount, table.checking, orderType, canDineIn, canTakeaway, isAcTable, guestsN]);
+  }, [cart.itemCount, table.checking, orderType, canDineIn, canTakeaway, locationGate.status, isAcTable, guestsN]);
 
   const handlePlace = async () => {
     // Login is required to order (the server refuses guest orders too). The
@@ -162,6 +159,7 @@ function ShoppingCart() {
         tableNo: orderType === "DINE_IN" ? table.tableNo : undefined,
         tableToken: orderType === "DINE_IN" ? table.tableToken : undefined,
         guests: isAcTable ? guestsN : undefined,
+        location: orderType === "DINE_IN" ? locationGate.coords : undefined,
         // A logged-in customer's profile; a guest sends nothing.
         customerName: auth.user?.name || undefined,
         customerPhone: auth.user?.phone || undefined,
@@ -216,6 +214,7 @@ function ShoppingCart() {
 
   // Why the button is disabled — shown right above it so it's never a mystery.
   const blocker = table.checking ? "Checking your table…"
+    : orderType === "DINE_IN" && locationGate.status !== "allowed" ? locationGate.message
     : !canDineIn && !canTakeaway
     ? (table.isDineIn ? "Ordering from the table is switched off right now — please ask a waiter." : "Takeaway orders are switched off right now — please ask at the counter.")
     : orderType === "DINE_IN" && !table.isDineIn ? "Scan your table's QR code for dine-in" : null;
@@ -253,6 +252,14 @@ function ShoppingCart() {
           <p className="small danger" style={{ margin: 0 }}>{blocker}</p>
         )}
       </div>
+
+      {orderType === "DINE_IN" && locationGate.status !== "allowed" && (
+        <div className="card notice" role="status" aria-live="polite">
+          <b>Verify your location to order</b>
+          <p className="small" style={{ margin: "6px 0 10px" }}>{locationGate.message}</p>
+          {locationGate.status !== "checking" && <button type="button" className="btn btn-ghost" onClick={locationGate.retry}>Try again</button>}
+        </div>
+      )}
 
       {/* ── Items ── */}
       <div className="card" style={{ padding: "4px 16px" }}>
