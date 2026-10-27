@@ -515,4 +515,11 @@ export default {
   "Received from supplier": "সরবরাহকারীর কাছ থেকে পাওয়া",
   "Used or damaged": "ব্যবহৃত বা ক্ষতিগ্রস্ত",
   "Confirm stock change": "স্টক পরিবর্তন নিশ্চিত করুন",
+  "Stock history": "স্টকের ইতিহাস",
+  Previous: "আগেরটি",
+  Next: "পরেরটি",
+  "Page {page} of {pages}": "{pages}-এর মধ্যে {page} পৃষ্ঠা",
+  Supplier: "সরবরাহকারী",
+  "No supplier": "কোনো সরবরাহকারী নেই",
+  "Stock value": "স্টকের মূল্য",
 };
