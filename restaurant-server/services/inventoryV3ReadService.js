@@ -39,32 +39,48 @@ export const stockData = async (req) => {
 
 // Inventory Manager read model: operational stock only. It deliberately omits
 // revenue, EBITDA, financial entries, payables and recipe profitability.
-export const mobileWorkspaceData = async (req) => {
-  const [items, configs] = await Promise.all([
-    bounded(req.models.InventoryItem.find({ status: "Active" }).select("name category unit currentStock reorderLevel criticalLevel costPrice updatedAt").sort({ name: 1 })),
-    bounded(req.v3.InventoryItemV3Config.find()),
-  ]);
-  const byConfig = new Map(configs.map((x) => [sid(x.inventoryItem), x]));
-  const rows = items.map((i) => {
-    const config = byConfig.get(sid(i)) || {};
-    return { _id: i._id, name: i.name, category: i.category || "", unit: i.unit,
-      currentStock: i.currentStock, reorderLevel: i.reorderLevel || 0, criticalLevel: i.criticalLevel || 0,
-      costPrice: i.costPrice || 0, updatedAt: i.updatedAt, config: { usualStockQty: config.usualStockQty, costClass: config.costClass },
-      stockLevel: classifyStockLevel(i.currentStock, i.reorderLevel, i.criticalLevel) };
-  });
-  const ids = items.map((i) => i._id);
-  const movements = ids.length ? await req.models.StockLedger.find({ inventoryItem: { $in: ids } }).select("inventoryItem type quantity balanceAfter reason createdAt createdBy").sort({ createdAt: -1, _id: -1 }).limit(150).lean() : [];
-  const byItem = new Map(rows.map((i) => [sid(i), i]));
+export const mobileOperationalView = (base) => {
+  const rows = base.items.map((i) => ({
+    ...i,
+    supplierName: base.suppliers.find((s) => sid(s) === sid(i.supplier))?.name || "",
+    status: i.status || "Active",
+  }));
   return {
     items: rows,
+    suppliers: base.suppliers.map((s) => ({ _id: s._id, name: s.name })),
     categories: [...new Set(rows.map((i) => i.category).filter(Boolean))].sort(),
     summary: {
       total: rows.length,
       low: rows.filter((i) => i.currentStock > 0 && i.stockLevel !== "OK").length,
       out: rows.filter((i) => i.currentStock <= 0).length,
     },
-    movements: movements.map((m) => ({ _id: m._id, itemId: m.inventoryItem, itemName: byItem.get(sid(m.inventoryItem))?.name || "Item", type: m.type,
-      quantity: m.quantity, balanceAfter: m.balanceAfter, reason: m.reason || "", createdAt: m.createdAt, createdBy: m.createdBy || null })),
+  };
+};
+
+export const mobileWorkspaceData = async (req) => {
+  // Admin V3's stock tab is backed by stockData(). Reuse that exact read
+  // model here so the mobile presentation cannot drift in fields, thresholds,
+  // supplier relationships, cost/value calculations, or active-item scope.
+  const base = await stockData(req), view = mobileOperationalView(base);
+
+  const requestedPage = Number.parseInt(req.query.historyPage, 10);
+  const requestedLimit = Number.parseInt(req.query.historyLimit, 10);
+  const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  const limit = Number.isInteger(requestedLimit) ? Math.min(50, Math.max(10, requestedLimit)) : 25;
+  const filter = {};
+  if (req.query.inventoryItem) filter.inventoryItem = req.query.inventoryItem;
+  if (req.query.type) filter.type = req.query.type;
+  const [movementRows, totalMovements] = await Promise.all([
+    req.models.StockLedger.find(filter).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit)
+      .populate("inventoryItem", "name nameBn unit").lean(),
+    req.models.StockLedger.countDocuments(filter),
+  ]);
+  return {
+    ...view,
+    movements: movementRows.map((m) => ({ _id: m._id, itemId: m.inventoryItem?._id || m.inventoryItem, itemName: m.inventoryItem?.name || "Item",
+      itemNameBn: m.inventoryItem?.nameBn || "", unit: m.inventoryItem?.unit || "", type: m.type, quantity: m.quantity,
+      balanceAfter: m.balanceAfter, reason: m.reason || "", createdAt: m.createdAt, createdBy: m.createdBy || null })),
+    movementMeta: { total: totalMovements, page, pages: Math.max(1, Math.ceil(totalMovements / limit)), limit },
   };
 };
 

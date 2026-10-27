@@ -6,6 +6,7 @@ import { capabilitiesView, settingsView, validateSettingsPatch, updateV3Settings
 import { getCapabilities, getSettings, patchSettings } from "../controllers/inventoryV3Controller.js";
 import { requireAdmin, requireStaff, requireInventory } from "../middleware/rbac.js";
 import { parseSetupArgs, setupStorage } from "../scripts/setup-inventory-v3.js";
+import { mobileOperationalView } from "../services/inventoryV3ReadService.js";
 
 const conn = mongoose.createConnection(); // Never opens a socket.
 const models = getInventoryV3Models(conn);
@@ -132,6 +133,21 @@ test("inventory manager is limited to inventory RBAC", () => {
   const denied = response();
   requireInventory({ user: { role: "waiter", status: "Active" } }, denied, () => assert.fail("waiter should not use inventory-manager routes"));
   assert.equal(denied.code, 403);
+});
+test("mobile inventory view preserves the Admin stock rows and full-scope summaries", () => {
+  const base = {
+    items: [
+      { _id: "out", name: "Rice", category: "Dry", unit: "kg", currentStock: 0, reorderLevel: 2, stockLevel: "OUT_OF_STOCK", costPaise: 12000, valuePaise: 0, supplier: "s1" },
+      { _id: "low", name: "Milk", category: "Dairy", unit: "l", currentStock: 1, reorderLevel: 2, stockLevel: "LOW", costPaise: null, valuePaise: null, supplier: null },
+      { _id: "ok", name: "Salt", category: "Dry", unit: "kg", currentStock: 8, reorderLevel: 2, stockLevel: "OK", costPaise: 5000, valuePaise: 40000, supplier: "s1" },
+    ],
+    suppliers: [{ _id: "s1", name: "Supplier A" }],
+  };
+  const mobile = mobileOperationalView(base);
+  assert.deepEqual(mobile.items.map((i) => i._id), base.items.map((i) => i._id));
+  assert.deepEqual(mobile.items.map((i) => [i.currentStock, i.unit, i.stockLevel, i.costPaise, i.valuePaise]), base.items.map((i) => [i.currentStock, i.unit, i.stockLevel, i.costPaise, i.valuePaise]));
+  assert.equal(mobile.items[0].supplierName, "Supplier A");
+  assert.deepEqual(mobile.summary, { total: 3, low: 1, out: 1 });
 });
 test("financial entries require safe amounts and valid effective dates", async () => {
   const valid = { requestKey: "test-entry-01", treatment: "OPERATING_EXPENSE", category: "electricity", amountPaise: 420000, effectiveDate: "2026-10-24", occurredAt: new Date(), paymentSource: "CASH_DRAWER", createdBy: actor };
