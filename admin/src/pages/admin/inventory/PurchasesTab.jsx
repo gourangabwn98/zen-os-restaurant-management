@@ -72,7 +72,7 @@ function PayablesPanel({ version, onChanged }) {
   );
 }
 
-export default function PurchasesTab({ version, open }) {
+export default function PurchasesTab({ version, open, allowImport = true }) {
   const [purchases, setPurchases] = useState(null);
   const [error, setError] = useState(false);
   const [search, setSearch] = useState("");
@@ -148,7 +148,7 @@ export default function PurchasesTab({ version, open }) {
           {PERIODS.map(([k, l]) => <button key={k} type="button" className={period === k ? "on" : ""} onClick={() => setPeriod(k)}>{t(l)}</button>)}
         </div>
         <span className="ivt-sp" />
-        <button type="button" className="zc-btn" onClick={() => open("import")}>⇪ {t("Import a bill")}</button>
+        {allowImport && <button type="button" className="zc-btn" onClick={() => open("import")}>⇪ {t("Import a bill")}</button>}
         <button type="button" className="zc-btn pri" onClick={() => open("purchase")}>＋ {t("Record purchase")}</button>
       </div>
 
