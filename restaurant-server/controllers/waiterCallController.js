@@ -3,6 +3,7 @@
 import {
   assertCanCallForOrder, getCallState, createCall, cancelCall,
   acknowledgeCall, resolveCall, listCallsForWaiter, toStaffCall,
+  getCounterDeskPhone,
 } from "../services/waiterCallService.js";
 import { getRoleFromUser, buildActor } from "../services/orderService.js";
 import { emitWaiterCall } from "../sockets/socket.js";
@@ -63,6 +64,13 @@ export const withdrawCall = async (req, res) => {
     if (call) await broadcast(req, call);
     res.json(await getCallState({ models: req.models, order, adminPhone: await adminPhoneOf(req.models) }));
   } catch (err) { fail(res, err); }
+};
+
+// Customer browsing contact: intentionally returns only the configured desk
+// phone, never a staff directory or order/customer data.
+export const getCounterDesk = async (req, res) => {
+  try { res.json({ phone: await getCounterDeskPhone({ User: req.models.User }) }); }
+  catch (err) { fail(res, err); }
 };
 
 // ── GET /api/waiter-calls/mine  (waiter app) ────────────────────────────────

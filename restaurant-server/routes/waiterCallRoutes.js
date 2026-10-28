@@ -2,6 +2,7 @@
 import express from "express";
 import {
   getOrderCallState, callWaiter, withdrawCall, myCalls, acknowledge, resolve,
+  getCounterDesk,
 } from "../controllers/waiterCallController.js";
 import { protect, dbFromHeader } from "../middleware/authMiddleware.js";
 import { requireStaff } from "../middleware/rbac.js";
@@ -20,6 +21,7 @@ const autoAuth = (req, res, next) =>
     : dbFromHeader(req, res, next);
 
 router.post  ("/",               autoAuth, callWaiter);
+router.get   ("/counter-desk",   autoAuth, getCounterDesk);
 router.get   ("/order/:orderId", autoAuth, getOrderCallState);
 router.delete("/order/:orderId", autoAuth, withdrawCall);
 

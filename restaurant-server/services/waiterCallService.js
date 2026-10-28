@@ -29,6 +29,19 @@ const LIVE = ["OPEN", "ACKNOWLEDGED"];
 
 const httpError = (msg, statusCode = 400, extra = {}) => Object.assign(new Error(msg), { statusCode, ...extra });
 
+/** Public customer-facing contact for the configured counter desk only. */
+export const getCounterDeskPhone = async ({ User }) => {
+  const desk = await User.findOne({
+    role: "waiter", status: { $ne: "Inactive" },
+    $or: [{ name: /^COUNTER DESK$/i }, { waiterName: /^COUNTER DESK$/i }],
+  }).select("phone").lean();
+  const phone = String(desk?.phone || "").replace(/[^\d+]/g, "");
+  if (!/^\+?[1-9]\d{6,14}$/.test(phone)) {
+    throw httpError("The COUNTER DESK phone number is not configured", 404);
+  }
+  return phone;
+};
+
 /**
  * Strict ownership check (stricter than orderService.assertCanViewOrder,
  * which lets a token-less guest *view* an order): ringing staff needs a

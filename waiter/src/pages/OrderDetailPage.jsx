@@ -8,6 +8,7 @@ import {
 } from "../services/orderService.js";
 import CombinedBillPanel from "../components/CombinedBillPanel.jsx";
 import { peekOrderData, fetchOrderData } from "../services/orderDataCache.js";
+import { getSocket } from "../services/socketService.js";
 import StatusBadge, { statusColor } from "../components/StatusBadge.jsx";
 import GlassCard from "../components/ui/GlassCard.jsx";
 import PrimaryButton from "../components/ui/PrimaryButton.jsx";
@@ -133,6 +134,17 @@ export default function OrderDetailPage() {
   }, [load]);
   // Paid meanwhile → stop the item edit (it would no longer match the payment).
   useEffect(() => { if (order?.paymentStatus === "PAID") setEditLines(null); }, [order?.paymentStatus]);
+  useEffect(() => {
+    if (!showAdd) return undefined;
+    const socket = getSocket();
+    if (!socket) return undefined;
+    const refreshMenu = () => {
+      fetchOrderData("menu").then((d) => setFullMenu(Array.isArray(d) ? d : [])).catch(() => {});
+      fetchOrderData("categories").then((d) => setMenuCategories(d || [])).catch(() => {});
+    };
+    socket.on("menu:updated", refreshMenu);
+    return () => socket.off("menu:updated", refreshMenu);
+  }, [showAdd]);
 
   const handleConfirm = async () => {
     setBusy(true);
