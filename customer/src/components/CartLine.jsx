@@ -8,7 +8,7 @@ export default function CartLine({ line: c, cart }) {
   const key = keyOf(c);
   const name = nameWithSize(c.item.name, c.item.size);
   const unit = lineUnitPrice(c);
-  const categoryOff = c.item.categoryOrderingEnabled === false;
+  const unavailable = c.item.isAvailable === false;
   return (
     <div className="cart-line">
       <div className="thumb">
@@ -21,13 +21,13 @@ export default function CartLine({ line: c, cart }) {
             <span>+ {addonLabel(a)} · ₹{a.price} each</span>
             <QtyStepper qty={addonQty(a)} label={`${a.name} quantity`}
               onDec={() => cart.changeAddonQty(key, a.addonId, -1)}
-              onInc={() => cart.changeAddonQty(key, a.addonId, 1)} incDisabled={categoryOff} />
+              onInc={() => cart.changeAddonQty(key, a.addonId, 1)} incDisabled={unavailable} />
           </div>
         ))}
         <span className="muted small">₹{unit} each{c.notes ? ` · “${c.notes}”` : ""}</span>
       </div>
-      <QtyStepper qty={c.qty} label={`${name} quantity`} onDec={() => cart.removeItem(key)} onInc={() => cart.incLine(key)} incDisabled={categoryOff} />
-      {categoryOff && <span className="na">Currently unavailable for ordering</span>}
+      <QtyStepper qty={c.qty} label={`${name} quantity`} onDec={() => cart.removeItem(key)} onInc={() => cart.incLine(key)} incDisabled={unavailable} />
+      {unavailable && <span className="na">Currently unavailable for ordering</span>}
       <span className="amt">₹{unit * c.qty}</span>
     </div>
   );

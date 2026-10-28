@@ -27,15 +27,30 @@ import { MENU_SECTIONS } from "../utils/menuSections.js";
 const MAX_NAME = 40;
 export const CATEGORY_SORT = { sortOrder: 1, name: 1 };
 
-export const setCategoryOrdering = async ({ models, id, enabled }) => {
+export const setCategoryOrdering = async ({ models, db, id, enabled }) => {
   if (typeof enabled !== "boolean") throw httpError("enabled must be a boolean");
-  const category = await models.Category.findOneAndUpdate(
-    { _id: id },
-    { $set: { orderingEnabled: enabled } },
-    { returnDocument: "after" },
-  ).lean();
-  if (!category) throw httpError("Category not found", 404);
-  return category;
+  const { Category, MenuItem } = models;
+  const session = await db.startSession();
+  let category, itemsUpdated = 0;
+  try {
+    await session.withTransaction(async () => {
+      category = await Category.findOneAndUpdate(
+        { _id: id },
+        { $set: { orderingEnabled: enabled } },
+        { returnDocument: "after", session },
+      );
+      if (!category) throw httpError("Category not found", 404);
+      const result = await MenuItem.updateMany(
+        { category: category.name },
+        { $set: { isAvailable: enabled, soldOutUntil: null } },
+        { session },
+      );
+      itemsUpdated = result.modifiedCount || 0;
+    });
+  } finally {
+    await session.endSession();
+  }
+  return { category, itemsUpdated };
 };
 
 // An item is "in" a manual category by its `category` (the old extra

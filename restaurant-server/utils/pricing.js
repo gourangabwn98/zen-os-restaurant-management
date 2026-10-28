@@ -25,7 +25,7 @@ const qtyOf = (raw) => {
  * this many of — an edit to an order the kitchen is cooking keeps them even
  * if they're sold out / out of hours now. The price still comes from the DB.
  */
-export const priceItems = async (items, MenuItem, scheduleCtx = null, { keepIds = null, Category = null, existingQuantities = null } = {}) => {
+export const priceItems = async (items, MenuItem, scheduleCtx = null, { keepIds = null } = {}) => {
   if (!Array.isArray(items) || items.length === 0) {
     const err = new Error("No items in order");
     err.statusCode = 400;
@@ -67,7 +67,6 @@ export const priceItems = async (items, MenuItem, scheduleCtx = null, { keepIds 
       // KH-12: chosen add-ons (ids only from the client) — priced from the DB.
       const { addons, extra } = resolveLineAddons(m, i.addonIds);
       return {
-        __category: m.category,
         menuItem: m._id,
         name: m.name,
         nameBn: m.nameBn || "",
@@ -80,25 +79,7 @@ export const priceItems = async (items, MenuItem, scheduleCtx = null, { keepIds 
     })
   );
 
-  if (Category) {
-    const names = [...new Set(resolved.map((i) => i.__category).filter(Boolean))];
-    const categories = await Category.find({ name: { $in: names } }).select("name orderingEnabled").lean();
-    const enabledByName = new Map(categories.map((c) => [c.name, c.orderingEnabled !== false]));
-    const requested = new Map();
-    for (const line of resolved) {
-      const id = String(line.menuItem);
-      requested.set(id, (requested.get(id) || 0) + line.qty);
-    }
-    for (const line of resolved) {
-      const current = Number(existingQuantities?.get(String(line.menuItem)) || 0);
-      if (enabledByName.get(line.__category) === false && (requested.get(String(line.menuItem)) || 0) > current) {
-        const err = new Error(`"${line.name}" is currently unavailable for ordering`);
-        err.statusCode = 400;
-        throw err;
-      }
-    }
-  }
-  return resolved.map(({ __category, ...line }) => line);
+  return resolved;
 };
 
 /**
@@ -143,8 +124,8 @@ export const computeTotals = (dbItems, restaurantProfile, coupon = null, { acSer
  * Full convenience wrapper used by placeOrder: resolve + compute in one call.
  * @returns {{ dbItems, subtotal, tax, serviceCharge, discount, total, totalQty }}
  */
-export const priceOrder = async ({ items, MenuItem, Category = null, restaurantProfile, scheduleCtx = null, coupon = null, acServiceCharge = 0, keepIds = null, existingQuantities = null }) => {
-  const dbItems = await priceItems(items, MenuItem, scheduleCtx, { keepIds, Category, existingQuantities });
+export const priceOrder = async ({ items, MenuItem, restaurantProfile, scheduleCtx = null, coupon = null, acServiceCharge = 0, keepIds = null }) => {
+  const dbItems = await priceItems(items, MenuItem, scheduleCtx, { keepIds });
   const totals  = computeTotals(dbItems, restaurantProfile, coupon, { acServiceCharge });
   return { dbItems, ...totals };
 };

@@ -211,20 +211,20 @@ export default function OrderMenuPicker({ items = [], loading, search = "", cats
             <div className="omp-grid">
               {list.map((m) => {
                 const qty = getQty(m._id);
-                const categoryOff = m.categoryOrderingEnabled === false;
-                const off = outOfStock(m) || categoryOff;
+                const unavailable = m.isAvailable === false;
+                const off = outOfStock(m) || unavailable;
                 const name = nameWithSize(localName(m), m.size);
                 return (
                   <div key={m._id} className={`omp-card${qty ? " in" : ""}${off ? " off" : ""}`}>
                     <button type="button" className="omp-tap" disabled={off} onClick={() => onAdd(m)}
-                      aria-label={off ? `${name} — ${categoryOff ? t("Currently unavailable for ordering") : t("Out of stock")}` : t("Add {name}", { name })}>
+                      aria-label={off ? `${name} — ${t("Currently unavailable for ordering")}` : t("Add {name}", { name })}>
                       <span className="omp-ph">
                         {isUrl(m.image)
                           ? <img src={m.image} alt="" loading="lazy" onError={(e) => { e.currentTarget.style.display = "none"; }} />
                           : <CategoryIcon name={iconOf(m.category)} size={30} />}
                         {m.isChefsPick && <span className="omp-sig">{t("Khoai Signature")}</span>}
                         {qty > 0 && <span className="omp-q">{fmtNum(qty)}</span>}
-                        {off && <span className="omp-oos">{categoryOff ? t("Currently unavailable for ordering") : t("Out of stock")}</span>}
+                        {off && <span className="omp-oos">{t("Currently unavailable for ordering")}</span>}
                       </span>
                       <span className="omp-bd">
                         <span className="omp-nm"><VegMark tag={m.tag} />{name}</span>

@@ -262,7 +262,7 @@ const startCategoryOrderingResetTick = () => {
       if (!isAfterCategoryResetBoundary(new Date(), timezone)) return;
       const day = categoryResetDay(new Date(), timezone);
       if (day === categoryOrderingResetDay) return;
-      const changed = await resetCategoryOrdering({ models });
+      const changed = await resetCategoryOrdering({ models, db: conn });
       categoryOrderingResetDay = day;
       if (changed) console.log(`category ordering reset: ${changed} categor${changed === 1 ? "y" : "ies"}`);
     } catch (err) {
