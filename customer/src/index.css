@@ -462,10 +462,11 @@ h1,h2,h3,h4,p{margin:0}
 /* ── Floating "Call waiter" (components/CallWaiterFab.jsx) ──────────────────
    Bottom-right of the app column, above the tab bar (and above the cart bar
    when it shows); the page gets extra bottom room so nothing hides under it. */
-.waiter-fab{position:fixed;z-index:31;right:max(14px,calc((100vw - var(--app-w)) / 2 + 14px));bottom:calc(98px + var(--safe-b));
+.waiter-fab{position:fixed;z-index:35;right:max(14px,calc((100vw - var(--app-w)) / 2 + 14px));bottom:calc(98px + var(--safe-b));
   display:inline-flex;align-items:center;gap:7px;height:46px;padding:0 16px 0 13px;border:0;border-radius:var(--r-pill);
   background:var(--surface);color:var(--text);font:inherit;font-weight:750;font-size:14px;box-shadow:var(--sh-2);
   margin-right:env(safe-area-inset-right,0px);animation:up var(--dur) var(--ease)}
+.waiter-fab:focus-visible{outline:3px solid var(--brand);outline-offset:3px}
 .waiter-fab span:first-child{font-size:18px;line-height:1}
 .call-waiter-contact{display:flex;flex-direction:column;gap:3px;padding:12px 14px;margin:0 0 14px;border:1px solid var(--edge);border-radius:var(--r-md);background:var(--surface-2)}
 .call-waiter-contact strong{font-size:20px;letter-spacing:.03em;overflow-wrap:anywhere}
@@ -474,6 +475,19 @@ h1,h2,h3,h4,p{margin:0}
 .app:has(.waiter-fab) .view{padding-bottom:calc(170px + var(--safe-b))}
 .app.has-cart:has(.waiter-fab) .view{padding-bottom:calc(236px + var(--safe-b))}
 @media (max-width:360px){.waiter-fab{height:42px;padding:0 13px 0 11px;font-size:13px}}
+
+/* ── Dialog (components/ui/Modal.jsx) ──────────────────────────────────────
+   The dialog is outside the page flow so it cannot be clipped by menu cards,
+   sticky sections, the cart bar, or the app's scroll container. */
+.modal-wrap{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;overflow-y:auto;padding:calc(16px + env(safe-area-inset-top,0px)) 16px calc(16px + var(--safe-b));background:rgba(40,15,5,.48);animation:fade .2s}
+.modal{position:relative;width:min(100%,460px);max-height:calc(100dvh - 32px - env(safe-area-inset-top,0px) - var(--safe-b));display:flex;flex-direction:column;overflow:hidden;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:var(--r-xl);box-shadow:0 18px 60px rgba(60,20,5,.3);animation:modal-in .2s var(--ease)}
+.modal-body{min-width:0;overflow-y:auto;padding:24px 20px 20px}
+.modal-body h3{margin:0 36px 8px 0;font-size:22px;line-height:1.15;font-weight:850;overflow-wrap:anywhere}
+.modal-x{position:absolute;z-index:1;top:10px;right:10px;width:38px;height:38px;border:0;border-radius:50%;background:var(--surface-2);color:var(--text-2);font:inherit;font-size:16px;cursor:pointer}
+.modal-x:hover{color:var(--text);background:var(--surface)}
+.modal-x:focus-visible{outline:3px solid var(--brand);outline-offset:2px}
+.modal-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px calc(14px + var(--safe-b));border-top:1px solid var(--line);background:var(--bg);flex:none}
+@keyframes modal-in{from{transform:translateY(8px) scale(.98);opacity:0}}
 
 /* ── First-visit "install the app" card (components/InstallPrompt.jsx) ── */
 .install-card{position:fixed;z-index:45;top:calc(10px + env(safe-area-inset-top,0px));left:12px;right:12px;max-width:496px;margin:0 auto;
