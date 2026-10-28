@@ -27,6 +27,7 @@ import {
   getMenuTimes, setMenuAvailability, reorderCategories, mergeCategory, setCategoryOrdering,
 } from "../../services/menuService.js";
 import { getRestaurantProfile } from "../../services/adminService.js";
+import { getSocket } from "../../services/socketService.js";
 import { useAuth } from "../../hooks/useAuth.js";
 import { isManager } from "../../utils/access.js";
 import PageHeader from "./shared/PageHeader.jsx";
@@ -919,6 +920,13 @@ export default function MenuAdminPage() {
       .catch(() => { setError(true); setLoading(false); });
   }, []);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return undefined;
+    const refreshMenu = () => load();
+    socket.on("menu:updated", refreshMenu);
+    return () => socket.off("menu:updated", refreshMenu);
+  }, [load]);
 
   // Restaurant timezone → the timeline's "now", Live/Off; business day end → "Sold out today".
   useEffect(() => {
@@ -1257,6 +1265,9 @@ export default function MenuAdminPage() {
                 const r = await setCategoryOrdering(category.categoryId, enabled);
                 const saved = r.data?.category || r.data;
                 setCats((prev) => prev.map((c) => c._id === category.categoryId ? { ...c, ...saved } : c));
+                setItems((prev) => prev.map((item) => item.category === category.name
+                  ? { ...item, isAvailable: enabled, soldOutUntil: null }
+                  : item));
                 toast.success(enabled ? t("Category ordering enabled") : t("Category ordering disabled"));
               } catch (e) {
                 toast.error(e?.response?.data?.message || t("Could not update category ordering"));

@@ -23,6 +23,8 @@ export const callWaiter = (orderId) =>
 export const withdrawWaiterCall = (orderId) =>
   api.delete(`/waiter-calls/order/${orderId}`, { headers: guestHeaders(orderId) });
 
+export const getCounterDeskPhone = () => api.get("/waiter-calls/counter-desk");
+
 /** Live call updates for one order (subscribeToOrder does the room join).
  * The socket may be in several of this customer's order rooms, so updates
  * are filtered by orderId. Returns an unsubscribe fn. */
