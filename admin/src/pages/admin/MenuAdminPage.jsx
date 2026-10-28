@@ -1255,7 +1255,8 @@ export default function MenuAdminPage() {
               setOrderingBusy((prev) => new Set(prev).add(category.categoryId));
               try {
                 const r = await setCategoryOrdering(category.categoryId, enabled);
-                setCats((prev) => prev.map((c) => c._id === category.categoryId ? { ...c, ...r.data } : c));
+                const saved = r.data?.category || r.data;
+                setCats((prev) => prev.map((c) => c._id === category.categoryId ? { ...c, ...saved } : c));
                 toast.success(enabled ? t("Category ordering enabled") : t("Category ordering disabled"));
               } catch (e) {
                 toast.error(e?.response?.data?.message || t("Could not update category ordering"));

@@ -12,10 +12,21 @@ export const categoryResetDay = (date, timezone) => {
 
 // Persistent and idempotent: startup plus the periodic tick catches a missed
 // 04:00 boundary after restarts, and updateMany is safe across instances.
-export const resetCategoryOrdering = async ({ models }) => {
-  const result = await models.Category.updateMany(
-    { orderingEnabled: false },
-    { $set: { orderingEnabled: true } },
-  );
-  return result.modifiedCount || 0;
+export const resetCategoryOrdering = async ({ models, db }) => {
+  const work = async (session) => {
+    const categoryResult = await models.Category.updateMany(
+      { orderingEnabled: false }, { $set: { orderingEnabled: true } }, { session },
+    );
+    await models.MenuItem.updateMany(
+      {}, { $set: { isAvailable: true, soldOutUntil: null } }, { session },
+    );
+    return categoryResult.modifiedCount || 0;
+  };
+  if (!db) return work(undefined);
+  const session = await db.startSession();
+  try {
+    let changed = 0;
+    await session.withTransaction(async () => { changed = await work(session); });
+    return changed;
+  } finally { await session.endSession(); }
 };

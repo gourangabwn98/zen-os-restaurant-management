@@ -1,8 +1,7 @@
 import api from "./api.js";
 
-// GET /api/menu?category=&search=&vegOnly=true — always excludes unavailable
-// items and items whose CATEGORY is outside its time window (items have no
-// time schedule of their own)
+// GET /api/menu?category=&search=&vegOnly=true — keeps unavailable items
+// visible with their saved state; category schedule still controls visibility.
 // server-side; each item also carries stockAvailable/stockTracked
 // (Phase 2 inventory linkage) so we can show "Out of stock" without hiding it.
 export const getMenu = (params) => api.get("/menu", { params });

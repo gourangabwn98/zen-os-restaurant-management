@@ -38,13 +38,15 @@ export const getBestSellers = async (req, res) => {
 
 // GET /api/menu/structure — { sections: [{ name, count, subcategories: [{ name, count }] }] }
 // in the configured section order. Counts follow the same visibility as GET
-// /api/menu (available + category schedule); the admin's manage view
-// (?includeUnavailable=true) counts every item.
+// /api/menu (visible catalog + category schedule); unavailable items remain
+// visible so clients can explain why ordering is disabled.
 export const getMenuStructure = async (req, res) => {
   try {
     const isAdmin = !!(req.user?.isAdmin || isManagementRole(req.user?.role));
     const manageView = req.query.includeUnavailable === "true" && isAdmin;
-    const filter = manageView ? {} : { isAvailable: true };
+    // Availability is rendered as an unavailable state; it must not hide
+    // items from the menu. Ordering is enforced by server pricing.
+    const filter = {};
     if (!manageView) {
       const { hiddenCategories } = await getScheduleContext({ models: req.models });
       if (hiddenCategories.size) filter.category = { $nin: [...hiddenCategories] };
@@ -67,13 +69,13 @@ export const getMenu = async (req, res) => {
     const { category, search, vegOnly, includeUnavailable, ignoreSchedule, tag } = req.query;
     const subcategories = parseSubcategoryFilter(req.query.subcategory);
     const isAdmin = !!(req.user?.isAdmin || isManagementRole(req.user?.role)); // admin or manager (Menu page)
-    const filter = { isAvailable: true };
+    const filter = {};
     const and = [];
-    // Admin menu management needs to see hidden items too (to un-hide them or
-    // filter by "Hidden"). Opt-in only — customer/waiter never pass this, so
-    // their menu stays "available items only" exactly as before.
+    // Admin menu management still opts into its existing full-catalog view;
+    // customer/waiter also receive unavailable rows so they remain visible.
     const manageView = includeUnavailable === "true" && isAdmin;
-    if (manageView) delete filter.isAvailable;
+    // Admin and ordering views both receive unavailable items so every client
+    // can display the saved state without changing visibility.
     // Escaped: a customer's search text is never a regex (a stray "(" used to 500).
     if (typeof search === "string" && search.trim()) {
       const rx = { $regex: escapeRegex(search.trim().slice(0, 80)), $options: "i" };
@@ -169,7 +171,6 @@ export const getCategories = async (req, res) => {
   try {
     const { MenuItem } = req.models;
     const cats = await MenuItem.aggregate([
-      { $match: { isAvailable: true } },
       { $group: { _id: "$category", categoryImage: { $first: "$categoryImage" }, count: { $sum: 1 } } },
       { $sort: { _id: 1 } },
     ]);
@@ -357,7 +358,7 @@ export const getCategoriesWithImage = async (req, res) => {
     // Sections in the configured order (utils/menuSections.js), then any
     // other category (built-in smart ones, old ones) in the saved admin order.
     const cats = sortBySection(allCats.filter((c) => !hiddenCategories.has(c.name)), (c) => c.name);
-    const visibleBase = { isAvailable: true, ...(hiddenCategories.size && { category: { $nin: [...hiddenCategories] } }) };
+    const visibleBase = { ...(hiddenCategories.size && { category: { $nin: [...hiddenCategories] } }) };
     const result = await Promise.all(cats.map(async (c) => {
       let item = null;
       if (c.kind === "SMART") {

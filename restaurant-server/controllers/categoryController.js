@@ -106,7 +106,7 @@ export const mergeCategory = async (req, res) => {
 export const setCategoryOrdering = async (req, res) => {
   try {
     const category = await setCategoryOrderingSvc({
-      models: req.models, id: req.params.id, enabled: req.body?.enabled,
+      models: req.models, db: req.db, id: req.params.id, enabled: req.body?.enabled,
     });
     emitMenuUpdated(req.tenantKey);
     res.json(category);

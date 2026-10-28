@@ -13,10 +13,10 @@ export default function ItemCard({ item, qty, onOpen, onAdd, onInc, onDec, conte
   const off = discountPct(item);
   const hasOriginal = Number(item.originalPrice) > Number(item.price);
   const hasAddons = itemAddons(item).length > 0;
-  const categoryOff = item.categoryOrderingEnabled === false;
+  const unavailable = item.isAvailable === false || outOfStock;
 
   return (
-    <article className={`pcard${outOfStock || categoryOff ? " off" : ""}`}>
+    <article className={`pcard${unavailable ? " off" : ""}`}>
       <ItemBadge item={item} off={off} context={context} />
       <HeartButton isFav={isFav} onClick={() => favorites.toggle(item._id)} />
 
@@ -41,12 +41,10 @@ export default function ItemCard({ item, qty, onOpen, onAdd, onInc, onDec, conte
         <Stars rating={item.rating} />
         <div className="pf">
           <div className="price">₹{item.price}{hasOriginal && <s>₹{item.originalPrice}</s>}</div>
-          {outOfStock
-            ? <span className="na">Sold out</span>
-            : categoryOff
-              ? <span className="na">Currently unavailable for ordering</span>
+          {unavailable
+            ? <span className="na">Currently unavailable for ordering</span>
             : qty > 0
-              ? <QtyStepper qty={qty} onInc={() => hasAddons ? onOpen(item) : onInc(item)} onDec={() => onDec(item)} label={`${item.name} quantity`} incDisabled={categoryOff} />
+              ? <QtyStepper qty={qty} onInc={() => hasAddons ? onOpen(item) : onInc(item)} onDec={() => onDec(item)} label={`${item.name} quantity`} />
               : <AddButton onClick={() => hasAddons ? onOpen(item) : onAdd(item)} label={`Add ${item.name}`} />}
         </div>
       </div>
