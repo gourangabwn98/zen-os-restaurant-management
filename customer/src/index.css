@@ -467,6 +467,9 @@ h1,h2,h3,h4,p{margin:0}
   background:var(--surface);color:var(--text);font:inherit;font-weight:750;font-size:14px;box-shadow:var(--sh-2);
   margin-right:env(safe-area-inset-right,0px);animation:up var(--dur) var(--ease)}
 .waiter-fab span:first-child{font-size:18px;line-height:1}
+.call-waiter-contact{display:flex;flex-direction:column;gap:3px;padding:12px 14px;margin:0 0 14px;border:1px solid var(--edge);border-radius:var(--r-md);background:var(--surface-2)}
+.call-waiter-contact strong{font-size:20px;letter-spacing:.03em;overflow-wrap:anywhere}
+.call-waiter-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:16px}
 .has-cart .waiter-fab{bottom:calc(168px + var(--safe-b))}
 .app:has(.waiter-fab) .view{padding-bottom:calc(170px + var(--safe-b))}
 .app.has-cart:has(.waiter-fab) .view{padding-bottom:calc(236px + var(--safe-b))}

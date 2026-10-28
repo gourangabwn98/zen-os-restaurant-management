@@ -26,6 +26,7 @@ export default function CallWaiterFab() {
     } finally { setLoading(false); }
   };
   const phoneLink = phone ? `tel:${phone}` : null;
+  const displayPhone = phone ? phone.replace(/(\+?\d{2})(\d{5})(\d{5})$/, "$1 $2 $3") : "";
 
   return (
     <>
@@ -38,14 +39,23 @@ export default function CallWaiterFab() {
 
       {open && (
         <Modal onClose={() => setOpen(false)} label="Call waiter">
-          <h3>Call waiter</h3>
+          <h3>Call Waiter</h3>
           <p className="muted" style={{ margin: "4px 0 14px" }}>
             Call the restaurant's configured COUNTER DESK. You can call before or after placing an order.
           </p>
           {loading && <p className="muted small">Loading the COUNTER DESK number…</p>}
           {error && <p className="danger small" role="alert">{error}</p>}
-          {!loading && phoneLink && <a href={phoneLink} className="btn btn-primary">📞 Call COUNTER DESK</a>}
+          {!loading && phoneLink && (
+            <div className="call-waiter-contact">
+              <span className="muted small">COUNTER DESK number</span>
+              <strong>{displayPhone}</strong>
+            </div>
+          )}
           {!loading && error && <button type="button" className="btn btn-ghost" onClick={openCall}>Try again</button>}
+          <div className="call-waiter-actions">
+            {phoneLink && <a href={phoneLink} className="btn btn-primary">📞 Call Now</a>}
+            <button type="button" className="btn btn-ghost" onClick={() => setOpen(false)}>Close</button>
+          </div>
         </Modal>
       )}
     </>
