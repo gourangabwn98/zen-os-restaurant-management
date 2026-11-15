@@ -2,6 +2,7 @@
 import axios from "axios";
 import { API_URL } from "../config/runtimeConfig.js";
 import toast from "react-hot-toast";
+import { withSavedData, clearSavedData } from "../offline/savedData.js";
 
 const api = axios.create({ baseURL: API_URL });
 
@@ -26,11 +27,16 @@ api.interceptors.response.use(
       redirecting = true;
       localStorage.removeItem("adminToken");
       localStorage.removeItem("adminUser");
+      clearSavedData();
       toast.error(error.response.data.message || "Please log in again");
       setTimeout(() => window.location.assign("/login"), 1200);
     }
     return Promise.reject(error);
   },
 );
+
+// Offline: successful GETs are saved per login; when the server can't be
+// reached, the same GET returns the saved copy (see offline/savedData.js).
+withSavedData(api, () => localStorage.getItem("adminToken"));
 
 export default api;

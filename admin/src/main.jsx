@@ -8,6 +8,7 @@ import { LanguageProvider } from "./i18n/LanguageProvider.jsx";
 import { Toaster } from "react-hot-toast";
 import { registerPwa } from "./pwa/registerPwa.js";
 import UpdatePrompt from "./pwa/UpdatePrompt.jsx";
+import OfflineBanner from "./offline/OfflineBanner.jsx";
 
 import "./fonts/fonts.css"; // self-hosted, works offline
 import "./theme/tokens.css";
@@ -39,6 +40,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         <LanguageProvider>
           <App />
           <UpdatePrompt />
+          <OfflineBanner />
         </LanguageProvider>
       </ThemeProvider>
     </AuthProvider>

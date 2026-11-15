@@ -2,6 +2,7 @@ import { STORAGE_KEY } from "../theme.js";
 // ─── src/context/AuthContext.jsx ──────────────────────────────────────────────
 import { useState } from "react";
 import { AuthContext } from "./authContextObject.js";
+import { clearSavedData } from "../offline/savedData.js";
 
 // src/context/AuthContext.jsx — make sure BOTH use same key
 export function AuthProvider({ children }) {
@@ -22,6 +23,7 @@ export function AuthProvider({ children }) {
   const logout = () => {
     localStorage.removeItem("adminToken");
     localStorage.removeItem("adminUser");
+    clearSavedData(); // offline copies of this login's data (may include guest details)
     setUser(null);
   };
 
