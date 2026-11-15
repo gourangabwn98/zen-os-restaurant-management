@@ -1,9 +1,9 @@
 import { io } from "socket.io-client";
 import { STORAGE } from "../theme.js";
 
-// Socket.IO listens on the same server as the REST API, at the root
-// (not under /api) — derive that from VITE_API_URL.
-const SOCKET_URL = (import.meta.env.VITE_API_URL || "").replace(/\/api\/?$/, "");
+// Socket.IO listens on the same server as the REST API, at the root (not
+// under /api). Address: config/runtimeConfig.js (config.js → VITE_API_URL → same origin).
+import { SOCKET_URL, SOCKET_PATH } from "../config/runtimeConfig.js";
 
 let socket = null;
 
@@ -12,6 +12,7 @@ export const getSocket = () => {
   if (socket) return socket;
   const token = localStorage.getItem(STORAGE.customerToken);
   socket = io(SOCKET_URL, {
+    path: SOCKET_PATH,
     auth: token ? { token } : {},
     transports: ["websocket", "polling"],
     withCredentials: false,

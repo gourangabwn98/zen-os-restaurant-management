@@ -1,12 +1,13 @@
 // src/services/api.js
 import axios from "axios";
+import { API_URL } from "../config/runtimeConfig.js";
 import toast from "react-hot-toast";
 import { STORAGE } from "../theme.js";
 
 /** Fired when the saved login stopped working — hooks/useAuth.js logs out. */
 export const AUTH_EXPIRED_EVENT = "auth:expired";
 
-const api = axios.create({ baseURL: import.meta.env.VITE_API_URL });
+const api = axios.create({ baseURL: API_URL });
 
 // Backend is single-restaurant now — no restaurant-identifying header is
 // needed for guests. Logged-in customers attach their JWT.

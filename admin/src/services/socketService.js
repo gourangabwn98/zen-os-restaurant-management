@@ -1,7 +1,8 @@
 // src/services/socketService.js
 import { io } from "socket.io-client";
 
-const SOCKET_URL = (import.meta.env.VITE_API_URL || "").replace(/\/api\/?$/, "");
+// Backend address: config/runtimeConfig.js (config.js → VITE_API_URL → same origin).
+import { SOCKET_URL, SOCKET_PATH } from "../config/runtimeConfig.js";
 
 let socket = null;
 
@@ -12,6 +13,7 @@ export const getSocket = () => {
   const token = localStorage.getItem("adminToken");
   if (!token) return null;
   socket = io(SOCKET_URL, {
+    path: SOCKET_PATH,
     auth: { token },
     transports: ["websocket", "polling"],
   });

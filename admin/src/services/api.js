@@ -1,8 +1,9 @@
 // src/services/api.js
 import axios from "axios";
+import { API_URL } from "../config/runtimeConfig.js";
 import toast from "react-hot-toast";
 
-const api = axios.create({ baseURL: import.meta.env.VITE_API_URL });
+const api = axios.create({ baseURL: API_URL });
 
 // Single-restaurant mode: the backend is always process.env.MONGO_URI on its
 // end — the client only ever needs to attach its own JWT, never any
