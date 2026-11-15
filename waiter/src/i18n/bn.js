@@ -353,4 +353,8 @@ export default {
   "{table} is calling again": "{table} আবার ডাকছে",
   "{table} — you're on the way": "{table} — আপনি আসছেন",
   "{table} bill · {c} orders": "{table}-এর বিল · {c}টি অর্ডার",
+  // App update prompt (src/pwa/UpdatePrompt.jsx)
+  "A new version of the app is ready.": "অ্যাপের নতুন সংস্করণ তৈরি।",
+  "Reload": "আবার লোড করুন",
+  "Later": "পরে",
 };

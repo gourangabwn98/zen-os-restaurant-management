@@ -94,4 +94,8 @@ export default {
   "{n} days": "{n} দিন",
   "{n} ticket": "{n}টি টিকিট",
   "{n} tickets": "{n}টি টিকিট",
+  // App update prompt (src/pwa/UpdatePrompt.jsx)
+  "A new version of the app is ready.": "অ্যাপের নতুন সংস্করণ তৈরি।",
+  "Reload": "আবার লোড করুন",
+  "Later": "পরে",
 };

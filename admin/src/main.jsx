@@ -6,6 +6,8 @@ import { AuthProvider } from "./context/AuthContext.jsx";
 import { ThemeProvider } from "./context/ThemeProvider.jsx";
 import { LanguageProvider } from "./i18n/LanguageProvider.jsx";
 import { Toaster } from "react-hot-toast";
+import { registerPwa } from "./pwa/registerPwa.js";
+import UpdatePrompt from "./pwa/UpdatePrompt.jsx";
 
 import "./fonts/fonts.css"; // self-hosted, works offline
 import "./theme/tokens.css";
@@ -20,6 +22,9 @@ document.addEventListener("wheel", (e) => {
   if (el?.tagName === "INPUT" && el.type === "number" && el === e.target) el.blur();
 }, { passive: true });
 
+// App shell works offline; a new deploy waits for "Reload" (src/pwa/).
+registerPwa();
+
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <AuthProvider>
@@ -33,6 +38,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         />
         <LanguageProvider>
           <App />
+          <UpdatePrompt />
         </LanguageProvider>
       </ThemeProvider>
     </AuthProvider>

@@ -14,8 +14,9 @@ import marketing from "./marketing.js";
 import settings from "./settings.js";
 import kitchen from "./kitchen.js";
 import khoai from "./khoai.js";
+import offline from "./offline.js";
 
 export default {
   ...common, ...login, ...dashboard, ...orders, ...tables, ...menu, ...inventory,
-  ...insights, ...staff, ...customers, ...marketing, ...settings, ...kitchen, ...khoai,
+  ...insights, ...staff, ...customers, ...marketing, ...settings, ...kitchen, ...khoai, ...offline,
 };
