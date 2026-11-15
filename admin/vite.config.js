@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import process from 'node:process'
 
 // Dev only: when the API URL is relative ("/api" in config.js or .env), the
 // dev server forwards /api and the Socket.IO connection to the backend, like a
