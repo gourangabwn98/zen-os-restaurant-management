@@ -7,6 +7,7 @@ import { ThemeProvider } from "./context/ThemeProvider.jsx";
 import { LanguageProvider } from "./i18n/LanguageProvider.jsx";
 import { Toaster } from "react-hot-toast";
 
+import "./fonts/fonts.css"; // self-hosted, works offline
 import "./theme/tokens.css";
 import "./theme/surfaces.css";
 
