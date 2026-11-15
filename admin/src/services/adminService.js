@@ -108,6 +108,9 @@ export const rejectOrder  = (id, reason) => api.patch(`/orders/${id}/reject`, { 
 // Edit a not-yet-sent order: full item list [{ menuItemId, qty, notes }] + the
 // order's current revision (409 if someone else edited it first).
 export const modifyOrderItems = (id, items, revision) => api.patch(`/orders/${id}/items`, { items, revision });
+// Add items to an existing order (Orders → "Add items"). The server re-prices
+// and decides where they go; body: { items, paymentMethod, paymentStatus }.
+export const addItemsToOrder = (id, body) => api.post(`/admin/orders/${id}/add-items`, body);
 
 // ── Payment verification (Phase 4) ────────────────────────────────────────
 export const updateOrderPayment = (id, body) => api.patch(`/admin/orders/${id}/payment`, body);

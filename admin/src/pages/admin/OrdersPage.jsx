@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import {
   getAllOrders, getRestaurantProfile, updateOrderStatus, settleOrders, reopenOrderBill,
   getAllTables, createTable, printOrderOrGroupBill, confirmOrder, rejectOrder, modifyOrderItems,
+  addItemsToOrder, updateOrderPayment,
 } from "../../services/adminService.js";
 import { placeOrder, newIdempotencyKey } from "../../services/orderService.js";
 import { getSocket } from "../../services/socketService.js";
@@ -1051,20 +1052,13 @@ const AddItemsToOrderModal = ({ order, onClose, onItemsAdded, onFollowUpPlaced }
         onClose();
         return;
       }
-      const token = localStorage.getItem("adminToken");
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/admin/orders/${order._id}/add-items`,
-        {
-          method:"POST",
-          headers:{ "Content-Type":"application/json", Authorization:`Bearer ${token}` },
-          body:JSON.stringify({
-            items: cart.map(c=>({ menuItemId:c.item._id, qty:c.qty, ...(c.addonIds?.length && { addonIds:c.addonIds }) })),
-            paymentMethod, paymentStatus,
-          }),
-        }
-      );
-      const data = await response.json();
-      if(!response.ok) throw new Error(data.message||t("Failed"));
+      // Through the shared api client (runtime backend URL + auth header +
+      // expired-login handling). A refusal throws; the catch below shows the
+      // server's message (e.response.data.message), as before.
+      const { data } = await addItemsToOrder(order._id, {
+        items: cart.map(c=>({ menuItemId:c.item._id, qty:c.qty, ...(c.addonIds?.length && { addonIds:c.addonIds }) })),
+        paymentMethod, paymentStatus,
+      });
       toast.success(`✓ ${tn(totalQty, "Added {n} item to order", "Added {n} items to order")}`);
       onItemsAdded(data);
       onClose();
@@ -1917,21 +1911,15 @@ export default function OrdersPage() {
 
   const handlePaymentChange=async(id,data)=>{
     try{
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/admin/orders/${id}/payment`,{
-        method:"PATCH",
-        headers:{ "Content-Type":"application/json", Authorization:`Bearer ${localStorage.getItem("adminToken")}` },
-        body:JSON.stringify(data),
-      });
-      // A refused change (e.g. a settled bill, or a role that can't undo Paid)
-      // must not look like it worked.
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        toast.error(body?.message || t("Payment update failed"));
-        return false;
-      }
+      await updateOrderPayment(id, data);
       patchOrder(id, data);
       toast.success(t("Payment updated ✓"));
-    }catch{ toast.error(t("Payment update failed")); return false; }
+    }catch(e){
+      // A refused change (e.g. a settled bill, or a role that can't undo Paid)
+      // must not look like it worked: show the server's reason, return false.
+      toast.error(e?.response?.data?.message || t("Payment update failed"));
+      return false;
+    }
   };
 
   const tableOrderMap = {};
