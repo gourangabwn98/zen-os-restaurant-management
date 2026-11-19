@@ -25,6 +25,7 @@ import { isStaffRole, isManagementRole } from "../utils/roles.js";
 import { assertServiceEnabled } from "../utils/serviceToggles.js";
 import { assertWithinDiningRadius } from "../utils/diningRadius.js";
 import { resolveCustomerPaymentMethod, isPayFirst, PAYMENT_METHODS, PAY_FIRST_WINDOW_MS } from "../utils/paymentMode.js";
+import { parseDeliveryCheckout, deliveryPaymentOptions, resolveDeliveryPaymentMethod } from "../utils/delivery.js";
 
 // ── Identity helpers ──────────────────────────────────────────────────────
 
@@ -57,6 +58,7 @@ const getActorRole = (user) => {
   if (isManagementRole(role)) return "ADMIN"; // actor.name still says which person
   if (role === "waiter") return "WAITER";
   if (role === "chef") return "CHEF";
+  if (role === "delivery") return "DELIVERY";
   return "CUSTOMER";
 };
 
@@ -162,6 +164,12 @@ export const placeOrderTx = async ({ req, body }) => {
     err.statusCode = 403;
     throw err;
   }
+  // Same for delivery partners — they carry orders, they don't create them.
+  if (getRoleFromUser(req.user) === "delivery") {
+    const err = new Error("Delivery partner accounts cannot place orders");
+    err.statusCode = 403;
+    throw err;
+  }
 
   // Customers must be logged in to order (no guest orders). Staff are always
   // logged in. Browsing the menu and the cart price quote stay open to all.
@@ -226,10 +234,28 @@ export const placeOrderTx = async ({ req, body }) => {
       err.statusCode = 400;
       throw err;
     }
+  } else if (normalizedType === "ONLINE") {
+    // Home delivery has its OWN payment policy (Admin → Delivery → Payment,
+    // utils/delivery.js): Cash on Delivery by default, Online only when the
+    // admin enabled it AND PhonePe is configured. COD never depends on
+    // PhonePe. Dine-in / takeaway are untouched (paymentMode below).
+    method = resolveDeliveryPaymentMethod({
+      requested: paymentMethod, options: deliveryPaymentOptions({ profile: restaurant, phonePeEnabled }),
+    });
   } else {
     method = resolveCustomerPaymentMethod({ requested: paymentMethod, mode: restaurant?.paymentMode, phonePeEnabled });
   }
+  // Online → pay-first (AWAITING_PAYMENT); COD → the normal customer flow
+  // (PENDING_CONFIRMATION, staff accept) and the rider collects the cash.
   const payFirst = !isStaffOrder && isPayFirst(method, phonePeEnabled);
+
+  // Home delivery (customer checkout): the address/pin must lie inside the
+  // delivery range. Staff orders keep their existing ONLINE behaviour (no
+  // address → no rider job).
+  let deliveryAddress = null;
+  if (!isStaffOrder && normalizedType === "ONLINE") {
+    deliveryAddress = parseDeliveryCheckout({ profile: restaurant, delivery: body.delivery });
+  }
 
   // ── Table / QR verification (soft — see schema comment) + session ─────────
   let tableSessionId = null;
@@ -353,8 +379,9 @@ export const placeOrderTx = async ({ req, body }) => {
     waiterId:      source === "WAITER" ? req.user?._id : null,
     // Staff-only — a customer/guest can never mark their own order urgent.
     priority:      isStaffOrder && priority === "URGENT" ? "URGENT" : "NORMAL",
-    guestName:     customerName  || "",
-    guestPhone:    customerPhone || "",
+    guestName:     customerName  || deliveryAddress?.contactName || "",
+    guestPhone:    customerPhone || deliveryAddress?.contactPhone || "",
+    deliveryAddress,
     paymentMethod: method,
     paymentStatus: "PENDING_VERIFICATION",
     billStatus:    "OPEN", // BIL-02 — only billingService settles it

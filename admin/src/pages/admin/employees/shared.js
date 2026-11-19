@@ -1,7 +1,7 @@
 // src/pages/admin/employees/shared.js — small helpers shared by the Employees screen.
 import { t, N_, fmtNum, fmtDate } from "../../../i18n/core.js";
 
-export const ROLE_LABEL = { manager: N_("Manager"), inventory_manager: N_("Inventory Manager"), waiter: N_("Waiter"), chef: N_("Chef"), admin: N_("Admin"), staff: N_("Other") };
+export const ROLE_LABEL = { manager: N_("Manager"), inventory_manager: N_("Inventory Manager"), waiter: N_("Waiter"), chef: N_("Chef"), admin: N_("Admin"), staff: N_("Other"), delivery: N_("Delivery partner") };
 /** EMP-03: "staff" people show their own job title (Cleaner, Cashier…). */
 export const roleText = (e) => (e?.role === "staff" ? e.jobTitle || t("Other") : t(ROLE_LABEL[e?.role] || e?.role || ""));
 // EMP-01 — the manager's words for a shift (attendanceService SHIFT_STATES).

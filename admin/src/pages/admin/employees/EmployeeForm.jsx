@@ -91,6 +91,7 @@ export default function EmployeeForm({ employee, customRoles = [], onClose, onSa
             {canMakeManager && <option value="inventory_manager">{t("Inventory Manager")}</option>}
             <option value="waiter">{t("Waiter")}</option>
             <option value="chef">{t("Chef")}</option>
+            <option value="delivery">{t("Delivery partner")}</option>
             <option value="staff">{t("Other (type the job)")}</option>
           </select>
         </Field>

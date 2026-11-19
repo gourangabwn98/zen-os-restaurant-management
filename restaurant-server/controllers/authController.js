@@ -398,7 +398,9 @@ export const adminVerifyOTP = async (req, res) => {
 // ── Staff (waiter/chef/admin) login helpers — shared by the OTP and Firebase
 // paths so both apply exactly the same "who counts as active staff" rule and
 // return exactly the same session shape.
-const STAFF_ROLES = ["waiter", "chef", "admin", "manager", "inventory_manager"];
+// "delivery" = rider — same OTP login, lands in the Delivery app (its RBAC is
+// requireDelivery; every other staff route rejects the role).
+const STAFF_ROLES = ["waiter", "chef", "admin", "manager", "inventory_manager", "delivery"];
 
 const findActiveStaffByPhone = (User, phone) =>
   User.findOne({
@@ -496,7 +498,7 @@ export const waiterVerifyOTP = async (req, res) => {
 
     const staffUser = await User.findOne({
       phone,
-      role: { $in: ["waiter","chef","admin","manager","inventory_manager"] },
+      role: { $in: STAFF_ROLES },
     });
 
     if (!staffUser)

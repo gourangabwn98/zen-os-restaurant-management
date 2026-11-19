@@ -60,6 +60,9 @@ export const requireInventoryStaff = requireRole(...new Set([...STAFF_ROLES, INV
 /** Shorthand: admin or chef (kitchen operations) */
 export const requireKitchen = requireRole("admin", "chef");
 
+/** Delivery partner (rider) — the Delivery app's own endpoints only. */
+export const requireDelivery = requireRole("delivery");
+
 /** Any authenticated, active employee — admin, manager, waiter, or chef. Used
  * for shared self-service endpoints like "my dashboard stats". */
 export const requireEmployee = requireRole("admin", "manager", "waiter", "chef");

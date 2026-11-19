@@ -6,7 +6,9 @@
 export const isManager = (user) => !!user && !user.isAdmin && user.role === "manager";
 export const isInventoryManager = (user) => !!user && !user.isAdmin && user.role === "inventory_manager";
 
-export const MANAGER_PAGES = ["orders", "tables", "invoices", "inventory", "employees", "menu", "help"];
+// "delivery": a manager runs riders day to day (Board, Partners, Live map,
+// Cash, Reports) — delivery Settings stay admin-only (server: requireAdmin).
+export const MANAGER_PAGES = ["orders", "tables", "invoices", "inventory", "employees", "menu", "delivery", "help"];
 export const INVENTORY_MANAGER_PAGES = ["inventory"];
 
 export const canOpenPage = (user, page) => isInventoryManager(user)

@@ -40,3 +40,12 @@ export const SOCKET_PATH = isAbsolute ? undefined : `${serverRoot}/socket.io`;
 export const SERVER_ORIGIN = isAbsolute
   ? serverRoot
   : (typeof window !== "undefined" ? window.location.origin + serverRoot : serverRoot);
+
+/**
+ * Google Maps JavaScript API key (browser key — restrict it to this site in
+ * Google Cloud; enable "Maps JavaScript API" and "Directions API"). From
+ * config.js `googleMapsKey` or VITE_GOOGLE_MAPS_KEY. Empty → the tracking
+ * page shows a simple to-scale view with straight-line distance and NO ETA
+ * (an ETA is never guessed).
+ */
+export const GOOGLE_MAPS_KEY = String(runtime.googleMapsKey || import.meta.env.VITE_GOOGLE_MAPS_KEY || "").trim();

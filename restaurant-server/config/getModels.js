@@ -19,6 +19,7 @@ import { INGREDIENT_SOURCES } from "../utils/recipeCost.js";
 import { CATEGORY_KINDS, SMART_KEYS } from "../utils/menuCategories.js";
 import { DUTY_ACTIONS, DUTY_CHANGE_SOURCES, BREAK_REASON_MAX } from "../utils/attendanceStateMachine.js";
 import { DINING_AREAS } from "../utils/diningArea.js";
+import { getDeliveryModels } from "./deliveryModels.js";
 
 // ── Atomic counters ──────────────────────────────────────────────────────────
 // One document per sequence (currently just "orderId"). Incremented with a
@@ -51,7 +52,8 @@ const userSchema = new mongoose.Schema({
   // "staff" (EMP-03) = an employee with a custom job (Cashier, Helper …) and
   // no app login — the OTP login and RBAC only ever accept admin/manager/waiter/chef.
   // "manager" = admin-app login limited to some pages (utils/roles.js).
-  role:       { type: String, enum: ["admin","manager","inventory_manager","waiter","chef","customer","staff"], default: "customer" },
+  // "delivery" = a delivery partner (rider): Delivery app login only (utils/roles.js).
+  role:       { type: String, enum: ["admin","manager","inventory_manager","waiter","chef","customer","staff","delivery"], default: "customer" },
   // EMP-03 — the custom role name for role "staff" (reused for later hires).
   jobTitle:   { type: String, default: "", trim: true, maxlength: 40 },
   address:    { type: String, default: "" }, // employee address (Employee Management)
@@ -97,7 +99,8 @@ const actorSchema = new mongoose.Schema({
   // Broader than ORDER_SOURCES (which is specifically "who created the
   // order") — CHEF is a legitimate actor (e.g. preparedBy/readyBy) even
   // though a chef can never be an order's source.
-  role: { type: String, enum: [...ORDER_SOURCES, "CHEF", "GUEST"], default: null },
+  // DELIVERY = a rider (OTP-verified hand-over → deliveredBy).
+  role: { type: String, enum: [...ORDER_SOURCES, "CHEF", "GUEST", "DELIVERY"], default: null },
   name: { type: String, default: "" },
 }, { _id: false });
 
@@ -165,6 +168,25 @@ const restaurantProfileSchema = new mongoose.Schema({
   // menu items switch back on at this time (services/menuItemService.js).
   businessDayEndsAt: { type: String, default: "03:00" },
   // Staff rules (Employees → Pay / Leave). Admin-editable, never env vars.
+  // Home delivery (services/deliveryService.js, utils/delivery.js
+  // deliverySettings — read through that helper, which fills defaults and
+  // clamps). The delivery radius is `deliveryRange` above (metres).
+  delivery: {
+    defaultCapacity:        { type: Number, default: 3 },
+    offerTtlSeconds:        { type: Number, default: 45 },
+    maxRounds:              { type: Number, default: 5 },
+    trackingTtlHours:       { type: Number, default: 2 },
+    presenceTimeoutMinutes: { type: Number, default: 10 },
+    maxOtpAttempts:         { type: Number, default: 5 },
+    // Which payment methods home delivery offers (utils/delivery.js
+    // deliveryPaymentOptions). COD is the default; online (PhonePe) only
+    // when an admin enables it AND PhonePe is configured.
+    payment: {
+      codEnabled:    { type: Boolean, default: true },
+      onlineEnabled: { type: Boolean, default: false },
+      defaultMethod: { type: String, enum: ["COD", "ONLINE"], default: "COD" },
+    },
+  },
   staffPolicy: {
     // EMP-02 — leaves earned per month; unused ones carry forward (no cap).
     paidLeavePerMonth: { type: Number, default: 4, min: 0, max: 31 },
@@ -473,6 +495,23 @@ const orderSchema = new mongoose.Schema({
   // Display can play a distinct alert tone for it.
   priority:       { type: String, enum: ["NORMAL","URGENT"], default: "NORMAL" },
   waiterId:       { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+
+  // ── Home delivery (orderType ONLINE, customer checkout) ────────────────────
+  // Validated server-side (utils/delivery.js parseDeliveryCheckout) — inside
+  // RestaurantProfile.deliveryRange. null on every non-delivery order. The
+  // delivery itself lives in DeliveryJob (config/deliveryModels.js).
+  deliveryAddress: {
+    type: new mongoose.Schema({
+      address:        { type: String, required: true },
+      landmark:       { type: String, default: "" },
+      latitude:       { type: Number, required: true },
+      longitude:      { type: Number, required: true },
+      contactName:    { type: String, default: "" },
+      contactPhone:   { type: String, required: true },
+      distanceMeters: { type: Number, default: null },
+    }, { _id: false }),
+    default: null,
+  },
 
   // ── Idempotency (Phase 1) ──────────────────────────────────────────────────
   // Client (customer/waiter/admin UI) generates one key per "place order"
@@ -1194,5 +1233,8 @@ export function getModels(conn) {
     WastageLog:          conn.models.WastageLog         || conn.model("WastageLog",         wastageLogSchema),
     WaiterCall:          conn.models.WaiterCall         || conn.model("WaiterCall",         waiterCallSchema),
     Coupon:              conn.models.Coupon             || conn.model("Coupon",             couponSchema),
+
+    // ── Home delivery (config/deliveryModels.js) ───────────────────────────
+    ...getDeliveryModels(conn),
   };
 }

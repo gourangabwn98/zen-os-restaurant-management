@@ -3,6 +3,7 @@ import cloudinary  from "../config/cloudinary.js";
 import streamifier from "streamifier";
 import { isPhonePeConfigured } from "../services/paymentService.js";
 import { PAYMENT_MODES, effectivePaymentMode } from "../utils/paymentMode.js";
+import { deliveryPaymentOptions } from "../utils/delivery.js";
 import { effectiveServices } from "../utils/serviceToggles.js";
 import { emitMenuUpdated } from "../sockets/socket.js";
 
@@ -28,6 +29,8 @@ export const getRestaurantProfile = async (req, res) => {
         phonePeEnabled,
         // What customers actually get (ONLINE without PhonePe falls back to CASH).
         effectivePaymentMode: effectivePaymentMode(profile.paymentMode, phonePeEnabled),
+        // Home delivery's own methods (COD default) — the cart shows only these.
+        deliveryPayment: deliveryPaymentOptions({ profile, phonePeEnabled }),
       },
     });
   } catch (err) { res.status(500).json({ message: err.message }); }
@@ -35,6 +38,10 @@ export const getRestaurantProfile = async (req, res) => {
 
 export const updateRestaurantProfile = async (req, res) => {
   try {
+    // Delivery settings (capacity, payment methods …) are changed only through
+    // their validated endpoint (PATCH /api/delivery/admin/settings) — a Profile
+    // save that sends back a stale copy must never overwrite them.
+    if (req.body && typeof req.body === "object") delete req.body.delivery;
     const { RestaurantProfile } = req.models;
     if (req.body.paymentMode !== undefined) {
       if (!PAYMENT_MODES.includes(req.body.paymentMode)) {

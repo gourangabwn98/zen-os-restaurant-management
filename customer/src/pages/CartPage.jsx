@@ -14,6 +14,8 @@ import Icon from "../components/ui/Icon.jsx";
 import CouponSheet from "../components/CouponSheet.jsx";
 import OrderEditReview from "../components/OrderEditReview.jsx";
 import { describeCoupon } from "../utils/coupon.js";
+import DeliveryDetails, { emptyDelivery, deliveryProblem } from "../components/delivery/DeliveryDetails.jsx";
+import { loadSavedAddress, saveAddress } from "../services/deliveryService.js";
 
 const LOGIN_REQUIRED = "LOGIN_REQUIRED";
 const rupees = (n) => `₹${Math.round((Number(n) || 0) * 100) / 100}`;
@@ -47,6 +49,17 @@ function ShoppingCart() {
   // sent with the order — the server re-checks it and computes the discount.
   const [coupon, setCoupon] = useState(null);
   const [couponOpen, setCouponOpen] = useState(false);
+  // Home delivery: its OWN payment methods (Admin → Delivery → Settings;
+  // server utils/delivery.js deliveryPaymentOptions) — COD by default.
+  const [deliveryPay, setDeliveryPay] = useState({ methods: ["Cash"], defaultMethod: "Cash", available: true, unavailableReason: "" });
+  const [delivery, setDelivery] = useState(() => {
+    const saved = loadSavedAddress();
+    return {
+      ...emptyDelivery(), ...(saved || {}),
+      contactName: saved?.contactName || auth.user?.name || "", contactPhone: saved?.contactPhone || auth.user?.phone || "",
+      latitude: null, longitude: null, accuracy: null, // the pin is always taken fresh
+    };
+  });
 
   useEffect(() => {
     const d = locationGate.profile;
@@ -58,9 +71,17 @@ function ShoppingCart() {
     if (d.acServiceChargePerGuest != null) setAcRate(Number(d.acServiceChargePerGuest));
     if (mode === "ONLINE") setPaymentMethod("Online");
     if (mode === "CASH") setPaymentMethod("Cash");
+    if (d.deliveryPayment) setDeliveryPay(d.deliveryPayment);
   }, [locationGate.profile]);
 
-  const methods = payMode === "CASH" ? ["Cash"] : payMode === "ONLINE" ? ["Online"] : ["Cash", "Online"];
+  const isDelivery = orderType === "ONLINE";
+  const methods = isDelivery ? deliveryPay.methods
+    : payMode === "CASH" ? ["Cash"] : payMode === "ONLINE" ? ["Online"] : ["Cash", "Online"];
+  // Switching to / from delivery puts the right default method back.
+  useEffect(() => {
+    if (isDelivery) setPaymentMethod(deliveryPay.defaultMethod || "Cash");
+    else setPaymentMethod(payMode === "ONLINE" ? "Online" : "Cash");
+  }, [isDelivery, deliveryPay.defaultMethod, payMode]);
   // Online + PhonePe = pay first: the order reaches the restaurant only once paid.
   const payFirst = paymentMethod === "Online" && phonePeEnabled;
 
@@ -70,12 +91,14 @@ function ShoppingCart() {
   // SET-01: the order types this customer can actually use right now.
   const canDineIn = table.isDineIn && services.dineIn !== false;
   const canTakeaway = services.takeAway !== false;
+  const canDelivery = services.delivery === true;
   const isAcTable = orderType === "DINE_IN" && canDineIn && table.diningArea === "AC_ROOM";
   const guestsN = /^\d+$/.test(guests) ? Number(guests) : 0;
   useEffect(() => {
     if (canDineIn) setOrderType("DINE_IN");
-    else if (canTakeaway) setOrderType("TAKEAWAY");
-  }, [canDineIn, canTakeaway]);
+    else if (canTakeaway) setOrderType((ty) => (ty === "ONLINE" && canDelivery ? ty : "TAKEAWAY"));
+    else if (canDelivery) setOrderType("ONLINE");
+  }, [canDineIn, canTakeaway, canDelivery]);
 
   // ── Live bill from the server (POST /orders/quote) ──────────────────────
   // The SAME pricing the order is stored with (orderService.priceOrderDraft):
@@ -141,10 +164,11 @@ function ShoppingCart() {
     if (table.checking) return false; // a scanned QR is still being verified
     if (orderType === "DINE_IN" && !canDineIn) return false;
     if (orderType === "TAKEAWAY" && !canTakeaway) return false;
+    if (isDelivery && (!canDelivery || !deliveryPay.available || deliveryProblem(delivery))) return false;
     if (orderType === "DINE_IN" && locationGate.status !== "allowed") return false;
     if (isAcTable && !(guestsN >= 1 && guestsN <= 100)) return false;
     return true;
-  }, [cart.itemCount, table.checking, orderType, canDineIn, canTakeaway, locationGate.status, isAcTable, guestsN]);
+  }, [cart.itemCount, table.checking, orderType, canDineIn, canTakeaway, locationGate.status, isAcTable, guestsN, isDelivery, canDelivery, deliveryPay.available, delivery]);
 
   const handlePlace = async () => {
     // Login is required to order (the server refuses guest orders too). The
@@ -161,8 +185,13 @@ function ShoppingCart() {
         guests: isAcTable ? guestsN : undefined,
         location: orderType === "DINE_IN" ? locationGate.coords : undefined,
         // A logged-in customer's profile; a guest sends nothing.
-        customerName: auth.user?.name || undefined,
-        customerPhone: auth.user?.phone || undefined,
+        customerName: (isDelivery ? delivery.contactName : auth.user?.name) || undefined,
+        customerPhone: (isDelivery ? delivery.contactPhone : auth.user?.phone) || undefined,
+        // Home delivery: address + GPS pin (server checks the delivery range).
+        delivery: isDelivery ? {
+          address: delivery.address, landmark: delivery.landmark, latitude: delivery.latitude, longitude: delivery.longitude,
+          contactName: delivery.contactName, contactPhone: delivery.contactPhone,
+        } : undefined,
         paymentMethod,
         // Only a coupon the server just accepted in the quote is sent.
         couponCode: couponOk ? coupon.code : undefined,
@@ -170,6 +199,7 @@ function ShoppingCart() {
         idempotencyKey: idemKey,
       };
       const { data: order } = await placeOrder(body);
+      if (isDelivery) saveAddress({ address: delivery.address, landmark: delivery.landmark, contactName: delivery.contactName, contactPhone: delivery.contactPhone });
 
       if (!auth.isLoggedIn && order.guestAccessToken) {
         saveGuestOrderToken(order._id, order.guestAccessToken);
@@ -214,6 +244,8 @@ function ShoppingCart() {
 
   // Why the button is disabled — shown right above it so it's never a mystery.
   const blocker = table.checking ? "Checking your table…"
+    : isDelivery && !deliveryPay.available ? deliveryPay.unavailableReason
+    : isDelivery ? deliveryProblem(delivery)
     : orderType === "DINE_IN" && locationGate.status !== "allowed" ? locationGate.message
     : !canDineIn && !canTakeaway
     ? (table.isDineIn ? "Ordering from the table is switched off right now — please ask a waiter." : "Takeaway orders are switched off right now — please ask at the counter.")
@@ -235,11 +267,21 @@ function ShoppingCart() {
               Not your table? Tap ✕ to switch to takeaway.
             </p>
           </>
-        ) : canTakeaway ? (
+        ) : canTakeaway || canDelivery ? (
           <>
-            <div className="opt is-on" style={{ margin: 0 }}>
-              <span className="ic">🛍️</span>
-              <span><b>Takeaway</b><span className="muted small">You'll collect this order at the restaurant</span></span>
+            <div role="radiogroup" aria-label="How do you want your order?">
+              {canTakeaway && (
+                <button type="button" role="radio" aria-checked={orderType !== "ONLINE"} className={`opt${orderType !== "ONLINE" ? " is-on" : ""}`} style={{ margin: 0 }} onClick={() => setOrderType("TAKEAWAY")}>
+                  <span className="ic">🛍️</span>
+                  <span><b>Takeaway</b><span className="muted small">You'll collect this order at the restaurant</span></span>
+                </button>
+              )}
+              {canDelivery && (
+                <button type="button" role="radio" aria-checked={orderType === "ONLINE"} className={`opt${orderType === "ONLINE" ? " is-on" : ""}`} style={{ margin: canTakeaway ? "8px 0 0" : 0 }} onClick={() => setOrderType("ONLINE")}>
+                  <span className="ic">🛵</span>
+                  <span><b>Home delivery</b><span className="muted small">{deliveryPay.available ? "We'll bring it to your door — track the rider live" : deliveryPay.unavailableReason}</span></span>
+                </button>
+              )}
             </div>
             {table.isDineIn && !services.dineIn && (
               <p className="muted small" style={{ margin: "8px 0 0" }}>Dine-in ordering is switched off right now, so this order is takeaway.</p>
@@ -266,6 +308,8 @@ function ShoppingCart() {
         {cart.cart.map((c) => <CartLine key={keyOf(c)} line={c} cart={cart} />)}
         <Link to="/menu" className="btn btn-ghost" style={{ margin: "12px 0", minHeight: 46 }}>+ Add more items</Link>
       </div>
+
+      {isDelivery && <DeliveryDetails value={delivery} onChange={setDelivery} />}
 
       {isAcTable && (
         <div className="card" style={{ marginTop: 12 }}>
@@ -360,10 +404,11 @@ function ShoppingCart() {
           >
             <span className="ic">{m === "Cash" ? "💵" : "📲"}</span>
             <span>
-              <b>{m === "Cash" ? (orderType === "DINE_IN" ? "Pay at your table" : "Pay at the counter") : phonePeEnabled ? "Pay now online (PhonePe)" : "UPI (pay after ordering)"}</b>
+              <b>{m === "Cash" ? (isDelivery ? "Cash on Delivery" : orderType === "DINE_IN" ? "Pay at your table" : "Pay at the counter") : phonePeEnabled ? "Pay now online (PhonePe)" : "UPI (pay after ordering)"}</b>
               <span className="muted small">
                 {m === "Cash"
-                  ? orderType === "DINE_IN"
+                  ? isDelivery ? "Pay the delivery partner in cash when your order arrives."
+                  : orderType === "DINE_IN"
                     ? "Cash, UPI or card. After ordering, tap “Call waiter” on your order page and your waiter will come to collect it."
                     : "Cash, UPI or card when you collect your order."
                   : phonePeEnabled

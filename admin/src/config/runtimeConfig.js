@@ -40,3 +40,11 @@ export const SOCKET_PATH = isAbsolute ? undefined : `${serverRoot}/socket.io`;
 export const SERVER_ORIGIN = isAbsolute
   ? serverRoot
   : (typeof window !== "undefined" ? window.location.origin + serverRoot : serverRoot);
+
+/**
+ * Google Maps JavaScript API key for the Delivery live map — config.js
+ * (`googleMapsKey`) or VITE_GOOGLE_MAPS_KEY. A BROWSER key: restrict it to
+ * this site's address in Google Cloud. Empty → the map shows a schematic
+ * (to-scale positions, no street tiles) and says so.
+ */
+export const GOOGLE_MAPS_KEY = String(runtime.googleMapsKey || import.meta.env.VITE_GOOGLE_MAPS_KEY || "").trim();

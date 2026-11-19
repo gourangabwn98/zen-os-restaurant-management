@@ -25,12 +25,13 @@ import "./employees/employees.css";
 import { useAuth } from "../../hooks/useAuth.js";
 import { isManager } from "../../utils/access.js";
 
-const STAFF_ROLES = ["manager", "waiter", "chef", "staff"];
+const STAFF_ROLES = ["manager", "waiter", "chef", "staff", "delivery"];
 const ROLE_FILTERS = [
   { key: "", label: N_("All") },
   { key: "manager", label: N_("Managers"), adminOnly: true },
   { key: "waiter", label: N_("Waiters") },
   { key: "chef", label: N_("Chefs") },
+  { key: "delivery", label: N_("Delivery") },
   { key: "staff", label: N_("Others") },
 ];
 const DUTY_FILTER_LABEL = { on: N_("On duty now"), worked: N_("Worked today") };

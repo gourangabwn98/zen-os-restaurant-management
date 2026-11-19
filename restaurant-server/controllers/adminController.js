@@ -6,6 +6,7 @@ import { parseGuests, applyGuestsToOrder } from "../services/acServiceCharge.js"
 import { priceItems, computeTotals } from "../utils/pricing.js";
 import { getScheduleContext } from "../services/menuScheduleService.js";
 import { transitionOrderStatusTx, buildActor, getRoleFromUser, EDITABLE_STATUSES } from "../services/orderService.js";
+import { kickDeliveryForOrder } from "../services/deliveryRealtime.js";
 import { ORDER_STATUSES, PAYMENT_STATUSES, canSetPaymentStatus } from "../utils/orderStateMachine.js";
 import {
   emitOrderStatusChanged, emitOrderCancelled, emitOrderConfirmed,
@@ -247,6 +248,7 @@ export const updateOrderStatus = async (req, res) => {
     } else {
       emitOrderStatusChanged(req.tenantKey, order, previousStatus);
     }
+    kickDeliveryForOrder(req, order); // home delivery: create / cancel / "ready for pickup"
 
     // Order completion just auto-cleared its table — same realtime events
     // the manual "clear table" button used to fire (see
