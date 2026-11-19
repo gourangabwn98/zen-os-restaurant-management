@@ -9,6 +9,7 @@ import {
   placeOrderTx, confirmOrderTx, cancelOrderTx, assertCanViewOrder, modifyOrderItemsTx,
   priceOrderDraft, getSourceFromUser,
 } from "../services/orderService.js";
+import { kickDeliveryForOrder } from "../services/deliveryRealtime.js";
 import {
   emitNewOrderPendingConfirmation, emitOrderCancelled, emitOrderConfirmed,
   emitSentToKitchen, emitOrderModified, emitKitchenOrderModified,
@@ -127,6 +128,7 @@ export const confirmOrder = async (req, res) => {
 
     emitOrderConfirmed(req.tenantKey, order);
     if (order.status === "PREPARING") emitSentToKitchen(req.tenantKey, { order, kotJob, kotCreated, inventoryAlerts });
+    kickDeliveryForOrder(req, order); // home delivery: broadcast to riders now (D1)
 
     res.json({
       message: "Order accepted",
@@ -151,6 +153,7 @@ export const rejectOrder = async (req, res) => {
       req, orderId: req.params.id, reason: req.body?.reason || "Rejected by staff",
     });
     emitOrderCancelled(req.tenantKey, order, order.cancelReason);
+    kickDeliveryForOrder(req, order);
     res.json({ message: "Order rejected", order });
   } catch (err) {
     res.status(err.statusCode || 500).json({ message: err.message });
@@ -165,6 +168,7 @@ export const cancelOrder = async (req, res) => {
       req, orderId: req.params.id, reason: req.body?.reason || "",
     });
     emitOrderCancelled(req.tenantKey, order, order.cancelReason);
+    kickDeliveryForOrder(req, order);
     res.json({ message: "Order cancelled", order });
   } catch (err) {
     res.status(err.statusCode || 500).json({ message: err.message });

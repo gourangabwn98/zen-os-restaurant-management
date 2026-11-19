@@ -32,6 +32,9 @@ import { t, tn, N_, fmtNum, fmtDate } from "../../i18n/core.js";
 import { displayName, displayLogo } from "../../brand.js";
 import { invalidate } from "../../services/cache.js";
 import PrintServiceCard from "./shared/PrintServiceCard.jsx";
+// Full backend address for the print-service .env — absolute even when the
+// app talks to a relative "/api" on its own origin.
+import { SERVER_ORIGIN } from "../../config/runtimeConfig.js";
 
 // ── page-scoped styles (tokens only — light / dark safe) ─────────────────────
 if (typeof document !== "undefined" && !document.getElementById("prof-styles")) {
@@ -628,7 +631,7 @@ export default function ProfilePage() {
           />
 
           {/* Print service — what actually prints KOTs and bills */}
-          <PrintServiceCard backendUrl={String(import.meta.env.VITE_API_URL || "").replace(/\/api\/?$/, "")} />
+          <PrintServiceCard backendUrl={SERVER_ORIGIN} />
 
           {/* Printers — reference list only (the print service reads its own printers.config.json) */}
           <div className="zc-card" style={{ marginBottom: 16 }}>

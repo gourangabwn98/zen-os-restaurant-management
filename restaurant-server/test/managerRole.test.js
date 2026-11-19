@@ -74,7 +74,8 @@ await test("orders: a manager's order is a staff order (source ADMIN) and the ac
 await test("employees: admin can create a manager; a manager can't", async () => {
   assert.ok(EMPLOYEE_ROLES.includes("manager"));
   assert.ok(employeeRolesFor(ADMIN).includes("manager"));
-  assert.deepEqual(employeeRolesFor(MANAGER), ["waiter", "chef", "staff"]);
+  // A manager also registers delivery partners (riders) — never managers.
+  assert.deepEqual(employeeRolesFor(MANAGER), ["waiter", "chef", "staff", "delivery"]);
   const User = { findOne: async () => null, create: async (d) => d };
   const made = await createEmployee({ User, name: "Rina", phone: "9876543210", role: "manager", roles: employeeRolesFor(ADMIN) });
   assert.equal(made.role, "manager");

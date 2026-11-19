@@ -50,6 +50,9 @@ import notificationRoutes from "./routes/notificationRoutes.js";
 import attendanceRoutes from "./routes/attendanceRoutes.js";
 import waiterCallRoutes from "./routes/waiterCallRoutes.js";
 import couponRoutes from "./routes/couponRoutes.js";
+import deliveryRoutes from "./routes/deliveryRoutes.js";
+import { runDeliveryTick } from "./services/deliveryService.js";
+import { publishDeliveryEffects } from "./services/deliveryRealtime.js";
 import { errorHandler, notFound } from "./middleware/errorMiddleware.js";
 import compression from "compression";
 import { sanitizeInput } from "./middleware/sanitizeInput.js";
@@ -125,6 +128,7 @@ app.use("/api/notifications",     notificationRoutes);
 app.use("/api/waiter-calls",      waiterCallRoutes);
 app.use("/api/coupons",           couponRoutes);
 app.use("/api/attendance",        attendanceRoutes);
+app.use("/api/delivery",          deliveryRoutes);
 
 app.get("/api/test-whatsapp/:phone", async (req, res) => {
   const { sendWhatsAppBill } = await import("./utils/sendWhatsAppBill.js");
@@ -171,6 +175,7 @@ connectDB().then(() => {
       startScheduledOfferTick();
       startPayFirstTick();
       startAutoSendTick();
+      startDeliveryTick();
       startCategoryOrderingResetTick();
     }
   });
@@ -247,6 +252,36 @@ const startPayFirstTick = () => {
   };
   tick();
   setInterval(tick, PAY_FIRST_TICK_MS);
+};
+
+// ── Home delivery ───────────────────────────────────────────────────────────
+// Creates jobs for confirmed delivery orders, expires offers, re-broadcasts or
+// escalates, takes idle riders offline and repairs capacity drift
+// (services/deliveryService.js runDeliveryTick). Every step is an atomic
+// conditional write — safe on several instances. 5s keeps offer expiry tight.
+const DELIVERY_TICK_MS = 5 * 1000;
+const startDeliveryTick = () => {
+  let running = false;
+  const tick = async () => {
+    if (running) return; // a slow tick never overlaps itself
+    running = true;
+    try {
+      const mongoUri = process.env.MONGO_URI;
+      const conn = await getDB(mongoUri);
+      const models = getModels(conn);
+      const { stats, effects } = await runDeliveryTick({ models, db: conn });
+      publishDeliveryEffects(tenantKeyFromUri(mongoUri), effects, { models });
+      if (stats.created || stats.cancelled || stats.rebroadcast || stats.escalated || stats.wentOffline || stats.repaired) {
+        console.log("🛵 delivery tick:", stats);
+      }
+    } catch (err) {
+      console.error("delivery tick failed:", err.message);
+    } finally {
+      running = false;
+    }
+  };
+  tick();
+  setInterval(tick, DELIVERY_TICK_MS);
 };
 
 const CATEGORY_ORDERING_TICK_MS = 60 * 1000;

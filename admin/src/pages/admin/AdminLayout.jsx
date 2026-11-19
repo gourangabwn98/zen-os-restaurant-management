@@ -21,6 +21,7 @@ const PAGE_LOADERS = {
   notifications: () => import("./NotificationsPage.jsx"),
   coupons:       () => import("./CouponsPage.jsx"),
   invoices:      () => import("./InvoicesPage.jsx"),
+  delivery:      () => import("./DeliveryPage.jsx"),
   analytics:     () => import("./AnalyticsPage.jsx"),
   employees:     () => import("./EmployeesPage.jsx"),
   inventory:     () => import("./InventoryEntry.jsx"),
@@ -34,6 +35,7 @@ const UsersPage         = lazy(PAGE_LOADERS.users);
 const NotificationsPage = lazy(PAGE_LOADERS.notifications);
 const CouponsPage       = lazy(PAGE_LOADERS.coupons);
 const InvoicesPage      = lazy(PAGE_LOADERS.invoices);
+const DeliveryPage      = lazy(PAGE_LOADERS.delivery);
 const AnalyticsPage     = lazy(PAGE_LOADERS.analytics);
 const EmployeesPage     = lazy(PAGE_LOADERS.employees);
 const InventoryPage     = lazy(PAGE_LOADERS.inventory);
@@ -77,6 +79,7 @@ const ICONS = {
   coupon:    <><path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4z" /><path d="M9 15l6-6" /><circle cx="9.5" cy="9.5" r=".6" /><circle cx="14.5" cy="14.5" r=".6" /></>,
   bell:      <><path d="M6 8a6 6 0 0 1 12 0c0 4 1.5 6 2 7H4c.5-1 2-3 2-7Z" /><path d="M10 19a2 2 0 0 0 4 0" /></>,
   profile:   <><circle cx="12" cy="12" r="3" /><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4" /></>,
+  delivery:  <><circle cx="6" cy="17" r="2.5" /><circle cx="18" cy="17" r="2.5" /><path d="M8.5 17h7M4 13l3-5h5l2 5M14 8h3l2.5 6.5" /></>,
   help:      <><circle cx="12" cy="12" r="9" /><path d="M9.5 9.5a2.5 2.5 0 1 1 3 2.4V14" /><path d="M12 17.5v.01" /></>,
   // Sidebar toggle — a panel glyph with a chevron pointing the direction the
   // click will move things, so "open" and "close" are visually distinct
@@ -100,6 +103,7 @@ const OPERATIONS_NAV_A = [
 const OPERATIONS_NAV_B = [
   { id: "dashboard", label: N_("Dashboard"), icon: "dash" },
   { id: "invoices", label: N_("Invoices"), icon: "invoices" },
+  { id: "delivery", label: N_("Delivery"), icon: "delivery" },
   { id: "inventory", label: N_("Inventory"), icon: "inventory" },
 ];
 const MANAGEMENT_NAV = [
@@ -427,6 +431,7 @@ export default function AdminLayout() {
             {activePage === "notifications" && <NotificationsPage />}
             {activePage === "coupons"    && <CouponsPage />}
             {activePage === "invoices"   && <InvoicesPage />}
+            {activePage === "delivery"   && <DeliveryPage onNavigate={setPage} />}
             {activePage === "analytics"  && <AnalyticsPage onNavigate={setPage} />}
             {activePage === "profile"    && <ProfilePage />}
             {activePage === "help"       && <HelpPage />}

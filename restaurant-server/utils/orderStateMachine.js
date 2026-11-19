@@ -121,7 +121,9 @@ const TRANSITION_ROLES = {
   "CONFIRMED->CANCELLED":            ["admin", "manager", "waiter"],
   "PREPARING->READY":                ["admin", "manager", "waiter", "chef"],
   "PREPARING->CANCELLED":            ["admin", "manager"], // once kitchen has started, only admin/manager can void
-  "READY->DELIVERED":                ["admin", "manager", "waiter"], // waiter taps "Served" → Eating
+  // waiter taps "Served" → Eating; "delivery" = a rider's OTP-verified
+  // hand-over of a home-delivery order (services/deliveryService.js deliverJob).
+  "READY->DELIVERED":                ["admin", "manager", "waiter", "delivery"],
   // Bill settled in billing → Completed (services/billingService.js).
   "DELIVERED->COMPLETED":            ["system"],
 };

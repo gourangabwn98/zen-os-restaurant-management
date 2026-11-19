@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
+import "./fonts/fonts.css"; // self-hosted, works offline
 import "./index.css";
 import { initInstallPrompt } from "./services/installPrompt.js";
 

@@ -19,6 +19,7 @@ import ProfilePage from "./pages/ProfilePage.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
 import FavoritesPage from "./pages/FavoritesPage.jsx";
 import NotificationsPage from "./pages/NotificationsPage.jsx";
+import TrackPage from "./pages/TrackPage.jsx";
 
 const NO_CHROME_ROUTES = ["/login"];
 // Browsing screens show the floating "View cart" bar (as in the reference).
@@ -27,7 +28,8 @@ const CART_BAR_ROUTES = ["/", "/menu", "/offers", "/favorites", "/profile"];
 function Shell({ children }) {
   const { pathname } = useLocation();
   const { auth, cart, orderEdit } = useAppState();
-  const chrome = !NO_CHROME_ROUTES.includes(pathname);
+  // /track/:token is a standalone public page (shared link, no login).
+  const chrome = !NO_CHROME_ROUTES.includes(pathname) && !pathname.startsWith("/track/");
   const showCartBar = chrome && (cart.itemCount > 0 || orderEdit.active) && CART_BAR_ROUTES.includes(pathname);
 
   // Refreshes a rotated FCM token silently for a customer who already
@@ -91,6 +93,7 @@ export default function App() {
             <Route path="/profile"   element={<ProfilePage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/login"     element={<LoginPage />} />
+            <Route path="/track/:token" element={<TrackPage />} />
             <Route path="*"          element={<Navigate to="/" replace />} />
           </Routes>
         </Shell>

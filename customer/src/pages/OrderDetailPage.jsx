@@ -7,6 +7,7 @@ import { getRestaurantProfile } from "../services/restaurantService.js";
 import { subscribeToOrder } from "../services/socketService.js";
 import StatusStepper from "../components/StatusStepper.jsx";
 import RateOrderCard from "../components/RateOrderCard.jsx";
+import DeliveryCard from "../components/delivery/DeliveryCard.jsx";
 import { useAppState } from "../context/AppState.jsx";
 import { canEditOrder } from "../hooks/useOrderEdit.js";
 import { Loader, ErrorState } from "../components/StateViews.jsx";
@@ -165,7 +166,7 @@ export default function OrderDetailPage() {
         <button type="button" className="back" onClick={() => nav("/orders")}><Icon name="back" />All orders</button>
         <h2>#{order.orderId}</h2>
         <p className="small">
-          {order.orderType === "DINE_IN" ? `Dine-in${order.tableNo ? ` · ${order.tableName || `Table ${order.tableNo}`}` : ""}` : "Takeaway"}
+          {order.orderType === "DINE_IN" ? `Dine-in${order.tableNo ? ` · ${order.tableName || `Table ${order.tableNo}`}` : ""}` : order.orderType === "ONLINE" ? "Home delivery" : "Takeaway"}
           {order.createdAt ? ` · ${formatOrderTime(order.createdAt)}` : ""}
         </p>
       </div>
@@ -179,6 +180,9 @@ export default function OrderDetailPage() {
         </div>
         <StatusStepper status={order.status} />
       </div>
+
+      {/* ── Home delivery: rider, hand-over code, live map, tracking link ── */}
+      {order.orderType === "ONLINE" && order.deliveryAddress && !["AWAITING_PAYMENT", "CANCELLED"].includes(order.status) && <DeliveryCard order={order} />}
 
       {/* ── ORD-01: held — can still be changed until it goes to the kitchen ── */}
       {["PENDING_CONFIRMATION", "CONFIRMED"].includes(order.status) && !order.stockDeducted && (

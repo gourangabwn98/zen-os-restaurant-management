@@ -12,7 +12,8 @@ import { zonedInstant } from "./offerStatsService.js";
 
 // "staff" = EMP-03's "Other": a custom job (jobTitle) with no app login.
 // "manager" = admin-app login limited to some pages (utils/roles.js).
-export const EMPLOYEE_ROLES = ["manager", "inventory_manager", "waiter", "chef", "staff"]; // extensible — add new categories here only
+// "delivery" = delivery partner (rider) — logs in to the Delivery app only.
+export const EMPLOYEE_ROLES = ["manager", "inventory_manager", "waiter", "chef", "staff", "delivery"]; // extensible — add new categories here only
 
 /** The employee categories this person may see and manage: everything for
  *  an admin; a manager never another manager (middleware/managerScope.js). */

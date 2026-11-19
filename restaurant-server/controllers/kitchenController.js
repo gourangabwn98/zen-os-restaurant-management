@@ -1,5 +1,6 @@
 // controllers/kitchenController.js
 import { transitionOrderStatusTx } from "../services/orderService.js";
+import { kickDeliveryForOrder } from "../services/deliveryRealtime.js";
 import { emitOrderStatusChanged, emitSentToKitchen } from "../sockets/socket.js";
 import { addonLabel, nameWithSize } from "../utils/menuAddons.js";
 
@@ -62,6 +63,7 @@ export const updateKitchenOrderStatus = async (req, res) => {
 
     if (status === "PREPARING" && kotJob !== undefined) emitSentToKitchen(req.tenantKey, { order, kotJob, kotCreated, inventoryAlerts });
     else emitOrderStatusChanged(req.tenantKey, order, previousStatus);
+    kickDeliveryForOrder(req, order); // assigned rider sees "Ready for pickup"
     res.json({ order: toKitchenTicket(order) });
   } catch (err) {
     res.status(err.statusCode || 500).json({ message: err.message });

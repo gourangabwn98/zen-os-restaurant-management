@@ -41,9 +41,16 @@
 //   waiter_call:new / waiter_call:updated { call }  → the rung waiters' own user rooms
 //   waiter_call:updated { state }                    → the calling customer's order room
 //   waiter_call:activity { event, call }             → staff room, silent (admin notification panel)
+//   delivery:*  (services/deliveryRealtime.js)       → a rider's own user room, the
+//               delivery-admin room (admin/manager), or one job's track room
+//
+// Delivery (rider) sockets — JWT with role "delivery": join ONLY their own
+// user room. Never the staff room (payment/guest data of every order) nor the
+// kitchen room. Client event:
+//   join-tracking { token }  — customer tracking link; verified server-side.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { isStaffRole } from "../utils/roles.js";
+import { isStaffRole, isManagementRole, DELIVERY } from "../utils/roles.js";
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import { getDB } from "../config/db.js";
@@ -101,6 +108,10 @@ export const initSocket = (httpServer) => {
         // the staff room — that room carries payment status and guest
         // name/phone, which a chef must never receive.
         socket.isChef       = socket.role === "chef";
+        // Rider: own user room only (offers + their own deliveries).
+        socket.isDelivery   = socket.role === DELIVERY && user.status !== "Inactive";
+        // Admin/manager: the delivery board + live rider map.
+        socket.isDeliveryAdmin = isManagementRole(socket.role);
         return next();
       }
 
@@ -127,6 +138,8 @@ export const initSocket = (httpServer) => {
     if (socket.isStaff) socket.join(rooms.staff(tenantKey));
     if (socket.isStaff && socket.userId) socket.join(rooms.user(tenantKey, socket.userId));
     if (socket.isChef)  socket.join(rooms.kitchen(tenantKey));
+    if (socket.isDelivery && socket.userId) socket.join(rooms.user(tenantKey, socket.userId));
+    if (socket.isDeliveryAdmin) socket.join(rooms.deliveryAdmin(tenantKey));
 
     if (socket.isPrinterDevice) {
       socket.join(rooms.printers(tenantKey));
@@ -165,6 +178,24 @@ export const initSocket = (httpServer) => {
         } catch {
           /* ignore — silently refuse the subscription */
         }
+      }
+    });
+
+    // ── Customer delivery tracking (/track/:token) ───────────────────────────
+    // Anyone holding a valid, unexpired tracking link may watch THAT delivery
+    // (status + rider position). The token is checked server-side; a bad or
+    // expired one simply joins nothing. Ack reports the outcome.
+    socket.on("join-tracking", async ({ token } = {}, ack) => {
+      const reply = typeof ack === "function" ? ack : () => {};
+      try {
+        const conn = await getDB(process.env.MONGO_URI);
+        const { verifyTrackingForSocket } = await import("../services/deliveryService.js");
+        const jobId = await verifyTrackingForSocket({ models: getModels(conn), token });
+        if (!jobId) return reply({ ok: false });
+        socket.join(rooms.track(tenantKey, jobId));
+        reply({ ok: true, jobId });
+      } catch (err) {
+        reply({ ok: false });
       }
     });
 
@@ -514,6 +545,19 @@ export const emitAttendanceUpdated = (tenantKey, { action, session, employee }) 
 // visibility rules server-side — so it is safe for the general tenant room.
 export const emitMenuUpdated = (tenantKey) => {
   emit(rooms.tenant(tenantKey), "menu:updated", { at: Date.now() });
+};
+
+// ── Home delivery (services/deliveryRealtime.js is the only caller) ─────────
+export const emitToDeliveryPartner = (tenantKey, partnerId, event, payload) => {
+  emit(rooms.user(tenantKey, partnerId), event, payload);
+};
+export const emitDeliveryAdmin = (tenantKey, event, payload) => {
+  emit(rooms.deliveryAdmin(tenantKey), event, payload);
+};
+/** Customer-safe payloads only (deliveryService.trackingStatusView / location). */
+export const emitDeliveryTracking = (tenantKey, jobId, orderId, event, payload) => {
+  emit(rooms.track(tenantKey, jobId), event, payload);
+  if (orderId) emit(rooms.order(tenantKey, orderId), event, payload);
 };
 
 // ── Call waiter (services/waiterCallService.js) ─────────────────────────────

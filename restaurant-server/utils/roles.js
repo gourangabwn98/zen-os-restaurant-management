@@ -20,6 +20,10 @@ export const MANAGER = "manager";
 export const WAITER = "waiter";
 export const CHEF = "chef";
 export const INVENTORY_MANAGER = "inventory_manager";
+// Delivery partner (rider). NOT staff: never joins the staff room, never sees
+// other orders — only the deliveries offered to / assigned to them
+// (services/deliveryService.js). Created by admin/manager on Employees.
+export const DELIVERY = "delivery";
 
 /** Floor/office staff: full order data, the `staff` socket room. */
 export const STAFF_ROLES = [ADMIN, MANAGER, WAITER];
@@ -31,3 +35,4 @@ export const INVENTORY_ROLES = [ADMIN, MANAGER, INVENTORY_MANAGER];
 export const isStaffRole = (role) => STAFF_ROLES.includes(role);
 export const isManagementRole = (role) => MANAGEMENT_ROLES.includes(role);
 export const isInventoryRole = (role) => INVENTORY_ROLES.includes(role);
+export const isDeliveryRole = (role) => role === DELIVERY;

@@ -45,4 +45,12 @@ export const rooms = {
   // used to ring a specific waiter for "Call waiter". Joined only by
   // admin/waiter sockets, each for their own user id.
   user: (tenantKey, userId) => `tenant:${tenantKey}:user:${userId}`,
+  // Home delivery. Admin + manager only: every rider's live GPS and every
+  // delivery's address — never the general staff room (waiters don't need
+  // rider positions) and never the kitchen.
+  deliveryAdmin: (tenantKey) => `tenant:${tenantKey}:delivery-admin`,
+  // One delivery's customer tracking view. Joined only with a valid,
+  // unexpired tracking token (deliveryService.verifyTrackingForSocket);
+  // carries that job's status + the rider's position, nothing else.
+  track: (tenantKey, jobId) => `tenant:${tenantKey}:track:${jobId}`,
 };

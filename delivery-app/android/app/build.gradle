@@ -1,0 +1,162 @@
+apply plugin: "com.android.application"
+apply plugin: "org.jetbrains.kotlin.android"
+apply plugin: "com.facebook.react"
+// FCM: only when the owner has placed the Firebase config for com.zenos.delivery here.
+if (file("google-services.json").exists()) {
+    apply plugin: "com.google.gms.google-services"
+}
+
+// ── Zen OS Delivery configuration (gradle.properties / -P / environment) ────
+def zenProp = { String name, String envName, String dflt ->
+    def v = project.findProperty(name) ?: System.getenv(envName)
+    return (v == null || v.toString().trim().isEmpty()) ? dflt : v.toString().trim()
+}
+// Debug default: the local sandbox (restaurant-server/scripts/localSandbox.js) as the emulator sees it.
+def zenApiDebug   = zenProp("zenApiUrl", "ZEN_API_URL", "http://10.0.2.2:5055/api")
+def zenApiRelease = zenProp("zenApiUrl", "ZEN_API_URL", "")
+def mapsKey       = zenProp("googleMapsKey", "GOOGLE_MAPS_ANDROID_KEY", "")
+def relStore      = zenProp("zenReleaseStoreFile", "ZEN_RELEASE_STORE_FILE", "")
+def hasReleaseSigning = relStore && file(relStore).exists() &&
+    zenProp("zenReleaseStorePassword", "ZEN_RELEASE_STORE_PASSWORD", "") &&
+    zenProp("zenReleaseKeyAlias", "ZEN_RELEASE_KEY_ALIAS", "")
+
+/**
+ * This is the configuration block to customize your React Native Android app.
+ * By default you don't need to apply any configuration, just uncomment the lines you need.
+ */
+react {
+    /* Folders */
+    //   The root of your project, i.e. where "package.json" lives. Default is '../..'
+    // root = file("../../")
+    //   The folder where the react-native NPM package is. Default is ../../node_modules/react-native
+    // reactNativeDir = file("../../node_modules/react-native")
+    //   The folder where the react-native Codegen package is. Default is ../../node_modules/@react-native/codegen
+    // codegenDir = file("../../node_modules/@react-native/codegen")
+    //   The cli.js file which is the React Native CLI entrypoint. Default is ../../node_modules/react-native/cli.js
+    // cliFile = file("../../node_modules/react-native/cli.js")
+
+    /* Variants */
+    // Bundle the JS into EVERY variant, debug included: the debug APK must run
+    // on its own (no Metro dev server) so it can be installed and tested.
+    debuggableVariants = []
+    //   The list of variants to that are debuggable. For those we're going to
+    //   skip the bundling of the JS bundle and the assets. By default is just 'debug'.
+    //   If you add flavors like lite, prod, etc. you'll have to list your debuggableVariants.
+    // debuggableVariants = ["liteDebug", "prodDebug"]
+
+    /* Bundling */
+    //   A list containing the node command and its flags. Default is just 'node'.
+    // nodeExecutableAndArgs = ["node"]
+    //
+    //   The command to run when bundling. By default is 'bundle'
+    // bundleCommand = "ram-bundle"
+    //
+    //   The path to the CLI configuration file. Default is empty.
+    // bundleConfig = file(../rn-cli.config.js)
+    //
+    //   The name of the generated asset file containing your JS bundle
+    // bundleAssetName = "MyApplication.android.bundle"
+    //
+    //   The entry file for bundle generation. Default is 'index.android.js' or 'index.js'
+    // entryFile = file("../js/MyApplication.android.js")
+    //
+    //   A list of extra flags to pass to the 'bundle' commands.
+    //   See https://github.com/react-native-community/cli/blob/main/docs/commands.md#bundle
+    // extraPackagerArgs = []
+
+    /* Hermes Commands */
+    //   The hermes compiler command to run. By default it is 'hermesc'
+    // hermesCommand = "$rootDir/my-custom-hermesc/bin/hermesc"
+    //
+    //   The list of flags to pass to the Hermes compiler. By default is "-O", "-output-source-map"
+    // hermesFlags = ["-O", "-output-source-map"]
+
+    /* Autolinking */
+    autolinkLibrariesWithApp()
+}
+
+/**
+ * Set this to true to Run Proguard on Release builds to minify the Java bytecode.
+ */
+def enableProguardInReleaseBuilds = false
+
+/**
+ * The preferred build flavor of JavaScriptCore (JSC)
+ *
+ * For example, to use the international variant, you can use:
+ * `def jscFlavor = 'org.webkit:android-jsc-intl:+'`
+ *
+ * The international variant includes ICU i18n library and necessary data
+ * allowing to use e.g. `Date.toLocaleString` and `String.localeCompare` that
+ * give correct results when using with locales other than en-US. Note that
+ * this variant is about 6MiB larger per architecture than default.
+ */
+def jscFlavor = 'org.webkit:android-jsc:+'
+
+android {
+    ndkVersion rootProject.ext.ndkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
+    compileSdk rootProject.ext.compileSdkVersion
+
+    namespace "com.zenos.delivery"
+    defaultConfig {
+        applicationId "com.zenos.delivery"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "1.0.0"
+        manifestPlaceholders = [MAPS_API_KEY: mapsKey]
+        buildConfigField "boolean", "MAPS_KEY_SET", mapsKey ? "true" : "false"
+        // Real phones (64/32-bit ARM) + x86_64 emulators; drops 32-bit x86 from React Native's prebuilt libs.
+        ndk { abiFilters "arm64-v8a", "armeabi-v7a", "x86_64" }
+    }
+    buildFeatures {
+        buildConfig true
+    }
+    signingConfigs {
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(relStore)
+                storePassword zenProp("zenReleaseStorePassword", "ZEN_RELEASE_STORE_PASSWORD", "")
+                keyAlias zenProp("zenReleaseKeyAlias", "ZEN_RELEASE_KEY_ALIAS", "")
+                keyPassword zenProp("zenReleaseKeyPassword", "ZEN_RELEASE_KEY_PASSWORD", "")
+            }
+        }
+    }
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+            buildConfigField "String", "ZEN_API_URL", "\"${zenApiDebug}\""
+        }
+        release {
+            // Never ship a release signed with the public debug key: it stays
+            // unsigned unless the owner's keystore is configured (gradle.properties).
+            signingConfig hasReleaseSigning ? signingConfigs.release : null
+            buildConfigField "String", "ZEN_API_URL", "\"${zenApiRelease}\""
+            minifyEnabled enableProguardInReleaseBuilds
+            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+        }
+    }
+}
+
+dependencies {
+    // The version of react-native is set by the React Native Gradle Plugin
+    implementation("com.facebook.react:react-android")
+    // Native delivery layer (ZenNative module, LocationTrackingService, ZenMessagingService)
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("androidx.security:security-crypto:1.0.0")
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("com.google.firebase:firebase-messaging:24.1.0")
+
+    if (hermesEnabled.toBoolean()) {
+        implementation("com.facebook.react:hermes-android")
+    } else {
+        implementation jscFlavor
+    }
+}

@@ -248,6 +248,39 @@ day it starts. Always pass `ctx.clock` (not bare minutes) to `isScheduleActive`.
 - Bulk menu load: `scripts/importMenu.js` (dry run first; switches old items
   off, never deletes unless `--remove-old`).
 
+## Home delivery (riders)
+
+`services/deliveryService.js`, models in `config/deliveryModels.js`, rules in
+`utils/delivery.js` + `utils/deliveryStateMachine.js`, routes `/api/delivery`.
+Design: `docs/delivery/`. Riders are `User` role `delivery` (Admin → Employees,
+same OTP login; `requireDelivery`); they are NOT staff — they join only their own
+`user:{id}` room, never `staff`/`kitchen`.
+- Delivery (`ONLINE`) customer orders carry `Order.deliveryAddress`, validated
+  inside `RestaurantProfile.deliveryRange`. Payment follows
+  `RestaurantProfile.delivery.payment` (`codEnabled`, `onlineEnabled`,
+  `defaultMethod`; rules only in `utils/delivery.js`). COD is the default and is
+  stored as `paymentMethod: Cash`. Online uses pay-first PhonePe. Dine-in and
+  takeaway keep `paymentMode` unchanged. Delivery settings change only through
+  `PATCH /api/delivery/admin/settings`, and the profile save ignores `delivery`.
+- **COD custody is not payment.** At the OTP drop the rider confirms the cash,
+  and the amount must equal the server's `order.total`. That writes one
+  `CodCollection` (unique on `order`) in the hand-over transaction. The order
+  stays `PENDING_VERIFICATION`, because a rider never marks anything PAID. Only
+  an admin/manager "Verify hand-in" marks it PAID, through the existing
+  `billingService.settleBills`. Don't add a second path that writes payment.
+- One `DeliveryJob` per order (unique), created when the order reaches CONFIRMED
+  (immediate hook + `runDeliveryTick` reconciliation). The delivery lifecycle is
+  separate from the order's: pickup needs order READY; the OTP drop moves the
+  order READY → DELIVERED with role `delivery` (`TRANSITION_ROLES`) in the same
+  transaction as the job and the capacity release.
+- **Accept = one transaction**: offer SENT→WON, capacity `$inc` guarded by
+  `activeCount < capacity`, job SEARCHING→ASSIGNED. Never split it; never check
+  capacity outside that filter. Every capacity change also bumps `capVersion`.
+- Service functions return `effects`; only `services/deliveryRealtime.js`
+  publishes them (after commit). Offers carry no customer name/phone/address;
+  tracking rooms carry no OTP/phone; GPS breadcrumbs are stored only while the
+  rider has an active job (TTL 7 days).
+
 ## OTP / SMS provider selection
 
 `restaurant-server/utils/sendOTP.js` **auto-detects** the provider from

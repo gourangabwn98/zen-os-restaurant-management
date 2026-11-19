@@ -17,9 +17,6 @@
     <meta name="application-name" content="Hotel KHOAI" />
     <meta name="description" content="Order from your table at Hotel KHOAI" />
     <title>Hotel KHOAI</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
     <script>try{if(localStorage.getItem("sohoj_theme")==="dark")document.documentElement.dataset.theme="dark";}catch(e){}</script>
   </head>
   <body>
@@ -33,6 +30,8 @@
       :root[data-theme="dark"] .boot{background:#1A0F0B;color:#f3e2d3}
     </style>
     <div id="root"><div class="boot" role="status"><img src="/brand/khoai-v2/hk-mark-192.png" alt="" width="84" height="84" /><span>Opening the menu…</span></div></div>
+    <!-- Runtime settings (backend address); edit on the server, no rebuild. Must load before the app. -->
+    <script src="/config.js"></script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

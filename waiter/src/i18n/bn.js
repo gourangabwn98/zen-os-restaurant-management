@@ -353,4 +353,16 @@ export default {
   "{table} is calling again": "{table} আবার ডাকছে",
   "{table} — you're on the way": "{table} — আপনি আসছেন",
   "{table} bill · {c} orders": "{table}-এর বিল · {c}টি অর্ডার",
+  // App update prompt (src/pwa/UpdatePrompt.jsx)
+  "A new version of the app is ready.": "অ্যাপের নতুন সংস্করণ তৈরি।",
+  "Reload": "আবার লোড করুন",
+  "Later": "পরে",
+  // Offline banner (src/offline/OfflineBanner.jsx)
+  "No internet connection.": "ইন্টারনেট সংযোগ নেই।",
+  "Can't reach the server.": "সার্ভারে পৌঁছানো যাচ্ছে না।",
+  "Showing data saved at {time}.": "{time}-এ সংরক্ষিত তথ্য দেখানো হচ্ছে।",
+  "Changes can't be saved until the connection is back.": "সংযোগ ফিরে না আসা পর্যন্ত পরিবর্তন সংরক্ষণ করা যাবে না।",
+  "Back online.": "আবার অনলাইন।",
+  "Refresh": "রিফ্রেশ করুন",
+  "Dismiss": "বন্ধ করুন",
 };
