@@ -13,7 +13,7 @@ export class ApiError extends Error {
     this.offline = status === 0;
   }
 }
-
+//hello
 let base = '';
 let token: string | null = null;
 let onAuthLost: (() => void) | null = null;
