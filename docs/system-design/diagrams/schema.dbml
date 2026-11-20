@@ -1,0 +1,400 @@
+// Zen OS — MongoDB schema as DBML (documentation only; MongoDB has no FK enforcement).
+// Source: restaurant-server/config/getModels.js, deliveryModels.js, localAuthModels.js (2026-11-20).
+// Embedded arrays/sub-docs are shown as json columns. Inventory V3 companions: 07-database-dictionary.md section 7.
+
+Table users {
+  _id objectid [pk]
+  name string
+  phone string [unique, note: 'sparse']
+  email string [unique, note: 'sparse']
+  role string [note: 'admin|manager|inventory_manager|waiter|chef|customer|staff|delivery']
+  isAdmin bool
+  status string [note: 'Active|Inactive']
+  pushTokens json
+  hr json
+  createdAt datetime
+}
+
+Table restaurantprofiles {
+  _id objectid [pk]
+  restaurantName string [not null]
+  gstRate number
+  serviceCharge number
+  paymentMode string [note: 'CASH|ONLINE|BOTH']
+  editWindowMinutes number
+  timezone string
+  upiId string
+  delivery json
+  services json
+  Note: 'singleton by convention (findOne)'
+}
+
+Table counters {
+  _id string [pk, note: 'sequence name']
+  seq number
+}
+
+Table menutimes {
+  _id objectid [pk]
+  name string
+  schedule json
+}
+
+Table categories {
+  _id objectid [pk]
+  name string [unique, not null]
+  schedule json
+  menuTime objectid [ref: > menutimes._id]
+  kind string
+  smartKey string [note: 'unique partial']
+  orderingEnabled bool
+}
+
+Table menuitems {
+  _id objectid [pk]
+  name string [not null]
+  price number [not null]
+  category string [not null, note: 'section key string, not a ref']
+  subcategory string
+  itemId string [unique, note: 'sparse']
+  tag string [not null, note: 'Veg|Non Veg|Others']
+  isAvailable bool
+  soldOutUntil datetime
+  addons json
+  indexes {
+    (category, subcategory)
+  }
+}
+
+Table tables {
+  _id objectid [pk]
+  tableNo number [unique, not null]
+  seats number
+  status string
+  diningArea string
+  occupancyStatus string
+  qrToken string
+}
+
+Table tablesessions {
+  _id objectid [pk]
+  table objectid [ref: > tables._id]
+  tableNo number [note: 'unique OPEN per tableNo']
+  status string
+  orders json
+}
+
+Table orders {
+  _id objectid [pk]
+  orderId string [unique]
+  user objectid [ref: > users._id]
+  items json [note: 'menuItem ref + snapshots + makingCost']
+  subtotal number
+  tax number
+  discount number
+  total number
+  coupon json
+  orderType string [note: 'DINE_IN|TAKEAWAY|ONLINE']
+  tableNo number
+  tableSession objectid [ref: > tablesessions._id]
+  parentOrder objectid [ref: > orders._id]
+  source string [note: 'CUSTOMER|WAITER|ADMIN']
+  status string [note: '8-state machine']
+  statusHistory json
+  paymentStatus string [note: 'PENDING_VERIFICATION|PAID|FAILED']
+  paymentMethod string [note: 'Cash|Online|Both']
+  paymentSplit json
+  payment json [note: 'PhonePe attempt']
+  billStatus string [note: 'OPEN|SETTLED']
+  autoPrepareAt datetime
+  paymentDeadline datetime
+  revision number
+  idempotencyKey string [note: 'unique partial (string)']
+  stockDeducted bool
+  stockDeductions json
+  deliveryAddress json
+  waiterId objectid [ref: > users._id]
+  paidAt datetime
+  createdAt datetime
+  indexes {
+    (status, createdAt)
+    createdAt
+    tableSession
+    paidAt
+    parentOrder
+  }
+}
+
+Table printerdevices {
+  _id objectid [pk]
+  name string
+  keyHash string [note: 'SHA-256, select:false']
+  role string [note: 'KOT|BILL|BOTH']
+  status string [note: 'Active|Revoked']
+  lastSeenAt datetime
+}
+
+Table kotjobs {
+  _id objectid [pk]
+  order objectid [unique, ref: - orders._id]
+  items json
+  customerName string
+  status string [note: 'PENDING|PRINTING|PRINTED|FAILED|SKIPPED']
+  printerId objectid [ref: > printerdevices._id]
+  attempts number
+}
+
+Table kotchangejobs {
+  _id objectid [pk]
+  order objectid [ref: > orders._id]
+  revision number
+  status string
+  indexes {
+    (order, revision) [unique]
+  }
+}
+
+Table billprintjobs {
+  _id objectid [pk]
+  order objectid [ref: > orders._id]
+  combinedOrders json
+  requestKey string [unique, note: 'sparse']
+  payload json
+  status string
+}
+
+Table invoices {
+  _id objectid [pk]
+  orders json
+  user objectid [ref: > users._id]
+  orderType string [note: 'legacy default Dining']
+  total number
+  paymentMethod string [note: 'Cash|Online (no Both)']
+}
+
+Table waitlistentries {
+  _id objectid [pk]
+  guestName string
+  partySize number
+  status string
+}
+
+Table waitercalls {
+  _id objectid [pk]
+  order objectid [ref: > orders._id]
+  targets json
+  status string
+  active bool [note: 'unique partial per order']
+}
+
+Table notificationlogs {
+  _id objectid [pk]
+  title string
+  status string
+  startsAt datetime
+}
+
+Table coupons {
+  _id objectid [pk]
+  code string [unique]
+  discountType string
+  startsAt datetime
+  endsAt datetime
+  audience string
+  notification objectid [ref: > notificationlogs._id]
+}
+
+Table supporttickets {
+  _id objectid [pk]
+  order objectid [ref: > orders._id]
+  user objectid [ref: > users._id]
+  status string
+}
+
+Table staffreviews {
+  _id objectid [pk]
+  order objectid [ref: > orders._id]
+  kind string
+  employee objectid [ref: > users._id]
+  rating number
+  indexes {
+    (order, kind) [unique]
+  }
+}
+
+Table attendancesessions {
+  _id objectid [pk]
+  employee objectid [ref: > users._id]
+  status string [note: 'unique OPEN per employee']
+  presenceStatus string
+  loginAt datetime
+  logoutAt datetime
+}
+
+Table dutyhistories {
+  _id objectid [pk]
+  employee objectid [ref: > users._id]
+  session objectid [ref: > attendancesessions._id]
+  action string
+  at datetime
+  Note: 'append-only'
+  indexes {
+    (session, action, at) [unique]
+  }
+}
+
+Table staffleaves {
+  _id objectid [pk]
+  employee objectid [ref: > users._id]
+  status string
+}
+
+Table staffpays {
+  _id objectid [pk]
+  employee objectid [ref: > users._id]
+  month string
+  type string [note: 'one SALARY per month']
+}
+
+Table suppliers {
+  _id objectid [pk]
+  name string
+}
+
+Table inventoryitems {
+  _id objectid [pk]
+  name string [unique]
+  unit string
+  currentStock number
+  costPrice number
+  supplier objectid [ref: > suppliers._id]
+}
+
+Table stockpurchases {
+  _id objectid [pk]
+  supplier objectid [ref: > suppliers._id]
+  items json
+  totalCost number
+  payable json
+}
+
+Table inventorybatches {
+  _id objectid [pk]
+  inventoryItem objectid [ref: > inventoryitems._id]
+  purchase objectid [ref: > stockpurchases._id]
+  quantity number
+  expiryDate datetime
+}
+
+Table recipes {
+  _id objectid [pk]
+  menuItem objectid [unique, ref: - menuitems._id]
+  ingredients json [note: 'inventoryItem refs']
+}
+
+Table wastagelogs {
+  _id objectid [pk]
+  inventoryItem objectid [ref: > inventoryitems._id]
+  quantity number
+  reason string
+}
+
+Table stockledgers {
+  _id objectid [pk]
+  inventoryItem objectid [ref: > inventoryitems._id]
+  type string
+  quantity number
+  balanceAfter number
+  relatedOrder objectid [ref: > orders._id]
+  relatedPurchase objectid [ref: > stockpurchases._id]
+  relatedWastage objectid [ref: > wastagelogs._id]
+}
+
+Table chefs {
+  _id objectid [pk]
+  name string
+  phone string [unique]
+  Note: 'legacy, unused'
+}
+
+Table deliverypartnerstates {
+  _id objectid [pk]
+  partner objectid [unique, ref: - users._id]
+  online bool
+  activeCount number
+  capacity number
+}
+
+Table deliveryjobs {
+  _id objectid [pk]
+  order objectid [unique, ref: - orders._id]
+  status string
+  partner objectid [ref: > users._id]
+  otpCode string [note: 'select:false']
+  cod bool
+}
+
+Table deliveryoffers {
+  _id objectid [pk]
+  job objectid [ref: > deliveryjobs._id]
+  partner objectid [ref: > users._id]
+  round number
+  status string
+  indexes {
+    (job, partner, round) [unique]
+  }
+}
+
+Table deliverylocations {
+  _id objectid [pk]
+  partner objectid [ref: > users._id]
+  receivedAt datetime [note: 'TTL 7 days']
+}
+
+Table deliveryevents {
+  _id objectid [pk]
+  job objectid [ref: > deliveryjobs._id]
+  order objectid [ref: > orders._id]
+  type string
+  Note: 'append-only'
+}
+
+Table codcollections {
+  _id objectid [pk]
+  order objectid [unique, ref: - orders._id]
+  job objectid [ref: > deliveryjobs._id]
+  partner objectid [ref: > users._id]
+  amount number
+  status string
+}
+
+// LOCAL_PRIMARY only
+
+Table staffdevices {
+  _id objectid [pk]
+  deviceId string [unique]
+  status string
+  pendingExpiresAt datetime [note: 'TTL']
+}
+
+Table staffpins {
+  _id objectid [pk]
+  user objectid [unique, ref: - users._id]
+  pinHash string [note: 'scrypt + pepper']
+}
+
+Table localsessions {
+  _id objectid [pk]
+  sid string [unique]
+  user objectid [ref: > users._id]
+  device objectid [ref: > staffdevices._id]
+  purgeAt datetime [note: 'TTL']
+}
+
+Table localauthevents {
+  _id objectid [pk]
+  type string
+  user objectid [ref: > users._id]
+  device objectid [ref: > staffdevices._id]
+  Note: 'append-only'
+}

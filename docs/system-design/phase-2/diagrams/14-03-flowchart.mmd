@@ -1,0 +1,9 @@
+%% Source: 14-deployment-architecture.md — 5. Proposed target deployment (PROPOSED)
+flowchart LR
+  GH[Git host] --> CI[CI: tests, builds, lint, npm audit, print-service tests]
+  CI -->|main only, tagged| R[Render backend]
+  CI --> V[Vercel apps incl. kitchen]
+  CI --> ART[Artifact store: print-service exe, local edition bundle<br/>NOT in git]
+  R --> UP[Uptime probe on /api/health + commit]
+  R --> LOG[Structured logs + alerts: print skips, pay-first anomalies, tick failures]
+  ATL[(Atlas: verified backups, IP access list)] --- R

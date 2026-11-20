@@ -1,0 +1,18 @@
+%% Source: 07-socketio-architecture.md — 4. Event flow — new customer order to kitchen
+sequenceDiagram
+  participant Cu as Customer app
+  participant API as Backend
+  participant St as Staff room (admin, waiter)
+  participant Ki as Kitchen room
+  participant Pr as Printers room
+  Cu->>API: POST /api/orders
+  API-->>St: order:new (sound)
+  St->>API: PATCH /orders/:id/confirm
+  API-->>St: order:confirmed
+  API-->>Cu: order:confirmed (order room)
+  Note over API: edit window ends (15 s tick)
+  API-->>St: kot:created + order:status_changed
+  API-->>Ki: kot:created + order:status_changed (stripped)
+  API-->>Pr: kot:created (print payload)
+  Pr->>API: report-job-status PRINTED
+  API-->>St: kot:status_changed

@@ -1,0 +1,17 @@
+%% Source: 05-database-architecture-erd.md — 4. ERD — inventory
+erDiagram
+  MENUITEM ||--o| RECIPE : "one recipe"
+  RECIPE }o--o{ INVENTORYITEM : ingredients
+  SUPPLIER ||--o{ INVENTORYITEM : supplies
+  SUPPLIER ||--o{ STOCKPURCHASE : bills
+  STOCKPURCHASE ||--o{ INVENTORYBATCH : creates
+  INVENTORYITEM ||--o{ INVENTORYBATCH : "batches"
+  INVENTORYITEM ||--o{ STOCKLEDGER : movements
+  ORDER ||--o{ STOCKLEDGER : deductions
+  STOCKPURCHASE ||--o{ STOCKLEDGER : receipts
+  WASTAGELOG ||--o{ STOCKLEDGER : losses
+  INVENTORYITEM {
+    string name UK
+    number currentStock "min 0"
+    number costPrice
+  }

@@ -88,6 +88,10 @@ const makeWorld = ({ profile = {}, table = null, orders = [] } = {}) => {
 const body = (extra = {}) => ({ items: [{ menuItemId: "m1", qty: 1 }], orderType: "TAKEAWAY", customerName: "Asha", customerPhone: "9999999999", ...extra });
 // Customers must be logged in to order — default caller is a logged-in customer.
 const CUSTOMER_USER = { _id: "cust1", role: "customer", name: "Asha", phone: "9999999999" };
+// Customer dine-in orders are location-gated (utils/diningRadius.js): the
+// profile carries the restaurant's position + radius, the order the device's.
+const DINE_IN_AREA = { latitude: 22.5726, longitude: 88.3639, dineInRange: 200 };
+const AT_TABLE = { latitude: 22.5727, longitude: 88.3640 }; // ~15 m away
 const place = (models, extra, user = CUSTOMER_USER) => placeOrderTx({ req: { models, db: {}, user }, body: body(extra) });
 
 // ── paymentMode util ─────────────────────────────────────────────────────────
@@ -135,8 +139,8 @@ await test("ONLINE mode + PhonePe: order starts AWAITING_PAYMENT with a deadline
 await test("pay-first dine-in order does NOT open/join the table session until paid", async () => {
   phonePe(true);
   const table = { _id: "t5", tableNo: 5, status: "Active", qrToken: "qr5" };
-  const { models, state } = makeWorld({ profile: { paymentMode: "ONLINE" }, table });
-  const { order } = await place(models, { paymentMethod: "Online", orderType: "DINE_IN", tableNo: 5, tableToken: "qr5" });
+  const { models, state } = makeWorld({ profile: { paymentMode: "ONLINE", ...DINE_IN_AREA }, table });
+  const { order } = await place(models, { paymentMethod: "Online", orderType: "DINE_IN", tableNo: 5, tableToken: "qr5", location: AT_TABLE });
   assert.equal(order.status, "AWAITING_PAYMENT");
   assert.equal(order.tableSession, null);
   assert.equal(state.sessionsOpened, 0);
@@ -145,8 +149,28 @@ await test("pay-first dine-in order does NOT open/join the table session until p
 await test("pay-first dine-in still validates the table QR token", async () => {
   phonePe(true);
   const table = { _id: "t5", tableNo: 5, status: "Active", qrToken: "qr5" };
-  const { models } = makeWorld({ profile: { paymentMode: "ONLINE" }, table });
-  await assert.rejects(place(models, { paymentMethod: "Online", orderType: "DINE_IN", tableNo: 5, tableToken: "WRONG" }), (e) => e.statusCode === 400);
+  const { models } = makeWorld({ profile: { paymentMode: "ONLINE", ...DINE_IN_AREA }, table });
+  // Inside the ordering area, so the rejection below really is the QR check
+  // (without a location the dining-radius gate threw a 400 first and this
+  // test passed for the wrong reason).
+  await assert.rejects(
+    place(models, { paymentMethod: "Online", orderType: "DINE_IN", tableNo: 5, tableToken: "WRONG", location: AT_TABLE }),
+    (e) => e.statusCode === 400 && /Invalid table QR/.test(e.message),
+  );
+});
+
+await test("pay-first dine-in is still location-gated (production rule unchanged)", async () => {
+  phonePe(true);
+  const table = { _id: "t5", tableNo: 5, status: "Active", qrToken: "qr5" };
+  const { models } = makeWorld({ profile: { paymentMode: "ONLINE", ...DINE_IN_AREA }, table });
+  await assert.rejects(
+    place(models, { paymentMethod: "Online", orderType: "DINE_IN", tableNo: 5, tableToken: "qr5" }),
+    (e) => e.code === "LOCATION_REQUIRED",
+  );
+  await assert.rejects(
+    place(models, { paymentMethod: "Online", orderType: "DINE_IN", tableNo: 5, tableToken: "qr5", location: { latitude: 22.70, longitude: 88.36 } }),
+    (e) => e.code === "OUTSIDE_DINING_RADIUS",
+  );
 });
 
 await test("BOTH mode: Online + PhonePe is pay-first; Online without PhonePe keeps the old UPI flow", async () => {

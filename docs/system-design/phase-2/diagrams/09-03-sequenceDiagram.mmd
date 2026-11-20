@@ -1,0 +1,16 @@
+%% Source: 09-printing-architecture.md — 4. Sequence — reconnect recovery
+sequenceDiagram
+  participant PS as print-service
+  participant API as Backend
+  participant DB as MongoDB
+  PS->>API: connect (printerKey)
+  PS->>API: get-queue (ack)
+  API->>DB: SKIP jobs older than 30 min
+  API->>DB: find PENDING/PRINTING/FAILED KOT, change slips, bills
+  API-->>PS: jobs
+  PS->>PS: upsert (PRINTED never regresses)
+  loop each pending job
+    PS->>API: report PRINTING
+    PS->>PS: print
+    PS->>API: report PRINTED or FAILED
+  end

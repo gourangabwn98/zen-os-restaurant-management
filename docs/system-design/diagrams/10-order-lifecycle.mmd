@@ -1,0 +1,21 @@
+%% Order status state machine (utils/orderStateMachine.js)
+stateDiagram-v2
+  [*] --> AWAITING_PAYMENT: customer + Online + PhonePe
+  [*] --> PENDING_CONFIRMATION: customer order
+  [*] --> CONFIRMED: staff order
+  AWAITING_PAYMENT --> PENDING_CONFIRMATION: system (verified payment)
+  AWAITING_PAYMENT --> CANCELLED: customer/admin/manager/system
+  PENDING_CONFIRMATION --> CONFIRMED: admin/manager/waiter
+  PENDING_CONFIRMATION --> CANCELLED: admin/manager/waiter/customer
+  CONFIRMED --> PREPARING: sendToKitchenTx (system/staff/chef)
+  CONFIRMED --> CANCELLED: admin/manager/waiter
+  PREPARING --> READY: admin/manager/waiter/chef
+  PREPARING --> CANCELLED: admin/manager (stock reversed)
+  READY --> DELIVERED: admin/manager/waiter/delivery
+  READY --> PREPARING: items added (edit)
+  DELIVERED --> PREPARING: items added (edit)
+  DELIVERED --> COMPLETED: system (settled + PAID)
+  PREPARING --> COMPLETED: admin/manager, PAID only
+  READY --> COMPLETED: admin/manager, PAID only
+  COMPLETED --> [*]
+  CANCELLED --> [*]

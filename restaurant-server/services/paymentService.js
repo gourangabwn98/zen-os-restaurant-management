@@ -28,27 +28,74 @@
 
 import crypto from "node:crypto";
 import axios from "axios";
+import { resolvePhonePeEnv, PHONEPE_ENVS } from "../utils/phonePeEnv.js";
 
-const HOSTS = {
-  SANDBOX:    "https://api-preprod.phonepe.com/apis/pg-sandbox",
-  PRODUCTION: "https://api.phonepe.com/apis/hermes",
+export const PHONEPE_HOSTS = Object.freeze({
+  [PHONEPE_ENVS.SANDBOX]:    "https://api-preprod.phonepe.com/apis/pg-sandbox",
+  [PHONEPE_ENVS.PRODUCTION]: "https://api.phonepe.com/apis/hermes",
+});
+
+// PHONEPE_ENV goes through utils/phonePeEnv.js ONLY. An unrecognised value (or
+// a blank one in production) gives host = null and the gateway counts as NOT
+// configured — it is never silently guessed to be the sandbox.
+const cfg = () => {
+  const resolved = resolvePhonePeEnv(process.env);
+  return {
+    merchantId: process.env.PHONEPE_MERCHANT_ID || "",
+    saltKey:    process.env.PHONEPE_SALT_KEY || "",
+    saltIndex:  process.env.PHONEPE_SALT_INDEX || "1",
+    env:        resolved.env,
+    host:       resolved.valid ? PHONEPE_HOSTS[resolved.env] : null,
+  };
 };
 
-const cfg = () => ({
-  merchantId: process.env.PHONEPE_MERCHANT_ID || "",
-  saltKey:    process.env.PHONEPE_SALT_KEY || "",
-  saltIndex:  process.env.PHONEPE_SALT_INDEX || "1",
-  host:       HOSTS[(process.env.PHONEPE_ENV || "SANDBOX").toUpperCase()] || HOSTS.SANDBOX,
-});
+/** Which PhonePe host requests would go to right now (null = disabled). No secrets. */
+export const phonePeTarget = () => { const c = cfg(); return { env: c.env, host: c.host }; };
 
 export const isPhonePeConfigured = () => {
   const c = cfg();
-  return Boolean(c.merchantId && c.saltKey);
+  return Boolean(c.merchantId && c.saltKey && c.host);
 };
 
 const PENDING = "PENDING";
 const SUCCESS = "SUCCESS";
 const FAILED  = "FAILED";
+// PhonePe reported success, but for a different amount than this attempt was
+// created for (or the order's total changed after the attempt started). Never
+// marks the order PAID; terminal for this attempt, so a duplicate callback or
+// a later poll can't flip it. Needs a person to look at it (refund / re-bill).
+export const AMOUNT_MISMATCH = "AMOUNT_MISMATCH";
+// Attempt states no gateway result may change any more.
+const FINAL_STATES = [SUCCESS, AMOUNT_MISMATCH];
+/** True once no gateway result may change this attempt (SUCCESS / AMOUNT_MISMATCH). */
+export const isFinalAttemptState = (state) => FINAL_STATES.includes(state);
+
+/** Paise the order is owed right now, from the server-side total. */
+export const expectedAmountPaise = (order) => Math.round(Number(order?.total) * 100);
+
+/**
+ * Pure: does a gateway-reported SUCCESS amount match what we expect?
+ * Fails closed — a missing / non-numeric amount is a mismatch.
+ * @returns {{ ok: boolean, reason: string, reported: number|null, expected: number }}
+ */
+export const checkPaidAmount = ({ order, reportedAmount }) => {
+  const attempt = Number(order?.payment?.amount);
+  const total = expectedAmountPaise(order);
+  const reported = reportedAmount === null || reportedAmount === undefined || reportedAmount === ""
+    ? null : Number(reportedAmount);
+  if (reported === null || !Number.isFinite(reported)) {
+    return { ok: false, reason: "AMOUNT_MISSING", reported: null, expected: attempt };
+  }
+  if (!Number.isFinite(attempt) || attempt <= 0) {
+    return { ok: false, reason: "ATTEMPT_AMOUNT_UNKNOWN", reported, expected: attempt };
+  }
+  if (reported !== attempt) return { ok: false, reason: "AMOUNT_DIFFERS", reported, expected: attempt };
+  // The attempt was for the right amount when it started, but the bill has
+  // since changed (e.g. staff edited the order) — paying the old amount must
+  // not settle the new bill.
+  if (attempt !== total) return { ok: false, reason: "ORDER_TOTAL_CHANGED", reported, expected: total };
+  return { ok: true, reason: "", reported, expected: attempt };
+};
 
 const sha256 = (s) => crypto.createHash("sha256").update(s).digest("hex");
 
@@ -94,9 +141,10 @@ export const initiatePhonePePayment = async ({ order, redirectUrl, callbackUrl }
   }
 
   const { merchantId, host } = cfg();
+  if (!host) { const e = new Error("PhonePe environment is not configured correctly"); e.statusCode = 503; throw e; }
   // One transaction id per attempt (<=35 chars, [a-zA-Z0-9_-]).
   const merchantTransactionId = `T${String(order._id)}${Date.now().toString(36)}`.slice(0, 35);
-  const amountPaise = Math.round(Number(order.total) * 100);
+  const amountPaise = expectedAmountPaise(order);
   if (!Number.isFinite(amountPaise) || amountPaise <= 0) {
     const e = new Error("Order total is not payable"); e.statusCode = 400; throw e;
   }
@@ -169,6 +217,7 @@ export const fetchPhonePeStatus = async ({ order }) => {
   }
 
   const { merchantId, host } = cfg();
+  if (!host) { const e = new Error("PhonePe environment is not configured correctly"); e.statusCode = 503; throw e; }
   const path = `/pg/v1/status/${merchantId}/${mtid}`;
 
   let res;
@@ -216,16 +265,66 @@ export const decodeCallback = (body) => {
 };
 
 // ── Apply a gateway result to an order — atomic, idempotent ─────────────────
-// `result` is { state, code, phonepeTransactionId } from either decodeCallback
-// or fetchPhonePeStatus. Returns { order, changed }.
+// `result` is { state, code, phonepeTransactionId, amount } from either
+// decodeCallback or fetchPhonePeStatus. Returns { order, changed, mismatch }.
+//
+// Finalised attempts (SUCCESS, AMOUNT_MISMATCH) are never changed again — a
+// duplicate / late / contradictory callback or poll is a no-op. A FAILED
+// attempt may still become SUCCESS on a later VERIFIED result (the money was
+// in fact taken), but never the other way round.
+//
+// SUCCESS is accepted only if the reported amount equals the attempt's amount
+// AND that still equals the order's current total (checkPaidAmount). Both are
+// re-asserted in the update filter, so an order edited between our read and
+// our write can't be marked PAID for the old amount.
 export const applyPhonePeResult = async ({ models, orderId, merchantTransactionId, result }) => {
   const { Order } = models;
   const match = { _id: orderId, "payment.merchantTransactionId": merchantTransactionId };
   const now = new Date();
 
   if (result.state === SUCCESS) {
+    const current = await Order.findById(orderId);
+    if (!current || current.payment?.merchantTransactionId !== merchantTransactionId) {
+      return { order: current, changed: false, mismatch: false };
+    }
+    if (FINAL_STATES.includes(current.payment?.state)) {
+      return { order: current, changed: false, mismatch: current.payment.state === AMOUNT_MISMATCH };
+    }
+
+    const check = checkPaidAmount({ order: current, reportedAmount: result.amount });
+    if (!check.ok) {
+      const flagged = await Order.findOneAndUpdate(
+        { ...match, "payment.state": { $nin: FINAL_STATES } },
+        {
+          $set: {
+            "payment.state": AMOUNT_MISMATCH,
+            "payment.lastCheckedAt": now,
+            "payment.raw": {
+              code: result.code || "PAYMENT_SUCCESS",
+              mismatch: check.reason,
+              reportedAmount: check.reported,
+              expectedAmount: check.expected,
+            },
+          },
+        },
+        { returnDocument: "after" },
+      );
+      // No PII — order ref + amounts only. Money may have been taken: a person
+      // must refund or re-bill (there is no automatic refund yet).
+      console.error(
+        `⚠️ PhonePe amount mismatch on order ${current.orderId || current._id} (${check.reason}): ` +
+        `reported ${check.reported ?? "none"} paise, expected ${check.expected} paise — NOT marked paid; needs review`,
+      );
+      return { order: flagged || (await Order.findById(orderId)), changed: false, mismatch: true };
+    }
+
     const updated = await Order.findOneAndUpdate(
-      { ...match, "payment.state": { $ne: SUCCESS } },
+      {
+        ...match,
+        "payment.state": { $nin: FINAL_STATES },
+        "payment.amount": check.reported,
+        total: current.total,
+      },
       {
         $set: {
           paymentStatus: "PAID",
@@ -242,7 +341,15 @@ export const applyPhonePeResult = async ({ models, orderId, merchantTransactionI
       },
       { returnDocument: "after" },
     );
-    return { order: updated || (await Order.findById(orderId)), changed: Boolean(updated) };
+    if (updated) return { order: updated, changed: true, mismatch: false };
+    // Lost a race: either another path already finalised it (fine), or the
+    // order total changed under us — re-run once against the fresh order so
+    // the latter is recorded as a mismatch instead of silently ignored.
+    const fresh = await Order.findById(orderId);
+    if (fresh && !FINAL_STATES.includes(fresh.payment?.state)) {
+      return applyPhonePeResult({ models, orderId, merchantTransactionId, result });
+    }
+    return { order: fresh, changed: false, mismatch: fresh?.payment?.state === AMOUNT_MISMATCH };
   }
 
   if (result.state === FAILED) {
@@ -250,7 +357,7 @@ export const applyPhonePeResult = async ({ models, orderId, merchantTransactionI
     // PENDING_VERIFICATION so the customer can retry or pay cash. We only
     // record that this attempt failed.
     const updated = await Order.findOneAndUpdate(
-      { ...match, "payment.state": { $nin: [SUCCESS, FAILED] } },
+      { ...match, "payment.state": { $nin: [...FINAL_STATES, FAILED] } },
       {
         $set: {
           "payment.state": FAILED,
@@ -260,7 +367,7 @@ export const applyPhonePeResult = async ({ models, orderId, merchantTransactionI
       },
       { returnDocument: "after" },
     );
-    return { order: updated || (await Order.findById(orderId)), changed: Boolean(updated) };
+    return { order: updated || (await Order.findById(orderId)), changed: Boolean(updated), mismatch: false };
   }
 
   // PENDING — just stamp the check time.
@@ -269,5 +376,5 @@ export const applyPhonePeResult = async ({ models, orderId, merchantTransactionI
     { $set: { "payment.lastCheckedAt": now } },
     { returnDocument: "after" },
   );
-  return { order: updated || (await Order.findById(orderId)), changed: false };
+  return { order: updated || (await Order.findById(orderId)), changed: false, mismatch: false };
 };

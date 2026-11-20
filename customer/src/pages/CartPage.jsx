@@ -7,6 +7,7 @@ import { useAppState } from "../context/AppState.jsx";
 import { placeOrder, quoteOrder, saveGuestOrderToken, newIdempotencyKey } from "../services/orderService.js";
 import { checkCoupon } from "../services/couponService.js";
 import { initiatePhonePePayment } from "../services/paymentService.js";
+import { PolicyLinks } from "./PolicyPage.jsx";
 import { EmptyState } from "../components/StateViews.jsx";
 import TableBadge from "../components/TableBadge.jsx";
 import Button from "../components/ui/Button.jsx";
@@ -433,6 +434,7 @@ function ShoppingCart() {
           ? "Your order is sent to the restaurant once your payment succeeds. Unpaid orders are cancelled after 15 minutes."
           : "Changed your mind? You can change this order for a few minutes after placing it — it goes to the kitchen after that."}
       </p>
+      <PolicyLinks style={{ justifyContent: "center", marginTop: 6 }} />
 
       {couponOpen && (
         <CouponSheet

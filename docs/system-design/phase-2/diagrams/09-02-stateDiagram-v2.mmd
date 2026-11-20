@@ -1,0 +1,12 @@
+%% Source: 09-printing-architecture.md — 2. Job status lifecycle
+stateDiagram-v2
+  [*] --> PENDING
+  PENDING --> PRINTING
+  PRINTING --> PRINTED
+  PRINTING --> FAILED: print error, attempt +1
+  PRINTING --> PENDING: printer offline, no attempt used
+  FAILED --> PRINTING: retry with backoff below MAX_ATTEMPTS
+  PENDING --> SKIPPED: older than 30 min or admin skip-stale
+  FAILED --> SKIPPED: older than 30 min or admin skip-stale
+  PRINTED --> [*]
+  SKIPPED --> [*]

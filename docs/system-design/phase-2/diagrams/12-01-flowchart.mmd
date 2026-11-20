@@ -1,0 +1,20 @@
+%% Source: 12-synchronization-architecture.md — 2. Components
+flowchart LR
+  subgraph Site
+    DB[(Local replica set)]
+    AG[Sync agent - PLANNED]
+    OB[(SyncOutbox / SyncState / SyncInbox / SyncConflict - PLANNED)]
+    SV[Existing services]
+    DB -- change stream --> AG
+    AG --> OB
+    AG -- re-execute inbox items --> SV
+    SV --> DB
+  end
+  subgraph Cloud
+    IN["/api/sync/v1 ingest - PLANNED"]
+    MR[(Mirror DB per site)]
+    RL[Relay socket - PLANNED]
+    IN --> MR
+  end
+  AG -- HTTPS push batches --> IN
+  RL -- inbox: remote orders, PhonePe callbacks, customer upserts, revocations --> AG

@@ -61,6 +61,9 @@ import { verifyPrinterKey, markPrinterSeen, expireOldPrintJobs } from "../servic
 import { recordHeartbeat } from "../services/attendanceService.js";
 import { kitchenSafeKot } from "../services/kotService.js";
 import { addonLabel, nameWithSize } from "../utils/menuAddons.js";
+import { isLocalPrimary } from "../config/deploymentMode.js";
+import { getLocalAuthModels } from "../config/localAuthModels.js";
+import { checkLocalToken } from "../services/localAuthService.js";
 
 let ioInstance = null;
 
@@ -100,6 +103,17 @@ export const initSocket = (httpServer) => {
         const user   = await models.User.findById(decoded.id).select("-otp -otpExpiry -password");
         if (!user) return next(new Error("User not found"));
 
+        // Offline Edition: same device-bound session rule as REST (protect).
+        // CLOUD mode: no DB work — only a local-server token is refused.
+        const localMode = isLocalPrimary();
+        if (localMode && user.status === "Inactive") return next(new Error("Socket auth failed: account inactive"));
+        const local = await checkLocalToken({ models: localMode ? getLocalAuthModels(conn) : null, decoded, user, localMode, path: null });
+        if (!local.ok) return next(new Error(`Socket auth failed: ${local.body.reason || local.body.code}`));
+        if (local.session) {
+          socket.localSessionId = local.session.sid;
+          socket.localSessionExpiresAt = local.session.expiresAt;
+        }
+
         socket.tenantKey = tenantKeyFromUri(mongoUri);
         socket.userId    = String(user._id);
         socket.role       = user.isAdmin ? "admin" : (user.role || "customer");
@@ -132,6 +146,14 @@ export const initSocket = (httpServer) => {
 
   io.on("connection", (socket) => {
     const tenantKey = socket.tenantKey;
+
+    // Offline Edition: a PIN session ends at a fixed time — don't let a live
+    // socket outlast it (REST already refuses after expiry).
+    if (socket.localSessionExpiresAt) {
+      const ms = new Date(socket.localSessionExpiresAt).getTime() - Date.now();
+      const timer = setTimeout(() => socket.disconnect(true), Math.max(0, Math.min(ms, 2 ** 31 - 1)));
+      socket.on("disconnect", () => clearTimeout(timer));
+    }
 
     // Everyone connected to a tenant gets the general tenant room.
     socket.join(rooms.tenant(tenantKey));
@@ -328,6 +350,25 @@ const markPrinterDeviceSeen = async (deviceId, status) => {
   const conn = await getDB(process.env.MONGO_URI);
   const { PrinterDevice } = getModels(conn);
   await markPrinterSeen({ PrinterDevice, deviceId, status });
+};
+
+/**
+ * Offline Edition: cut the live sockets of revoked PIN sessions (device
+ * revoked, PIN reset, logout). Their next reconnect fails the handshake.
+ * Never throws — revocation itself already succeeded in the database.
+ */
+export const disconnectLocalSessions = (sids = []) => {
+  if (!ioInstance || !sids.length) return 0;
+  const wanted = new Set(sids.map(String));
+  let n = 0;
+  for (const socket of ioInstance.sockets.sockets.values()) {
+    if (socket.localSessionId && wanted.has(socket.localSessionId)) {
+      socket.emit("auth:session_ended", { reason: "SESSION_REVOKED" });
+      socket.disconnect(true);
+      n++;
+    }
+  }
+  return n;
 };
 
 export const getIO = () => {

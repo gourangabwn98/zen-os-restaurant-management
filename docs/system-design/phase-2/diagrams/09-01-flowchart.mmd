@@ -1,0 +1,23 @@
+%% Source: 09-printing-architecture.md — 1. Current architecture (IMPLEMENTED)
+flowchart LR
+  subgraph Backend[restaurant-server]
+    C1[sendToKitchenTx] --> KJ[(KOTJob)]
+    C2[modifySentOrderTx] --> CJ[(KOTChangeJob)]
+    C3[printBill / printCombinedBill] --> BJ[(BillPrintJob)]
+    KJ & CJ & BJ --> EM[emit to printers room]
+    GQ[get-queue ack<br/>expires >30 min] --- KJ & CJ & BJ
+    RS[report-job-status<br/>atomic update] --> KJ & CJ & BJ
+  end
+  subgraph PC[Restaurant Windows PC]
+    SC[socketClient<br/>reconnect 1-30 s, poll 5 s] --> Q[(data/queue.json)]
+    Q --> PR[processor<br/>retry sweep 3 s]
+    PR --> RN[renderers + logo + pay QR + Bengali raster]
+    PR --> PM[printerManager<br/>role KOT/BILL/BOTH]
+    PM --> L[LAN TCP 9100]
+    PM --> U[USB via Windows share]
+    PM --> D[USB_DIRECT WinUSB]
+  end
+  EM --> SC
+  SC --> GQ
+  PR --> RS
+  L & U & D --> P[Thermal printer]

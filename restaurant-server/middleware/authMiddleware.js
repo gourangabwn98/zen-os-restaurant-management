@@ -12,6 +12,9 @@ import jwt   from "jsonwebtoken";
 import { getDB }     from "../config/db.js";
 import { getModels } from "../config/getModels.js";
 import { tenantKeyFromUri } from "../utils/tenantKey.js";
+import { isLocalPrimary } from "../config/deploymentMode.js";
+import { getLocalAuthModels } from "../config/localAuthModels.js";
+import { checkLocalToken } from "../services/localAuthService.js";
 
 const getConfiguredMongoUri = () => {
   const mongoUri = process.env.MONGO_URI;
@@ -39,6 +42,24 @@ const sessionExpired = (res) =>
 const accountInactive = (res) =>
   res.status(403).json({ message: "This account has been deactivated", code: "ACCOUNT_INACTIVE" });
 
+// Offline Edition (services/localAuthService.js checkLocalToken):
+//   LOCAL mode — admin/manager/inventory/waiter/chef must hold a device-bound
+//     PIN session that is still open, unexpired, on a still-approved device.
+//     Re-checked on EVERY request, so a revoke applies immediately.
+//   CLOUD mode — no extra database work; only a token minted by a local
+//     server is refused (it can never be valid in the cloud).
+// Expired/revoked answers reuse code SESSION_EXPIRED (+ `reason`), which the
+// staff apps already handle by returning to the login screen.
+const localTokenCheck = async (req, decoded) => {
+  const localMode = isLocalPrimary();
+  const result = await checkLocalToken({
+    models: localMode ? getLocalAuthModels(req.db) : null,
+    decoded, user: req.user, localMode, path: req.originalUrl,
+  });
+  if (result.ok) req.localSession = result.session;
+  return result;
+};
+
 // ── protect — JWT required, but the DB is always MONGO_URI ───────────────────
 export const protect = async (req, res, next) => {
   const auth = req.headers.authorization;
@@ -52,6 +73,8 @@ export const protect = async (req, res, next) => {
       .findById(decoded.id).select("-otp -otpExpiry -password");
     if (!req.user) return sessionExpired(res);
     if (req.user.status === "Inactive") return accountInactive(res);
+    const local = await localTokenCheck(req, decoded);
+    if (!local.ok) return res.status(local.status).json(local.body);
     next();
   } catch (e) {
     sessionExpired(res);
@@ -88,6 +111,9 @@ export const optionalProtect = async (req, res, next) => {
   req.user = await req.models.User.findById(decoded.id).select("-otp -otpExpiry -password");
   if (!req.user) return sessionExpired(res);
   if (req.user.status === "Inactive") return accountInactive(res);
+  let local;
+  try { local = await localTokenCheck(req, decoded); } catch { return sessionExpired(res); } // fail closed
+  if (!local.ok) return res.status(local.status).json(local.body);
   next();
 };
 

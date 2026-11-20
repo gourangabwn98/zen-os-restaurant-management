@@ -1,0 +1,21 @@
+%% Source: 08-order-kot-workflow.md — 1. Order state machine
+stateDiagram-v2
+  [*] --> AWAITING_PAYMENT: customer, Online, PhonePe on
+  [*] --> PENDING_CONFIRMATION: customer order
+  [*] --> CONFIRMED: staff order
+  AWAITING_PAYMENT --> PENDING_CONFIRMATION: system, verified payment
+  AWAITING_PAYMENT --> CANCELLED: customer, admin, manager, system after 15 min
+  PENDING_CONFIRMATION --> CONFIRMED: admin, manager, waiter accept
+  PENDING_CONFIRMATION --> CANCELLED: admin, manager, waiter, customer
+  CONFIRMED --> PREPARING: sendToKitchenTx - timer, staff, chef
+  CONFIRMED --> CANCELLED: admin, manager, waiter
+  PREPARING --> READY: admin, manager, waiter, chef
+  PREPARING --> CANCELLED: admin, manager - stock reversed
+  READY --> DELIVERED: admin, manager, waiter, rider OTP
+  READY --> PREPARING: items added after KOT
+  DELIVERED --> PREPARING: items added after KOT
+  DELIVERED --> COMPLETED: system - bill settled and PAID
+  PREPARING --> COMPLETED: admin or manager, PAID only
+  READY --> COMPLETED: admin or manager, PAID only
+  COMPLETED --> [*]
+  CANCELLED --> [*]

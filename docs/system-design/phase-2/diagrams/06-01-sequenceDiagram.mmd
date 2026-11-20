@@ -1,0 +1,18 @@
+%% Source: 06-api-architecture.md — 2. Request pipeline
+sequenceDiagram
+  participant C as Client
+  participant G as Global middleware
+  participant A as Auth (protect / optionalProtect / autoAuth / dbFromHeader)
+  participant R as RBAC + duty + id validation
+  participant H as Controller
+  participant S as Service
+  participant D as MongoDB
+  C->>G: HTTPS request
+  G->>G: CORS *, gzip, JSON 10 MB, strip $-keys
+  G->>A: attach req.db/models, verify JWT, load User, LOCAL session check
+  A->>R: requireRole, managerScope, requireWaiterOnDuty, objectIdParam
+  R->>H: next()
+  H->>S: call
+  S->>D: atomic write / transaction
+  S-->>H: result or Error{statusCode}
+  H-->>C: JSON

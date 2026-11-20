@@ -1,0 +1,36 @@
+%% System Context — Zen OS (verified actors/systems; dashed = PROPOSED)
+flowchart LR
+  classDef person fill:#08427b,color:#fff
+  classDef sys fill:#1168bd,color:#fff
+  classDef ext fill:#999,color:#fff
+  classDef planned fill:#fff,color:#333,stroke:#999,stroke-dasharray:5 5
+  Owner["Admin / Owner"]:::person
+  Manager["Manager / Inventory manager"]:::person
+  Waiter["Waiter"]:::person
+  Chef["Chef"]:::person
+  Customer["Customer"]:::person
+  Rider["Delivery partner"]:::person
+  Zen["Zen OS (single restaurant)"]:::sys
+  Atlas[("MongoDB Atlas")]:::ext
+  Firebase["Firebase Auth + FCM"]:::ext
+  PhonePe["PhonePe PG V1"]:::ext
+  SMS["Twilio / MSG91"]:::ext
+  Cloudinary["Cloudinary"]:::ext
+  Google["Google Maps / Routes"]:::ext
+  Printers["Thermal printers"]:::ext
+  UPI["UPI app (deep link)"]:::ext
+  Android["Android print agent"]:::planned
+  Owner & Manager -->|Admin app| Zen
+  Waiter -->|Waiter app| Zen
+  Chef -->|Kitchen app| Zen
+  Customer -->|Customer app| Zen
+  Rider -->|Delivery app| Zen
+  Zen --> Atlas
+  Zen --> Firebase
+  Zen <--> PhonePe
+  Zen --> SMS
+  Zen --> Cloudinary
+  Zen --> Google
+  Zen -->|on-prem print-service| Printers
+  Customer -.-> UPI
+  Android -.->|PROPOSED| Printers

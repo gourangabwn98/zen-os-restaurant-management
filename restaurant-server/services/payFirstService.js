@@ -7,7 +7,7 @@
 // change stays in orderService (promotePaidOrder / expireUnpaidOrders).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { isPhonePeConfigured, fetchPhonePeStatus, applyPhonePeResult } from "./paymentService.js";
+import { isPhonePeConfigured, fetchPhonePeStatus, applyPhonePeResult, isFinalAttemptState } from "./paymentService.js";
 import { promotePaidOrder, expireUnpaidOrders } from "./orderService.js";
 
 // A gateway attempt still PENDING at the deadline (customer is on PhonePe's
@@ -47,7 +47,7 @@ export const runPayFirstTick = async ({ models, now = new Date(), onPromoted, on
 
   const beforeCancel = async (order) => {
     const mtid = order.payment?.merchantTransactionId;
-    if (!mtid || !isPhonePeConfigured() || order.payment?.state === "SUCCESS") return;
+    if (!mtid || !isPhonePeConfigured() || isFinalAttemptState(order.payment?.state)) return;
     const result = await fetchPhonePeStatus({ order });
     const { order: updated, changed } = await applyPhonePeResult({
       models, orderId: order._id, merchantTransactionId: mtid, result,

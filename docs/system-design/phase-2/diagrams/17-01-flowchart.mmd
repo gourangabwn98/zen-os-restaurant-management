@@ -1,0 +1,13 @@
+%% Source: 17-implementation-roadmap.md — 1. Sequence
+flowchart LR
+  P0[Phase 0<br/>Decisions OD-1..OD-7] --> P1[Phase 1<br/>Security quick fixes]
+  P1 --> P2[Phase 2<br/>Commit & review current branch]
+  P2 --> P3[Phase 3<br/>CI, tests green, deploy record]
+  P3 --> P4[Phase 4<br/>Offline core: O5 HTTPS, O9 installer + backup, O4 degrade]
+  P4 --> P5A[Phase 5A<br/>Restricted gate - if R1]
+  P4 --> P5B[Phase 5B<br/>O3 LAN customers + O8 riders - if F]
+  P5A & P5B --> P6[Phase 6<br/>Sync O6 mock cloud → O7 cloud - needs approval]
+  P3 --> P7[Phase 7<br/>Payments: refunds, reconciliation, V2 when keys]
+  P3 --> P8[Phase 8<br/>Printing: skip alerts, routing, lease]
+  P8 --> P9[Phase 9<br/>Android print agent pilot]
+  P6 & P7 & P9 --> P10[Phase 10<br/>Pilot restaurant + go-live]

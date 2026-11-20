@@ -6,7 +6,7 @@
 
 import {
   isPhonePeConfigured, initiatePhonePePayment, fetchPhonePeStatus,
-  applyPhonePeResult, decodeCallback, verifyCallbackSignature,
+  applyPhonePeResult, decodeCallback, verifyCallbackSignature, isFinalAttemptState,
 } from "../services/paymentService.js";
 import { assertCanViewOrder } from "../services/orderService.js";
 import { afterPaymentApplied } from "../services/payFirstService.js";
@@ -81,7 +81,7 @@ export const phonePeOrderStatus = async (req, res) => {
     if (
       isPhonePeConfigured() &&
       order.payment?.merchantTransactionId &&
-      order.payment?.state !== "SUCCESS"
+      !isFinalAttemptState(order.payment?.state)
     ) {
       try {
         const result = await fetchPhonePeStatus({ order });

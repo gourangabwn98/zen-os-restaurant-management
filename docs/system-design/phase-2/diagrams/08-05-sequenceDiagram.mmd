@@ -1,0 +1,13 @@
+%% Source: 08-order-kot-workflow.md — 5. Billing and completion
+sequenceDiagram
+  actor W as Waiter / Manager
+  participant API as Backend
+  participant DB as MongoDB
+  participant PS as print-service
+  W->>API: POST /api/admin/orders/:id/print-bill
+  API->>DB: BillPrintJob (AC charge snapshotted at first print)
+  API-->>PS: bill:print
+  W->>API: POST /api/admin/orders/settle {orderIds, paymentMethod, paymentSplit?}
+  API->>DB: per order atomic: billStatus SETTLED (+ PAID, method, paidBy) if status unchanged
+  API->>DB: completeServedSettledOrder → COMPLETED when DELIVERED
+  W->>API: POST /api/admin/table-sessions/:id/close (no live orders)

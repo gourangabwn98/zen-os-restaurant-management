@@ -1,0 +1,19 @@
+%% External integration architecture
+flowchart LR
+  API["restaurant-server"]
+  API -->|Mongoose| M[("MongoDB")]
+  API -->|Admin SDK verify / FCM| F["Firebase"]
+  API -->|REST X-VERIFY| P["PhonePe V1"]
+  P -->|callback| API
+  API -->|SDK| T["Twilio SMS/WhatsApp"]
+  API -->|REST| G["MSG91"]
+  API -->|upload| C["Cloudinary"]
+  API -->|REST| GR["Google Routes"]
+  API -->|WASM + data download| OCR["Tesseract"]
+  WEB["Web apps"] -->|JS SDK| F
+  WEB -->|Maps JS| GM["Google Maps"]
+  WEB -.->|upi://pay| UPI["UPI apps"]
+  PS["print-service"] -->|TCP/USB/share| PR["Printers"]
+  PS -->|PowerShell GDI+| WIN["Windows"]
+  AND["Android print agent"]:::p -.-> PR
+  classDef p stroke-dasharray:5 5

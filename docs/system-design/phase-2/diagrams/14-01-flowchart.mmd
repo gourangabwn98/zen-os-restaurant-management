@@ -1,0 +1,25 @@
+%% Source: 14-deployment-architecture.md — 1. Current production (inferred from repo — Medium confidence)
+flowchart LR
+  subgraph Vercel[Vercel - inferred]
+    VA[admin]
+    VC[customer]
+    VW[waiter]
+  end
+  VK[kitchen - hosting UNKNOWN]
+  subgraph Render[Render - inferred]
+    API[restaurant-server<br/>single instance, ticks in-process]
+  end
+  ATL[(MongoDB Atlas<br/>tier/backup UNKNOWN)]
+  EXT[Firebase, PhonePe, Twilio/MSG91, Cloudinary, Google]
+  subgraph Rest[Restaurant]
+    PC[Windows PC<br/>SohojPrintService.exe]
+    PR[Printers]
+    DEV[Devices]
+  end
+  DEV --> VA & VC & VW & VK
+  DEV -->|HTTPS/WSS| API
+  API --> ATL
+  API --> EXT
+  EXT -->|PhonePe callback| API
+  PC -->|outbound WSS| API
+  PC --> PR

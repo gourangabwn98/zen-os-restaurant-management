@@ -1,0 +1,30 @@
+%% C4 Component — restaurant-server
+flowchart LR
+  subgraph HTTP["Express pipeline"]
+    MW["cors * / compression / json 10mb / sanitizeInput"]
+    AUTH["protect / optionalProtect / dbFromHeader / autoAuth"]
+    RBAC["requireRole family / managerScope / requireWaiterOnDuty / objectIdParam / rateLimit"]
+  end
+  subgraph Routes["routes/* (25 files, 276 handlers)"]
+    R1["auth"] --- R2["orders"] --- R3["admin"] --- R4["menu/categories"] --- R5["payments"]
+    R6["inventory + v3"] --- R7["employees/attendance"] --- R8["printer"] --- R9["delivery"] --- R10["local (LOCAL)"]
+  end
+  subgraph Services["services/*"]
+    OS["orderService"] --- KS["kotService"] --- BS["billingService / combinedBill"]
+    PAY["paymentService (PhonePe V1) / payFirstService"]
+    INV["inventoryService / inventoryV3*"]
+    DS["deliveryService / deliveryRealtime / routeService"]
+    ATT["attendance / employee / leave / pay / staffReport"]
+    MENU["menu* / category* / smartCategory"]
+    PD["printerDeviceService"]
+    LA["localAuthService"]
+  end
+  SM["utils: orderStateMachine, pricing, paymentMode, phonePeEnv, roles, units, recipeCost"]
+  SOCK["sockets/socket.js: handshake, rooms, emitters"]
+  MODELS["config/getModels + delivery + inventoryV3 + localAuth"]
+  TICKS["server.js ticks: offers 30s, auto-send 15s, pay-first 60s, delivery 5s, category reset 60s"]
+  MW --> AUTH --> RBAC --> Routes --> Services
+  Services --> SM
+  Services --> MODELS --> DB[("MongoDB")]
+  Services --> SOCK
+  TICKS --> Services

@@ -1,0 +1,7 @@
+%% Source: 15-testing-strategy.md — 2. Strategy (PROPOSED)
+flowchart TB
+  U[Unit - pure utils: state machine, pricing, paymentMode, units, recipeCost, phonePeEnv] --> S[Service tests on in-memory replica set<br/>transactions, unique indexes, races]
+  S --> C[Contract tests<br/>app services vs backend routes and socket payloads]
+  C --> E[E2E flows<br/>HTTP + Socket.IO against sandbox]
+  E --> H[Hardware and device tests<br/>printers, phones, Offline Edition PC]
+  H --> P[Pilot at one restaurant]

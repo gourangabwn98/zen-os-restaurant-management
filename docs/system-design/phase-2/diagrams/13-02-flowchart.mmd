@@ -1,0 +1,13 @@
+%% Source: 13-security-threat-model.md — 4. Authentication and authorization architecture
+flowchart TD
+  REQ[Request with Bearer JWT] --> V[jwt.verify JWT_SECRET]
+  V --> U[load User, exclude otp/password]
+  U --> IA{status Inactive?}
+  IA -- yes --> D1[403 ACCOUNT_INACTIVE]
+  IA -- no --> LM{LOCAL mode?}
+  LM -- yes --> LS[checkLocalToken: session open, unexpired, device APPROVED]
+  LM -- no --> RB
+  LS --> RB[requireRole / requireManagement / ...]
+  RB --> MS[managerScope for employee routes]
+  MS --> DU[requireWaiterOnDuty for order writes]
+  DU --> SVC[service-level checks: TRANSITION_ROLES, PAYMENT_STATUS_ROLES, ownership / guest token]

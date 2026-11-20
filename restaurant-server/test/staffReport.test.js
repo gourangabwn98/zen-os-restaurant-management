@@ -270,8 +270,9 @@ await test("8. duplicate / retried / second-person Paid requests never double-co
   assert.equal(r.payments.length, 1);
   assert.deepEqual([rowOf(r, X).collected, rowOf(r, Y).collected], [0, 0]);
   // PhonePe callback + poll racing: one success applied once.
-  const g = world([order(2, { payment: { provider: "PHONEPE", state: "PENDING", merchantTransactionId: "M2" } })]);
-  const ok = { state: "SUCCESS", code: "PAYMENT_SUCCESS", phonepeTransactionId: "T2" };
+  // Amounts must match (paymentService.checkPaidAmount): total ₹1000 = 100000 paise.
+  const g = world([order(2, { payment: { provider: "PHONEPE", state: "PENDING", merchantTransactionId: "M2", amount: 100000 } })]);
+  const ok = { state: "SUCCESS", code: "PAYMENT_SUCCESS", phonepeTransactionId: "T2", amount: 100000 };
   const a = await applyPhonePeResult({ models: g.models, orderId: oid(2), merchantTransactionId: "M2", result: ok });
   const b = await applyPhonePeResult({ models: g.models, orderId: oid(2), merchantTransactionId: "M2", result: ok });
   assert.deepEqual([a.changed, b.changed], [true, false]);

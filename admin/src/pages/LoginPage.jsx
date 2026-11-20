@@ -13,10 +13,58 @@ import {
 import LanguageToggle from "../components/LanguageToggle.jsx";
 import { t, fmtNum } from "../i18n/core.js";
 import { BRAND } from "../brand.js";
+import { LOCAL_SERVER } from "../local/localAuth.js";
+import PinLogin from "../local/PinLogin.jsx";
+import { getSetupStatus } from "../local/localAdminService.js";
 
 const PINK = PRIMARY;
 
+// Offline Edition: on the restaurant PC staff sign in with phone + PIN on an
+// approved device (src/local/). In the cloud the OTP login below is unchanged.
 export default function LoginPage() {
+  return LOCAL_SERVER ? <LocalLoginPage /> : <OtpLoginPage />;
+}
+
+function LocalLoginPage() {
+  const nav = useNavigate();
+  const { login } = useAuth();
+  // A brand-new restaurant PC has no admin yet → offer first-time setup.
+  const [needsSetup, setNeedsSetup] = useState(false);
+  useEffect(() => {
+    getSetupStatus().then(({ data }) => setNeedsSetup(!!data.needsBootstrap)).catch(() => {});
+  }, []);
+  return (
+    <div style={{
+      minHeight: "100vh", background: "linear-gradient(135deg, #0f0d18 0%, #1a1625 50%, #12101a 100%)",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+      fontFamily: "'DM Sans', 'Noto Sans Bengali', sans-serif",
+    }}>
+      <div style={{ background: "#13111f", borderRadius: 20, padding: "32px 28px", width: "100%", maxWidth: 380, border: "1px solid rgba(139,92,246,0.2)", boxShadow: "0 25px 60px rgba(0,0,0,0.6)", boxSizing: "border-box" }}>
+        <img src={BRAND.mark} alt={BRAND.name} width="56" height="56" style={{ display: "block", margin: "0 auto 14px", borderRadius: 16 }} />
+        <PinLogin
+          title={t("ADMIN PANEL")}
+          defaultLabel={t("Counter PC")}
+          roles={["admin", "manager", "inventory_manager"]}
+          theme={{ accent: PINK, inputBg: "#1a1625", border: "rgba(255,255,255,0.1)", text: "#f1f0f5", muted: "#9ca3af", faint: "#6b7280", cardBg: "rgba(124,58,237,0.08)" }}
+          onLoggedIn={(data) => {
+            login(data);
+            nav("/admin");
+            toast.success(t("Welcome, {name}!", { name: data.name || t("Admin") }));
+          }}
+        />
+        {needsSetup && (
+          <div style={{ marginTop: 18, padding: "12px 14px", borderRadius: 12, background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.25)", fontSize: 12.5, color: "#c4b5fd", lineHeight: 1.5 }}>
+            {t("This restaurant PC isn't set up yet.")}{" "}
+            <button type="button" onClick={() => nav("/setup")} style={{ border: "none", background: "none", color: "#fff", fontWeight: 800, cursor: "pointer", padding: 0, fontFamily: "inherit", textDecoration: "underline" }}>{t("Start first-time setup")}</button>
+          </div>
+        )}
+        <div style={{ marginTop: 20, textAlign: "center" }}><LanguageToggle /></div>
+      </div>
+    </div>
+  );
+}
+
+function OtpLoginPage() {
   const nav        = useNavigate();
   const { login }  = useAuth();
 

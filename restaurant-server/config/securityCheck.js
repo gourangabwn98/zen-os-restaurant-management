@@ -6,6 +6,8 @@
 // warning so an existing deployment keeps running while it gets fixed.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { resolvePhonePeEnv, PHONEPE_ENVS } from "../utils/phonePeEnv.js";
+
 /** Pure: env → { fatal: [], warnings: [] } (unit-tested). */
 export const checkSecurityConfig = (env = process.env) => {
   const fatal = [], warnings = [];
@@ -30,8 +32,13 @@ export const checkSecurityConfig = (env = process.env) => {
     warnings.push("Firebase Admin is not fully configured — admin and customer phone login will fail.");
   const pp = ["PHONEPE_MERCHANT_ID", "PHONEPE_SALT_KEY"].filter((k) => get(k)).length;
   if (pp === 1) warnings.push("PhonePe is half-configured (need both PHONEPE_MERCHANT_ID and PHONEPE_SALT_KEY).");
-  if (pp === 2 && prod && get("PHONEPE_ENV") !== "PROD")
-    warnings.push("PhonePe is configured but PHONEPE_ENV is not PROD — real customers would be sent to the sandbox.");
+  if (pp === 2) {
+    // Same parser the gateway uses (utils/phonePeEnv.js) — the two can't disagree.
+    const pe = resolvePhonePeEnv(env);
+    if (!pe.valid) warnings.push(`${pe.reason} The PhonePe gateway is DISABLED until this is fixed.`);
+    else if (prod && pe.env !== PHONEPE_ENVS.PRODUCTION)
+      warnings.push("PhonePe is configured but PHONEPE_ENV is SANDBOX — real customers would be sent to the sandbox. Set PHONEPE_ENV=PRODUCTION.");
+  }
   return { fatal, warnings };
 };
 

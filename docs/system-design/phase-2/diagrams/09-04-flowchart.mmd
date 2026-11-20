@@ -1,0 +1,11 @@
+%% Source: 09-printing-architecture.md — 6. Android print agent (PROPOSED)
+flowchart LR
+  BE[Backend printers room<br/>phase 1: existing protocol<br/>later: lease API] --> AG
+  subgraph AND[Fixed Android edge device - PROPOSED]
+    AG[Foreground service] --> AQ[(Durable queue)]
+    AQ --> AR[ESC/POS + bitmap Bengali, logo, QR]
+    AR --> AL[LAN 9100]
+    AR -.later.-> AU[USB OTG, tested models]
+  end
+  AL --> P[LAN printer]
+  WIN[Windows print-service<br/>kept in parallel] --> P

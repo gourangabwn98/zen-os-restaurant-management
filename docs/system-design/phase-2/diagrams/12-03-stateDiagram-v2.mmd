@@ -1,0 +1,8 @@
+%% Source: 12-synchronization-architecture.md — 4. Reconnect behaviour
+stateDiagram-v2
+  [*] --> Online
+  Online --> Offline: probe fails
+  Offline --> Draining: probe succeeds
+  Draining --> Online: outbox empty
+  Draining --> Offline: probe fails
+  Online --> Online: push continuously

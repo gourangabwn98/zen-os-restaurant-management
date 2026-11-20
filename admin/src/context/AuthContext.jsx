@@ -3,6 +3,7 @@ import { STORAGE_KEY } from "../theme.js";
 import { useState } from "react";
 import { AuthContext } from "./authContextObject.js";
 import { clearSavedData } from "../offline/savedData.js";
+import { localLogout } from "../local/localAuth.js";
 
 // src/context/AuthContext.jsx — make sure BOTH use same key
 export function AuthProvider({ children }) {
@@ -21,6 +22,7 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
+    localLogout(localStorage.getItem("adminToken")); // Offline Edition: end the PIN session on the server (no-op in the cloud)
     localStorage.removeItem("adminToken");
     localStorage.removeItem("adminUser");
     clearSavedData(); // offline copies of this login's data (may include guest details)

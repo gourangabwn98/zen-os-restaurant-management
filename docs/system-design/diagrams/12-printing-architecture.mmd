@@ -1,0 +1,20 @@
+%% Printing architecture (Windows print-service, IMPLEMENTED)
+flowchart LR
+  subgraph Backend
+    A["sendToKitchenTx / modifySentOrderTx / printBill / printCombinedBill"] --> J[("KOTJob, KOTChangeJob, BillPrintJob")]
+    A --> E["emit kot:created / bill:print -> printers room"]
+    Q["get-queue ack (expire >30 min -> SKIPPED)"] --- J
+    R["report-job-status (atomic)"] --> J
+  end
+  subgraph PC["Restaurant Windows PC"]
+    SC["socketClient"] --> PQ[("data/queue.json")]
+    PQ --> PROC["processor + retry sweep"]
+    PROC --> PM["printerManager (role)"]
+    PM --> LAN["LAN 9100"]
+    PM --> USB["USB share copy /b"]
+    PM --> UD["USB_DIRECT libusb"]
+  end
+  E --> SC
+  SC -->|connect + every 5 s| Q
+  PROC --> R
+  LAN & USB & UD --> PRN["Thermal printer"]

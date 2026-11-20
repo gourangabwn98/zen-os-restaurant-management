@@ -1,0 +1,14 @@
+%% Source: 04-frontend-backend-architecture.md — 1.1 Common structure of the four web apps
+flowchart TB
+  subgraph App[Each web app]
+    R[React Router pages] --> H[hooks: useAuth, useLiveOrders, ...]
+    H --> SVC[services/*.js domain calls]
+    SVC --> API[services/api.js<br/>axios + Bearer token + 401 handling]
+    API --> SD[offline/savedData.js<br/>GET cache in IndexedDB<br/>admin, waiter, kitchen]
+    SD --> CN[offline/connectivity.js<br/>banner + /api/health probe]
+    H --> SK[services/socketService.js]
+    R --> LP[local/PinLogin.jsx<br/>LOCAL mode only]
+    CFG[public/config.js<br/>window.__ZEN_CONFIG__] --> API
+  end
+  API -->|HTTPS| BE[(restaurant-server)]
+  SK -->|WSS| BE

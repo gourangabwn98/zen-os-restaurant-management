@@ -1,0 +1,23 @@
+%% Source: 03-high-level-architecture.md — 2. System context
+flowchart LR
+  classDef person fill:#08427b,color:#fff
+  classDef sys fill:#1168bd,color:#fff
+  classDef ext fill:#888,color:#fff
+  Owner[Admin / Owner]:::person
+  Mgr[Manager / Inventory manager]:::person
+  Wtr[Waiter]:::person
+  Chef[Chef]:::person
+  Cust[Customer]:::person
+  Rider[Delivery partner]:::person
+  Zen[Zen OS]:::sys
+  DB[(MongoDB)]:::ext
+  FB[Firebase Auth + FCM]:::ext
+  PP[PhonePe PG V1]:::ext
+  SMS[Twilio / MSG91]:::ext
+  CL[Cloudinary]:::ext
+  GG[Google Maps / Routes]:::ext
+  PR[Thermal printers]:::ext
+  Owner & Mgr & Wtr & Chef & Cust & Rider --> Zen
+  Zen --> DB & FB & SMS & CL & GG
+  Zen <--> PP
+  Zen --> PR

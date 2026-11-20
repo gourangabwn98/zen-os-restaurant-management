@@ -24,6 +24,18 @@ r = checkSecurityConfig({ ...base, PHONEPE_MERCHANT_ID: "m" });
 assert.ok(r.warnings.some((w) => /half-configured/.test(w)));
 r = checkSecurityConfig({ ...base, PHONEPE_MERCHANT_ID: "m", PHONEPE_SALT_KEY: "s", PHONEPE_ENV: "UAT" });
 assert.ok(r.warnings.some((w) => /sandbox/.test(w)));
+// PHONEPE_ENV — same parser as the gateway (utils/phonePeEnv.js).
+const pp = { ...base, PHONEPE_MERCHANT_ID: "m", PHONEPE_SALT_KEY: "s" };
+for (const v of ["PRODUCTION", "PROD", "production", " Live "]) {
+  r = checkSecurityConfig({ ...pp, PHONEPE_ENV: v });
+  assert.deepEqual(r.warnings, [], `PHONEPE_ENV=${v} is a valid production setting`);
+}
+r = checkSecurityConfig({ ...pp, PHONEPE_ENV: "SANDBOX" });
+assert.ok(r.warnings.some((w) => /sandbox/.test(w)), "explicit sandbox in production warns");
+r = checkSecurityConfig({ ...pp, PHONEPE_ENV: "" });
+assert.ok(r.warnings.some((w) => /PHONEPE_ENV is not set/.test(w) && /DISABLED/.test(w)), "blank in production disables + warns");
+r = checkSecurityConfig({ ...pp, PHONEPE_ENV: "PRD" });
+assert.ok(r.warnings.some((w) => /not recognised/.test(w) && /DISABLED/.test(w)), "typo disables + warns");
 r = checkSecurityConfig({ NODE_ENV: "development", JWT_SECRET: strong });
 assert.deepEqual(r.warnings, [], "dev without SMS/TZ is fine");
 const out = JSON.stringify(checkSecurityConfig({ ...base, JWT_SECRET: "Zq9xKwVb" }));

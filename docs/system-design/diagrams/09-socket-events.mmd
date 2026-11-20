@@ -1,0 +1,27 @@
+%% Socket.IO rooms and events (red = legacy PII leak to anonymous room)
+flowchart LR
+  subgraph Rooms
+    T["tenant:{key} — ALL sockets incl. guests"]
+    S["staff — admin, manager, waiter"]
+    K["kitchen — chef only"]
+    P["printers — print-service"]
+    O["order:{id} — owner / guest token / staff"]
+    U["user:{id} — staff & riders (own)"]
+    DA["delivery-admin — admin, manager"]
+    TR["track:{jobId} — tracking token"]
+  end
+  E1["order:new / confirmed / status_changed / cancelled / payment_changed / needs_attention"] --> S
+  E1 --> O
+  E2["order:status_changed, order:cancelled, kot:created (PII-stripped)"] --> K
+  E3["kot:created, bill:print (print payloads)"] --> P
+  E4["menu:updated"] --> T
+  E5["waiter_call:new/updated"] --> U
+  E6["delivery:* offers/jobs"] --> U
+  E7["delivery:location_updated, board"] --> DA
+  E8["delivery:status_updated / location"] --> TR
+  L["LEGACY: new-order, order-status-updated, order-rejected (full order)"]:::bad --> T
+  classDef bad fill:#c00,color:#fff
+  P -->|"get-queue (ack), report-job-status"| SRV["server"]
+  O -.->|"join-order"| SRV
+  TR -.->|"join-tracking"| SRV
+  S -.->|"employee:attendance:heartbeat"| SRV

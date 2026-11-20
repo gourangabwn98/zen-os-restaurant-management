@@ -1,0 +1,20 @@
+%% C4 Component — print-service
+flowchart LR
+  IDX["index.js: timers (retry 3s, poll 5s, health 5s), instanceLock"]
+  SC["socketClient: printerKey handshake, reconnect 1-30s, get-queue, report-job-status"]
+  Q[("queue.js: Map + data/queue.json (tmp+rename)")]
+  PROC["processor: pick, render, print, mark, retry backoff, maxAttempts"]
+  REN["renderers: kot, bill, layout; logo, payQr, textImage (GDI+ via PowerShell)"]
+  PM["printerManager: role KOT/BILL/BOTH, health"]
+  D1["lanDriver TCP 9100"]
+  D2["usbDriver: copy /b to Windows share"]
+  D3["usbDirectDriver: libusb WinUSB"]
+  PROF["restaurantProfile: public profile cache"]
+  BE["Backend printers room"]
+  BE <--> SC
+  SC --> Q
+  IDX --> PROC
+  Q <--> PROC
+  PROC --> REN
+  REN --> PROF
+  PROC --> PM --> D1 & D2 & D3

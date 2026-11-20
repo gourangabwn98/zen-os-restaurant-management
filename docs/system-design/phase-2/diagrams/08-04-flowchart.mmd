@@ -1,0 +1,7 @@
+%% Source: 08-order-kot-workflow.md — 4. KOT lifecycle and change slips
+flowchart TD
+  A[sendToKitchenTx] -->|txn| K[KOTJob - unique per order]
+  E[modifySentOrderTx<br/>PREPARING/READY/DELIVERED, bill OPEN] -->|txn: re-price, restock, deduct| C[KOTChangeJob - unique order+revision<br/>lists only differences, CANCEL - prefix]
+  E -->|items added to READY/DELIVERED| P[status back to PREPARING]
+  F[Follow-up order<br/>parentOrder = root] --> K2[its own KOTJob]
+  K & C & K2 --> Q[printers room + get-queue]

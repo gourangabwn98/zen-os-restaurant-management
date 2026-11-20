@@ -1,0 +1,18 @@
+%% Source: 10-payment-architecture.md — 7. Gaps and proposed architecture (PLANNED / PROPOSED)
+flowchart TB
+  subgraph Today[IMPLEMENTED]
+    V1[paymentService V1]
+  end
+  subgraph Planned[PLANNED - docs/phonepe-integration]
+    SW[PHONEPE_API_VERSION switch]
+    V2[V2 OAuth token cache + checkout/v2 + order status]
+    WH[V2 webhook - Authorization hash, confirm via status call]
+    RF[Refund service - unique merchantRefundId, atomic states]
+    RC[Reconciliation tick for payment.state PENDING]
+    AR[Admin re-check endpoint]
+  end
+  V1 --> SW --> V2
+  SW --> WH
+  V1 --> RF
+  V1 --> RC
+  V1 --> AR

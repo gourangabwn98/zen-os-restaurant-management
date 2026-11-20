@@ -1,0 +1,10 @@
+%% Source: 10-payment-architecture.md — 4. Gateway attempt state
+stateDiagram-v2
+  [*] --> CREATED
+  CREATED --> PENDING: initiate
+  PENDING --> SUCCESS: verified, amount matches
+  PENDING --> AMOUNT_MISMATCH: verified, amount differs - final, needs a person
+  PENDING --> FAILED: verified failure - cash or retry still possible
+  FAILED --> PENDING: new attempt, new merchantTransactionId
+  SUCCESS --> [*]
+  AMOUNT_MISMATCH --> [*]

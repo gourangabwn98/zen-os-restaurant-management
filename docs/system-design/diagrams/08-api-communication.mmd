@@ -1,0 +1,10 @@
+%% API communication by consumer
+flowchart LR
+  CUS[Customer] -->|"menu, categories, orders, quote, payments/phonepe, coupons, waiter-calls, reviews, support, delivery/track"| API
+  WTR[Waiter] -->|"orders, admin/orders + settle, tables, table-sessions, waitlist, attendance, waiter-calls"| API
+  KIT[Kitchen] -->|"kitchen/orders, attendance"| API
+  ADM[Admin/Manager] -->|"/api/admin/*, menu, categories, coupons, notifications, employees, inventory(+v3), delivery/admin, printer, local"| API
+  DEL[Rider app] -->|"auth/employee, delivery/me, offers, jobs"| API
+  PS[print-service] -->|"socket get-queue/report-job-status; GET public profile"| API
+  PP[PhonePe] -->|"POST /api/payments/phonepe/callback (X-VERIFY)"| API
+  API[(restaurant-server)] -->|"/pg/v1/pay, /pg/v1/status"| PP

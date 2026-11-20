@@ -27,6 +27,7 @@ const PAGE_LOADERS = {
   inventory:     () => import("./InventoryEntry.jsx"),
   profile:       () => import("./ProfilePage.jsx"),
   help:          () => import("./HelpPage.jsx"),
+  devices:       () => import("./DevicesPage.jsx"), // Offline Edition only (utils/access.js)
 };
 const DashboardPage     = lazy(PAGE_LOADERS.dashboard);
 const TablesPage        = lazy(PAGE_LOADERS.tables);
@@ -41,6 +42,7 @@ const EmployeesPage     = lazy(PAGE_LOADERS.employees);
 const InventoryPage     = lazy(PAGE_LOADERS.inventory);
 const ProfilePage       = lazy(PAGE_LOADERS.profile);
 const HelpPage          = lazy(PAGE_LOADERS.help);
+const DevicesPage       = lazy(PAGE_LOADERS.devices);
 
 // Warm every page chunk in the background once the first screen is up, so
 // switching pages later is instant. Network-friendly: one at a time, idle only.
@@ -80,6 +82,7 @@ const ICONS = {
   bell:      <><path d="M6 8a6 6 0 0 1 12 0c0 4 1.5 6 2 7H4c.5-1 2-3 2-7Z" /><path d="M10 19a2 2 0 0 0 4 0" /></>,
   profile:   <><circle cx="12" cy="12" r="3" /><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4" /></>,
   delivery:  <><circle cx="6" cy="17" r="2.5" /><circle cx="18" cy="17" r="2.5" /><path d="M8.5 17h7M4 13l3-5h5l2 5M14 8h3l2.5 6.5" /></>,
+  devices:   <><rect x="7" y="3" width="10" height="18" rx="2" /><path d="M11 18h2" /></>,
   help:      <><circle cx="12" cy="12" r="9" /><path d="M9.5 9.5a2.5 2.5 0 1 1 3 2.4V14" /><path d="M12 17.5v.01" /></>,
   // Sidebar toggle — a panel glyph with a chevron pointing the direction the
   // click will move things, so "open" and "close" are visually distinct
@@ -118,6 +121,7 @@ const FINANCE_NAV = [
 ];
 const SETTINGS_NAV = [
   { id: "profile", label: N_("Profile"), icon: "profile" },
+  { id: "devices", label: N_("Devices & PINs"), icon: "devices" }, // hidden unless LOCAL_SERVER (canOpenPage)
   { id: "help", label: N_("Help & Support"), icon: "help" },
 ];
 
@@ -435,6 +439,7 @@ export default function AdminLayout() {
             {activePage === "analytics"  && <AnalyticsPage onNavigate={setPage} />}
             {activePage === "profile"    && <ProfilePage />}
             {activePage === "help"       && <HelpPage />}
+            {activePage === "devices"    && <DevicesPage />}
           </>
         </Suspense>
       </main>

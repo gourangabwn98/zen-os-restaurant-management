@@ -1,0 +1,17 @@
+%% Source: 03-high-level-architecture.md — 3. Containers (verified)
+flowchart TB
+  subgraph Clients
+    ADM[Admin SPA/PWA]
+    WTR[Waiter PWA]
+    KIT[Kitchen PWA]
+    CUS[Customer SPA]
+    DEL[Delivery app - Android]
+  end
+  API[restaurant-server<br/>REST /api + Socket.IO + ticks]
+  DB[(MongoDB<br/>Atlas or local replica set)]
+  PS[print-service<br/>Windows exe + disk queue]
+  PR[Printers]
+  ADM & WTR & KIT & CUS & DEL -->|HTTPS + WSS| API
+  API --> DB
+  PS -->|WSS printer key| API
+  PS --> PR

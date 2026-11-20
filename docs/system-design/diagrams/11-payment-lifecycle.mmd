@@ -1,0 +1,15 @@
+%% Payment lifecycle: paymentStatus + PhonePe attempt state + pay-first sequence
+stateDiagram-v2
+  state "Order.paymentStatus" as PS {
+    [*] --> PENDING_VERIFICATION
+    PENDING_VERIFICATION --> PAID: staff mark/settle | verified PhonePe | COD verify
+    PAID --> PENDING_VERIFICATION: admin undo
+  }
+  state "Order.payment.state (PhonePe V1)" as GS {
+    [*] --> CREATED
+    CREATED --> PENDING: initiate
+    PENDING --> SUCCESS: verified + amount match
+    PENDING --> AMOUNT_MISMATCH: verified, wrong amount (final)
+    PENDING --> FAILED: verified failure
+    FAILED --> PENDING: new attempt
+  }

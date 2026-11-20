@@ -1,0 +1,17 @@
+%% Source: 12-synchronization-architecture.md — 3. Up-sync sequence
+sequenceDiagram
+  autonumber
+  participant DB as Site MongoDB
+  participant AG as Sync agent
+  participant OB as Outbox
+  participant CL as Cloud ingest
+  participant MR as Mirror
+  DB-->>AG: change event (fullDocument)
+  AG->>OB: row {syncSeq, collection, docId, op, version, payload} + resume token
+  loop online, batches ≤200 rows / 1 MB
+    AG->>CL: POST push (key siteId:syncSeq)
+    CL->>MR: upsert where version < incoming
+    CL-->>AG: ok / duplicate / conflict / rejected per row
+    AG->>OB: advance watermark over contiguous ok+duplicate
+  end
+  Note over AG,CL: offline → backoff 2 s … 5 min, never drop rows

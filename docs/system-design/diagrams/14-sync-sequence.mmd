@@ -1,0 +1,18 @@
+%% Data synchronization sequence (PLANNED design, docs/offline-edition/05)
+sequenceDiagram
+  autonumber
+  participant DB as Site MongoDB
+  participant AG as Sync agent
+  participant OB as SyncOutbox/SyncState
+  participant CL as Cloud /api/sync/v1
+  participant MR as Cloud mirror
+  DB-->>AG: change stream event
+  AG->>OB: outbox row (syncSeq) + resume token
+  loop while online
+    AG->>CL: push batch (siteId:syncSeq)
+    CL->>MR: upsert if version < incoming
+    CL-->>AG: ok | duplicate | conflict | rejected
+    AG->>OB: advance watermark
+  end
+  CL-->>AG: inbox items (remote orders, PhonePe relay, revocations)
+  AG->>DB: re-execute via services (site pricing), exactly once

@@ -1,0 +1,10 @@
+%% Source: 03-high-level-architecture.md — 4. Deployment shapes
+flowchart LR
+  subgraph Cloud[CLOUD_PRIMARY - implemented]
+    C1[Backend] --> C2[(Atlas)]
+  end
+  subgraph Site[LOCAL_PRIMARY - partial]
+    L1[Backend on PC] --> L2[(Local replica set)]
+    L3[Static apps 8080-8083] 
+  end
+  Site -. PLANNED sync, not approved .-> Cloud

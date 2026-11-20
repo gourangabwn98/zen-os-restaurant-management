@@ -1,0 +1,22 @@
+%% Deployment topology (inferred cloud hosting; verified on-prem artifacts)
+flowchart LR
+  subgraph Internet
+    V["Vercel: admin, customer, waiter (kitchen UNKNOWN)"]
+    R["Render: restaurant-server (single instance)"]
+    A[("MongoDB Atlas")]
+    X["Firebase, PhonePe, Twilio/MSG91, Cloudinary, Google"]
+  end
+  subgraph Restaurant
+    PC["Windows PC: SohojPrintService.exe"]
+    PR["Printers"]
+    DEV["Phones / tablets / PCs"]
+    LPC["(Optional) Offline Edition PC: backend + local MongoDB"]
+  end
+  DEV -->|HTTPS| V
+  DEV -->|HTTPS/WSS| R
+  R --> A
+  R --> X
+  X -->|PhonePe callback| R
+  PC -->|WSS outbound| R
+  PC --> PR
+  DEV -.->|LAN, LOCAL mode| LPC

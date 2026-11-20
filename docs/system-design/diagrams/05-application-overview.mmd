@@ -1,0 +1,13 @@
+%% Overall application architecture
+flowchart TB
+  subgraph Web["Web apps (shared pattern: api.js + socketService + offline/savedData + local/PinLogin)"]
+    A["admin: orders, billing, tables, menu, inventory, employees, coupons, offers, insights, delivery, devices"]
+    W["waiter: tables, new order, order detail, duty, calls"]
+    K["kitchen: KOT board PREPARING/READY"]
+    C["customer: menu, cart, checkout, PhonePe/UPI, tracking, reviews, help"]
+  end
+  D["delivery-app: offers, jobs, OTP drop, COD, GPS service"]
+  B["restaurant-server"]
+  P["print-service"]
+  A & W & K & C & D -->|REST + Socket.IO| B
+  P -->|Socket.IO printer key| B

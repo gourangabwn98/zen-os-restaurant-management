@@ -1,0 +1,24 @@
+%% Source: 08-order-kot-workflow.md — 2. End-to-end sequence — customer QR order, dine-in
+sequenceDiagram
+  autonumber
+  actor Cu as Customer
+  participant CA as Customer app
+  participant API as Backend
+  participant DB as MongoDB
+  actor W as Waiter
+  participant T as Auto-send tick (15 s)
+  participant PS as print-service
+  Cu->>CA: scan table QR, browse, add to cart
+  CA->>API: POST /api/orders/quote
+  CA->>API: Firebase login → POST /api/auth/firebase-verify
+  CA->>API: POST /api/orders (idempotencyKey, tableToken, location)
+  API->>DB: open/find TableSession, insert Order PENDING_CONFIRMATION
+  API-->>W: order:new
+  W->>API: PATCH /api/orders/:id/confirm
+  API->>DB: atomic PENDING_CONFIRMATION→CONFIRMED, autoPrepareAt
+  Note over CA,API: edit window (default 3 min from placement)
+  T->>API: autoSendDueOrders
+  API->>DB: TRANSACTION: PREPARING + stock deduction + KOTJob
+  API-->>PS: kot:created
+  PS->>PS: queue, render, print
+  PS->>API: report-job-status PRINTED

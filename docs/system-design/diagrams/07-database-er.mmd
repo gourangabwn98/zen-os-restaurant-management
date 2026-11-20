@@ -1,0 +1,35 @@
+%% ER-style relationships (core). Full fields: schema.dbml
+erDiagram
+  USER ||--o{ ORDER : "user (caller)"
+  USER ||--o{ ATTENDANCESESSION : works
+  ATTENDANCESESSION ||--o{ DUTYHISTORY : logs
+  USER ||--o{ STAFFLEAVE : ""
+  USER ||--o{ STAFFPAY : ""
+  USER ||--o{ STAFFREVIEW : rated
+  ORDER ||--|{ ORDER_ITEM : embeds
+  MENUITEM ||--o{ ORDER_ITEM : snapshot
+  MENUITEM ||--o| RECIPE : "one recipe"
+  RECIPE }o--o{ INVENTORYITEM : ingredients
+  CATEGORY }o--o| MENUTIME : "sits in"
+  TABLE ||--o{ TABLESESSION : opens
+  TABLESESSION }o--o{ ORDER : groups
+  ORDER ||--o| KOTJOB : "unique"
+  ORDER ||--o{ KOTCHANGEJOB : "per revision"
+  ORDER ||--o{ BILLPRINTJOB : reprints
+  PRINTERDEVICE ||--o{ KOTJOB : "printed by"
+  ORDER }o--o| ORDER : parentOrder
+  ORDER ||--o{ WAITERCALL : ""
+  ORDER ||--o| DELIVERYJOB : "unique"
+  DELIVERYJOB ||--o{ DELIVERYOFFER : rounds
+  DELIVERYJOB ||--o{ DELIVERYEVENT : audit
+  ORDER ||--o| CODCOLLECTION : "unique"
+  USER ||--o| DELIVERYPARTNERSTATE : rider
+  INVENTORYITEM ||--o{ STOCKLEDGER : movements
+  INVENTORYITEM ||--o{ INVENTORYBATCH : ""
+  SUPPLIER ||--o{ STOCKPURCHASE : ""
+  STOCKPURCHASE ||--o{ STOCKLEDGER : ""
+  ORDER ||--o{ STOCKLEDGER : deductions
+  WASTAGELOG ||--o{ STOCKLEDGER : ""
+  COUPON }o--o| NOTIFICATIONLOG : announced
+  USER ||--o| STAFFPIN : "LOCAL"
+  STAFFDEVICE ||--o{ LOCALSESSION : "LOCAL"

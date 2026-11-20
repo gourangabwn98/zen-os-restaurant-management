@@ -1,0 +1,19 @@
+%% Offline-first architecture (solid = implemented O1/O2, dashed = planned)
+flowchart TB
+  subgraph Site["Restaurant LAN"]
+    PC["restaurant-server LOCAL_PRIMARY + static apps 8080-8083 + /local/health"]
+    RS[("MongoDB replica set 127.0.0.1")]
+    PS["print-service -> localhost"]
+    DEV["Staff devices: StaffDevice + PIN (O2)"]
+    CUS["Customer phones (O3 PLANNED)"]
+    PC --> RS
+    PS --> PC
+    DEV -->|HTTP; HTTPS O5 planned| PC
+    CUS -.-> PC
+  end
+  subgraph Browser["Every staff browser"]
+    IDB[("IndexedDB zen-saved-data: read-only GET cache")]
+  end
+  DEV --- IDB
+  CLOUD["Cloud mirror + relay (O6/O7 PLANNED, not approved)"]
+  PC -.->|outbox push / inbox| CLOUD

@@ -1,0 +1,21 @@
+%% Source: 04-frontend-backend-architecture.md — 2. Backend architecture (verified)
+flowchart LR
+  subgraph Express[Express 5 app]
+    G[Global MW: cors, compression, json, sanitizeInput]
+    RT[routes/* 25 files]
+    MW[Route MW: protect, optionalProtect, autoAuth, requireRole*, managerScope, requireWaiterOnDuty, objectIdParam, rateLimit, upload]
+    CT[controllers/* thin]
+  end
+  SV[services/* business logic]
+  UT[utils/* state machines, pricing, enums]
+  MD[config/*Models.js]
+  SO[sockets/socket.js]
+  TK[ticks in server.js]
+  LC[local/* LOCAL only]
+  G --> RT --> MW --> CT --> SV
+  SV --> UT
+  SV --> MD --> DB[(MongoDB)]
+  CT --> SO
+  TK --> SV
+  TK --> SO
+  LC --> RT

@@ -15,6 +15,9 @@ import AdminLayout from "./pages/admin/AdminLayout";
 // so both load as their own chunks.
 const LoginPage = lazy(() => import("./pages/LoginPage"));
 const KitchenDisplayPage = lazy(() => import("./pages/KitchenDisplayPage"));
+// Offline Edition only: first-time setup of a restaurant PC (no route in the cloud).
+const SetupPage = lazy(() => import("./pages/SetupPage"));
+const LOCAL_SERVER = typeof window !== "undefined" && window.__ZEN_CONFIG__?.localServer === true;
 const RouteFallback = () => <div style={{ minHeight: "100vh", display: "grid", placeItems: "center" }}><div className="zc-spin" /></div>;
 
 function ProtectedAdmin({ children, adminOnly = false }) {
@@ -46,6 +49,7 @@ export default function App() {
       <Suspense fallback={<RouteFallback />}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        {LOCAL_SERVER && <Route path="/setup" element={<SetupPage />} />}
 
         <Route
           path="/admin"

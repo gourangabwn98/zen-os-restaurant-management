@@ -1,0 +1,11 @@
+%% Source: 10-payment-architecture.md — 2. Three separate state fields on an order
+flowchart LR
+  subgraph O[Order]
+    S[status<br/>operational lifecycle]
+    P[paymentStatus<br/>PENDING_VERIFICATION / PAID / FAILED-historic]
+    B[billStatus<br/>OPEN / SETTLED]
+    G[payment.state<br/>gateway attempt: CREATED / PENDING / SUCCESS / FAILED / AMOUNT_MISMATCH]
+  end
+  G -->|SUCCESS + amount ok| P
+  P -->|PAID required| S
+  B -->|SETTLED + DELIVERED| S

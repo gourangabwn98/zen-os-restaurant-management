@@ -20,6 +20,7 @@ import LoginPage from "./pages/LoginPage.jsx";
 import FavoritesPage from "./pages/FavoritesPage.jsx";
 import NotificationsPage from "./pages/NotificationsPage.jsx";
 import TrackPage from "./pages/TrackPage.jsx";
+import PolicyPage from "./pages/PolicyPage.jsx";
 
 const NO_CHROME_ROUTES = ["/login"];
 // Browsing screens show the floating "View cart" bar (as in the reference).
@@ -94,6 +95,10 @@ export default function App() {
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/login"     element={<LoginPage />} />
             <Route path="/track/:token" element={<TrackPage />} />
+            <Route path="/terms"         element={<PolicyPage kind="terms" />} />
+            <Route path="/privacy"       element={<PolicyPage kind="privacy" />} />
+            <Route path="/refund-policy" element={<PolicyPage kind="refund" />} />
+            <Route path="/contact"       element={<PolicyPage kind="contact" />} />
             <Route path="*"          element={<Navigate to="/" replace />} />
           </Routes>
         </Shell>

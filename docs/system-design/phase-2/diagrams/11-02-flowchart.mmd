@@ -1,0 +1,19 @@
+%% Source: 11-offline-architecture-comparison.md — Option R1 — Restricted offline, local-primary + capability gate (PROPOSED)
+flowchart TB
+  subgraph Site[Restaurant LAN - single writer]
+    CAP[capabilities.js PROPOSED<br/>internetUp? → allowed capability set]
+    API[restaurant-server LOCAL_PRIMARY]
+    G[route guards requireCapability PROPOSED]
+    DB[(Local replica set)]
+    PS[print-service → localhost]
+    W[Waiter / Admin / Manager devices]
+    K[Kitchen screen + KOT - if OD-1 includes it]
+    API --> G --> DB
+    CAP --> G
+    PS --> API
+    W --> API
+    K -.-> API
+  end
+  PROBE[Internet probe PROPOSED<br/>e.g. HTTPS reachability of cloud] --> CAP
+  CL[Cloud mirror - PLANNED]
+  API -.outbox.-> CL

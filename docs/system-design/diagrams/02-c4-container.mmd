@@ -1,0 +1,32 @@
+%% C4 Container — CLOUD_PRIMARY (production shape) and LOCAL_PRIMARY (Offline Edition)
+flowchart TB
+  subgraph Devices["Devices"]
+    ADM["Admin SPA/PWA (React 19)"]
+    WTR["Waiter PWA (React 18)"]
+    KIT["Kitchen PWA (React 18)"]
+    CUS["Customer SPA (React 18)"]
+    DEL["Delivery app (RN 0.77 + Kotlin)"]
+  end
+  subgraph Cloud["Cloud (Render + Vercel, inferred)"]
+    API["restaurant-server: Express 5 REST /api/* + Socket.IO 4 + ticks"]
+    STATIC["Vercel static: admin, customer, waiter"]
+  end
+  DB[("MongoDB Atlas")]
+  subgraph Site["Restaurant premises"]
+    PS["print-service (SohojPrintService.exe) + data/queue.json"]
+    PR["Printers: LAN 9100 / USB share / USB_DIRECT"]
+  end
+  EXT["Firebase / PhonePe / Twilio / MSG91 / Cloudinary / Google"]
+  STATIC -.-> ADM & WTR & CUS
+  ADM & WTR & KIT & CUS & DEL -->|HTTPS + WSS, JWT| API
+  API --> DB
+  PS -->|WSS printerKey| API
+  PS --> PR
+  API --> EXT
+  subgraph LocalPC["LOCAL_PRIMARY: restaurant PC (O1/O2, uncommitted)"]
+    LAPI["restaurant-server DEPLOYMENT_MODE=LOCAL + /api/local + /local/health"]
+    LAPPS["static apps 8080-8083"]
+    LRS[("MongoDB replica set 127.0.0.1")]
+    LAPI --> LRS
+  end
+  LAPI -. "sync O6/O7 PLANNED, not approved" .-> DB

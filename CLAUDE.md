@@ -172,7 +172,14 @@ conditional `findOneAndUpdate` (`payment.state != SUCCESS → SUCCESS`),
 never check-then-save, so callback + poll + admin re-check racing each
 other is safe (mirrors the `KOTJob` idempotency pattern). A `FAILED`
 gateway attempt deliberately leaves `paymentStatus` at
-`PENDING_VERIFICATION` so cash / a retry still works. `order.payment`
+`PENDING_VERIFICATION` so cash / a retry still works. A `PAYMENT_SUCCESS`
+is applied only if PhonePe's amount equals `order.payment.amount` AND that
+still equals the order's current total (`checkPaidAmount`, re-asserted in the
+update filter); otherwise the attempt becomes `AMOUNT_MISMATCH` — never PAID,
+final, needs a person. `SUCCESS` and `AMOUNT_MISMATCH` are final
+(`isFinalAttemptState`); no later callback/poll changes them. `PHONEPE_ENV` is
+read only through `utils/phonePeEnv.js` (an unknown value disables the
+gateway — never guess the sandbox). `order.payment`
 (sub-doc: `provider`, `merchantTransactionId`, `phonepeTransactionId`,
 `state`, `amount`, `raw`) is the gateway attempt's own lifecycle — do not
 confuse `payment.state` with the order's `paymentStatus`. The callback
@@ -371,6 +378,28 @@ WinUSB device, e.g. POS-58/80 boards) uses `type: "USB_DIRECT"`
 (`drivers/usbDirectDriver.js`, the `usb` v3 package — prebuilt N-API
 binary, no toolchain); the packaged .exe loads it from `node_modules/` next
 to itself.
+
+## Offline Edition (deployment modes)
+
+Design and status: `docs/offline-edition/` (02 architecture, 10 status, 11 setup/recovery).
+`config/deploymentMode.js` is the only place that reads `DEPLOYMENT_MODE`:
+unset = `CLOUD_PRIMARY` (production, unchanged); `LOCAL`/`LOCAL_PRIMARY` = the
+restaurant PC is the **only writer**, against a MongoDB replica set on
+127.0.0.1. An unknown value stops the server. Never compare the raw string
+elsewhere. Every Offline Edition path (`local/*`, `/local/health`, the app
+servers, the DNS skip in `server.js`) must stay off in cloud mode.
+- `config/localModeCheck.js` refuses LOCAL with `+srv`/remote/no-`replicaSet`
+  URIs, the sandbox JWT secret, or `OTP_DEV_ECHO`. Don't relax these.
+- LAN-only routes decide from `req.socket.remoteAddress` (`local/lanOnly.js`),
+  never `X-Forwarded-For`.
+- **Staff auth in LOCAL (O2, doc 18)**: admin/manager/inventory/waiter/chef sign in ONLY with
+  phone + PIN on an admin-approved `StaffDevice` (`services/localAuthService.js`,
+  `config/localAuthModels.js`, kept out of getModels.js). `checkLocalToken` runs on every request and
+  socket handshake. Never cache it, or revoke stops being immediate. OTP/Firebase staff routes are
+  gated by `local/staffLoginGate.js`. PINs are hashed only via `utils/localPin.js` (pepper in .env).
+  `LocalAuthEvent` is append-only. Never log a PIN or device secret.
+- The cloud is a read-only mirror. No multi-master writes, and no production
+  cloud sync until separately approved. Phases after O1 need explicit approval.
 
 ## Conventions to follow when adding features
 

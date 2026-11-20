@@ -106,6 +106,12 @@ export default function OrderDetailPage() {
           if (!stopped) { toast.error("Payment didn't go through — you can try again or pay cash."); load(); }
           return;
         }
+        // Backend paymentService AMOUNT_MISMATCH: PhonePe reported a different
+        // amount than this bill — not marked paid; staff must check it.
+        if (data?.paymentState === "AMOUNT_MISMATCH") {
+          if (!stopped) { toast.error("We couldn't confirm your payment amount — please show this screen to a staff member."); load(); }
+          return;
+        }
       } catch { /* transient — keep trying */ }
       if (!stopped && tries < 6) setTimeout(tick, 2500);
       else if (!stopped) load();

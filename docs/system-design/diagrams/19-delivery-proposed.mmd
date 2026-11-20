@@ -1,0 +1,17 @@
+%% Delivery platform: existing (solid) and PROPOSED extensions (dashed)
+flowchart TB
+  CUS["Customer checkout (ONLINE)"] --> DS
+  subgraph Site["Site writer"]
+    DS["deliveryService: job per order, offers, accept txn, OTP drop, COD"]
+    ADM["Admin delivery board"]
+  end
+  RIDER["Rider app (RN + Kotlin)"] <--> DS
+  TRACK["/track/:token"] <--> DS
+  ADM --> DS
+  RL["Cloud relay (PLANNED O7)"]:::p
+  AGG["Aggregator adapters (PROPOSED)"]:::p
+  PAYOUT["Rider payout ledger (PROPOSED)"]:::p
+  RIDER -.-> RL -.-> DS
+  AGG -.->|re-priced via placeOrderTx| DS
+  DS -.-> PAYOUT
+  classDef p stroke-dasharray:5 5

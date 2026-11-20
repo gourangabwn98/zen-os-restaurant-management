@@ -6,8 +6,38 @@ import { useAppState } from "../context/AppState.jsx";
 import { AMBER, TEXT_MUTED, BORDER } from "../theme.js";
 import { t, LanguageToggle } from "../i18n/index.jsx";
 import { BRAND } from "../brand.js";
+import { LOCAL_SERVER } from "../local/localAuth.js";
+import PinLogin from "../local/PinLogin.jsx";
 
+// Offline Edition: on the restaurant PC staff sign in with phone + PIN on an
+// approved device (src/local/). In the cloud the OTP login below is unchanged.
 export default function LoginPage() {
+  return LOCAL_SERVER ? <LocalLoginPage /> : <OtpLoginPage />;
+}
+
+function LocalLoginPage() {
+  const nav = useNavigate();
+  const { auth } = useAppState();
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", padding: 24 }}>
+      <img src={BRAND.mark} alt={BRAND.name} width="64" height="64" style={{ display: "block", margin: "0 auto 14px", borderRadius: "50%" }} />
+      <PinLogin
+        title={t("Kitchen login")}
+        defaultLabel={t("Kitchen screen")}
+        roles={["chef", "admin"]}
+        theme={{ accent: AMBER, accentText: "#111", inputBg: "#161a22", border: BORDER, muted: TEXT_MUTED, faint: TEXT_MUTED }}
+        onLoggedIn={(data) => {
+          auth.login(data);
+          toast.success(t("Welcome, {name}!", { name: data.name || t("Chef") }));
+          nav("/board", { replace: true });
+        }}
+      />
+      <LanguageToggle style={{ marginTop: 22 }} />
+    </div>
+  );
+}
+
+function OtpLoginPage() {
   const nav = useNavigate();
   const { auth } = useAppState();
 

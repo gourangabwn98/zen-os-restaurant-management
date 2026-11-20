@@ -1,0 +1,16 @@
+%% Source: 11-offline-architecture-comparison.md — Option F — Full offline, local-primary (approved design)
+flowchart TB
+  subgraph Site[Restaurant LAN - single writer]
+    API[restaurant-server LOCAL_PRIMARY]
+    DB[(Local replica set)]
+    PS[print-service → localhost]
+    ST[Staff devices: admin, manager, waiter, chef, inventory]
+    CU[Customer phones on Wi-Fi - O3]
+    API --> DB
+    PS --> API
+    ST --> API
+    CU --> API
+  end
+  CL[Cloud mirror + relay - O6/O7]
+  API -.outbox.-> CL
+  CL -.inbox: remote orders, PhonePe relay.-> API

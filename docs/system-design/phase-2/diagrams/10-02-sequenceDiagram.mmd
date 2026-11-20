@@ -1,0 +1,22 @@
+%% Source: 10-payment-architecture.md — 3. PhonePe pay-first sequence
+sequenceDiagram
+  autonumber
+  actor Cu as Customer
+  participant CA as Customer app
+  participant API as Backend
+  participant PP as PhonePe
+  participant TK as Pay-first tick 60 s
+  CA->>API: POST /api/orders (Online) → AWAITING_PAYMENT, deadline +15 min
+  CA->>API: POST /api/payments/phonepe/initiate
+  API->>PP: POST /pg/v1/pay (amount = total x 100, X-VERIFY)
+  PP-->>API: redirect URL
+  API-->>CA: redirect
+  Cu->>PP: pays
+  PP->>API: POST /api/payments/phonepe/callback (X-VERIFY)
+  API->>API: constant-time checksum verify
+  API->>API: applyPhonePeResult - atomic, final states, amount check
+  API->>API: promotePaidOrder → PENDING_CONFIRMATION, joins table session
+  API-->>CA: order:status_changed
+  CA->>API: GET /api/payments/phonepe/status/:orderId (on return)
+  API->>PP: GET /pg/v1/status (signed)
+  TK->>API: promote stragglers, last live check, cancel unpaid after deadline

@@ -1,0 +1,13 @@
+%% Source: 04-frontend-backend-architecture.md — Domain module map
+flowchart TB
+  ORD[Orders<br/>orderService, kotService] --> INV[Inventory<br/>inventoryService]
+  ORD --> BIL[Billing<br/>billingService, combinedBill, acServiceCharge]
+  ORD --> PAY[Payments<br/>paymentService, payFirstService]
+  ORD --> TBL[Tables<br/>tableSessionService]
+  ORD --> DEL[Delivery<br/>deliveryService]
+  ORD --> MENU[Menu<br/>menu*, category*]
+  ORD --> CPN[Coupons<br/>couponService]
+  STF[Staff<br/>attendance, employee, leave, pay, staffReport] --> ORD
+  PRT[Printing<br/>printerDeviceService] --> ORD
+  LOC[Offline auth<br/>localAuthService] --> STF
+  INS[Insights] --> ORD

@@ -1,0 +1,14 @@
+%% Source: 05-database-architecture-erd.md — 5. ERD — people and delivery
+erDiagram
+  USER ||--o{ ATTENDANCESESSION : "one OPEN"
+  ATTENDANCESESSION ||--o{ DUTYHISTORY : "append-only"
+  USER ||--o{ STAFFLEAVE : requests
+  USER ||--o{ STAFFPAY : "one SALARY per month"
+  USER ||--o| DELIVERYPARTNERSTATE : rider
+  ORDER ||--o| DELIVERYJOB : "one job"
+  DELIVERYJOB ||--o{ DELIVERYOFFER : "per rider per round"
+  DELIVERYJOB ||--o{ DELIVERYEVENT : "append-only"
+  ORDER ||--o| CODCOLLECTION : "COD custody"
+  USER ||--o{ DELIVERYLOCATION : "TTL 7 d"
+  USER ||--o| STAFFPIN : "LOCAL"
+  STAFFDEVICE ||--o{ LOCALSESSION : "LOCAL"

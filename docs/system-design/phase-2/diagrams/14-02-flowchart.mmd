@@ -1,0 +1,15 @@
+%% Source: 14-deployment-architecture.md — 2. Offline Edition (LOCAL_PRIMARY) — O1/O2 implemented, installer PLANNED
+flowchart TB
+  subgraph PC[Restaurant PC - Windows]
+    N[Node 22: restaurant-server<br/>DEPLOYMENT_MODE=LOCAL]
+    M[(mongod 7 replica set rs0<br/>127.0.0.1 only)]
+    S[Static apps<br/>8080 customer, 8081 admin, 8082 waiter, 8083 kitchen]
+    P[print-service → localhost]
+    N --> M
+    N --- S
+    P --> N
+  end
+  LAN[Restaurant Wi-Fi devices] -->|HTTP now, HTTPS O5| S
+  LAN --> N
+  BK[(USB backup - manual mongodump)] -.-> M
+  N -.PLANNED O6/O7.-> CLOUD[Cloud mirror]

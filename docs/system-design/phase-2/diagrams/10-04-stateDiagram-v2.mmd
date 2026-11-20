@@ -1,0 +1,7 @@
+%% Source: 10-payment-architecture.md — 5. Staff payment and settlement
+stateDiagram-v2
+  [*] --> PENDING_VERIFICATION
+  PENDING_VERIFICATION --> PAID: waiter, manager, admin mark or settle
+  PENDING_VERIFICATION --> PAID: verified PhonePe
+  PENDING_VERIFICATION --> PAID: COD hand-in verified
+  PAID --> PENDING_VERIFICATION: admin undo only

@@ -1,0 +1,9 @@
+%% Source: 06-api-architecture.md — 5. Communication map
+flowchart LR
+  CUS[Customer] -->|menu, quote, orders, payments, coupons, waiter-calls, reviews, support, track| API[(restaurant-server)]
+  WTR[Waiter] -->|orders, admin/orders, settle, tables, sessions, waitlist, attendance, waiter-calls| API
+  KIT[Kitchen] -->|kitchen/orders, attendance| API
+  ADM[Admin / Manager] -->|admin/*, menu, inventory, employees, coupons, notifications, delivery/admin, printer, local| API
+  DEL[Rider app] -->|auth/employee, delivery/me, offers, jobs| API
+  PP[PhonePe] -->|callback| API
+  API -->|pg/v1/pay, pg/v1/status| PP

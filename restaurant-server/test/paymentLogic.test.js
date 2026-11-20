@@ -15,7 +15,7 @@ process.env.PHONEPE_SALT_INDEX = "1";
 
 const {
   isPhonePeConfigured, verifyCallbackSignature, mapPhonePeCode,
-  decodeCallback, applyPhonePeResult,
+  decodeCallback, applyPhonePeResult, checkPaidAmount, isFinalAttemptState, AMOUNT_MISMATCH,
 } = await import("../services/paymentService.js");
 
 let passed = 0, failed = 0;
@@ -73,18 +73,25 @@ const run = async () => {
 
   console.log("── applyPhonePeResult (atomic / idempotent) ───");
 
-  // Minimal fake of the Mongoose Order model: one in-memory doc, findOneAndUpdate
-  // honours a `payment.state` $ne / $nin guard just like Mongo would.
+  // Minimal fake of the Mongoose Order model: one in-memory doc. findOneAndUpdate
+  // honours a `payment.state` $ne / $nin guard AND plain equality on every other
+  // filter key (_id, payment.merchantTransactionId, payment.amount, total) —
+  // just like Mongo would. `writes` counts successful updates.
+  const getPath = (o, k) => k.split(".").reduce((v, part) => (v == null ? v : v[part]), o);
   const makeModels = (doc) => ({
     Order: {
       _doc: doc,
+      writes: 0,
       async findById() { return this._doc; },
       async findOneAndUpdate(filter, update) {
-        const g = filter["payment.state"];
-        const cur = this._doc.payment.state;
-        if (g?.$ne !== undefined && cur === g.$ne) return null;
-        if (g?.$nin && g.$nin.includes(cur)) return null;
-        if (g && g.$ne === undefined && g.$nin === undefined && cur !== g) return null;
+        for (const [k, g] of Object.entries(filter)) {
+          const cur = getPath(this._doc, k);
+          if (g && typeof g === "object") {
+            if (g.$ne !== undefined && cur === g.$ne) return null;
+            if (g.$nin && g.$nin.includes(cur)) return null;
+          } else if (String(cur) !== String(g)) return null;
+        }
+        this.writes++;
         const set = update.$set || {};
         for (const [k, v] of Object.entries(set)) {
           if (k.startsWith("payment.")) this._doc.payment[k.slice(8)] = v;
@@ -94,15 +101,22 @@ const run = async () => {
       },
     },
   });
+  // Rs 123.45 order with a PhonePe attempt created for exactly that amount.
+  const pendingOrder = (id, over = {}) => ({
+    _id: id, total: 123.45, paymentStatus: "PENDING_VERIFICATION", paymentMethod: "Cash",
+    payment: { merchantTransactionId: `T${id}`, state: "PENDING", amount: 12345 },
+    ...over,
+  });
+  const success = (extra = {}) => ({ state: "SUCCESS", code: "PAYMENT_SUCCESS", phonepeTransactionId: "PP", amount: 12345, ...extra });
 
   await test("SUCCESS marks the order PAID + Online, and reports changed", async () => {
     const models = makeModels({
-      _id: "o1", paymentStatus: "PENDING_VERIFICATION", paymentMethod: "Cash",
-      payment: { merchantTransactionId: "T1", state: "PENDING" },
+      _id: "o1", total: 50, paymentStatus: "PENDING_VERIFICATION", paymentMethod: "Cash",
+      payment: { merchantTransactionId: "T1", state: "PENDING", amount: 5000 },
     });
     const { order, changed } = await applyPhonePeResult({
       models, orderId: "o1", merchantTransactionId: "T1",
-      result: { state: "SUCCESS", code: "PAYMENT_SUCCESS", phonepeTransactionId: "PP1" },
+      result: { state: "SUCCESS", code: "PAYMENT_SUCCESS", phonepeTransactionId: "PP1", amount: 5000 },
     });
     assert.equal(changed, true);
     assert.equal(order.paymentStatus, "PAID");
@@ -117,7 +131,7 @@ const run = async () => {
     });
     const { order, changed } = await applyPhonePeResult({
       models, orderId: "o2", merchantTransactionId: "T2",
-      result: { state: "SUCCESS", code: "PAYMENT_SUCCESS", phonepeTransactionId: "PP2" },
+      result: { state: "SUCCESS", code: "PAYMENT_SUCCESS", phonepeTransactionId: "PP2", amount: 5000 },
     });
     assert.equal(changed, false);
     assert.equal(order.paymentStatus, "PAID");
@@ -148,6 +162,140 @@ const run = async () => {
     assert.equal(changed, false);
     assert.equal(order.paymentStatus, "PAID");
     assert.equal(order.payment.state, "SUCCESS");
+  });
+
+  console.log("── amount verification ────────────────────────");
+
+  await test("checkPaidAmount: exact match is ok (float total → paise)", () => {
+    assert.equal(checkPaidAmount({ order: pendingOrder("a0"), reportedAmount: 12345 }).ok, true);
+  });
+  await test("checkPaidAmount: missing / non-numeric amount fails closed", () => {
+    assert.equal(checkPaidAmount({ order: pendingOrder("a1"), reportedAmount: undefined }).reason, "AMOUNT_MISSING");
+    assert.equal(checkPaidAmount({ order: pendingOrder("a1"), reportedAmount: "abc" }).reason, "AMOUNT_MISSING");
+  });
+
+  for (const [label, amount, reason] of [
+    ["less than expected", 100, "AMOUNT_DIFFERS"],
+    ["more than expected", 12346, "AMOUNT_DIFFERS"],
+    ["missing", undefined, "AMOUNT_MISSING"],
+  ]) {
+    await test(`SUCCESS with amount ${label} is NOT marked PAID → AMOUNT_MISMATCH`, async () => {
+      const models = makeModels(pendingOrder("m1"));
+      const { order, changed, mismatch } = await applyPhonePeResult({
+        models, orderId: "m1", merchantTransactionId: "Tm1", result: success({ amount }),
+      });
+      assert.equal(changed, false);
+      assert.equal(mismatch, true);
+      assert.equal(order.paymentStatus, "PENDING_VERIFICATION");
+      assert.equal(order.paymentMethod, "Cash");
+      assert.equal(order.payment.state, AMOUNT_MISMATCH);
+      assert.equal(order.payment.raw.mismatch, reason);
+    });
+  }
+
+  await test("order total changed after the attempt started → not PAID (ORDER_TOTAL_CHANGED)", async () => {
+    const models = makeModels(pendingOrder("m2", { total: 200 }));
+    const { order, mismatch } = await applyPhonePeResult({
+      models, orderId: "m2", merchantTransactionId: "Tm2", result: success(),
+    });
+    assert.equal(mismatch, true);
+    assert.equal(order.paymentStatus, "PENDING_VERIFICATION");
+    assert.equal(order.payment.raw.mismatch, "ORDER_TOTAL_CHANGED");
+  });
+
+  await test("total edited between read and PAID write → write refused, recorded as mismatch", async () => {
+    const models = makeModels(pendingOrder("m3"));
+    const realUpdate = models.Order.findOneAndUpdate.bind(models.Order);
+    let raced = false;
+    models.Order.findOneAndUpdate = async function (f, u) {
+      // Staff edits the bill just before the PAID write lands.
+      if (!raced && u.$set?.paymentStatus === "PAID") { raced = true; this._doc.total = 150; }
+      return realUpdate(f, u);
+    };
+    const { order, changed, mismatch } = await applyPhonePeResult({
+      models, orderId: "m3", merchantTransactionId: "Tm3", result: success(),
+    });
+    assert.equal(raced, true);
+    assert.equal(changed, false);
+    assert.equal(mismatch, true);
+    assert.equal(order.paymentStatus, "PENDING_VERIFICATION");
+    assert.equal(order.payment.raw.mismatch, "ORDER_TOTAL_CHANGED");
+  });
+
+  console.log("── finalised attempts can't be changed ────────");
+
+  await test("duplicate SUCCESS after PAID changes nothing (txn id / paidAt kept)", async () => {
+    const paidAt = new Date("2026-01-01T10:00:00Z");
+    const models = makeModels(pendingOrder("f1", {
+      paymentStatus: "PAID", paymentMethod: "Online", paidAt,
+      payment: { merchantTransactionId: "Tf1", state: "SUCCESS", amount: 12345, phonepeTransactionId: "ORIG" },
+    }));
+    const { order, changed } = await applyPhonePeResult({
+      models, orderId: "f1", merchantTransactionId: "Tf1", result: success({ phonepeTransactionId: "OTHER" }),
+    });
+    assert.equal(changed, false);
+    assert.equal(models.Order.writes, 0);
+    assert.equal(order.payment.phonepeTransactionId, "ORIG");
+    assert.equal(order.paidAt, paidAt);
+  });
+
+  await test("a correct-amount SUCCESS after AMOUNT_MISMATCH cannot flip it to PAID", async () => {
+    const models = makeModels(pendingOrder("f2", {
+      payment: { merchantTransactionId: "Tf2", state: AMOUNT_MISMATCH, amount: 12345 },
+    }));
+    const { order, changed, mismatch } = await applyPhonePeResult({
+      models, orderId: "f2", merchantTransactionId: "Tf2", result: success(),
+    });
+    assert.equal(changed, false);
+    assert.equal(mismatch, true);
+    assert.equal(models.Order.writes, 0);
+    assert.equal(order.paymentStatus, "PENDING_VERIFICATION");
+  });
+
+  await test("FAILED / PENDING after AMOUNT_MISMATCH change nothing", async () => {
+    const models = makeModels(pendingOrder("f3", {
+      payment: { merchantTransactionId: "Tf3", state: AMOUNT_MISMATCH, amount: 12345 },
+    }));
+    await applyPhonePeResult({ models, orderId: "f3", merchantTransactionId: "Tf3", result: { state: "FAILED", code: "PAYMENT_ERROR" } });
+    await applyPhonePeResult({ models, orderId: "f3", merchantTransactionId: "Tf3", result: { state: "PENDING", code: "PAYMENT_PENDING" } });
+    assert.equal(models.Order.writes, 0);
+    assert.equal(models.Order._doc.payment.state, AMOUNT_MISMATCH);
+  });
+
+  await test("PENDING after SUCCESS changes nothing", async () => {
+    const models = makeModels(pendingOrder("f4", {
+      paymentStatus: "PAID", payment: { merchantTransactionId: "Tf4", state: "SUCCESS", amount: 12345 },
+    }));
+    await applyPhonePeResult({ models, orderId: "f4", merchantTransactionId: "Tf4", result: { state: "PENDING", code: "PAYMENT_PENDING" } });
+    assert.equal(models.Order.writes, 0);
+    assert.equal(models.Order._doc.paymentStatus, "PAID");
+  });
+
+  await test("result for a different (older) attempt's txn id changes nothing", async () => {
+    const models = makeModels(pendingOrder("f5"));
+    const { changed } = await applyPhonePeResult({
+      models, orderId: "f5", merchantTransactionId: "T-OLD-ATTEMPT", result: success(),
+    });
+    assert.equal(changed, false);
+    assert.equal(models.Order.writes, 0);
+    assert.equal(models.Order._doc.paymentStatus, "PENDING_VERIFICATION");
+  });
+
+  await test("a verified late SUCCESS after a FAILED attempt still records the payment", async () => {
+    const models = makeModels(pendingOrder("f6", {
+      payment: { merchantTransactionId: "Tf6", state: "FAILED", amount: 12345 },
+    }));
+    const { order, changed } = await applyPhonePeResult({
+      models, orderId: "f6", merchantTransactionId: "Tf6", result: success(),
+    });
+    assert.equal(changed, true);
+    assert.equal(order.paymentStatus, "PAID");
+  });
+
+  await test("isFinalAttemptState: SUCCESS and AMOUNT_MISMATCH only", () => {
+    assert.equal(isFinalAttemptState("SUCCESS"), true);
+    assert.equal(isFinalAttemptState(AMOUNT_MISMATCH), true);
+    for (const st of ["CREATED", "PENDING", "FAILED", undefined]) assert.equal(isFinalAttemptState(st), false);
   });
 
   console.log(`\n${passed} passed, ${failed} failed`);

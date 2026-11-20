@@ -1,0 +1,9 @@
+%% Source: 11-offline-architecture-comparison.md — Option R2 — Restricted offline, cloud-primary with local failover (PROPOSED, not recommended)
+flowchart LR
+  subgraph Normal[Internet up]
+    C[Cloud backend - writer] --> A[(Atlas)]
+  end
+  subgraph Outage[Internet down]
+    L[Local fallback server - second writer] --> LD[(Local DB)]
+  end
+  L -.replay on reconnect - conflicts possible.-> C

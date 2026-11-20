@@ -1,0 +1,23 @@
+%% Request lifecycle: Client -> API -> Middleware -> Controller -> Service -> Model -> MongoDB -> Response
+sequenceDiagram
+  autonumber
+  participant Cl as Client app
+  participant Ex as Express (global MW)
+  participant Mw as Route MW (auth, RBAC, duty)
+  participant Ct as Controller
+  participant Sv as Service
+  participant Md as Mongoose model
+  participant Db as MongoDB
+  participant Io as socket.js
+  Cl->>Ex: HTTPS /api/... Bearer JWT
+  Ex->>Ex: cors, compression, json, sanitizeInput
+  Ex->>Mw: protect (verify JWT, load User, LOCAL session) -> requireRole -> requireWaiterOnDuty
+  Mw->>Ct: next()
+  Ct->>Sv: call with { req | models, db, ... }
+  Sv->>Md: validate transition / price / role
+  Md->>Db: atomic findOneAndUpdate or transaction
+  Db-->>Md: result
+  Md-->>Sv: document
+  Sv-->>Ct: { order, effects }
+  Ct->>Io: typed emit to rooms (errors swallowed)
+  Ct-->>Cl: 2xx JSON or { message } with err.statusCode || 500

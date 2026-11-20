@@ -1,0 +1,33 @@
+%% Source: 13-security-threat-model.md — 1. Trust boundaries
+flowchart LR
+  subgraph Internet[Untrusted]
+    ANON[Anonymous browser / socket]
+    CUS[Logged-in customer]
+    PP[PhonePe]
+  end
+  subgraph Staff[Authenticated staff devices]
+    W[Waiter] 
+    A[Admin / Manager]
+    K[Chef]
+    R[Rider]
+  end
+  subgraph Server[Backend trust zone]
+    API[restaurant-server]
+    DB[(MongoDB)]
+    ENV[.env secrets]
+  end
+  subgraph Prem[Restaurant premises]
+    PS[print-service + PRINTER_KEY + queue.json]
+    PR[Printers]
+    LAN[LAN - Offline Edition, plain HTTP until O5]
+  end
+  REPO[Git repository]
+  ANON -- B1 --> API
+  CUS -- B1 --> API
+  PP -- B2 callback --> API
+  W & A & K & R -- B3 JWT --> API
+  PS -- B4 printer key --> API
+  API --- DB
+  API --- ENV
+  REPO -. B5 committed artifacts .- PS
+  LAN -- B6 --> API

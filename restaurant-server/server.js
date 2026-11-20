@@ -4,12 +4,23 @@
 
 import dns  from "node:dns";
 import http from "http";
-dns.setServers(["1.1.1.1", "8.8.8.8"]);
+// Cloud: resolve through public DNS (unchanged). Offline Edition: skip it —
+// with the internet down those resolvers are unreachable, and the local
+// server only talks to 127.0.0.1 anyway. (Imports below are hoisted, so
+// .env is already loaded when this line runs.)
+if (!isLocalPrimary()) dns.setServers(["1.1.1.1", "8.8.8.8"]);
 
 import express    from "express";
 import cors       from "cors";
 import "./config/env.js";
 import { runSecurityCheck } from "./config/securityCheck.js";
+import { isLocalPrimary } from "./config/deploymentMode.js";
+import { runLocalModeCheck } from "./config/localModeCheck.js";
+import { createLocalHealthRouter, probeDatabase } from "./local/healthRoutes.js";
+import { startLocalAppServers } from "./local/staticApps.js";
+import localAuthRoutes from "./routes/localAuthRoutes.js";
+import { getLocalAuthModels } from "./config/localAuthModels.js";
+import { prepareBootstrap } from "./services/localAuthService.js";
 import { connectDB, getDB } from "./config/db.js";
 import { getModels } from "./config/getModels.js";
 import { tenantKeyFromUri } from "./utils/tenantKey.js";
@@ -59,6 +70,13 @@ import { sanitizeInput } from "./middleware/sanitizeInput.js";
 
 // Deployment settings security depends on (warns; stops only without JWT_SECRET).
 runSecurityCheck();
+// Offline Edition (config/deploymentMode.js). Stops on an unknown
+// DEPLOYMENT_MODE, or in LOCAL mode on a database that isn't a replica set
+// on this PC. Unset (cloud) → nothing happens.
+runLocalModeCheck();
+const LOCAL_MODE = isLocalPrimary();
+const startedAt = new Date();
+let localApps = { getApps: () => ({}), close: async () => {} };
 //test
 const app    = express();
 const server = http.createServer(app);
@@ -141,6 +159,13 @@ app.get("/api/test-whatsapp/:phone", async (req, res) => {
   res.json({ message: "WhatsApp test sent to +91" + req.params.phone });
 });
 
+// Offline Edition only: LAN-only health of the restaurant PC (DB replica
+// set, served apps). Not mounted in the cloud — /local/* stays a 404 there.
+if (LOCAL_MODE) app.use("/local", createLocalHealthRouter({ getApps: () => localApps.getApps(), startedAt }));
+// Offline Edition only: first-admin setup, device registration, PIN login
+// (routes/localAuthRoutes.js). Not mounted in the cloud.
+if (LOCAL_MODE) app.use("/api/local", localAuthRoutes);
+
 app.use(notFound);
 app.use(errorHandler);
 
@@ -154,6 +179,16 @@ connectDB().then(() => {
 ║  DB: ${(process.env.MONGO_URI || "").split("/").pop().split("?")[0]}
 ╚══════════════════════════════════════════════════════╝
     `);
+    // Offline Edition: serve admin / waiter / kitchen / customer from this PC.
+    if (LOCAL_MODE) {
+      localApps = startLocalAppServers({ apiPort: PORT });
+      probeDatabase({ connect: () => getDB(process.env.MONGO_URI) }).then((db) => {
+        if (!db.connected) console.error(`❌ LOCAL MODE: database not reachable (${db.error}) — is the MongoDB service running? Retrying on every request.`);
+        else if (!db.replicaSet) console.error("❌ LOCAL MODE: MongoDB is NOT a replica set — orders cannot be saved. Run: node scripts/localReplicaSet.js");
+        else console.log(`🗄  Local MongoDB replica set "${db.replicaSet}" ${db.isPrimary ? "(primary)" : "(NOT primary)"}`);
+      });
+      startBootstrapAnnouncer();
+    }
     warmUpOcr(); // background — see utils/purchaseImportExtract.js
     // MNU-03/04/05/07 built-in categories (idempotent; never overwrites admin edits).
     getDB(process.env.MONGO_URI)
@@ -315,3 +350,32 @@ const startCategoryOrderingResetTick = () => {
 // produce — so staff kept getting turned OFF duty on their own. Duty now
 // ends only on an explicit action (services/attendanceService.js endDuty /
 // setEmployeeShift), and every real ON/OFF writes a DutyHistory record.
+
+// ── Offline Edition: one-time first-admin setup code ─────────────────────────
+// While the local database has no admin, every start prints a fresh setup
+// code HERE, on the PC's own console (never sent anywhere else). Setup is
+// accepted only from this PC (routes/localAuthRoutes.js requireLoopback).
+// Retries until the database is reachable (the PC may boot MongoDB late).
+const startBootstrapAnnouncer = () => {
+  const attempt = async () => {
+    try {
+      const conn = await getDB(process.env.MONGO_URI);
+      const r = await prepareBootstrap({ models: getLocalAuthModels(conn), appModels: getModels(conn) });
+      if (r.needed) {
+        const shown = r.code.match(/.{1,4}/g).join("-");
+        const adminPort = process.env.LOCAL_PORT_ADMIN || 8081;
+        console.log(`
+╔══════════════════════════════════════════════════════════════╗
+║  FIRST-TIME SETUP — no admin exists on this restaurant PC yet  ║
+║  On THIS PC open:  http://localhost:${adminPort}/setup
+║  Setup code:       ${shown}   (valid 2 hours, single use)
+║  Restaurant ID:    LOCAL_SITE_ID from this PC's .env
+╚══════════════════════════════════════════════════════════════╝`);
+      }
+    } catch (err) {
+      console.error("first-time setup check failed (will retry in 30 s):", err.message);
+      setTimeout(attempt, 30e3);
+    }
+  };
+  attempt();
+};

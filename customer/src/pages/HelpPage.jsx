@@ -4,6 +4,7 @@ import { submitSupportTicket } from "../services/supportService.js";
 import { useAppState } from "../context/AppState.jsx";
 import { useRestaurantProfile } from "../hooks/useRestaurantProfile.js";
 import Button from "../components/ui/Button.jsx";
+import { PolicyLinks } from "./PolicyPage.jsx";
 
 const SUBJECTS = ["Order issue", "Billing / Payment", "Feedback", "General"];
 
@@ -93,6 +94,8 @@ export default function HelpPage() {
           </Button>
         </>
       )}
+
+      <PolicyLinks style={{ marginTop: 28, marginBottom: 8 }} />
     </>
   );
 }

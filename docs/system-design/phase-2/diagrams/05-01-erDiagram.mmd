@@ -1,0 +1,30 @@
+%% Source: 05-database-architecture-erd.md — 3. ERD — orders, floor and printing
+erDiagram
+  USER ||--o{ ORDER : "user (caller)"
+  ORDER ||--|{ ORDER_ITEM : embeds
+  MENUITEM ||--o{ ORDER_ITEM : "snapshot of"
+  TABLE ||--o{ TABLESESSION : "one OPEN at a time"
+  TABLESESSION }o--o{ ORDER : groups
+  ORDER }o--o| ORDER : "parentOrder (follow-up)"
+  ORDER ||--o| KOTJOB : "exactly one"
+  ORDER ||--o{ KOTCHANGEJOB : "one per revision"
+  ORDER ||--o{ BILLPRINTJOB : "reprints"
+  PRINTERDEVICE ||--o{ KOTJOB : prints
+  PRINTERDEVICE ||--o{ BILLPRINTJOB : prints
+  ORDER ||--o{ WAITERCALL : "one active"
+  ORDER ||--o{ STAFFREVIEW : "FOOD and SERVICE"
+  COUPON ||--o{ ORDER : "snapshot"
+  ORDER {
+    string orderId UK
+    string status
+    string paymentStatus
+    string billStatus
+    number total
+    number revision
+    string idempotencyKey UK
+  }
+  KOTJOB {
+    objectid order UK
+    string status
+    number attempts
+  }

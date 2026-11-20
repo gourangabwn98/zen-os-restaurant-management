@@ -468,7 +468,9 @@ const orderSchema = new mongoose.Schema({
     provider:              { type: String, enum: ["NONE","PHONEPE"], default: "NONE" },
     merchantTransactionId: { type: String, default: "" },
     phonepeTransactionId:  { type: String, default: "" },
-    state:                 { type: String, enum: ["CREATED","PENDING","SUCCESS","FAILED"], default: "CREATED" },
+    // AMOUNT_MISMATCH: PhonePe reported success for a different amount than
+    // expected — never marks the order PAID; a person must review it.
+    state:                 { type: String, enum: ["CREATED","PENDING","SUCCESS","FAILED","AMOUNT_MISMATCH"], default: "CREATED" },
     amount:                { type: Number, default: 0 }, // paise, server-derived from order.total
     lastCheckedAt:         { type: Date, default: null },
     raw:                   { type: mongoose.Schema.Types.Mixed, default: null }, // last gateway code, no PII

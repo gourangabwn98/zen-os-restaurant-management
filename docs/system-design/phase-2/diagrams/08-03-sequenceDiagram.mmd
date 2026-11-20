@@ -1,0 +1,15 @@
+%% Source: 08-order-kot-workflow.md — 3. Staff order and kitchen
+sequenceDiagram
+  actor W as Waiter (on duty)
+  participant API as Backend
+  participant DB as MongoDB
+  actor C as Chef
+  W->>API: POST /api/orders (staff JWT)
+  API->>DB: insert Order CONFIRMED (+ table session)
+  alt editWindowMinutes = 0
+    API->>DB: sendToKitchenTx immediately
+  end
+  Note over API: otherwise timer after the window
+  C->>API: PATCH /api/kitchen/orders/:id/status READY
+  API-->>W: order:status_changed
+  W->>API: PUT /api/admin/orders/:id/status DELIVERED

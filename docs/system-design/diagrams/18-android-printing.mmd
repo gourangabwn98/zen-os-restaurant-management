@@ -1,0 +1,11 @@
+%% Android printing — PROPOSED (no code in repo)
+flowchart LR
+  BE["restaurant-server: print jobs + printers room"] -->|"WSS printerKey (phase 1); lease API later"| AG
+  subgraph AND["Android edge device (PROPOSED)"]
+    AG["Foreground service socket client"] --> Q[("Durable queue")]
+    Q --> R["Renderer: ESC/POS + bitmap Bengali, logo, QR"]
+    R --> D1["LAN driver 9100"]
+    R -.-> D2["USB OTG (later, tested models)"]
+  end
+  D1 --> P["LAN printer"]
+  WIN["Existing Windows print-service (kept in parallel)"] --> P

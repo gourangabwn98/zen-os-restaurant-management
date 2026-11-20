@@ -1,0 +1,12 @@
+%% Source: 07-socketio-architecture.md — 1. Handshake
+flowchart TD
+  S[Socket connects] --> K{auth.printerKey?}
+  K -- yes --> PK[verify SHA-256 hash, device Active] --> PR[role printer → printers room]
+  K -- no --> T{auth.token?}
+  T -- yes --> J[jwt.verify + load User]
+  J --> L{LOCAL mode?}
+  L -- yes --> LC[refuse Inactive, checkLocalToken, session expiry timer]
+  L -- no --> NC[no Inactive check - R-04]
+  LC --> RL[rooms by role]
+  NC --> RL
+  T -- no --> G[guest → tenant room only]
